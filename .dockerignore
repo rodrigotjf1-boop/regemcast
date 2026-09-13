@@ -1,0 +1,35 @@
+# O contexto de build é a raiz do repositório. Sem esta lista, o `docker build`
+# empacota node_modules (com binário nativo compilado para Windows) e .env.
+#
+# Toda regra aparece em DUAS formas: a da raiz e a `**/`, que pega subpasta.
+# Só a forma de raiz deixaria `backend/.env` e `frontend/.env.local` — os
+# arquivos que carregam DATABASE_URL, JWT_SECRET e DIST_TOKEN — entrarem na
+# imagem, que é justamente o que esta lista existe para impedir.
+node_modules
+**/node_modules
+.next
+**/.next
+dist
+**/dist
+coverage
+**/coverage
+.git
+.github
+.pgdata
+*.tsbuildinfo
+**/*.tsbuildinfo
+npm-debug.log*
+**/npm-debug.log*
+
+# Segredos: em qualquer pasta, em qualquer variante (.env, .env.local,
+# .env.production...). O `!` abaixo devolve só o modelo, que não tem segredo
+# nenhum — e precisa vir DEPOIS, senão a regra acima o exclui de volta.
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+docs
+mockups

@@ -1,0 +1,112 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================================
+ * MARCA — PLACEHOLDER NEUTRO
+ *
+ * O dono do produto ainda vai enviar logo e cores. Até lá vale esta paleta
+ * neutra de viés frio, deliberadamente sem personalidade. Ela NÃO é a paleta
+ * do Regem (nada de dourado #E2A340 nem do navy) — RegemCast é outro produto.
+ *
+ * PARA TROCAR A MARCA, mexa só aqui:
+ *   1. os canais RGB de `--cor-*` (formato "R G B", sem vírgula, porque é o que
+ *      deixa `bg-acento/10` funcionar);
+ *   2. `--fonte-corpo` / `--fonte-mono` (abaixo);
+ *   3. `src/components/marca/logotipo.tsx` (o monograma provisório).
+ * Nenhum componente usa cor crua, então nada mais precisa ser tocado.
+ * ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  --cor-fundo: 244 246 246;          /* #F4F6F6 */
+  --cor-superficie: 255 255 255;
+  --cor-superficie-2: 235 239 239;
+  --cor-tinta: 16 25 28;             /* #10191C */
+  --cor-tinta-suave: 88 104 109;
+  --cor-borda: 214 221 221;
+  --cor-acento: 11 122 140;          /* #0B7A8C */
+  --cor-acento-forte: 8 95 109;
+  --cor-acento-suave: 229 243 245;
+  --cor-acento-contraste: 255 255 255;
+  --cor-sucesso: 21 128 61;
+  --cor-atencao: 180 83 9;
+  --cor-erro: 180 35 24;
+  --cor-sombra: 16 25 28;
+
+  /* Sem next/font: não há arquivo de fonte no repo e next/font/google trava o
+   * build em máquina sem rede. Quando a marca chegar, troque a pilha aqui. */
+  --fonte-corpo: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --fonte-mono: ui-monospace, SFMono-Regular, 'Cascadia Mono', Consolas, 'Courier New', monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --cor-fundo: 11 18 20;
+    --cor-superficie: 17 27 30;
+    --cor-superficie-2: 22 35 38;
+    --cor-tinta: 232 239 239;
+    --cor-tinta-suave: 157 176 180;
+    --cor-borda: 36 54 58;
+    --cor-acento: 63 183 201;
+    --cor-acento-forte: 118 209 222;
+    --cor-acento-suave: 16 41 46;
+    --cor-acento-contraste: 8 26 30;
+    --cor-sucesso: 74 222 128;
+    --cor-atencao: 251 191 36;
+    --cor-erro: 252 165 165;
+    --cor-sombra: 0 0 0;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-borda;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-fundo text-tinta antialiased;
+    font-family: var(--fonte-corpo);
+  }
+
+  /* Foco sempre visível — inclusive em quem navega só de teclado. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-acento ring-offset-2 ring-offset-fundo;
+  }
+
+  h1, h2, h3 {
+    @apply font-semibold tracking-tight text-tinta;
+  }
+
+  /* Números que se comparam na vertical (uso do ciclo, tetos) alinham melhor
+   * com largura fixa. */
+  .numerico {
+    font-family: var(--fonte-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Pula direto para o conteúdo — leitor de tela e teclado. */
+  .pular-para-conteudo {
+    @apply absolute left-4 top-4 z-50 -translate-y-20 rounded-md bg-acento px-3 py-2
+           text-sm font-medium text-acento-contraste transition-transform
+           focus-visible:translate-y-0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

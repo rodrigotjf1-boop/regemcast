@@ -1,0 +1,71 @@
+'use client';
+
+import { forwardRef, type InputHTMLAttributes, type SelectHTMLAttributes } from 'react';
+
+import { cn } from '@/lib/cn';
+
+const BASE_CAMPO =
+  'w-full rounded-lg border border-borda bg-superficie px-3 py-2 text-sm text-tinta ' +
+  'placeholder:text-tinta-suave/70 transition-colors ' +
+  'read-only:bg-superficie-2 read-only:text-tinta-suave ' +
+  'disabled:cursor-not-allowed disabled:bg-superficie-2 disabled:text-tinta-suave';
+
+export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+  /** Marca o campo como inválido e liga o `aria-invalid` de uma vez só. */
+  invalido?: boolean;
+}
+
+export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
+  { className, invalido, ...props },
+  ref,
+) {
+  return (
+    <input
+      ref={ref}
+      aria-invalid={invalido || undefined}
+      className={cn(BASE_CAMPO, 'h-10', invalido && 'border-erro', className)}
+      {...props}
+    />
+  );
+});
+
+export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
+  invalido?: boolean;
+}
+
+export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
+  { className, invalido, children, ...props },
+  ref,
+) {
+  return (
+    <select
+      ref={ref}
+      aria-invalid={invalido || undefined}
+      className={cn(BASE_CAMPO, 'h-10 pr-8', invalido && 'border-erro', className)}
+      {...props}
+    >
+      {children}
+    </select>
+  );
+});
+
+/** Texto de apoio abaixo do campo (dica ou erro). */
+export function AjudaCampo({
+  children,
+  tom = 'neutro',
+  id,
+}: {
+  children: React.ReactNode;
+  tom?: 'neutro' | 'erro';
+  id?: string;
+}) {
+  return (
+    <p
+      id={id}
+      className={cn('text-xs', tom === 'erro' ? 'text-erro' : 'text-tinta-suave')}
+      role={tom === 'erro' ? 'alert' : undefined}
+    >
+      {children}
+    </p>
+  );
+}

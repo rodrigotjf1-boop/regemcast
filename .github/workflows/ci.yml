@@ -1,0 +1,79 @@
+name: CI
+
+# O portão antes do merge. Roda em todo push e em toda PR, e os dois lados são
+# independentes: erro no front não esconde erro no back, e vice-versa.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+# Push novo na mesma branch cancela a execução anterior — CI de commit já
+# substituído só gasta minuto e atrasa a fila.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend (typecheck · build · test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      # npm ci (e não npm install): respeita o lockfile e falha se ele estiver
+      # fora de sincronia com o package.json, em vez de resolver sozinho uma
+      # árvore diferente da que roda em produção.
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Testes
+        run: npm test
+
+  frontend:
+    name: frontend (typecheck · build · test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+          # Valor público e só de build — o bundle do navegador não carrega
+          # segredo nenhum. A URL real entra no build do EasyPanel.
+          NEXT_PUBLIC_API_URL: http://localhost:3000/api/v1
+
+      - name: Testes
+        run: npm test --if-present

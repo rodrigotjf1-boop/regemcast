@@ -1,0 +1,187 @@
+import { resolve } from 'node:path';
+
+/**
+ * Leitura e validação das variáveis de ambiente, uma vez, no boot.
+ *
+ * Fail-fast de propósito: um segredo ausente derruba o processo no start, em
+ * vez de virar um 500 obscuro no primeiro request. No Regem, `WA_CLOUD_TOKEN`
+ * vazio vira `BadRequestException` — ou seja, o cliente recebe "sua requisição
+ * está errada" quando o problema é de configuração nossa.
+ */
+
+/**
+ * Carrega `backend/.env` em desenvolvimento.
+ *
+ * Este arquivo é lido no import, antes de o Nest existir, então `ConfigModule`
+ * não serve aqui — quando ele inicializaria, `env` já teria estourado.
+ *
+ * Só fora de produção, de propósito: em produção as variáveis vêm do EasyPanel
+ * e `process.loadEnvFile` SOBRESCREVE o que já está em `process.env`. Um `.env`
+ * esquecido dentro da imagem passaria por cima da configuração real do
+ * servidor — falha silenciosa e difícil de enxergar. (O `.dockerignore` já
+ * impede isso; esta guarda é a segunda tranca.)
+ */
+if (process.env.NODE_ENV !== 'production') {
+  // Caminho relativo ao arquivo compilado (dist/config/env.js) e ao fonte
+  // (src/config/env.ts): os dois estão dois níveis abaixo de backend/.
+  const caminho = resolve(__dirname, '..', '..', '.env');
+  try {
+    process.loadEnvFile(caminho);
+  } catch {
+    // Sem .env: seguimos com o que estiver no ambiente. Se faltar algo
+    // obrigatório, o erro logo abaixo diz exatamente qual variável é.
+  }
+}
+
+function obrigatoria(nome: string): string {
+  const v = process.env[nome];
+  if (!v || !v.trim()) {
+    throw new Error(
+      `Variável de ambiente ${nome} não está definida. Veja backend/.env.example.`,
+    );
+  }
+  return v.trim();
+}
+
+function opcional(nome: string, padrao = ''): string {
+  return (process.env[nome] ?? padrao).trim();
+}
+
+function numero(nome: string, padrao: number): number {
+  const bruto = process.env[nome];
+  if (!bruto) return padrao;
+  const n = Number(bruto);
+  if (!Number.isFinite(n)) {
+    throw new Error(`Variável ${nome} precisa ser um número (recebi "${bruto}").`);
+  }
+  return n;
+}
+
+function booleana(nome: string, padrao = false): boolean {
+  const bruto = (process.env[nome] ?? '').trim().toLowerCase();
+  if (!bruto) return padrao;
+  return bruto === 'true' || bruto === '1' || bruto === 'sim';
+}
+
+const producao = opcional('NODE_ENV') === 'production';
+
+/**
+ * URL NOSSA que vai dentro de link enviado ao cliente (convite, rastreio de
+ * clique). Em dev tem padrão; em produção é obrigatória E precisa ser https.
+ *
+ * O padrão silencioso é pior que a falta: um deploy sem a variável não quebra,
+ * ele manda o cliente para `http://localhost:3001` — e o erro só aparece do
+ * outro lado, no cliente que clicou e não chegou a lugar nenhum. Exigir https
+ * é o mesmo cuidado: link http em e-mail e em template da Meta vira aviso de
+ * "site não seguro" e ainda trafega o token do convite em claro.
+ */
+function urlPublica(nome: string, padraoDev: string): string {
+  if (!producao) return opcional(nome, padraoDev);
+  const valor = obrigatoria(nome);
+  if (!/^https:\/\/\S+$/.test(valor)) {
+    throw new Error(
+      `Variável de ambiente ${nome} precisa começar com https:// em produção ` +
+        `(recebi "${valor}"). Veja backend/.env.example.`,
+    );
+  }
+  return valor;
+}
+
+/**
+ * Piso de tamanho do token do console de distribuição. Espelha
+ * TAMANHO_MINIMO_DIST_TOKEN do DistTokenGuard de propósito: lá a checagem é por
+ * request (o guard relê process.env para permitir rotação sem redeploy), aqui é
+ * no boot — token curto não pode ficar escondido até alguém abrir o console.
+ * O valor nunca aparece em log nem em mensagem de erro.
+ */
+const DIST_TOKEN_MINIMO = 24;
+
+function distToken(): string {
+  const valor = opcional('DIST_TOKEN');
+  if (valor && producao && valor.length < DIST_TOKEN_MINIMO) {
+    throw new Error(
+      `Variável de ambiente DIST_TOKEN tem menos de ${DIST_TOKEN_MINIMO} caracteres ` +
+        'e protege os dados de TODAS as contas. Gere outra com: openssl rand -hex 32.',
+    );
+  }
+  return valor;
+}
+
+export const env = {
+  producao,
+  porta: numero('PORT', 3000),
+
+  banco: {
+    url: obrigatoria('DATABASE_URL'),
+    /**
+     * Em produção o certificado é verificado de verdade. `rejectUnauthorized:
+     * false` é o padrão silencioso de muita biblioteca e transforma TLS em
+     * teatro — quem está no meio do caminho lê tudo.
+     */
+    ssl: opcional('DATABASE_SSL', producao ? 'require' : 'disable'),
+    poolMax: numero('DATABASE_POOL_MAX', 10),
+  },
+
+  redis: {
+    url: opcional('REDIS_URL', 'redis://localhost:6379'),
+  },
+
+  sessao: {
+    segredo: obrigatoria('JWT_SECRET'),
+    ttlHoras: numero('JWT_TTL_HORAS', 12),
+    cookieNome: opcional('COOKIE_NOME', 'regemcast_sess'),
+    cookieDominio: opcional('COOKIE_DOMINIO'),
+  },
+
+  rede: {
+    /** Base do link de convite que o cliente recebe por e-mail. */
+    appUrl: urlPublica('APP_URL', 'http://localhost:3001'),
+    apiUrl: opcional('API_URL', 'http://localhost:3000'),
+    /** Em produção é obrigatório: sem lista, CORS com credenciais vira buraco. */
+    corsOrigin: producao
+      ? obrigatoria('CORS_ORIGIN').split(',').map((s) => s.trim()).filter(Boolean)
+      : opcional('CORS_ORIGIN', 'http://localhost:3001').split(',').map((s) => s.trim()).filter(Boolean),
+    trustProxy: numero('TRUST_PROXY', 1),
+    trustCloudflare: booleana('TRUST_CLOUDFLARE', false),
+    swagger: booleana('SWAGGER_ENABLED', !producao),
+  },
+
+  meta: {
+    appId: opcional('META_APP_ID'),
+    appSecret: opcional('META_APP_SECRET'),
+    verifyToken: opcional('META_VERIFY_TOKEN'),
+    configId: opcional('META_CONFIG_ID'),
+    graphVersao: opcional('META_GRAPH_VERSAO', 'v25.0'),
+    tokenChave: opcional('META_TOKEN_CHAVE'),
+  },
+
+  /**
+   * ATENÇÃO: esta base fica CONGELADA dentro de cada template aprovado pela
+   * Meta. Trocar depois obriga a recriar e reaprovar todos os modelos, com
+   * nome novo — foi o que aconteceu no Regem, onde o domínio da API vive
+   * dentro dos templates já aprovados.
+   *
+   * Por isso ela é obrigatória e https em produção, como a APP_URL: um deploy
+   * sem a variável não congelaria "o domínio errado", congelaria `localhost`
+   * dentro de templates que só se conserta recriando tudo.
+   */
+  rastreioBase: urlPublica('RASTREIO_BASE_URL', 'http://localhost:3000/r'),
+
+  /**
+   * Console de distribuição (Regem), não do cliente. Opcional: sem ela as rotas
+   * do console respondem 503 (DistTokenGuard é fail-closed). Aparece aqui para
+   * o boot recusar um token curto demais — o guard, que lê process.env a cada
+   * request, continua sendo quem autoriza.
+   */
+  distribuicao: {
+    token: distToken(),
+  },
+
+  storage: {
+    url: opcional('SUPABASE_URL'),
+    chave: opcional('SUPABASE_SERVICE_KEY'),
+    bucket: opcional('SUPABASE_BUCKET', 'regemcast-midia'),
+  },
+} as const;
+
+export type Env = typeof env;
