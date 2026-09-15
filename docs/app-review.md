@@ -9,6 +9,27 @@ Estado dos portões da Meta para o app do Regemcast:
 | App Review — `whatsapp_business_management` | ⏳ pode ser gravado **hoje** |
 | App Review — `whatsapp_business_messaging` | 🔒 **bloqueado**: exige envio funcionando |
 
+## Sem Acesso Avançado, ninguém conecta — nem para testar
+
+Confirmado em produção, em 15/set/2026: com o app **Ao vivo** e só Acesso
+Padrão, o Embedded Signup recusa o onboarding com
+
+> "O app do parceiro não tem as permissões de mensagens e Gerenciamento do
+> WhatsApp Business avançadas que são necessárias para a integração."
+> (#2655111)
+
+A documentação é explícita: *"You will not be able to onboard business
+customers until your app has been approved for advanced access for each of the
+permissions it requires."*
+
+**A saída não é um contorno, é o caminho previsto pela Meta:** com o app em
+**modo Desenvolvimento**, as permissões aparecem normalmente na tela de
+autorização *"to anyone who has an admin, developer, or tester role on your
+app"*. É assim que se constrói e se grava o vídeo antes de pedir a análise.
+
+Por isso o app fica em **Desenvolvimento** até o App Review sair. Voltar para
+**Ao vivo** é o último passo, depois da aprovação — não antes.
+
 ## A conclusão que muda a ordem das coisas
 
 O vídeo de `whatsapp_business_messaging` precisa mostrar o app **enviando e
@@ -18,10 +39,13 @@ modelo nem de campanha, e nenhuma rota de disparo.
 
 Ou seja: **não dá para submeter as duas permissões agora.** A ordem real é:
 
-1. Fase 4 mínima — um modelo aprovado e um envio de teste que funcione de ponta
+1. App em **Desenvolvimento**; o dono conecta a própria WABA (funciona porque
+   ele é admin do app).
+2. Fase 4 mínima — um modelo aprovado e um envio de teste que funcione de ponta
    a ponta, com o status voltando pelo webhook.
-2. Gravar os dois vídeos.
-3. Submeter as duas permissões juntas.
+3. Gravar os dois vídeos.
+4. Submeter as duas permissões juntas.
+5. Aprovado, virar o app para **Ao vivo** e abrir para a lista de espera.
 
 Dá para submeter só `whatsapp_business_management` antes, e é uma decisão
 defensável (a análise leva ~24h e um "aprovado" adianta o outro pedido). Mas
