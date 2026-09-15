@@ -195,6 +195,27 @@ um 500 obscuro no primeiro request.
 
 ## Migrations
 
+Os dois serviços ficam em **auto-deploy**: o merge na `main` implanta sozinho.
+Não há clique manual para segurar o código enquanto a migration não foi
+aplicada — a ordem "migration antes do merge" é a única proteção.
+
+**Se o auto-deploy parar de funcionar**, o suspeito número um é a URL do
+webhook, não o EasyPanel. Ele gera o webhook a partir do endereço do próprio
+painel; se o painel não tiver domínio na hora em que o serviço foi criado, sai
+`http://<ip>:3000/api/deploy/<token>` — e o GitHub não alcança isso. Aconteceu
+aqui em 15/set/2026: toda entrega voltava `failed to connect to host` / 502
+com a caixa de auto-deploy marcada. Diagnóstico, sem abrir o painel:
+
+```bash
+gh api repos/rodrigotjf1-boop/regemcast/hooks --jq '.[] | "\(.active)  \(.config.url)"'
+gh api repos/rodrigotjf1-boop/regemcast/hooks/<id>/deliveries?per_page=5 --jq '.[] | "\(.delivered_at) \(.status) \(.status_code)"'
+```
+
+A correção é trocar só o host para `https://painel.dmstecnologias.com`,
+mantendo o token de cada serviço.
+
+---
+
 O deploy **não** aplica migration. A regra do projeto é: quem aplica na nuvem é
 o dono, à mão, conferindo antes (ver [`banco.md`](./banco.md)). O código sobe
 no merge; a migration vai antes dele, nunca depois — entre os dois, o Drizzle

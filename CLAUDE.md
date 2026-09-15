@@ -239,6 +239,22 @@ Detalhe e o porquê em `docs/marca.md`; fonte da verdade em `kit/LEIA-ME.md`.
 
    Antes de criar, confira o **último número** em `database/migrations/` e use
    o **próximo**, sem pular nem repetir. SQL idempotente sempre.
+
+   **Os dois serviços estão em auto-deploy** (`regemcast-api` e
+   `regemcast-web`, painel em `https://painel.dmstecnologias.com`). Ou seja:
+   o merge implanta sozinho, e **não existe clique manual para segurar o código
+   enquanto a migration não foi aplicada**. A ordem acima é a única proteção —
+   decisão do dono, em 15/set/2026, consciente da troca.
+
+   Entregue o SQL junto com a linha do ledger, para a nuvem não ficar
+   desalinhada (o dono aplica pelo SQL Editor, que não escreve em
+   `schema_migrations`):
+
+   ```sql
+   insert into public.schema_migrations (arquivo, hash)
+   values ('NNN_nome.sql', '<sha256 do arquivo, com CRLF normalizado para LF>')
+   on conflict (arquivo) do nothing;
+   ```
 3. **Branch → PR → CI verde → merge.** Nada de commit direto na `main`. O CI
    roda `npm ci`, `typecheck`, `build` e `test` nos dois lados.
 4. **Antes de qualquer push**, rode `npm run typecheck` e `npm run build` em
