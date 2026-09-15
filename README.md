@@ -1,4 +1,4 @@
-# RegemCast
+# Regemcast
 
 Disparo de WhatsApp em massa pela **API oficial da Meta** (Cloud API). Cada
 cliente conecta o próprio WhatsApp Business Account, importa a base com opt-in,

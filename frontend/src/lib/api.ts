@@ -1,5 +1,5 @@
 /**
- * Cliente HTTP do RegemCast.
+ * Cliente HTTP do Regemcast.
  *
  * Enxuto de propósito: a sessão é um cookie httpOnly emitido pela API, então o
  * navegador só precisa mandar `credentials: 'include'`. Não existe token em

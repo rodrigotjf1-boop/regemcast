@@ -362,7 +362,7 @@ export class ContaService {
       return this.paraResumo(novo);
     } catch (erro) {
       if (violacaoUnica(erro)) {
-        throw new ConflictException('Este e-mail já tem acesso ao RegemCast. Use outro endereço.');
+        throw new ConflictException('Este e-mail já tem acesso ao Regemcast. Use outro endereço.');
       }
       throw erro;
     }
@@ -410,7 +410,7 @@ export class ContaService {
       // Não existe rota de transferência de titularidade: a frase precisa
       // mandar para onde a pessoa realmente resolve isso.
       throw new ForbiddenException(
-        'O dono da conta não pode ser suspenso. Suspenda outro acesso, ou fale com o suporte do RegemCast para trocar o titular.',
+        'O dono da conta não pode ser suspenso. Suspenda outro acesso, ou fale com o suporte do Regemcast para trocar o titular.',
       );
     }
 
@@ -498,7 +498,7 @@ export class ContaService {
 
     if (alvo.papel === 'dono') {
       throw new ForbiddenException(
-        'O dono da conta não pode ser removido. Remova outro acesso, ou fale com o suporte do RegemCast para trocar o titular.',
+        'O dono da conta não pode ser removido. Remova outro acesso, ou fale com o suporte do Regemcast para trocar o titular.',
       );
     }
 
@@ -560,7 +560,7 @@ export class ContaService {
       e?.stack,
     );
     return new InternalServerErrorException(
-      'Não conseguimos remover este acesso agora. Tente de novo em instantes — se continuar, fale com o suporte do RegemCast.',
+      'Não conseguimos remover este acesso agora. Tente de novo em instantes — se continuar, fale com o suporte do Regemcast.',
     );
   }
 

@@ -19,7 +19,7 @@ import type { ResumoConta } from '@/lib/tipos';
 /** Fase 1 do produto. Tudo aqui está desligado de propósito — e diz isso. */
 const PROXIMOS_PASSOS: ReadonlyArray<{ titulo: string; descricao: string }> = [
   {
-    titulo: 'Conectar o WhatsApp',
+    titulo: 'Conectar o número',
     descricao:
       'Você informa o número e nós concluímos a conexão com a Meta. Nenhuma conta de desenvolvedor do seu lado.',
   },
@@ -196,7 +196,7 @@ export default function Painel() {
             Enquanto isso, confira os{' '}
             <Link
               href="/conta"
-              className="font-medium text-acento underline underline-offset-4 hover:text-acento-forte"
+              className="font-medium text-acento-forte underline underline-offset-4 decoration-acento decoration-2 hover:decoration-4"
             >
               dados da sua conta
             </Link>{' '}

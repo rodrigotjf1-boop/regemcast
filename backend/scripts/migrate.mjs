@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Runner de migration do RegemCast — com LEDGER.
+ * Runner de migration do Regemcast — com LEDGER.
  *
  * Por que ledger: no Regem não existe tabela de controle. O runner re-executa
  * os ~240 arquivos em ordem a cada atualização e engole uma lista de SQLSTATEs

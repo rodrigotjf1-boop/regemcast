@@ -27,7 +27,7 @@ export function EmptyState({
         className,
       )}
     >
-      {icone ? <div aria-hidden="true" className="text-acento">{icone}</div> : null}
+      {icone ? <div aria-hidden="true" className="text-acento-forte">{icone}</div> : null}
       <h3 className="text-sm font-semibold text-tinta">{titulo}</h3>
       <p className="max-w-prose text-sm text-tinta-suave">{descricao}</p>
       {acao ? <div className="pt-1">{acao}</div> : null}

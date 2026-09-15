@@ -49,7 +49,7 @@ export default function ListaEspera() {
           <Logotipo className="justify-center" />
           <h1 className="text-2xl">Lista de espera</h1>
           <p className="text-sm text-tinta-suave">
-            O RegemCast dispara suas campanhas de WhatsApp pela API oficial da Meta — com número
+            O Regemcast dispara suas campanhas com integração via API Oficial do WhatsApp Business — com número
             verificado, modelos aprovados e histórico de cada envio.
           </p>
         </div>
@@ -67,7 +67,7 @@ export default function ListaEspera() {
               <p className="text-sm text-tinta-suave">
                 Guardamos seu lugar na fila. Liberamos as vagas <strong>por ordem de chegada</strong>,
                 em lotes pequenos, porque a Meta limita quantos números novos conectamos por semana —
-                assim ninguém fica preso no meio da conexão do WhatsApp.
+                assim ninguém fica preso no meio da conexão do número.
               </p>
               <p className="text-sm text-tinta-suave">
                 Quando for sua vez, enviamos um convite para <strong>{email}</strong> com o link de
@@ -132,7 +132,7 @@ export default function ListaEspera() {
 
                 <div className="space-y-1.5">
                   <Label htmlFor="telefone" opcional>
-                    WhatsApp para contato
+                    Telefone para contato
                   </Label>
                   <Input
                     id="telefone"
@@ -160,7 +160,7 @@ export default function ListaEspera() {
                   Já tem conta?{' '}
                   <Link
                     href="/entrar"
-                    className="font-medium text-acento underline underline-offset-4 hover:text-acento-forte"
+                    className="font-medium text-acento-forte underline underline-offset-4 decoration-acento decoration-2 hover:decoration-4"
                   >
                     Entrar
                   </Link>

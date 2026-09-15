@@ -66,7 +66,7 @@ const SESSAO_EXPIRADA = 'Sua sessão expirou. Entre de novo.';
  * existe em lugar nenhum.
  */
 const EMAIL_JA_CADASTRADO =
-  'Já existe uma conta com este e-mail. Entre com a sua senha — se não lembra dela, fale com o suporte do RegemCast.';
+  'Já existe uma conta com este e-mail. Entre com a sua senha — se não lembra dela, fale com o suporte do Regemcast.';
 const PLANO_CORTESIA = 'cortesia';
 /** Duração da cortesia do primeiro ciclo. */
 const DIAS_CORTESIA = 30;
@@ -282,7 +282,7 @@ export class AuthService {
       throw new UnauthorizedException('Este acesso foi suspenso. Fale com o dono da conta.');
     }
     throw new UnauthorizedException(
-      'Esta conta está suspensa. Fale com o suporte do RegemCast para reativar.',
+      'Esta conta está suspensa. Fale com o suporte do Regemcast para reativar.',
     );
   }
 
@@ -438,7 +438,7 @@ export class AuthService {
       if (!planoCortesia) {
         // Falta de dado nosso, não erro do cliente.
         throw new InternalServerErrorException(
-          'O plano de cortesia não está cadastrado. Avise o suporte do RegemCast.',
+          'O plano de cortesia não está cadastrado. Avise o suporte do Regemcast.',
         );
       }
 

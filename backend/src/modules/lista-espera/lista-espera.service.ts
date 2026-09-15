@@ -1,5 +1,5 @@
 /**
- * Fila de entrada do RegemCast.
+ * Fila de entrada do Regemcast.
  *
  * Ela existe por um motivo concreto: a Meta limita um Tech Provider a 10
  * clientes NOVOS por janela rolling de 7 dias enquanto a Access Verification
@@ -247,7 +247,7 @@ export class ListaEsperaService {
       }
       if (linha.status === 'convertida') {
         throw new ConflictException(
-          'Esta pessoa já virou conta no RegemCast. Não há convite a enviar.',
+          'Esta pessoa já virou conta no Regemcast. Não há convite a enviar.',
         );
       }
 
@@ -346,7 +346,7 @@ export class ListaEsperaService {
       }
       if (linha.status === 'convertida') {
         throw new ConflictException(
-          'Esta pessoa já virou conta no RegemCast. Cancele a conta em vez de recusar o pedido.',
+          'Esta pessoa já virou conta no Regemcast. Cancele a conta em vez de recusar o pedido.',
         );
       }
 

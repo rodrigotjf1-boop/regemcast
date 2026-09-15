@@ -110,7 +110,7 @@ detecta isso e diz exatamente o que fazer se você esquecer.
 
 > Se for usar o **pooler** do Supabase (porta `6543`, "Transaction pooler"),
 > use-o apenas na `DATABASE_URL` da API — e saiba que o pooler em modo
-> transaction não mantém `SET` fora de transação. O RegemCast define o GUC
+> transaction não mantém `SET` fora de transação. O Regemcast define o GUC
 > `app.conta_id` com `set_config(..., true)`, que vive dentro da transação, então
 > funciona nos dois modos. Para migration, use a conexão direta (porta `5432`).
 
@@ -238,7 +238,7 @@ Aqui é onde a migration é testada antes de ir para a nuvem.
 
 São dois caminhos. **Nesta máquina vale o caminho B**: não há Docker instalado,
 e existe um PostgreSQL 18 nativo escutando na `5432` — o mesmo que o Regem usa
-em dev. O banco do RegemCast é separado (`regemcast`); nada do Regem é tocado.
+em dev. O banco do Regemcast é separado (`regemcast`); nada do Regem é tocado.
 
 | | Caminho A — Docker | Caminho B — Postgres nativo |
 | --- | --- | --- |

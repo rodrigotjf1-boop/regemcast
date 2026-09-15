@@ -57,7 +57,7 @@ export default function Entrar() {
         <div className="space-y-2 text-center">
           <Logotipo className="justify-center" />
           <p className="text-sm text-tinta-suave">
-            Entre para gerenciar seus disparos de WhatsApp.
+            Entre para gerenciar seus disparos.
           </p>
         </div>
 
@@ -108,7 +108,7 @@ export default function Entrar() {
           Ainda não tem acesso?{' '}
           <Link
             href="/lista-espera"
-            className="font-medium text-acento underline underline-offset-4 hover:text-acento-forte"
+            className="font-medium text-acento-forte underline underline-offset-4 decoration-acento decoration-2 hover:decoration-4"
           >
             Entre na lista de espera
           </Link>

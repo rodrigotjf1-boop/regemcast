@@ -1,0 +1,13 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:transparent;width:512px;height:512px;overflow:hidden}svg{display:block}</style></head><body><svg width="512" height="512" viewBox="0 0 100 100">
+<g id="hop"><g id="sq" transform="translate(50 88) scale(1 1) translate(-50 -88)"><path d="M26 16H74A12 12 0 0 1 86 28V60A12 12 0 0 1 74 72H44L28 88L31 72H26A12 12 0 0 1 14 60V28A12 12 0 0 1 26 16Z" fill="#A3E635"/><g id="pp" transform="translate(50 44) scale(1) translate(-50 -44)"><path d="M24 48H32L38 38L44 48L50 30L56 48L62 40L68 48H76" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></g></g></g>
+</svg><script>
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const seg=(t,a,b)=>clamp((t-a)/(b-a),0,1);
+const outBack=x=>{const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(x-1,3)+c1*Math.pow(x-1,2)};
+const outCubic=x=>1-Math.pow(1-x,3);
+const inOut=x=>x<0.5?2*x*x:1-Math.pow(-2*x+2,2)/2;
+const $=id=>document.getElementById(id);
+window.setT=t=>{const p=(t/1.2)%1; const s=(Math.cos(2*Math.PI*p)+1)/2; const y=-14*Math.sin(Math.PI*p);
+ $('hop').setAttribute('transform',`translate(0 ${y})`);
+ $('sq').setAttribute('transform',`translate(50 88) scale(${1+0.12*s} ${1-0.12*s}) translate(-50 -88)`);
+ $('pp').setAttribute('transform',`translate(50 44) scale(${1+0.10*(1-s)}) translate(-50 -44)`);};</script></body></html>

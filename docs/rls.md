@@ -1,6 +1,6 @@
 # Isolamento entre contas (RLS)
 
-O RegemCast é multi-conta: cada cliente tem a própria lista de contatos, os
+O Regemcast é multi-conta: cada cliente tem a própria lista de contatos, os
 próprios modelos e as próprias campanhas. Vazar dado de uma conta para outra não
 é bug de tela — é incidente. Por isso o isolamento **não** mora no `where` de
 cada consulta. Ele mora no banco, e o `where` é só conveniência.

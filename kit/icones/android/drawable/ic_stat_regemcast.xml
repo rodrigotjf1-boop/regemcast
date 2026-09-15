@@ -1,0 +1,8 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="100" android:viewportHeight="100">
+  <group android:translateY="-4">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M28 22H72A10 10 0 0 1 82 32V58A10 10 0 0 1 72 68H46L32 82L34 68H28A10 10 0 0 1 18 58V32A10 10 0 0 1 28 22Z"/>
+    <path android:strokeColor="#FF000000" android:strokeWidth="7" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M28 48H34L39 39L44 48L50 32L56 48L61 41L66 48H72"/>
+  </group>
+</vector>
+<!-- Observação: use os PNGs em drawable-*dpi para o ícone de status (o pulso já vem recortado/transparente). -->

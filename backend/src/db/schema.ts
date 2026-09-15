@@ -1,5 +1,5 @@
 /**
- * Schema Drizzle do RegemCast.
+ * Schema Drizzle do Regemcast.
  *
  * O SQL de `database/migrations/` é a fonte da verdade do banco; este arquivo
  * é o espelho tipado. Quando os dois divergirem, o SQL vence — mas divergir é
@@ -43,7 +43,7 @@ export const plano = pgTable('plano', {
 }));
 
 /**
- * O cliente do RegemCast.
+ * O cliente do Regemcast.
  *
  * `timezone` rege toda janela de envio e todo teto de período. É coluna, e não
  * constante, porque no Regem 'America/Sao_Paulo' está cravado no SQL — e ainda

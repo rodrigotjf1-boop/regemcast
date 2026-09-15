@@ -1,4 +1,4 @@
-# RegemCast — disparo de WhatsApp pela API oficial da Meta
+# Regemcast — disparo de WhatsApp pela API oficial da Meta
 
 > **Leia este arquivo inteiro antes de qualquer tarefa.** São as regras
 > permanentes do projeto. Se uma instrução pontual conflitar com o que está
@@ -12,12 +12,12 @@ oficial da Meta**, para empresas externas. O cliente cadastra a base de
 contatos, monta o modelo (template), agenda a campanha e acompanha entrega,
 leitura e clique.
 
-**O que o RegemCast NÃO é:** não é ERP, não tem pedido, cardápio, entregador,
+**O que o Regemcast NÃO é:** não é ERP, não tem pedido, cardápio, entregador,
 loja, estoque, comanda nem PDV. Se uma tarefa pedir qualquer uma dessas coisas,
 o pedido está no projeto errado — pergunte.
 
 **Relação com o Regem:** o Regem (`C:\Regen`) é outro produto, separado. O
-RegemCast nasceu das lições aprendidas lá, mas **não compartilha código, banco
+Regemcast nasceu das lições aprendidas lá, mas **não compartilha código, banco
 nem deploy**. Nunca copie arquivo do Regem para cá e nunca altere nada lá.
 
 ## Stack e estrutura
@@ -30,7 +30,7 @@ Monorepo em `C:\RegemCast`.
   (`*.module.ts`, `*.controller.ts`, `*.service.ts`, `dto/`). Schema Drizzle em
   `src/db/schema.ts`. Swagger em `/api/v1/docs` (só com `SWAGGER_ENABLED=true`).
 - **`frontend/`** — Next.js 14 (App Router) + Tailwind. `output: 'standalone'`.
-  Roda na porta 3001.
+  Roda na porta 3011 (a 3001 é do Regem, nesta máquina).
 - **`database/migrations/`** — SQL escrito à mão, `NNN_nome.sql`. Aplicado por
   `backend/scripts/migrate.mjs` (`npm run migrate`), que mantém **ledger** em
   `schema_migrations`.
@@ -46,9 +46,31 @@ Monorepo em `C:\RegemCast`.
 2. `database/migrations/*.sql` — o schema real. Antes de escrever query, **leia
    a migration**, não confie na memória.
 3. `backend/src/db/schema.ts` — o espelho do schema em Drizzle.
-4. Este arquivo — as regras.
+4. `kit/LEIA-ME.md` — a marca (cores, logo, tipografia, regras da Meta).
+   Resumo operacional em `docs/marca.md`. Onde divergirem, o **kit** vence.
+5. Este arquivo — as regras.
 
 ## Regras invioláveis
+
+### Marca
+
+Detalhe e o porquê em `docs/marca.md`; fonte da verdade em `kit/LEIA-ME.md`.
+
+- **O nome se escreve `Regemcast`** — um `R` maiúsculo, resto minúsculo. No
+  logo, o wordmark é todo minúsculo.
+- **Nunca** use "WhatsApp", "WA" ou "Zap" no **nome do produto**, no **ícone**,
+  no **domínio** ou combinado ao logo. Em descrição, use o descritor exato:
+  **"Integração via API Oficial do WhatsApp Business"** (constante `DESCRITOR`
+  em `frontend/src/app/layout.tsx`). Na interface, nomeie a ação ("Conectar o
+  número"), não a plataforma alheia.
+- **Nunca** prometa "selo verificado": a Meta concede à conta do cliente, não
+  o app concede.
+- **Sobre lima `#A3E635`, texto sempre em ameixa `#2B1B3D` — nunca branco**
+  (lima com branco dá 1,36:1). Logo, lima é **preenchimento**, não cor de
+  texto sobre fundo claro. Não escureça nem esverdeie o lima, nem em *hover*:
+  ele precisa manter distância do verde do WhatsApp `#25D366`.
+- Cor nova entra como token em `globals.css`. **Nenhum componente usa cor
+  crua.**
 
 ### Canal e conformidade
 
@@ -133,7 +155,7 @@ Monorepo em `C:\RegemCast`.
   vem de lá, e o que ficou sem status precisa ser reconciliado.
 - **Webhook verifica assinatura** (`X-Hub-Signature-256`, HMAC sobre o corpo
   **cru**) e é **idempotente**: a Meta reentrega o mesmo evento.
-- **Sem edge, sem servidor local, sem instalador.** O RegemCast é 100% nuvem.
+- **Sem edge, sem servidor local, sem instalador.** O Regemcast é 100% nuvem.
   Se a tarefa falar em `.exe`, sync local ou appliance, é do Regem, não daqui.
 
 ### Escala

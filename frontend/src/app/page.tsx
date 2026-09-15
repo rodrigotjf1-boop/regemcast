@@ -36,7 +36,7 @@ export default function Raiz() {
     <main id="conteudo" className="grid min-h-screen place-items-center p-6">
       <p className="flex items-center gap-3 text-sm text-tinta-suave">
         <Spinner rotulo={null} />
-        Abrindo o RegemCast…
+        Abrindo o Regemcast…
       </p>
     </main>
   );

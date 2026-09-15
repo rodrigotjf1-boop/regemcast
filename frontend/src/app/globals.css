@@ -3,41 +3,144 @@
 @tailwind utilities;
 
 /* ============================================================================
- * MARCA — PLACEHOLDER NEUTRO
+ * MARCA — Regemcast · direção 04 "Pulso", versão Lima
  *
- * O dono do produto ainda vai enviar logo e cores. Até lá vale esta paleta
- * neutra de viés frio, deliberadamente sem personalidade. Ela NÃO é a paleta
- * do Regem (nada de dourado #E2A340 nem do navy) — RegemCast é outro produto.
+ * Fonte da verdade: `kit/LEIA-ME.md`. Os valores abaixo são os do kit; se
+ * divergirem, o kit vence.
  *
- * PARA TROCAR A MARCA, mexa só aqui:
- *   1. os canais RGB de `--cor-*` (formato "R G B", sem vírgula, porque é o que
- *      deixa `bg-acento/10` funcionar);
- *   2. `--fonte-corpo` / `--fonte-mono` (abaixo);
- *   3. `src/components/marca/logotipo.tsx` (o monograma provisório).
- * Nenhum componente usa cor crua, então nada mais precisa ser tocado.
+ *   Lima Pulso  #A3E635   ação, destaque
+ *   Ameixa      #2B1B3D   base: fundo escuro e texto
+ *   Amarelo     #FFD166   destaque secundário
+ *   Creme       #FFF3EA   fundo claro
+ *
+ * DUAS REGRAS DO KIT QUE MANDAM NESTA PALETA:
+ *
+ * 1. "Painel web e documentos usam ameixa como base e lima só em ações e
+ *    destaques." Por isso o lima aparece como PREENCHIMENTO (botão primário,
+ *    selo), nunca como campo inteiro de fundo no painel.
+ *
+ * 2. "Nunca coloque texto branco sobre lima — sobre lima, texto sempre em
+ *    ameixa." Medido: lima sobre branco dá 1,36:1 (reprovado em qualquer
+ *    critério); lima sobre ameixa dá 9,6:1. Daí `--cor-acento-contraste` ser
+ *    ameixa, e não branco.
+ *
+ * Consequência que não estava escrita no kit, mas decorre dela: **lima não
+ * serve como cor de texto sobre fundo claro**. Por isso `--cor-acento-forte`
+ * (que os componentes usam em texto e link) é AMEIXA no tema claro e LIMA no
+ * escuro — no escuro o lima está sobre ameixa, onde tem contraste de sobra.
+ * `--cor-acento` fica reservado a preenchimento.
+ *
+ * PARA AJUSTAR A MARCA, mexa só aqui: os canais RGB abaixo (formato "R G B",
+ * sem vírgula, porque é o que faz `bg-acento/10` funcionar). Nenhum componente
+ * usa cor crua.
  * ========================================================================== */
+
+/* Poppins vendorizada (kit/LEIA-ME.md: wordmark em Poppins Bold, apoio em
+ * Poppins). Os .woff2 vêm do Google Fonts e moram em `src/fonts/` porque
+ * `next/font/google` baixa no BUILD e trava quando a máquina de build não tem
+ * rede — foi problema real no Regem. Aqui o arquivo já está no repositório. */
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../fonts/poppins-400.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191,
+    U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../fonts/poppins-400-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('../fonts/poppins-500.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191,
+    U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('../fonts/poppins-500-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('../fonts/poppins-600.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191,
+    U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('../fonts/poppins-600-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../fonts/poppins-700.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191,
+    U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../fonts/poppins-700-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
 
 :root {
   color-scheme: light;
 
-  --cor-fundo: 244 246 246;          /* #F4F6F6 */
+  --cor-fundo: 255 243 234;          /* Creme  #FFF3EA */
   --cor-superficie: 255 255 255;
-  --cor-superficie-2: 235 239 239;
-  --cor-tinta: 16 25 28;             /* #10191C */
-  --cor-tinta-suave: 88 104 109;
-  --cor-borda: 214 221 221;
-  --cor-acento: 11 122 140;          /* #0B7A8C */
-  --cor-acento-forte: 8 95 109;
-  --cor-acento-suave: 229 243 245;
-  --cor-acento-contraste: 255 255 255;
+  --cor-superficie-2: 250 234 223;
+  --cor-tinta: 43 27 61;             /* Ameixa #2B1B3D */
+  --cor-tinta-suave: 110 92 128;
+  --cor-borda: 232 217 204;
+  --cor-acento: 163 230 53;          /* Lima   #A3E635 — só preenchimento */
+  --cor-acento-forte: 43 27 61;      /* texto e link: ameixa (lima não lê aqui) */
+  --cor-acento-suave: 237 248 218;   /* lima diluído no creme */
+  --cor-acento-contraste: 43 27 61;  /* sobre lima, SEMPRE ameixa */
+  /* Traço do pulso dentro do balão do símbolo — ver components/marca/logotipo. */
+  --cor-pulso: 255 255 255;
   --cor-sucesso: 21 128 61;
-  --cor-atencao: 180 83 9;
-  --cor-erro: 180 35 24;
-  --cor-sombra: 16 25 28;
+  --cor-atencao: 138 90 0;
+  --cor-erro: 179 38 30;
+  --cor-sombra: 43 27 61;
 
-  /* Sem next/font: não há arquivo de fonte no repo e next/font/google trava o
-   * build em máquina sem rede. Quando a marca chegar, troque a pilha aqui. */
-  --fonte-corpo: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --fonte-corpo: 'Poppins', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --fonte-mono: ui-monospace, SFMono-Regular, 'Cascadia Mono', Consolas, 'Courier New', monospace;
 }
 
@@ -45,18 +148,20 @@
   :root {
     color-scheme: dark;
 
-    --cor-fundo: 11 18 20;
-    --cor-superficie: 17 27 30;
-    --cor-superficie-2: 22 35 38;
-    --cor-tinta: 232 239 239;
-    --cor-tinta-suave: 157 176 180;
-    --cor-borda: 36 54 58;
-    --cor-acento: 63 183 201;
-    --cor-acento-forte: 118 209 222;
-    --cor-acento-suave: 16 41 46;
-    --cor-acento-contraste: 8 26 30;
-    --cor-sucesso: 74 222 128;
-    --cor-atencao: 251 191 36;
+    /* Aqui o ameixa vira o que o kit chama de base: fundo dominante. */
+    --cor-fundo: 30 18 41;
+    --cor-superficie: 43 27 61;      /* Ameixa #2B1B3D */
+    --cor-superficie-2: 58 38 81;
+    --cor-tinta: 255 243 234;        /* Creme  #FFF3EA */
+    --cor-tinta-suave: 195 178 209;
+    --cor-borda: 74 51 102;
+    --cor-acento: 163 230 53;
+    --cor-acento-forte: 163 230 53;  /* sobre ameixa o lima tem 9,6:1 */
+    --cor-acento-suave: 52 33 74;
+    --cor-acento-contraste: 43 27 61;
+    --cor-pulso: 43 27 61;
+    --cor-sucesso: 134 239 172;
+    --cor-atencao: 255 209 102;      /* Amarelo #FFD166 */
     --cor-erro: 252 165 165;
     --cor-sombra: 0 0 0;
   }

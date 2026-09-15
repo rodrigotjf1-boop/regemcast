@@ -1,9 +1,10 @@
 import type { Config } from 'tailwindcss';
 
 /**
- * A paleta REAL mora em `src/app/globals.css`, como custom properties.
- * Aqui só existe o nome do token -> a variável. Trocar a marca (logo e cores
- * ainda vão chegar) é editar um bloco de CSS, não caçar cor crua em componente.
+ * A paleta REAL mora em `src/app/globals.css`, como custom properties, e vem
+ * do kit da marca (`kit/LEIA-ME.md` — direção 04 "Pulso", versão Lima).
+ * Aqui só existe o nome do token -> a variável, então ajustar a marca é editar
+ * um bloco de CSS, não caçar cor crua em componente.
  *
  * As variáveis guardam CANAIS ("16 25 28"), e não "#10191C", porque é isso que
  * permite `bg-acento/10`, `text-tinta/60` etc. continuarem funcionando.
@@ -30,7 +31,8 @@ const config: Config = {
         erro: cor('cor-erro'),
       },
       fontFamily: {
-        // Pilha do sistema até a marca chegar. Ver comentário em globals.css.
+        // Poppins vendorizada em src/fonts (o kit pede Poppins; next/font/google
+        // trava o build sem rede). Ver @font-face em globals.css.
         sans: ['var(--fonte-corpo)'],
         mono: ['var(--fonte-mono)'],
       },

@@ -1,0 +1,15 @@
+# Normaliza a quebra de linha na entrada do repositório e evita o ruído de
+# "LF will be replaced by CRLF" a cada `git add` no Windows.
+* text=auto eol=lf
+
+# Binários: não normalizar nunca.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.mp4 binary
+*.webm binary
+*.woff2 binary
+*.pdf binary
+*.eps binary

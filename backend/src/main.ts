@@ -43,8 +43,8 @@ async function bootstrap() {
 
   if (env.rede.swagger) {
     const doc = new DocumentBuilder()
-      .setTitle('RegemCast')
-      .setDescription('API do RegemCast — disparo de WhatsApp por API oficial.')
+      .setTitle('Regemcast')
+      .setDescription('API do Regemcast — disparo de WhatsApp por API oficial.')
       .setVersion('0.1.0')
       .addCookieAuth(env.sessao.cookieNome)
       .build();
@@ -53,7 +53,7 @@ async function bootstrap() {
 
   await app.listen(env.porta, '0.0.0.0');
   new Logger('Bootstrap').log(
-    `RegemCast API em http://localhost:${env.porta}/api/v1` +
+    `Regemcast API em http://localhost:${env.porta}/api/v1` +
       (env.rede.swagger ? ` · docs em /api/v1/docs` : ''),
   );
 }
