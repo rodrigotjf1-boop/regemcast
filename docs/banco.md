@@ -90,11 +90,11 @@ senha. O formato é:
 postgres://<usuario>:<senha>@<host>:<porta>/postgres
 ```
 
-Exemplo (host e senha são ilustrativos):
+Exemplo. **Troque `SEU_ID_DO_PROJETO` e as senhas** — copiar esta linha como está resulta em `ENOTFOUND` no primeiro acesso ao banco:
 
 ```
-DATABASE_URL=postgres://regemcast_app:SENHA_DO_APP@db.abcdefghijk.supabase.co:5432/postgres
-MIGRATION_DATABASE_URL=postgres://postgres:SENHA_DO_POSTGRES@db.abcdefghijk.supabase.co:5432/postgres
+DATABASE_URL=postgres://regemcast_app:SENHA_DO_APP@db.SEU_ID_DO_PROJETO.supabase.co:5432/postgres
+MIGRATION_DATABASE_URL=postgres://postgres:SENHA_DO_POSTGRES@db.SEU_ID_DO_PROJETO.supabase.co:5432/postgres
 ```
 
 Coloque as duas em `backend/.env` (copie de `backend/.env.example` se ainda não
