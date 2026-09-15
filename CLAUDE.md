@@ -218,9 +218,22 @@ Detalhe e o porquê em `docs/marca.md`; fonte da verdade em `kit/LEIA-ME.md`.
 
 1. **Tarefa grande: plano antes do código.** Apresente, espere aprovação,
    destaque as migrations.
-2. **Migration: o dono aplica na nuvem; o agente testa no local.** Antes de
-   criar, confira o **último número** em `database/migrations/` e use o
-   **próximo**, sem pular nem repetir. SQL idempotente sempre.
+2. **Migration: o SQL vai para o dono ANTES do merge.** A ordem é rígida e não
+   se inverte:
+
+   1. o agente escreve a migration e a testa no banco **local**;
+   2. **entrega o SQL ao dono e para** — sem push, sem merge do código que
+      depende dela;
+   3. o dono aplica na **nuvem** e confirma;
+   4. só então o código é mesclado e deployado.
+
+   O motivo é concreto: o Drizzle traduz `select()` para a lista explícita de
+   colunas do schema. Entre um deploy que já pede a coluna nova e a migration
+   que ainda não rodou, **toda consulta àquela tabela quebra e os dados somem
+   da tela** — sem erro que aponte a causa. Foi incidente real no Regem.
+
+   Antes de criar, confira o **último número** em `database/migrations/` e use
+   o **próximo**, sem pular nem repetir. SQL idempotente sempre.
 3. **Branch → PR → CI verde → merge.** Nada de commit direto na `main`. O CI
    roda `npm ci`, `typecheck`, `build` e `test` nos dois lados.
 4. **Antes de qualquer push**, rode `npm run typecheck` e `npm run build` em
