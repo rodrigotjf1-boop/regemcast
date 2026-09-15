@@ -78,7 +78,7 @@ o Dockerfile copia `database/migrations` de lá).
 NODE_ENV=production
 PORT=3000
 DATABASE_URL=postgres://regemcast_app:SENHA@HOST.supabase.co:5432/postgres
-DATABASE_SSL=require
+DATABASE_SSL=supabase
 REDIS_URL=redis://regemcast-redis:6379
 JWT_SECRET=<openssl rand -base64 48>
 JWT_TTL_HORAS=12
@@ -97,6 +97,31 @@ META_TOKEN_CHAVE=<openssl rand -base64 32>
 ```
 
 **Domains:** `castapi.dmsregem.com` · porta `3000` · HTTPS ligado.
+
+### Por que `DATABASE_SSL=supabase`, e não `require`
+
+O Postgres do Supabase — direto ou pelo pooler — apresenta certificado
+assinado pela **CA raiz própria deles**, que é auto-assinada e **não está no
+bundle do Node**. Com `require`, a conexão morre com
+`self-signed certificate in certificate chain` (SELF_SIGNED_CERT_IN_CHAIN).
+
+Comprovado contra o servidor real:
+
+```
+$ openssl s_client -connect aws-0-sa-east-1.pooler.supabase.com:5432 -starttls postgres
+  verify error:num=19:self-signed certificate in certificate chain
+
+$ openssl s_client ... -CAfile backend/certs/supabase-root-2021.crt
+  Verify return code: 0 (ok)
+```
+
+`supabase` usa a raiz que vem no repositório (`backend/certs/`) e mantém a
+verificação **real**. A saída fácil seria `rejectUnauthorized: false`, que é o
+que quase todo tutorial manda: aquilo mantém a criptografia e joga fora a
+autenticação — continua interceptável, porque nada garante que do outro lado
+está mesmo o seu banco.
+
+Existe `no-verify` como escape de emergência, e ele grita no log a cada boot.
 
 ### Por que `COOKIE_DOMINIO` fica VAZIO
 

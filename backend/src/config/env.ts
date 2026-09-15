@@ -33,6 +33,23 @@ if (process.env.NODE_ENV !== 'production') {
   }
 }
 
+/** Lê um PEM que pode vir em texto puro ou em base64. */
+function pemOpcional(nome: string): string {
+  const bruto = (process.env[nome] ?? '').trim();
+  if (!bruto) return '';
+  if (bruto.includes('-----BEGIN')) return bruto;
+  try {
+    const decodificado = Buffer.from(bruto, 'base64').toString('utf8');
+    if (decodificado.includes('-----BEGIN')) return decodificado;
+  } catch {
+    // cai no erro abaixo
+  }
+  throw new Error(
+    `Variável ${nome} não parece um certificado: esperava PEM (-----BEGIN ...) ` +
+      'ou o mesmo PEM em base64.',
+  );
+}
+
 function obrigatoria(nome: string): string {
   const v = process.env[nome];
   if (!v || !v.trim()) {
@@ -120,6 +137,12 @@ export const env = {
      */
     ssl: opcional('DATABASE_SSL', producao ? 'require' : 'disable'),
     poolMax: numero('DATABASE_POOL_MAX', 10),
+    /**
+     * CA para validar o certificado do banco. Aceita o PEM inteiro ou o PEM em
+     * base64 — variável multi-linha é problema em painel de deploy. Vazio faz
+     * o modo de DATABASE_SSL decidir.
+     */
+    caCert: pemOpcional('DATABASE_CA_CERT'),
   },
 
   redis: {

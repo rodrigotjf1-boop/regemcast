@@ -45,6 +45,8 @@ COPY --from=build     --chown=node:node /app/dist ./dist
 COPY --chown=node:node backend/package.json ./package.json
 COPY --chown=node:node backend/scripts ./scripts
 COPY --chown=node:node database/migrations ./database/migrations
+# CA raiz do Supabase — sem ela a conexão TLS falha com SELF_SIGNED_CERT_IN_CHAIN.
+COPY --chown=node:node backend/certs ./certs
 
 USER node
 EXPOSE 3000
