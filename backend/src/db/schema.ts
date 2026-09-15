@@ -183,3 +183,97 @@ export const usoCiclo = pgTable('uso_ciclo', {
 }, (t) => ({
   pk: primaryKey({ columns: [t.contaId, t.cicloInicio] }),
 }));
+
+// ============================================================================
+// META / WHATSAPP (migration 003)
+// ============================================================================
+
+/**
+ * A WhatsApp Business Account do cliente.
+ *
+ * `wabaId` é único GLOBAL, não por conta: é a identidade da WABA do lado da
+ * Meta, e duas contas do Regemcast reivindicando a mesma significaria uma lendo
+ * as conversas da outra.
+ */
+export const waConta = pgTable('wa_conta', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  contaId: uuid('conta_id').notNull().references(() => conta.id, { onDelete: 'cascade' }),
+  wabaId: text('waba_id').notNull(),
+  businessId: text('business_id'),
+  nome: text('nome'),
+  /**
+   * Token do cliente, cifrado em AES-256-GCM (`v1.iv.tag.cifra`).
+   * Nunca sai daqui em claro — ver `modules/meta/cripto.ts`.
+   */
+  tokenCifrado: text('token_cifrado'),
+  tokenEm: timestamp('token_em', { withTimezone: true }),
+  escopos: jsonb('escopos').notNull().default(sql`'[]'::jsonb`),
+  /** Prazo do Brasil: toda WABA elegível precisa estar em BRL até 30/jun/2027. */
+  moeda: text('moeda'),
+  statusRevisao: text('status_revisao'),
+  restricoes: jsonb('restricoes').notNull().default(sql`'[]'::jsonb`),
+  webhookAssinadoEm: timestamp('webhook_assinado_em', { withTimezone: true }),
+  onboardadaEm: timestamp('onboardada_em', { withTimezone: true }),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  wabaUq: uniqueIndex('uq_wa_conta_waba').on(t.wabaId),
+  contaIdx: index('idx_wa_conta_conta').on(t.contaId),
+}));
+
+/**
+ * O número que dispara. `phoneNumberId` é único global pelo mesmo motivo do
+ * `wabaId`, e é por ele que o webhook descobre de quem é cada evento.
+ */
+export const waNumero = pgTable('wa_numero', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  contaId: uuid('conta_id').notNull().references(() => conta.id, { onDelete: 'cascade' }),
+  waContaId: uuid('wa_conta_id').notNull().references(() => waConta.id, { onDelete: 'cascade' }),
+  phoneNumberId: text('phone_number_id').notNull(),
+  telefoneE164: text('telefone_e164'),
+  nomeExibicao: text('nome_exibicao'),
+  /** verde | amarela | vermelha | desconhecida — 7 dias em amarela derrubam o tier. */
+  qualidade: text('qualidade').notNull().default('desconhecida'),
+  qualidadeEm: timestamp('qualidade_em', { withTimezone: true }),
+  /** Teto de usuários únicos por 24h. Conta nova começa em 250. */
+  tierLimite: integer('tier_limite'),
+  tierNome: text('tier_nome'),
+  tierEm: timestamp('tier_em', { withTimezone: true }),
+  /** pendente | registrado | suspenso | removido. Sem registro, todo envio dá 133010. */
+  status: text('status').notNull().default('pendente'),
+  registradoEm: timestamp('registrado_em', { withTimezone: true }),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  phoneUq: uniqueIndex('uq_wa_numero_phone').on(t.phoneNumberId),
+  contaIdx: index('idx_wa_numero_conta').on(t.contaId),
+  waContaIdx: index('idx_wa_numero_wa_conta').on(t.waContaId),
+}));
+
+/**
+ * Webhook recebido, gravado ANTES de qualquer efeito colateral.
+ *
+ * No Regem o controller responde 200 e processa em memória sem await: deploy no
+ * meio do processamento perde o evento em definitivo, porque a Meta já recebeu
+ * 200 e não reenvia.
+ *
+ * Sem FK e sem `notNull` em `contaId` de propósito: o evento chega identificado
+ * por `phone_number_id` e só depois descobrimos de quem é — e precisa ser
+ * gravado mesmo quando não resolve para conta nenhuma, que é justamente o caso
+ * que merece investigação.
+ */
+export const waEvento = pgTable('wa_evento', {
+  id: bigserial('id', { mode: 'bigint' }).primaryKey(),
+  chaveIdempotencia: text('chave_idempotencia').notNull(),
+  tipo: text('tipo').notNull(),
+  phoneNumberId: text('phone_number_id'),
+  contaId: uuid('conta_id'),
+  payload: jsonb('payload').notNull(),
+  recebidoEm: timestamp('recebido_em', { withTimezone: true }).notNull().defaultNow(),
+  processadoEm: timestamp('processado_em', { withTimezone: true }),
+  tentativas: integer('tentativas').notNull().default(0),
+  erro: text('erro'),
+}, (t) => ({
+  chaveUq: uniqueIndex('uq_wa_evento_chave').on(t.chaveIdempotencia),
+  pendenteIdx: index('idx_wa_evento_pendente').on(t.recebidoEm).where(sql`processado_em is null`),
+}));

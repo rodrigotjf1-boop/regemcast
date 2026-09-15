@@ -13,6 +13,7 @@ import { AuditoriaModule } from './modules/auditoria/auditoria.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ContaModule } from './modules/conta/conta.module';
 import { ListaEsperaModule } from './modules/lista-espera/lista-espera.module';
+import { MetaModule } from './modules/meta/meta.module';
 import { SaudeModule } from './modules/saude/saude.module';
 
 @Module({
@@ -48,6 +49,7 @@ import { SaudeModule } from './modules/saude/saude.module';
     AuthModule,
     ContaModule,
     ListaEsperaModule,
+    MetaModule,
     SaudeModule,
   ],
   providers: [
