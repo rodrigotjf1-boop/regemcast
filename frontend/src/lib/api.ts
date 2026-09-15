@@ -13,7 +13,7 @@
  * nosso (5xx) e é o que liga a tela do cliente à linha do log no servidor.
  */
 
-const BASE = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000/api/v1').replace(/\/+$/, '');
+const BASE = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3010/api/v1').replace(/\/+$/, '');
 
 export interface CorpoErro {
   mensagem?: string;

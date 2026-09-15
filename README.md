@@ -25,12 +25,12 @@ cp frontend/.env.example frontend/.env.local
 cd backend && npm ci && npm run migrate
 
 # 5. Subir
-npm run start:dev          # API  → http://localhost:3000/api/v1
-cd ../frontend && npm ci && npm run dev   # Web → http://localhost:3001
+npm run start:dev          # API  → http://localhost:3010/api/v1
+cd ../frontend && npm ci && npm run dev   # Web → http://localhost:3011
 ```
 
 Documentação da API (com `SWAGGER_ENABLED=true`):
-<http://localhost:3000/api/v1/docs>.
+<http://localhost:3010/api/v1/docs>.
 
 ## Documentação
 

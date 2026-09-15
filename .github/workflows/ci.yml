@@ -73,7 +73,7 @@ jobs:
           NEXT_TELEMETRY_DISABLED: '1'
           # Valor público e só de build — o bundle do navegador não carrega
           # segredo nenhum. A URL real entra no build do EasyPanel.
-          NEXT_PUBLIC_API_URL: http://localhost:3000/api/v1
+          NEXT_PUBLIC_API_URL: http://localhost:3010/api/v1
 
       - name: Testes
         run: npm test --if-present

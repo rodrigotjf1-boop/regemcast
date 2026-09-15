@@ -184,17 +184,26 @@ select tablename, policyname
  order by tablename;
 ```
 
-Tem que **listar** as policies. Depois da `001`, o esperado é:
+Tem que **listar** as policies. Depois da `001` e da `002`, são **oito linhas**:
 
-| tablename      | policyname       |
-| -------------- | ---------------- |
-| `assinatura`   | `rc_isolamento`  |
-| `auditoria`    | `rc_isolamento`  |
-| `conta`        | `rc_isolamento`  |
-| `lista_espera` | `rc_sistema`     |
-| `plano`        | `rc_sistema`     |
-| `usuario`      | `rc_isolamento`  |
-| `uso_ciclo`    | `rc_isolamento`  |
+| tablename      | policyname          | o que faz |
+| -------------- | ------------------- | --------- |
+| `assinatura`   | `rc_isolamento`     | só a própria conta |
+| `auditoria`    | `rc_isolamento`     | só a própria conta |
+| `conta`        | `rc_isolamento`     | só a própria conta |
+| `lista_espera` | `rc_sistema`        | só escopo de sistema |
+| `plano`        | `rc_sistema`        | escrita só no escopo de sistema |
+| `plano`        | `rc_plano_leitura`  | **leitura liberada** — veio da `002` |
+| `usuario`      | `rc_isolamento`     | só a própria conta |
+| `uso_ciclo`    | `rc_isolamento`     | só a própria conta |
+
+As **duas** linhas de `plano` estão certas. Policies permissivas somam com `OR`,
+e elas têm alcances diferentes: `rc_plano_leitura` é `for select`, então libera
+só a leitura do catálogo de planos para o escopo do tenant; `rc_sistema` é
+`for all` e continua sendo a única que autoriza escrita. O catálogo de planos
+não é segredo de ninguém, e sem essa leitura a rota `GET /conta` precisaria
+abrir escopo de sistema no meio do request — o que abriria uma transação dentro
+da outra e travaria o pool.
 
 Resultado **vazio** significa que a `001` não aplicou a parte de RLS — pare e
 investigue antes de colocar qualquer dado real.
@@ -213,14 +222,85 @@ Todas as tabelas de negócio têm que ter `relrowsecurity = true` **e**
 `relforcerowsecurity = true`. Sem o `force`, o dono da tabela continua
 enxergando tudo.
 
+Uma exceção esperada aparece na lista: **`schema_migrations`** vem com `false`
+nas duas colunas, e está certo. Ela é o ledger do runner de migration — não tem
+`conta_id`, não guarda dado de cliente e não pertence a conta nenhuma. Se
+`schema_migrations` for a **única** linha com `false`, está tudo em ordem.
+
 Para o teste que **prova** que a RLS pega — abrir uma transação, apontar para a
 conta A e tentar ler linha da conta B — veja [`rls.md`](./rls.md).
 
 ---
 
-## Parte 2 — Local (Docker)
+## Parte 2 — Local
 
 Aqui é onde a migration é testada antes de ir para a nuvem.
+
+São dois caminhos. **Nesta máquina vale o caminho B**: não há Docker instalado,
+e existe um PostgreSQL 18 nativo escutando na `5432` — o mesmo que o Regem usa
+em dev. O banco do RegemCast é separado (`regemcast`); nada do Regem é tocado.
+
+| | Caminho A — Docker | Caminho B — Postgres nativo |
+| --- | --- | --- |
+| Quando usar | máquina com Docker | **esta máquina** |
+| Postgres | container | serviço do Windows, porta 5432 |
+| Redis | container | **não tem** — `/saude/pronto` responde 503 no Redis |
+| Apagar e recomeçar | `down -v` + `rm -rf .pgdata` | `drop schema public cascade` |
+
+Redis só vira impeditivo na Fase 4, quando entra a fila de disparo. Até lá a
+API sobe e funciona sem ele; o único efeito é `/saude/pronto` acusar `redis:
+"falhou"`, que é o comportamento correto e não um defeito.
+
+---
+
+### Caminho B — Postgres nativo (sem Docker)
+
+**B.1 — Criar o banco**, conectado como `postgres`:
+
+```sql
+create database regemcast;
+```
+
+**B.2 — Criar o role**, já dentro do banco `regemcast`, como `postgres`. Rode o
+conteúdo de `database/migrations/000_roles.sql`, trocando a senha do arquivo
+por uma de desenvolvimento.
+
+**B.3 — Apontar o `backend/.env`** para ele:
+
+```
+DATABASE_URL=postgres://regemcast_app:SUA_SENHA_DEV@localhost:5432/regemcast
+MIGRATION_DATABASE_URL=postgres://postgres:SENHA_DO_POSTGRES@localhost:5432/regemcast
+DATABASE_SSL=disable
+REDIS_URL=redis://localhost:6379
+```
+
+As duas URLs são necessárias e **têm papéis diferentes**: a API roda como
+`regemcast_app`, que não tem permissão de DDL (é o que garante que ela não possa
+alterar o próprio schema); o runner de migration precisa de um usuário que
+tenha. Sem a `MIGRATION_DATABASE_URL`, `npm run migrate` para e explica isso.
+
+**B.4 — Aplicar e subir**:
+
+```bash
+cd backend
+npm run migrate          # cria o ledger e aplica 001 e 002
+npm run migrate -- --status
+npm run build && npm start
+```
+
+Para começar do zero (apaga tudo do banco `regemcast`, como `postgres`):
+
+```sql
+drop schema public cascade;
+create schema public;
+```
+
+Depois disso, repita B.2 e B.4 — o ledger some junto com o schema, então as
+migrations rodam de novo desde a `001`.
+
+---
+
+### Caminho A — Docker
 
 ### Passo 1. Subir Postgres e Redis
 
@@ -295,15 +375,15 @@ npm run migrate
 npm run start:dev
 ```
 
-A API sobe em <http://localhost:3000/api/v1> e, com `SWAGGER_ENABLED=true`, a
-documentação fica em <http://localhost:3000/api/v1/docs>.
+A API sobe em <http://localhost:3010/api/v1> e, com `SWAGGER_ENABLED=true`, a
+documentação fica em <http://localhost:3010/api/v1/docs>.
 
 O front:
 
 ```bash
 cd frontend
 npm ci
-npm run dev      # http://localhost:3001
+npm run dev      # http://localhost:3011
 ```
 
 ---

@@ -70,7 +70,7 @@ const producao = opcional('NODE_ENV') === 'production';
  * clique). Em dev tem padrão; em produção é obrigatória E precisa ser https.
  *
  * O padrão silencioso é pior que a falta: um deploy sem a variável não quebra,
- * ele manda o cliente para `http://localhost:3001` — e o erro só aparece do
+ * ele manda o cliente para `http://localhost:3011` — e o erro só aparece do
  * outro lado, no cliente que clicou e não chegou a lugar nenhum. Exigir https
  * é o mesmo cuidado: link http em e-mail e em template da Meta vira aviso de
  * "site não seguro" e ainda trafega o token do convite em claro.
@@ -109,7 +109,7 @@ function distToken(): string {
 
 export const env = {
   producao,
-  porta: numero('PORT', 3000),
+  porta: numero('PORT', 3010),
 
   banco: {
     url: obrigatoria('DATABASE_URL'),
@@ -135,12 +135,12 @@ export const env = {
 
   rede: {
     /** Base do link de convite que o cliente recebe por e-mail. */
-    appUrl: urlPublica('APP_URL', 'http://localhost:3001'),
-    apiUrl: opcional('API_URL', 'http://localhost:3000'),
+    appUrl: urlPublica('APP_URL', 'http://localhost:3011'),
+    apiUrl: opcional('API_URL', 'http://localhost:3010'),
     /** Em produção é obrigatório: sem lista, CORS com credenciais vira buraco. */
     corsOrigin: producao
       ? obrigatoria('CORS_ORIGIN').split(',').map((s) => s.trim()).filter(Boolean)
-      : opcional('CORS_ORIGIN', 'http://localhost:3001').split(',').map((s) => s.trim()).filter(Boolean),
+      : opcional('CORS_ORIGIN', 'http://localhost:3011').split(',').map((s) => s.trim()).filter(Boolean),
     trustProxy: numero('TRUST_PROXY', 1),
     trustCloudflare: booleana('TRUST_CLOUDFLARE', false),
     swagger: booleana('SWAGGER_ENABLED', !producao),
@@ -165,7 +165,7 @@ export const env = {
    * sem a variável não congelaria "o domínio errado", congelaria `localhost`
    * dentro de templates que só se conserta recriando tudo.
    */
-  rastreioBase: urlPublica('RASTREIO_BASE_URL', 'http://localhost:3000/r'),
+  rastreioBase: urlPublica('RASTREIO_BASE_URL', 'http://localhost:3010/r'),
 
   /**
    * Console de distribuição (Regem), não do cliente. Opcional: sem ela as rotas
