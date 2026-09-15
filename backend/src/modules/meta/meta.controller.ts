@@ -4,7 +4,10 @@ import { ApiTags } from '@nestjs/swagger';
 import type { UsuarioAutenticado } from '../../common/auth.guard';
 import { DonoGuard } from '../../common/dono.guard';
 import { UsuarioAtual } from '../../common/usuario-atual.decorator';
+import { Publico } from '../../common/publico.decorator';
+import { DistTokenGuard } from '../lista-espera/dist-token.guard';
 import { ConcluirSignupDto } from './dto/concluir-signup.dto';
+import { ConectarManualDto } from './dto/conectar-manual.dto';
 import { RegistrarNumeroDto } from './dto/registrar-numero.dto';
 import { MetaService } from './meta.service';
 
@@ -33,6 +36,24 @@ export class MetaController {
   @UseGuards(DonoGuard)
   conectar(@UsuarioAtual() usuario: UsuarioAutenticado, @Body() dto: ConcluirSignupDto) {
     return this.servico.concluirOnboarding(usuario.contaId, usuario.id, dto);
+  }
+
+  /**
+   * Conecta uma WABA informando o token, sem Embedded Signup.
+   *
+   * Rota da DISTRIBUIÇÃO: `@Publico()` para escapar do guard de sessão, e
+   * `DistTokenGuard` no lugar dele. O `@Publico()` fica aqui, explícito, e não
+   * no controller inteiro, porque `grep -rn "@Publico" src/` precisa listar
+   * toda a superfície anônima da API numa tela só.
+   *
+   * Serve ao número de teste da Meta — que não passa pelo Embedded Signup — e
+   * ao suporte, quando o signup de um cliente morre no meio.
+   */
+  @Post('conectar-manual')
+  @Publico()
+  @UseGuards(DistTokenGuard)
+  conectarManual(@Body() dto: ConectarManualDto) {
+    return this.servico.conectarManual(dto.contaId, dto);
   }
 
   /**

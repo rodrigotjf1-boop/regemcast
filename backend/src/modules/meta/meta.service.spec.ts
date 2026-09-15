@@ -19,7 +19,7 @@
  *
  * O banco entra como dublê. Nada aqui toca Postgres nem rede.
  */
-import { Logger } from '@nestjs/common';
+import { BadRequestException, Logger } from '@nestjs/common';
 
 // `config/env` é fail-fast no import: sem DATABASE_URL o módulo derruba o
 // processo só de ser carregado, e a cadeia deste teste passa por ele. A chave
@@ -292,6 +292,74 @@ describe('concluirOnboarding — o que vai para a auditoria', () => {
 
     const guardado = ultimaEscritaCom(diario, 'tokenCifrado')?.tokenCifrado as string;
     expect(guardado).toBeTruthy();
+    expect(guardado).not.toContain(TOKEN);
+    expect(guardado.startsWith('v1.')).toBe(true);
+  });
+});
+
+describe('conectarManual — a porta da distribuição', () => {
+  it('recusa conta inexistente sem falar com a Meta', async () => {
+    const { service, graph } = montar();
+
+    await expect(
+      service.conectarManual(CONTA, { wabaId: 'WABA1', token: TOKEN }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    // A ordem importa: validar a conta ANTES de qualquer chamada externa. Do
+    // contrário, um contaId errado viraria tráfego para a Meta em nome de
+    // ninguém — e o erro só apareceria depois, confuso.
+    expect(graph.dadosDaWaba).not.toHaveBeenCalled();
+    expect(graph.assinarWebhook).not.toHaveBeenCalled();
+  });
+
+  it('conecta sem Embedded Signup e audita como sistema', async () => {
+    const { service, db, diario, registrar, graph } = montar();
+    db.select.mockReturnValueOnce(consulta([{ id: CONTA }], diario));
+
+    const r = await service.conectarManual(CONTA, {
+      wabaId: 'WABA1',
+      phoneNumberId: 'PN1',
+      token: TOKEN,
+    });
+
+    // Nenhum `code` é trocado: o token já veio pronto.
+    expect(graph.trocarCodePorToken).not.toHaveBeenCalled();
+    // Mas o resto do caminho é o mesmo do signup — webhook assinado inclusive.
+    expect(graph.assinarWebhook).toHaveBeenCalledWith('WABA1', TOKEN);
+    expect(r.wabaId).toBe('WABA1');
+
+    const entrada = registrar.mock.calls[0][0];
+    expect(entrada.atorTipo).toBe('sistema');
+    expect(entrada.atorUsuarioId).toBeNull();
+    expect(JSON.stringify(entrada)).not.toContain(TOKEN);
+  });
+
+  it('não inventa prazo de validade para um token informado à mão', async () => {
+    const { service, db, diario } = montar();
+    db.select.mockReturnValueOnce(consulta([{ id: CONTA }], diario));
+
+    await service.conectarManual(CONTA, {
+      wabaId: 'WABA1',
+      phoneNumberId: 'PN1',
+      token: TOKEN,
+    });
+
+    // Chutar uma data seria pior que não ter: o aviso de vencimento na tela
+    // passaria a mentir, e o cliente confiaria nele.
+    expect(ultimaEscritaCom(diario, 'tokenExpiraEm')?.tokenExpiraEm).toBeNull();
+  });
+
+  it('o token informado é cifrado antes de tocar o banco', async () => {
+    const { service, db, diario } = montar();
+    db.select.mockReturnValueOnce(consulta([{ id: CONTA }], diario));
+
+    await service.conectarManual(CONTA, {
+      wabaId: 'WABA1',
+      phoneNumberId: 'PN1',
+      token: TOKEN,
+    });
+
+    const guardado = ultimaEscritaCom(diario, 'tokenCifrado')?.tokenCifrado as string;
     expect(guardado).not.toContain(TOKEN);
     expect(guardado.startsWith('v1.')).toBe(true);
   });
