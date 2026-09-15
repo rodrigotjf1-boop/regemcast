@@ -168,6 +168,18 @@ function CartaoNumero({ numero }: { numero: NumeroWhatsapp }) {
 
         <EstadoSincronizacao numero={numero} />
 
+        {/*
+          Lembrete permanente, não aviso de uma vez só: a Meta derruba a conexão
+          de quem passa 14 dias sem abrir o aplicativo. Quem conecta e some volta
+          a precisar de todo o fluxo, sem entender por quê.
+        */}
+        {numero.coexistencia && (
+          <p className="text-xs leading-relaxed text-tinta-suave">
+            Abra o WhatsApp Business no celular ao menos <strong>uma vez a cada 14 dias</strong>.
+            Sem isso a Meta encerra a conexão e você precisa conectar o número de novo.
+          </p>
+        )}
+
         {numero.qualidade === 'amarela' || numero.qualidade === 'vermelha' ? (
           <p className="rounded-card border border-atencao/30 bg-atencao/10 p-3 text-sm leading-relaxed text-atencao">
             Muita gente marcou suas mensagens como indesejadas. Sete dias assim e a Meta reduz
