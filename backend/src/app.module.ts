@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 import { AuthGuard } from './common/auth.guard';
@@ -22,11 +23,27 @@ import { SaudeModule } from './modules/saude/saude.module';
       secret: env.sessao.segredo,
       signOptions: { expiresIn: `${env.sessao.ttlHoras}h` },
     }),
-    // Teto grosseiro por IP. As rotas sensíveis (login, cadastro na lista de
-    // espera) apertam isso com @Throttle próprio — no Regem o @Throttle da
-    // rota pública repete exatamente os valores do teto global, então não
-    // aperta nada e passa a falsa sensação de proteção.
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
+    /**
+     * Teto por IP. As rotas sensíveis (login, cadastro na lista de espera)
+     * apertam isso com `@Throttle` próprio — no Regem o `@Throttle` da rota
+     * pública repete exatamente os valores do teto global, então não aperta
+     * nada e passa falsa sensação de proteção.
+     *
+     * O contador vive no REDIS, não na memória do processo. Medido em
+     * produção com o storage padrão: 25 tentativas de login seguidas
+     * produziram `401` até a 13ª, e um `401` no meio dos `429` — assinatura de
+     * balde por réplica. Com mais de uma instância, o limite real vira
+     * N × limite, e cada deploy zera a contagem. Para um portão de força
+     * bruta, isso é o mesmo que não ter portão.
+     */
+    ThrottlerModule.forRootAsync({
+      useFactory: () => ({
+        throttlers: [{ ttl: 60_000, limit: 120 }],
+        // Em dev-local o padrão em memória basta: é um processo só, e exigir
+        // Redis para rodar a API na sua máquina é atrito sem ganho.
+        ...(env.producao ? { storage: new ThrottlerStorageRedisService(env.redis.url) } : {}),
+      }),
+    }),
     AuditoriaModule,
     AuthModule,
     ContaModule,
