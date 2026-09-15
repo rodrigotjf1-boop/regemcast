@@ -9,6 +9,60 @@ Estado dos portões da Meta para o app do Regemcast:
 | App Review — `whatsapp_business_management` | ⏳ pode ser gravado **hoje** |
 | App Review — `whatsapp_business_messaging` | 🔒 **bloqueado**: exige envio funcionando |
 
+## Portão que ninguém avisa: "Testar os casos de uso"
+
+Antes de o formulário de envio aceitar qualquer coisa, a Meta exige que o app
+tenha **feito pelo menos uma chamada real de API com cada permissão**. Fica em
+**Analisar → Teste**, e nasce zerado:
+
+    whatsapp_business_messaging     0 de 1 chamada(s) de API obrigatória(s)
+    whatsapp_business_management    0 de 1 chamada(s) de API obrigatória(s)
+    public_profile                  0 chamada(s) de teste de API
+
+Dois prazos na mesma tela: o resultado *"pode levar até 24 horas para aparecer"*
+e cada teste *"é válido por apenas 30 dias"*. Ou seja: não adianta fazer isso
+meses antes de submeter, nem na véspera.
+
+**Limpo em 15/set/2026 com o número de teste do próprio app** (`+1 555 675-3137`,
+phone number ID `1263588270171945`, qualidade GREEN). O Explorador da Graph API
+travou no nó `me` e não assumiu o caminho novo; resolvido pelo PowerShell — o
+que a Meta conta é a chamada com o token do app, não a ferramenta.
+
+```powershell
+# token gerado no Explorador da Graph API, com as duas permissões de WhatsApp
+$token = "EAA..."
+
+# 1. public_profile
+Invoke-RestMethod -Uri "https://graph.facebook.com/v26.0/me?fields=id,name" `
+  -Headers @{ Authorization = "Bearer $token" }
+
+# 2. whatsapp_business_management
+$phoneId = "1263588270171945"
+Invoke-RestMethod -Uri "https://graph.facebook.com/v26.0/$phoneId`?fields=id,display_phone_number,verified_name,quality_rating" `
+  -Headers @{ Authorization = "Bearer $token" }
+
+# 3. whatsapp_business_messaging (o destinatário precisa estar cadastrado
+#    em "Gerenciar lista de números de telefone", senão a Meta recusa)
+$corpo = @{
+  messaging_product = "whatsapp"
+  to                = "55DDDNUMERO"
+  type              = "template"
+  template          = @{ name = "hello_world"; language = @{ code = "en_US" } }
+} | ConvertTo-Json -Depth 5
+
+Invoke-RestMethod -Uri "https://graph.facebook.com/v26.0/$phoneId/messages" `
+  -Method Post -Headers @{ Authorization = "Bearer $token" } `
+  -ContentType "application/json" -Body $corpo
+```
+
+Duas armadilhas de PowerShell que custaram tentativas: a crase antes do `?` é
+obrigatória (sem ela a URL sai truncada), e `$token` não sobrevive a fechar a
+janela.
+
+E a de sempre: o retorno `"message_status": "accepted"` significa **a Meta
+aceitou**, não **chegou**. Só conte o teste como feito depois de ver a mensagem
+no celular.
+
 ## A ordem é da Meta, não nossa
 
 O Regemcast **ainda não é Tech Provider** — quem é, é o app do Regem, e pelo
