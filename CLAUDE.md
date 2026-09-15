@@ -34,8 +34,10 @@ Monorepo em `C:\RegemCast`.
 - **`database/migrations/`** — SQL escrito à mão, `NNN_nome.sql`. Aplicado por
   `backend/scripts/migrate.mjs` (`npm run migrate`), que mantém **ledger** em
   `schema_migrations`.
-- **`docs/`** — [`banco.md`](docs/banco.md) (preparar o banco, passo a passo) e
-  [`rls.md`](docs/rls.md) (como o isolamento funciona e como provar que pega).
+- **`docs/`** — [`banco.md`](docs/banco.md) (preparar o banco, passo a passo),
+  [`rls.md`](docs/rls.md) (como o isolamento funciona e como provar que pega) e
+  [`whatsapp.md`](docs/whatsapp.md) (os dois caminhos de conexão, coexistência,
+  prazos e erros da Meta — com as fontes).
 - **Infra** — `docker-compose.dev.yml` (Postgres + Redis local),
   `backend/Dockerfile`, `frontend/Dockerfile` (os dois com contexto na **raiz**
   do repositório), `.github/workflows/ci.yml`.
@@ -43,6 +45,9 @@ Monorepo em `C:\RegemCast`.
 ## Fontes da verdade
 
 1. `docs/banco.md` e `docs/rls.md` — banco, migrations e isolamento.
+   `docs/whatsapp.md` — o que a Meta exige em cada caminho de conexão. **Antes
+   de afirmar qualquer regra da Meta, confira lá e nas fontes que ele cita** —
+   caminho de menu ou prazo lembrado de cabeça já custou tempo mais de uma vez.
    `docs/deploy.md` — EasyPanel, Cloudflare e a armadilha do subdomínio de
    segundo nível (o Universal SSL não cobre, e a falha é de TLS, não de HTTP).
 2. `database/migrations/*.sql` — o schema real. Antes de escrever query, **leia

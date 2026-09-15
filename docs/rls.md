@@ -86,6 +86,9 @@ caber em um deles:
 | `auth.convite.previa` | `auth.service.ts` | O convite é lido por token, antes de existir conta. |
 | `auth.convite.aceitar` | `auth.service.ts` | É a transação que **cria** a conta. |
 | `lista-espera.*` (5 usos) | `lista-espera.service.ts` | `lista_espera` vive antes da conta e tem policy `rc_sistema`: nenhuma linha dela pertence a uma conta. |
+| `meta.webhook.*` (7 usos) | `webhook.service.ts` | O webhook da Meta chega identificado por `phone_number_id`, não por conta — e chega sem sessão, autenticado só pela assinatura HMAC. Descobrir de quem é aquele número exige enxergar entre contas. |
+| `coexistencia.expirar` | `coexistencia.job.ts` | Varredura entre contas: o job acorda sem sessão para carimbar quem passou das 24 horas da coexistência. Só carimba o estado — regra de negócio nenhuma acontece aqui. |
+| `coexistencia.fila` | `coexistencia.job.ts` | Lê a fila de números com sincronização pendente, de todas as contas. A ação em cima de cada um acontece em `comConta`, dentro do `MetaService`, que é onde o token daquele cliente pode ser lido. |
 
 **(B) O registro precisa sobreviver ao rollback da operação.**
 
@@ -95,10 +98,15 @@ caber em um deles:
 
 Quando um caminho novo aparecer, a pergunta não é "posso usar?", e sim **em qual
 dos dois motivos ele cabe**. Se não couber em nenhum, o caminho está errado —
-não a regra. Dois casos já previstos e que cabem em (A): o webhook da Meta
-(chega identificado por `phone_number_id`, não por conta) e os jobs da fila (o
-worker acorda sem sessão, lê a conta do payload e **imediatamente** entra em
-`comConta`).
+não a regra. Os jobs da fila, quando existirem, cabem em (A) pelo mesmo motivo
+do `coexistencia.job`: o worker acorda sem sessão, descobre a conta e
+**imediatamente** entra em `comConta`.
+
+Repare no padrão que os dois usos do `coexistencia.job` seguem, porque ele é a
+forma certa de um job de fundo usar a chave mestra: escopo de sistema **só para
+descobrir de quem é o trabalho**, e a partir daí `comConta`. O que o job faz em
+escopo de sistema é carimbar estado; o que exige token, decisão ou dado do
+cliente acontece dentro da conta.
 
 Regras de uso:
 
@@ -118,7 +126,7 @@ Para revisar todos os usos de uma vez:
 grep -rn "comEscopoSistema" backend/src --include=*.ts | grep -v spec
 ```
 
-Hoje são **10** chamadas, todas classificadas na tabela acima. Se o número subir
+Hoje são **19** chamadas, todas classificadas na tabela acima. Se o número subir
 sem que a tabela tenha crescido junto, o isolamento está sendo corroído por
 dentro — e a tabela, não o código, é o lugar de discutir isso.
 

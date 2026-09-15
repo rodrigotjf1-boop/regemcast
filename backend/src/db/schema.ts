@@ -248,6 +248,18 @@ export const waNumero = pgTable('wa_numero', {
   /** pendente | registrado | suspenso | removido. Sem registro, todo envio dá 133010. */
   status: text('status').notNull().default('pendente'),
   registradoEm: timestamp('registrado_em', { withTimezone: true }),
+  /**
+   * O número também vive no app WhatsApp Business do celular (coexistência).
+   * Muda duas coisas no motor: pula o /register (o app já registrou, e chamar
+   * dá erro) e limita a vazão a 20 mps.
+   */
+  coexistencia: boolean('coexistencia').notNull().default(false),
+  /** nao_se_aplica | pendente | sincronizando | concluida | expirada | falhou */
+  sincronizacao: text('sincronizacao').notNull().default('nao_se_aplica'),
+  sincronizacaoEm: timestamp('sincronizacao_em', { withTimezone: true }),
+  sincronizacaoErro: text('sincronizacao_erro'),
+  /** De onde o prazo de 24h da coexistência é contado. */
+  onboardadoEm: timestamp('onboardado_em', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({

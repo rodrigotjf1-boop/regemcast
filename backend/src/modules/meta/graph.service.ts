@@ -307,4 +307,28 @@ export class GraphService {
       },
     });
   }
+
+  /**
+   * Pede à Meta a sincronização dos dados do app do celular (coexistência).
+   *
+   * Os dados NÃO voltam nesta resposta: ela só enfileira o pedido, e o
+   * conteúdo chega depois pelos webhooks `smb_app_state_sync` (contatos) e
+   * `history` (mensagens). Confundir o 200 daqui com "sincronizado" é o
+   * mesmo erro de achar que "a Meta aceitou" significa "a mensagem chegou".
+   *
+   * O prazo é de 24 horas a partir do fim do onboarding; estourado, a Meta
+   * desfaz a conexão e o cliente refaz o fluxo inteiro.
+   */
+  async sincronizarDadosDoApp(
+    phoneNumberId: string,
+    tipo: 'smb_app_state_sync' | 'history',
+    tokenDoCliente: string,
+  ): Promise<void> {
+    await this.chamar(`${phoneNumberId}/smb_app_data`, {
+      metodo: 'POST',
+      token: tokenDoCliente,
+      corpo: { messaging_product: 'whatsapp', sync_type: tipo },
+    });
+  }
+
 }

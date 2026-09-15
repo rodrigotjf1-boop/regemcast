@@ -2,10 +2,11 @@ import type { ReactNode } from 'react';
 
 import { cn } from '@/lib/cn';
 
-type Tom = 'erro' | 'sucesso' | 'informacao';
+type Tom = 'erro' | 'atencao' | 'sucesso' | 'informacao';
 
 const TONS: Record<Tom, string> = {
   erro: 'border-erro/30 bg-erro/10 text-erro',
+  atencao: 'border-atencao/30 bg-atencao/10 text-atencao',
   sucesso: 'border-sucesso/30 bg-sucesso/10 text-sucesso',
   informacao: 'border-acento/25 bg-acento-suave text-acento-forte',
 };

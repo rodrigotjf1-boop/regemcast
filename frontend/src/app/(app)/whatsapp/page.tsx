@@ -9,7 +9,12 @@ import { EstadoErro } from '@/components/ui/estado-erro';
 import { Spinner } from '@/components/ui/spinner';
 import { mensagemDoErro } from '@/lib/api';
 import { whatsapp } from '@/lib/servicos';
-import type { NumeroWhatsapp, QualidadeNumero, SituacaoWhatsapp } from '@/lib/tipos';
+import type {
+  NumeroWhatsapp,
+  QualidadeNumero,
+  SincronizacaoNumero,
+  SituacaoWhatsapp,
+} from '@/lib/tipos';
 
 /**
  * Tela de conexão do WhatsApp.
@@ -127,6 +132,7 @@ function CartaoNumero({ numero }: { numero: NumeroWhatsapp }) {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge tom={q.tom}>Qualidade: {q.texto}</Badge>
+            {numero.coexistencia && <Badge tom="acento">Também no seu celular</Badge>}
             {numero.status === 'registrado' ? (
               <Badge tom="sucesso">Pronto para enviar</Badge>
             ) : (
@@ -151,7 +157,16 @@ function CartaoNumero({ numero }: { numero: NumeroWhatsapp }) {
             separado do teto do seu plano. Conta nova começa em 250 e sobe conforme o histórico
             de envios.
           </p>
+          <p className="mt-2 text-xs leading-relaxed text-tinta-suave">
+            Velocidade de envio: até{' '}
+            <strong className="numerico">{numero.vazaoMaxima}</strong> mensagens por segundo.
+            {numero.coexistencia
+              ? ' É o teto de quem mantém o aplicativo no celular — um número dedicado chega a 80.'
+              : ''}
+          </p>
         </div>
+
+        <EstadoSincronizacao numero={numero} />
 
         {numero.qualidade === 'amarela' || numero.qualidade === 'vermelha' ? (
           <p className="rounded-card border border-atencao/30 bg-atencao/10 p-3 text-sm leading-relaxed text-atencao">
@@ -163,6 +178,82 @@ function CartaoNumero({ numero }: { numero: NumeroWhatsapp }) {
     </Card>
   );
 }
+
+/**
+ * Estado da cópia dos dados do celular (coexistência).
+ *
+ * Existe porque este é o único passo do onboarding com **prazo**: 24 horas, e
+ * quem conta é a Meta. Estourado, ela desfaz a conexão e o cliente refaz tudo.
+ * Um "sincronizando" mudo na tela seria a pior versão disso — o cliente fecha
+ * o aplicativo no celular achando que já acabou.
+ *
+ * Número dedicado não tem o que copiar e não mostra nada.
+ */
+function EstadoSincronizacao({ numero }: { numero: NumeroWhatsapp }) {
+  if (!numero.coexistencia || numero.sincronizacao === 'nao_se_aplica') return null;
+
+  const texto = TEXTO_SINCRONIZACAO[numero.sincronizacao];
+  if (!texto) return null;
+
+  const horas = numero.horasParaSincronizar;
+  const prazo =
+    horas === null
+      ? null
+      : horas <= 0
+        ? 'O prazo terminou.'
+        : horas < 1
+          ? 'Falta menos de 1 hora para o prazo acabar.'
+          : 'Faltam ' + Math.floor(horas) + (Math.floor(horas) === 1 ? ' hora' : ' horas') + ' para o prazo acabar.';
+
+  return (
+    <div className={'rounded-card border p-3 ' + TOM_SINCRONIZACAO[texto.tom]}>
+      <p className="text-sm font-medium">{texto.titulo}</p>
+      <p className="mt-1 text-sm leading-relaxed">{texto.explicacao}</p>
+      {prazo && <p className="mt-1 text-sm leading-relaxed">{prazo}</p>}
+    </div>
+  );
+}
+
+const TOM_SINCRONIZACAO: Record<'atencao' | 'sucesso' | 'erro', string> = {
+  atencao: 'border-atencao/30 bg-atencao/10 text-atencao',
+  sucesso: 'border-sucesso/30 bg-sucesso/10 text-sucesso',
+  erro: 'border-erro/30 bg-erro/10 text-erro',
+};
+
+const TEXTO_SINCRONIZACAO: Partial<
+  Record<SincronizacaoNumero, { tom: 'atencao' | 'sucesso' | 'erro'; titulo: string; explicacao: string }>
+> = {
+  pendente: {
+    tom: 'atencao',
+    titulo: 'Preparando a cópia dos seus dados',
+    explicacao:
+      'Mantenha o WhatsApp Business aberto no celular. A cópia dos contatos e das conversas começa em instantes.',
+  },
+  sincronizando: {
+    tom: 'atencao',
+    titulo: 'Copiando seus contatos e conversas',
+    explicacao:
+      'Mantenha o WhatsApp Business aberto no celular até terminar. Se fechar antes, a cópia para onde estiver.',
+  },
+  concluida: {
+    tom: 'sucesso',
+    titulo: 'Contatos e conversas copiados',
+    explicacao:
+      'Você continua atendendo pelo celular normalmente — o que chegar por lá também aparece aqui.',
+  },
+  expirada: {
+    tom: 'erro',
+    titulo: 'O prazo para copiar os dados terminou',
+    explicacao:
+      'A Meta desfez a conexão. Conecte o número de novo e mantenha o WhatsApp Business aberto no celular durante a cópia.',
+  },
+  falhou: {
+    tom: 'erro',
+    titulo: 'Não conseguimos copiar os dados do seu celular',
+    explicacao:
+      'Conecte o número de novo. Na janela da Meta, autorize o compartilhamento dos dados do aplicativo quando ela pedir.',
+  },
+};
 
 /**
  * Aviso de vencimento da autorização.
