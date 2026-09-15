@@ -105,14 +105,46 @@ Duas variáveis porque `regemcast_app` **não tem `CREATE` no schema public**: e
 lê e escreve nas tabelas, e é só. Quem cria tabela é o dono do banco. O runner
 detecta isso e diz exatamente o que fazer se você esquecer.
 
+
+### ⚠️ A conexão direta é IPv6-only — em servidor, use o Session pooler
+
+O host `db.<ref>.supabase.co` responde **só em IPv6**
+([compatibilidade IPv4/IPv6](https://supabase.com/docs/guides/troubleshooting/supabase--your-network-ipv4-and-ipv6-compatibility-cHe3BP)).
+Da sua máquina costuma funcionar; de uma VPS sem IPv6 roteado, não — e o erro
+é `ENOTFOUND` ou `ENETUNREACH`, que parece host errado e não é.
+
+Aconteceu neste projeto: a API subiu no EasyPanel e toda consulta morria com
+`getaddrinfo ENOTFOUND` num host que estava escrito corretamente.
+
+Para a `DATABASE_URL` da API, use o **Session pooler**, que é IPv4:
+
+```
+postgresql://regemcast_app.SEU_REF:SENHA@aws-0-REGIAO.pooler.supabase.com:5432/postgres
+```
+
+Duas coisas que não dá para deduzir e precisam ser **copiadas da tela**
+(Supabase → **Connect** → *Session pooler*): o host `aws-N-regiao...` e o
+`SEU_REF`.
+
+E uma pegadinha do pooler: **o usuário carrega o project ref colado com
+ponto**. Não é `regemcast_app`, é `regemcast_app.SEU_REF` — vale para qualquer
+role customizado.
+
+| Modo | Porta | IPv4? | Usar para |
+|---|---|---|---|
+| Direct connection | 5432 | **não** (IPv6) | sua máquina, se tiver IPv6 |
+| **Session pooler** | 5432 | sim | **a API, no servidor** |
+| Transaction pooler | 6543 | sim | alto volume de conexões curtas |
+
+Os três funcionam com a RLS do Regemcast: o GUC `app.conta_id` é definido com
+`set_config(..., true)`, que vive dentro da transação e não depende de a sessão
+ser mantida entre comandos.
+
+Se preferir manter a conexão direta, existe o add-on **IPv4** do Supabase
+(~US$ 4/mês).
+
 > **Nunca** comite o `.env`. Ele está no `.gitignore`; confira com
 > `git status --short` antes de commitar.
-
-> Se for usar o **pooler** do Supabase (porta `6543`, "Transaction pooler"),
-> use-o apenas na `DATABASE_URL` da API — e saiba que o pooler em modo
-> transaction não mantém `SET` fora de transação. O Regemcast define o GUC
-> `app.conta_id` com `set_config(..., true)`, que vive dentro da transação, então
-> funciona nos dois modos. Para migration, use a conexão direta (porta `5432`).
 
 ### Passo 4. Aplicar as migrations
 
