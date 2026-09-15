@@ -43,6 +43,8 @@ Monorepo em `C:\RegemCast`.
 ## Fontes da verdade
 
 1. `docs/banco.md` e `docs/rls.md` — banco, migrations e isolamento.
+   `docs/deploy.md` — EasyPanel, Cloudflare e a armadilha do subdomínio de
+   segundo nível (o Universal SSL não cobre, e a falha é de TLS, não de HTTP).
 2. `database/migrations/*.sql` — o schema real. Antes de escrever query, **leia
    a migration**, não confie na memória.
 3. `backend/src/db/schema.ts` — o espelho do schema em Drizzle.
