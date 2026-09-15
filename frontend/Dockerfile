@@ -20,7 +20,7 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY frontend/ ./
-ARG NEXT_PUBLIC_API_URL=http://localhost:3000/api/v1
+ARG NEXT_PUBLIC_API_URL=http://localhost:3010/api/v1
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 # Garante que public/ exista: COPY de pasta ausente quebra o estágio final, e
 # um projeto sem arquivo estático nenhum é perfeitamente válido.

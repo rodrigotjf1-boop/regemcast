@@ -77,3 +77,35 @@ jobs:
 
       - name: Testes
         run: npm test --if-present
+
+  # Builda as duas imagens exatamente como o EasyPanel vai buildar: contexto na
+  # raiz, Dockerfile apontado por -f. Sem isto, um erro de Dockerfile só
+  # aparece no deploy — e aí já está no caminho crítico. Não faz push: o
+  # objetivo é falhar aqui, e não lá.
+  imagens:
+    name: imagens docker (build de verificação)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Imagem da API
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: false
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      - name: Imagem da web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: false
+          build-args: |
+            NEXT_PUBLIC_API_URL=https://api.cast.dmsregem.com/api/v1
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web

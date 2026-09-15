@@ -32,4 +32,7 @@ npm-debug.log*
 !**/.env.example
 
 docs
-mockups
+
+# O kit da marca tem 7,9 MB de vetor, vídeo e PNG. O que a web usa já está
+# copiado em frontend/public; o resto não entra em imagem nenhuma.
+kit
