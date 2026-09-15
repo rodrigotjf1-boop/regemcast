@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
@@ -19,6 +20,9 @@ import { SaudeModule } from './modules/saude/saude.module';
 @Module({
   imports: [
     DrizzleModule,
+    // Agendador: hoje só a retomada de webhooks pendentes (ver
+    // modules/meta/webhook.retomada.ts).
+    ScheduleModule.forRoot(),
     JwtModule.register({
       global: true,
       secret: env.sessao.segredo,

@@ -377,4 +377,75 @@ export class MetaService {
 
     return { conectado: true as const, conta: c, numeros };
   }
+
+  /**
+   * Registra (ou re-registra) um número na Cloud API.
+   *
+   * Existe separado do onboarding por causa do PIN. Quando o número já tem
+   * verificação em duas etapas, o PIN que geramos é recusado com 133005 e só o
+   * que o cliente definiu no WhatsApp Manager serve — então ele precisa de um
+   * caminho para informá-lo. Sem esta rota, o onboarding terminaria com uma
+   * pendência sem saída.
+   *
+   * O PIN informado é usado e descartado: não vai para o banco nem para log.
+   */
+  async registrarNumero(
+    contaId: string,
+    usuarioId: string,
+    phoneNumberId: string,
+    pinInformado?: string,
+  ): Promise<{ registrado: boolean; mensagem: string }> {
+    const credencial = await this.tokenDaConta(contaId);
+    if (!credencial) {
+      throw new BadRequestException(
+        'Nenhuma conta de WhatsApp conectada. Conecte a conta antes de registrar o número.',
+      );
+    }
+
+    const [numero] = await this.ctx.db
+      .select({ id: waNumero.id })
+      .from(waNumero)
+      .where(and(eq(waNumero.contaId, contaId), eq(waNumero.phoneNumberId, phoneNumberId)))
+      .limit(1);
+
+    if (!numero) {
+      throw new BadRequestException('Não encontramos este número na sua conta.');
+    }
+
+    const pin = pinInformado ?? String(randomInt(100_000, 1_000_000));
+
+    try {
+      await this.graph.registrarNumero(phoneNumberId, pin, credencial.token);
+    } catch (erro) {
+      if (erro instanceof ErroGraph) {
+        this.log.error(`Registro do número falhou: ${erro.detalheParaLog}`);
+        // A frase traduzida já diz o que fazer — inclusive pedir o PIN quando
+        // o caso é 133005.
+        throw new BadRequestException(erro.mensagemParaUsuario);
+      }
+      throw erro;
+    }
+
+    await this.ctx.db
+      .update(waNumero)
+      .set({ status: 'registrado', registradoEm: new Date() })
+      .where(eq(waNumero.id, numero.id));
+
+    await this.auditoria.registrar({
+      contaId,
+      atorTipo: 'usuario',
+      atorUsuarioId: usuarioId,
+      acao: 'whatsapp.numero_registrado',
+      entidade: 'wa_numero',
+      entidadeId: numero.id,
+      // Sem o PIN, obviamente. O que importa auditar é que foi registrado e por quem.
+      detalhe: { phoneNumberId, comPinDoCliente: Boolean(pinInformado) },
+    });
+
+    return {
+      registrado: true,
+      mensagem: 'Número registrado. Já dá para enviar por ele.',
+    };
+  }
+
 }

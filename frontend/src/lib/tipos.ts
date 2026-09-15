@@ -107,3 +107,51 @@ export interface ConvitePendente {
   nome: string;
   empresa: string | null;
 }
+
+// --------------------------------------------------------------- WhatsApp
+
+/** `GET /whatsapp/config` — o que o Embedded Signup precisa. Nada aqui é segredo. */
+export interface ConfigSignup {
+  appId: string;
+  configId: string;
+  graphVersao: string;
+}
+
+export type QualidadeNumero = 'verde' | 'amarela' | 'vermelha' | 'desconhecida';
+export type StatusNumero = 'pendente' | 'registrado' | 'suspenso' | 'removido';
+
+export interface NumeroWhatsapp {
+  phoneNumberId: string;
+  telefone: string | null;
+  nome: string | null;
+  qualidade: QualidadeNumero;
+  /** Teto de usuários únicos por 24h. `null` = ilimitado. Ausente = a Meta não disse. */
+  tierLimite: number | null;
+  tierNome: string | null;
+  status: StatusNumero;
+}
+
+export interface ContaWhatsapp {
+  wabaId: string;
+  nome: string | null;
+  moeda: string | null;
+  statusRevisao: string | null;
+  conectadaEm: string | null;
+  webhookAssinadoEm: string | null;
+}
+
+/** `GET /whatsapp/situacao` */
+export type SituacaoWhatsapp =
+  | { conectado: false }
+  | { conectado: true; conta: ContaWhatsapp; numeros: NumeroWhatsapp[] };
+
+/** `POST /whatsapp/conectar` */
+export interface ResultadoConexao {
+  wabaId: string;
+  phoneNumberId: string;
+  telefone: string | null;
+  nome: string | null;
+  registrado: boolean;
+  /** O que ainda falta o cliente fazer, já em pt-BR. */
+  pendencias: string[];
+}

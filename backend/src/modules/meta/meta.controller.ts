@@ -5,6 +5,7 @@ import type { UsuarioAutenticado } from '../../common/auth.guard';
 import { DonoGuard } from '../../common/dono.guard';
 import { UsuarioAtual } from '../../common/usuario-atual.decorator';
 import { ConcluirSignupDto } from './dto/concluir-signup.dto';
+import { RegistrarNumeroDto } from './dto/registrar-numero.dto';
 import { MetaService } from './meta.service';
 
 @ApiTags('WhatsApp')
@@ -32,5 +33,18 @@ export class MetaController {
   @UseGuards(DonoGuard)
   conectar(@UsuarioAtual() usuario: UsuarioAutenticado, @Body() dto: ConcluirSignupDto) {
     return this.servico.concluirOnboarding(usuario.contaId, usuario.id, dto);
+  }
+
+  /**
+   * Registra o número na Cloud API.
+   *
+   * Separado do conectar por causa do PIN: quando o número já tem verificação
+   * em duas etapas, só o PIN que o cliente definiu no WhatsApp Manager serve —
+   * e sem esta rota o onboarding terminaria numa pendência sem saída.
+   */
+  @Post('registrar-numero')
+  @UseGuards(DonoGuard)
+  registrarNumero(@UsuarioAtual() usuario: UsuarioAutenticado, @Body() dto: RegistrarNumeroDto) {
+    return this.servico.registrarNumero(usuario.contaId, usuario.id, dto.phoneNumberId, dto.pin);
   }
 }

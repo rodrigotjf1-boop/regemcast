@@ -12,12 +12,15 @@
  */
 import { api } from './api';
 import type {
+  ConfigSignup,
   ConvitePendente,
   Conta,
   ResumoConta,
   Sessao,
   SessaoCriada,
   StatusUsuario,
+  ResultadoConexao,
+  SituacaoWhatsapp,
   UsuarioDaConta,
 } from './tipos';
 
@@ -108,4 +111,35 @@ export const conta = {
   /** `PATCH /conta/usuarios/:id` — suspende ou reativa um acesso. */
   mudarStatus: (id: string, status: StatusUsuario) =>
     api.patch<UsuarioDaConta>(`/conta/usuarios/${encodeURIComponent(id)}`, { status }),
+};
+
+// --------------------------------------------------------------- WhatsApp
+
+/** Corpo de `POST /whatsapp/conectar` (ConcluirSignupDto). */
+export interface DadosConexao {
+  code: string;
+  wabaId: string;
+  phoneNumberId: string;
+}
+
+/** Corpo de `POST /whatsapp/registrar-numero` (RegistrarNumeroDto). */
+export interface DadosRegistroNumero {
+  phoneNumberId: string;
+  /** Só quando o número tem verificação em duas etapas. */
+  pin?: string;
+}
+
+export const whatsapp = {
+  /** `GET /whatsapp/config` */
+  config: () => api.get<ConfigSignup>('/whatsapp/config'),
+
+  /** `GET /whatsapp/situacao` */
+  situacao: () => api.get<SituacaoWhatsapp>('/whatsapp/situacao'),
+
+  /** `POST /whatsapp/conectar` */
+  conectar: (dados: DadosConexao) => api.post<ResultadoConexao>('/whatsapp/conectar', dados),
+
+  /** `POST /whatsapp/registrar-numero` */
+  registrarNumero: (dados: DadosRegistroNumero) =>
+    api.post<{ registrado: boolean; mensagem: string }>('/whatsapp/registrar-numero', dados),
 };

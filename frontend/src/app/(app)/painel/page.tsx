@@ -16,10 +16,16 @@ import { formatarData, formatarNumero } from '@/lib/formato';
 import { conta as servicoConta } from '@/lib/servicos';
 import type { ResumoConta } from '@/lib/tipos';
 
-/** Fase 1 do produto. Tudo aqui está desligado de propósito — e diz isso. */
-const PROXIMOS_PASSOS: ReadonlyArray<{ titulo: string; descricao: string }> = [
+/**
+ * O caminho até o primeiro disparo.
+ *
+ * Passo com `href` já existe e é clicável; os demais mostram "em breve" e são
+ * inertes. O cartão não mente sobre o que está pronto.
+ */
+const PROXIMOS_PASSOS: ReadonlyArray<{ titulo: string; descricao: string; href?: string }> = [
   {
     titulo: 'Conectar o número',
+    href: '/whatsapp',
     descricao:
       'Você informa o número e nós concluímos a conexão com a Meta. Nenhuma conta de desenvolvedor do seu lado.',
   },
@@ -171,9 +177,13 @@ export default function Painel() {
           <ol className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {PROXIMOS_PASSOS.map((passo, indice) => (
               <li key={passo.titulo}>
-                <div
-                  aria-disabled="true"
-                  className="flex h-full gap-3 rounded-lg border border-dashed border-borda bg-superficie-2/40 p-4 opacity-80"
+                <PassoBase
+                  href={passo.href}
+                  className={
+                    passo.href
+                      ? 'flex h-full gap-3 rounded-lg border border-borda bg-superficie p-4 transition-colors hover:border-acento hover:bg-superficie-2'
+                      : 'flex h-full gap-3 rounded-lg border border-dashed border-borda bg-superficie-2/40 p-4 opacity-80'
+                  }
                 >
                   <span
                     aria-hidden="true"
@@ -184,11 +194,11 @@ export default function Painel() {
                   <div className="min-w-0 space-y-1">
                     <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-tinta">
                       {passo.titulo}
-                      <Badge tom="acento">em breve</Badge>
+                      {passo.href ? null : <Badge tom="acento">em breve</Badge>}
                     </p>
                     <p className="text-sm text-tinta-suave">{passo.descricao}</p>
                   </div>
-                </div>
+                </PassoBase>
               </li>
             ))}
           </ol>
@@ -219,6 +229,34 @@ export default function Painel() {
           />
         </CardCorpo>
       </Card>
+    </div>
+  );
+}
+
+/**
+ * Casca de um passo: vira link quando o passo já existe, e uma caixa inerte
+ * (com `aria-disabled`) quando ainda não. Assim o leitor de tela também sabe a
+ * diferença, não só quem enxerga o tracejado.
+ */
+function PassoBase({
+  href,
+  className,
+  children,
+}: {
+  href?: string;
+  className: string;
+  children: React.ReactNode;
+}) {
+  if (href) {
+    return (
+      <Link href={href} className={className}>
+        {children}
+      </Link>
+    );
+  }
+  return (
+    <div aria-disabled="true" className={className}>
+      {children}
     </div>
   );
 }
