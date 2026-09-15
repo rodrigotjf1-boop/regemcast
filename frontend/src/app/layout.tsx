@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 
+import { ConfigRuntimeScript } from '@/lib/config-runtime';
+
 import './globals.css';
 
 /**
@@ -41,6 +43,19 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+/**
+ * Renderiza a cada requisição, em vez de no build.
+ *
+ * Sem isto o Next pré-renderiza as páginas no build, e o `ConfigRuntimeScript`
+ * seria avaliado ali — congelando no HTML o endereço da API que existia na
+ * máquina de build. Foi exatamente o que aconteceu no primeiro teste: o
+ * container subia com `API_URL_PUBLICA` de produção e servia `localhost`.
+ *
+ * O custo é zero na prática: todas as telas daqui são de aplicação, nenhuma é
+ * conteúdo que se beneficie de cache estático.
+ */
+export const dynamic = 'force-dynamic';
+
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
@@ -55,6 +70,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="pt-BR">
       <body className="min-h-screen bg-fundo text-tinta">
+        {/* Antes de qualquer script da aplicação: o cliente HTTP lê daqui o
+            endereço da API. Ver lib/config-runtime. */}
+        <ConfigRuntimeScript />
         <a className="pular-para-conteudo" href="#conteudo">
           Pular para o conteúdo
         </a>

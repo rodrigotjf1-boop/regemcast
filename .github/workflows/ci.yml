@@ -73,7 +73,7 @@ jobs:
           NEXT_TELEMETRY_DISABLED: '1'
           # Valor público e só de build — o bundle do navegador não carrega
           # segredo nenhum. A URL real entra no build do EasyPanel.
-          NEXT_PUBLIC_API_URL: http://localhost:3010/api/v1
+          API_URL_PUBLICA: http://localhost:3010/api/v1
 
       - name: Testes
         run: npm test --if-present
@@ -105,7 +105,5 @@ jobs:
           context: .
           file: frontend/Dockerfile
           push: false
-          build-args: |
-            NEXT_PUBLIC_API_URL=https://api.cast.dmsregem.com/api/v1
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web

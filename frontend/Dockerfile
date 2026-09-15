@@ -3,10 +3,10 @@
 # O contexto de build é a RAIZ do repositório:
 #   docker build -f frontend/Dockerfile -t regemcast-web .
 #
-# Segredo NÃO entra aqui. A única ARG é NEXT_PUBLIC_API_URL, que por definição
-# é pública: tudo que começa com NEXT_PUBLIC_ é embutido no bundle do navegador
-# e qualquer visitante consegue ler. Chave de serviço, token da Meta e segredo
-# de sessão vivem só no backend.
+# Segredo NÃO entra aqui — e, desde a config em runtime, NADA de configuração
+# entra: o endereço da API é lido pelo servidor Next a cada inicialização, da
+# variável API_URL_PUBLICA (ver src/lib/config-runtime.tsx). A imagem é a mesma
+# em qualquer ambiente; trocar de domínio é trocar a variável e reiniciar.
 
 # ---------------------------------------------------------------- deps
 FROM node:22-alpine AS deps
@@ -20,8 +20,6 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY frontend/ ./
-ARG NEXT_PUBLIC_API_URL=http://localhost:3010/api/v1
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 # Garante que public/ exista: COPY de pasta ausente quebra o estágio final, e
 # um projeto sem arquivo estático nenhum é perfeitamente válido.
 RUN mkdir -p public && npm run build

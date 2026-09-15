@@ -13,7 +13,16 @@
  * nosso (5xx) e é o que liga a tela do cliente à linha do log no servidor.
  */
 
-const BASE = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3010/api/v1').replace(/\/+$/, '');
+import { configDoCliente } from './config-runtime';
+
+/**
+ * Resolvida a cada chamada, e não uma vez no topo do módulo: o valor vem do que
+ * o servidor injetou na página (ver `lib/config-runtime`). Assim, trocar o
+ * domínio da API é trocar a variável e reiniciar — sem rebuildar a imagem.
+ */
+function base(): string {
+  return configDoCliente().apiUrl;
+}
 
 export interface CorpoErro {
   mensagem?: string;
@@ -80,7 +89,7 @@ async function requisitar<T>(
 ): Promise<T> {
   let resposta: Response;
   try {
-    resposta = await fetch(`${BASE}${caminho}`, {
+    resposta = await fetch(`${base()}${caminho}`, {
       method: metodo,
       credentials: 'include',
       cache: 'no-store',
