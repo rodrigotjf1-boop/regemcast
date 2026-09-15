@@ -207,6 +207,12 @@ export const waConta = pgTable('wa_conta', {
    */
   tokenCifrado: text('token_cifrado'),
   tokenEm: timestamp('token_em', { withTimezone: true }),
+  /**
+   * Quando o token do cliente vence. O template de Embedded Signup da Meta
+   * emite token com prazo (60 dias), e sem isto a falha chega pelo pior
+   * caminho: erro 190 no meio de uma campanha, sem aviso prévio.
+   */
+  tokenExpiraEm: timestamp('token_expira_em', { withTimezone: true }),
   escopos: jsonb('escopos').notNull().default(sql`'[]'::jsonb`),
   /** Prazo do Brasil: toda WABA elegível precisa estar em BRL até 30/jun/2027. */
   moeda: text('moeda'),

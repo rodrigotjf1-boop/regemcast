@@ -138,6 +138,8 @@ export interface ContaWhatsapp {
   statusRevisao: string | null;
   conectadaEm: string | null;
   webhookAssinadoEm: string | null;
+  /** Quando a autorização do cliente vence. Nulo = a Meta não informou prazo. */
+  tokenExpiraEm: string | null;
 }
 
 /** `GET /whatsapp/situacao` */

@@ -99,6 +99,7 @@ export default function PaginaWhatsapp() {
                   Cobrança da Meta em {situacao.conta.moeda}
                 </p>
               )}
+              <AvisoExpiracao expiraEm={situacao.conta.tokenExpiraEm} />
             </div>
           </Card>
 
@@ -160,5 +161,38 @@ function CartaoNumero({ numero }: { numero: NumeroWhatsapp }) {
         ) : null}
       </div>
     </Card>
+  );
+}
+
+/**
+ * Aviso de vencimento da autorização.
+ *
+ * O template de Embedded Signup que a Meta manda usar emite token com prazo
+ * (60 dias). Sem este aviso, o cliente descobre que está desconectado quando a
+ * campanha para com erro 190 — ou seja, no pior momento possível. Com ele, a
+ * reconexão acontece em hora escolhida.
+ *
+ * Aparece só na última semana: avisar 50 dias antes é ruído que ensina a
+ * ignorar o aviso.
+ */
+function AvisoExpiracao({ expiraEm }: { expiraEm: string | null }) {
+  if (!expiraEm) return null;
+
+  const dias = Math.ceil((new Date(expiraEm).getTime() - Date.now()) / 86_400_000);
+  if (dias > 7) return null;
+
+  const venceu = dias <= 0;
+  return (
+    <p
+      className={
+        venceu
+          ? 'mt-2 rounded-card border border-erro/30 bg-erro/10 p-3 text-sm leading-relaxed text-erro'
+          : 'mt-2 rounded-card border border-atencao/30 bg-atencao/10 p-3 text-sm leading-relaxed text-atencao'
+      }
+    >
+      {venceu
+        ? 'A autorização do WhatsApp venceu e nenhuma campanha sai até você reconectar.'
+        : `A autorização do WhatsApp vence em ${dias} ${dias === 1 ? 'dia' : 'dias'}. Reconecte antes disso para as campanhas não pararem.`}
+    </p>
   );
 }

@@ -112,9 +112,16 @@ export class MetaService {
     // 1. Troca do code. Primeiro de tudo, porque ele vive 30 segundos — se
     //    fizermos qualquer consulta antes, o prazo pode estourar.
     let token: string;
+    let expiraEm: Date | null = null;
     try {
       const r = await this.graph.trocarCodePorToken(code);
       token = r.token;
+      // A Meta devolve a validade em segundos. O template que usamos emite
+      // token com prazo (60 dias), e guardar isso é o que permite avisar antes
+      // de a campanha parar com erro 190.
+      if (r.expiraEm && r.expiraEm > 0) {
+        expiraEm = new Date(Date.now() + r.expiraEm * 1000);
+      }
     } catch (erro) {
       if (erro instanceof ErroGraph) {
         this.log.error(`Troca do code falhou: ${erro.detalheParaLog}`);
@@ -143,6 +150,7 @@ export class MetaService {
       moeda: waba.currency ?? null,
       statusRevisao: waba.account_review_status ?? null,
       token,
+      expiraEm,
     });
 
     const pendencias: string[] = [];
@@ -221,6 +229,7 @@ export class MetaService {
       moeda: string | null;
       statusRevisao: string | null;
       token: string;
+      expiraEm: Date | null;
     },
   ): Promise<{ id: string }> {
     const cifrado = cifrarToken(dados.token, env.meta.tokenChave);
@@ -241,6 +250,7 @@ export class MetaService {
           statusRevisao: dados.statusRevisao,
           tokenCifrado: cifrado,
           tokenEm: agora,
+          tokenExpiraEm: dados.expiraEm,
           onboardadaEm: agora,
         })
         .where(eq(waConta.id, existente.id));
@@ -257,6 +267,7 @@ export class MetaService {
         statusRevisao: dados.statusRevisao,
         tokenCifrado: cifrado,
         tokenEm: agora,
+        tokenExpiraEm: dados.expiraEm,
         onboardadaEm: agora,
       })
       .returning({ id: waConta.id });
@@ -355,6 +366,7 @@ export class MetaService {
         statusRevisao: waConta.statusRevisao,
         conectadaEm: waConta.onboardadaEm,
         webhookAssinadoEm: waConta.webhookAssinadoEm,
+        tokenExpiraEm: waConta.tokenExpiraEm,
       })
       .from(waConta)
       .where(eq(waConta.contaId, contaId))
