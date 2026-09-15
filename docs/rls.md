@@ -88,6 +88,7 @@ caber em um deles:
 | `lista-espera.*` (5 usos) | `lista-espera.service.ts` | `lista_espera` vive antes da conta e tem policy `rc_sistema`: nenhuma linha dela pertence a uma conta. |
 | `meta.webhook.*` (7 usos) | `webhook.service.ts` | O webhook da Meta chega identificado por `phone_number_id`, não por conta — e chega sem sessão, autenticado só pela assinatura HMAC. Descobrir de quem é aquele número exige enxergar entre contas. |
 | `coexistencia.expirar` | `coexistencia.job.ts` | Varredura entre contas: o job acorda sem sessão para carimbar quem passou das 24 horas da coexistência. Só carimba o estado — regra de negócio nenhuma acontece aqui. |
+| `whatsapp.conectar-manual` | `meta.service.ts` | A rota é da distribuição e não tem sessão: o operador informa qual conta está conectando, e antes de qualquer chamada à Meta é preciso confirmar que ela existe. Dura o `select` e acaba — a gravação acontece em `comConta`. |
 | `coexistencia.fila` | `coexistencia.job.ts` | Lê a fila de números com sincronização pendente, de todas as contas. A ação em cima de cada um acontece em `comConta`, dentro do `MetaService`, que é onde o token daquele cliente pode ser lido. |
 
 **(B) O registro precisa sobreviver ao rollback da operação.**
@@ -126,7 +127,7 @@ Para revisar todos os usos de uma vez:
 grep -rn "comEscopoSistema" backend/src --include=*.ts | grep -v spec
 ```
 
-Hoje são **19** chamadas, todas classificadas na tabela acima. Se o número subir
+Hoje são **20** chamadas, todas classificadas na tabela acima. Se o número subir
 sem que a tabela tenha crescido junto, o isolamento está sendo corroído por
 dentro — e a tabela, não o código, é o lugar de discutir isso.
 

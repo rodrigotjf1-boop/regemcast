@@ -26,7 +26,7 @@ import { and, eq } from 'drizzle-orm';
 
 import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
-import { waConta, waNumero } from '../../db/schema';
+import { conta, waConta, waNumero } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { cifrarToken, decifrarToken } from './cripto';
 import { ErroGraph, GraphService } from './graph.service';
@@ -42,6 +42,18 @@ export interface DadosDoSignup {
   phoneNumberId?: string;
   /** true quando o cliente escolheu manter o WhatsApp Business no celular. */
   coexistencia?: boolean;
+}
+
+/** O que `conectarComToken` precisa, venha o token de onde vier. */
+interface ParametrosConexao {
+  contaId: string;
+  /** `null` quando quem conectou foi a distribuição, não um usuário da conta. */
+  atorUsuarioId: string | null;
+  token: string;
+  expiraEm: Date | null;
+  wabaId: string;
+  phoneNumberId: string;
+  coexistencia: boolean;
 }
 
 export interface ResultadoOnboarding {
@@ -176,6 +188,95 @@ export class MetaService {
       throw erro;
     }
 
+    return this.conectarComToken({
+      contaId,
+      atorUsuarioId: usuarioId,
+      token,
+      expiraEm,
+      wabaId,
+      phoneNumberId,
+      coexistencia,
+    });
+  }
+
+  /**
+   * Conecta uma WABA informando o token direto, sem Embedded Signup.
+   *
+   * É operação da DISTRIBUIÇÃO, não do cliente — fica atrás do
+   * `DistTokenGuard`, como as rotas do console. Existe por dois motivos reais,
+   * e nenhum deles é conveniência:
+   *
+   * 1. **O número de teste da Meta não passa pelo Embedded Signup.** Ele
+   *    pertence à WABA do próprio app, e é com ele que se constrói e se grava o
+   *    vídeo do App Review — que libera o Acesso Avançado, que libera o
+   *    Embedded Signup para cliente real. Sem este caminho o produto não sai do
+   *    lugar: precisaria do signup para gravar o vídeo que destrava o signup.
+   * 2. **Suporte.** Quando o signup de um cliente falha no meio, alguém precisa
+   *    terminar a conexão sem mandar ele refazer tudo.
+   *
+   * O token entra por aqui e some: é cifrado antes de tocar o banco e nunca
+   * volta em resposta nenhuma.
+   */
+  async conectarManual(
+    contaId: string,
+    dados: { wabaId: string; phoneNumberId?: string; token: string },
+  ): Promise<ResultadoOnboarding> {
+    // A conta precisa existir. Escopo de sistema porque a rota não tem sessão:
+    // quem chama é a distribuição, e a conta ainda não é "a do request".
+    const existe = await this.ctx.comEscopoSistema('whatsapp.conectar-manual', async (db) => {
+      const [c] = await db
+        .select({ id: conta.id })
+        .from(conta)
+        .where(eq(conta.id, contaId))
+        .limit(1);
+      return Boolean(c);
+    });
+
+    if (!existe) {
+      throw new BadRequestException('Não encontramos esta conta.');
+    }
+
+    this.log.warn(
+      `Conexão manual do WhatsApp na conta ${contaId} (WABA ${dados.wabaId}) — ` +
+        'operação da distribuição, fora do Embedded Signup.',
+    );
+
+    // Daqui para frente é exatamente o caminho do Embedded Signup. A transação
+    // é aberta aqui porque o interceptor só abre contexto em rota autenticada.
+    return this.ctx.comConta(contaId, () =>
+      this.conectarComToken({
+        contaId,
+        atorUsuarioId: null,
+        token: dados.token,
+        // Token informado à mão pode ser permanente (usuário do sistema) ou o
+        // temporário de 24h. Não dá para saber daqui, e chutar seria pior que
+        // não ter: o aviso de vencimento passaria a mentir.
+        expiraEm: null,
+        wabaId: dados.wabaId,
+        phoneNumberId: dados.phoneNumberId ?? '',
+        // Coexistência exige Acesso Avançado, que é justamente o que ainda não
+        // temos. Número de teste é sempre dedicado.
+        coexistencia: false,
+      }),
+    );
+  }
+
+  /**
+   * Conecta uma WABA à conta quando o token do cliente já está em mãos.
+   *
+   * Existe separado do `concluirOnboarding` porque o token pode chegar por dois
+   * caminhos — o Embedded Signup (o normal) e a conexão manual da distribuição
+   * — e **tudo depois do token é idêntico**. Duplicar isso significaria corrigir
+   * defeito em dois lugares e esquecer um; e o que vem depois não é trivial:
+   * ordem de gravação, assinatura de webhook, descoberta do número, registro ou
+   * sincronização, e a trilha de auditoria.
+   *
+   * Roda **dentro de um contexto de conta** já aberto. Quem chama decide: o
+   * onboarding herda a transação do request; a conexão manual abre a própria.
+   */
+  private async conectarComToken(p: ParametrosConexao): Promise<ResultadoOnboarding> {
+    const { contaId, atorUsuarioId, token, expiraEm, wabaId, phoneNumberId, coexistencia } = p;
+
     // 2. Dados da WABA. Se isto falhar, o token é inválido e não adianta seguir.
     const waba = await this.graph.dadosDaWaba(wabaId, token).catch((erro) => {
       if (erro instanceof ErroGraph) {
@@ -275,8 +376,10 @@ export class MetaService {
 
     await this.auditoria.registrar({
       contaId,
-      atorTipo: 'usuario',
-      atorUsuarioId: usuarioId,
+      // Sem usuário, o ator é o sistema: foi a distribuição que conectou, e a
+      // trilha precisa dizer isso em vez de inventar um responsável.
+      atorTipo: atorUsuarioId ? 'usuario' : 'sistema',
+      atorUsuarioId,
       acao: 'whatsapp.conectado',
       entidade: 'wa_conta',
       entidadeId: registro.id,
