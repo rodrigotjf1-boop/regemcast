@@ -9,6 +9,30 @@ Estado dos portões da Meta para o app do Regemcast:
 | App Review — `whatsapp_business_management` | ⏳ pode ser gravado **hoje** |
 | App Review — `whatsapp_business_messaging` | 🔒 **bloqueado**: exige envio funcionando |
 
+## A ordem é da Meta, não nossa
+
+O Regemcast **ainda não é Tech Provider** — quem é, é o app do Regem, e pelo
+fluxo oficial essa condição é do app, não da pessoa. A ordem que a Meta publica
+para virar Tech Provider é esta, e o que importa é onde o App Review aparece:
+
+1. Criar o app ✅
+2. Verificação de negócio ✅
+3. Configuração do app (ícone, política de privacidade, categoria) ✅
+4. **Envio dos vídeos**
+5. **Documentação para o App Review**
+6. **Aprovação → Acesso Avançado**
+7. **Onboarding de Tech Provider no painel do app**
+
+O App Review vem **antes** do onboarding de Tech Provider. E a coexistência
+exige ser Tech Provider (*"You must already be a Solution Partner or Tech
+Provider"*). Logo: **não existe caminho que faça a coexistência funcionar antes
+da análise do app.** Tentamos, em 15/set/2026, e o beco é este.
+
+Consequência prática: o que destrava tudo é o **número de teste** da Meta
+(WhatsApp → Configuração da API), grátis, com WABA própria, até 5 destinatários
+de teste e o modelo `hello_world` pré-aprovado. É contra ele que a Fase 4 nasce
+e os dois vídeos são gravados.
+
 ## Sem Acesso Avançado, ninguém conecta — nem para testar
 
 Confirmado em produção, em 15/set/2026: com o app **Ao vivo** e só Acesso

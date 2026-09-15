@@ -303,12 +303,68 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
             ? 'Depois de conectar, mantenha o WhatsApp Business aberto no celular por alguns minutos: é quando a cópia acontece. O prazo é de 24 horas — passou disso, a Meta desfaz a conexão e você refaz tudo.'
             : 'Se o número já estiver em uso no aplicativo do WhatsApp, a Meta recusa a conexão. Nesse caso, volte e escolha a primeira opção.'}
         </p>
+
+        {modo === 'coexistencia' && <MudancasNoApp />}
       </fieldset>
 
       <Button onClick={abrir} carregando={etapa === 'conectando'}>
         {etapa === 'conectando' ? 'Conectando…' : 'Conectar meu número'}
       </Button>
     </div>
+  );
+}
+
+/**
+ * O que a coexistência tira do WhatsApp Business do cliente.
+ *
+ * Isto não é letra miúda: quem hoje dispara na mão usa **lista de transmissão**,
+ * e a coexistência a deixa somente leitura. Descobrir isso depois de conectar
+ * é descobrir que a ferramenta do dia a dia mudou sem aviso — e a culpa, para
+ * o cliente, é nossa, não da Meta.
+ *
+ * Fica recolhido para não assustar antes da hora, mas fica **na mesma tela da
+ * escolha**, aberto a um clique, porque a decisão é aqui e não dá para voltar
+ * atrás sem refazer o fluxo inteiro.
+ */
+function MudancasNoApp() {
+  return (
+    <details className="rounded-card border border-borda bg-superficie-2 p-3">
+      <summary className="cursor-pointer text-xs font-medium text-tinta marker:text-tinta-suave">
+        O que muda no seu WhatsApp Business
+      </summary>
+
+      <div className="mt-3 space-y-3 text-xs leading-relaxed text-tinta-suave">
+        <div>
+          <p className="font-medium text-tinta">Recursos que deixam de funcionar no celular</p>
+          <ul className="mt-1 list-disc space-y-1 pl-4">
+            <li>
+              <strong>Listas de transmissão</strong> ficam somente leitura — você passa a disparar
+              por aqui, que é justamente o ponto
+            </li>
+            <li>Editar e apagar mensagem deixam de funcionar nas conversas individuais</li>
+            <li>Mensagens temporárias são desativadas nas conversas individuais</li>
+            <li>Visualização única e localização em tempo real também são desativadas</li>
+          </ul>
+        </div>
+
+        <div>
+          <p className="font-medium text-tinta">O que você precisa manter</p>
+          <ul className="mt-1 list-disc space-y-1 pl-4">
+            <li>
+              Abrir o WhatsApp Business no celular ao menos <strong>uma vez a cada 14 dias</strong>,
+              ou a conexão cai
+            </li>
+            <li>O aplicativo na versão 2.24.17 ou mais nova</li>
+          </ul>
+        </div>
+
+        <p>
+          A Meta decide quem pode usar a coexistência olhando o tempo de uso e a qualidade da sua
+          conta. Conta muito nova ou com muitas denúncias pode ser recusada — e nesse caso o
+          caminho é um número dedicado.
+        </p>
+      </div>
+    </details>
   );
 }
 

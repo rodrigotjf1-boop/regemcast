@@ -108,6 +108,24 @@ Estados possíveis:
 | `expirada` | Passou das 24h; a Meta desfaz e o cliente refaz |
 | `falhou` | A Meta recusou — o caso comum é o código `2593109`, o cliente não autorizar o compartilhamento |
 
+### O que a coexistência TIRA do cliente
+
+Isto é material de venda, não detalhe técnico — e está na tela da escolha,
+recolhido num "O que muda no seu WhatsApp Business", mais o lembrete dos 14
+dias fixo no cartão do número:
+
+- **Listas de transmissão ficam somente leitura.** Quem dispara na mão hoje usa
+  exatamente isso. É o item que mais dói, e o que mais justifica o produto.
+- Editar e apagar mensagem param de funcionar nas conversas individuais.
+- Mensagens temporárias, visualização única e localização em tempo real são
+  desativadas nas conversas individuais.
+- O cliente precisa **abrir o aplicativo ao menos uma vez a cada 14 dias**, ou a
+  Meta encerra a conexão.
+- A elegibilidade é julgada pela Meta por conta: *"available only to businesses
+  actively using the WhatsApp Business App, based on Meta's review of account
+  age and messaging quality"*. Conta nova ou com qualidade ruim é recusada, e aí
+  o caminho é número dedicado.
+
 ### O que o cliente precisa saber, e onde ele lê isso
 
 O aplicativo tem que ficar **aberto no celular** durante a cópia. Se fechar
@@ -161,6 +179,12 @@ clássico.
 
 ## O que ainda falta
 
+- **Acesso Avançado — e ele bloqueia a coexistência inteira.** Testado em
+  produção: com Acesso Padrão, o Embedded Signup nunca troca a tela de "digite
+  um número novo" pela de conectar o WhatsApp Business, e a Meta responde
+  `#2655111` ("o app do parceiro não tem as permissões avançadas"). Todos os
+  pré-requisitos documentados estavam satisfeitos — os três webhooks inclusive.
+  Ver [`app-review.md`](./app-review.md) para a ordem forçada pela Meta.
 - **App Review** das permissões `whatsapp_business_management` e
   `whatsapp_business_messaging`: vídeo de tela por permissão + descrição
   escrita. Verificação de Negócio e Verificação de Acesso já estão aprovadas.
