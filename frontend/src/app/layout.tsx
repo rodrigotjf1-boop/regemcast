@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 
-import { ConfigRuntimeScript } from '@/lib/config-runtime';
+import { ConfigRuntimeScript, configDoServidor } from '@/lib/config-runtime';
 
 import './globals.css';
 
@@ -15,7 +15,25 @@ import './globals.css';
  */
 const DESCRITOR = 'Integração via API Oficial do WhatsApp Business';
 
-export const metadata: Metadata = {
+/**
+ * `generateMetadata` em vez de `metadata` estático porque o `metadataBase`
+ * precisa ser lido em TEMPO DE EXECUÇÃO, da mesma variável que o resto da
+ * configuração.
+ *
+ * Sem ele, o Next avisa no boot e resolve as URLs relativas contra
+ * `http://localhost:3011` — então a imagem de prévia do link aponta para a
+ * máquina de quem buildou. O efeito só aparece do lado de fora: alguém
+ * compartilha o link no WhatsApp ou no LinkedIn e a prévia vem quebrada,
+ * sem que nada no servidor registre erro.
+ */
+export function generateMetadata(): Metadata {
+  return {
+    metadataBase: new URL(configDoServidor().appUrl),
+    ...METADATA_COMUM,
+  };
+}
+
+const METADATA_COMUM: Metadata = {
   title: {
     default: 'Regemcast',
     template: '%s · Regemcast',

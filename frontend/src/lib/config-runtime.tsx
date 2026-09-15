@@ -21,12 +21,16 @@
  */
 
 const PADRAO_DEV = 'http://localhost:3010/api/v1';
+/** Endereço público DESTE site. Usado como base das URLs absolutas do metadata. */
+const PADRAO_APP_DEV = 'http://localhost:3011';
 
 /** Chave no `window`. Prefixada para não colidir com nada de biblioteca. */
 export const CHAVE_CONFIG = '__REGEMCAST_CONFIG__';
 
 export interface ConfigRuntime {
   apiUrl: string;
+  /** Base pública do site, para montar URL absoluta de OG image e afins. */
+  appUrl: string;
 }
 
 declare global {
@@ -37,9 +41,12 @@ declare global {
 
 /** Roda no servidor: lê o ambiente do processo. */
 export function configDoServidor(): ConfigRuntime {
-  const bruto =
-    process.env.API_URL_PUBLICA ?? process.env.NEXT_PUBLIC_API_URL ?? PADRAO_DEV;
-  return { apiUrl: bruto.trim().replace(/\/+$/, '') };
+  const api = process.env.API_URL_PUBLICA ?? process.env.NEXT_PUBLIC_API_URL ?? PADRAO_DEV;
+  const app = process.env.APP_URL_PUBLICA ?? PADRAO_APP_DEV;
+  return {
+    apiUrl: api.trim().replace(/\/+$/, ''),
+    appUrl: app.trim().replace(/\/+$/, ''),
+  };
 }
 
 /**
