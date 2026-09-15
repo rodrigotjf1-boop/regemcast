@@ -156,6 +156,26 @@ export default function PoliticaDePrivacidade() {
             nunca são exibidas, nem para o próprio cliente.
           </p>
           <p>
+            <strong className="text-tinta">
+              Quando o cliente escolhe manter o WhatsApp Business no celular
+            </strong>{' '}
+            — o que a Meta chama de coexistência —, a plataforma também nos envia, com
+            autorização dele dada na própria janela da Meta: a lista de contatos do WhatsApp
+            daquele número e o histórico de conversas dos{' '}
+            <strong className="text-tinta">últimos 180 dias</strong>, além de uma cópia das
+            mensagens que ele enviar pelo aplicativo dali em diante. Isso existe para que o
+            atendimento pelo celular e as campanhas enviadas por aqui sejam a mesma conversa,
+            e não duas histórias separadas.
+          </p>
+          <p>
+            Sobre esses dados somos <strong className="text-tinta">operador</strong>: eles
+            pertencem ao cliente e às pessoas que conversaram com ele. Guardamos para operar o
+            serviço, não usamos para nenhuma outra finalidade e apagamos junto com a conta,
+            conforme o prazo da seção 6. O cliente pode recusar o compartilhamento na janela da
+            Meta — nesse caso a conexão continua funcionando para enviar campanhas, apenas sem
+            contatos e histórico trazidos do celular.
+          </p>
+          <p>
             Não usamos dados da Meta para publicidade, não os transferimos para terceiros e não
             os cruzamos com dados de outros clientes.
           </p>

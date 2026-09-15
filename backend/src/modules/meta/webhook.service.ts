@@ -121,6 +121,11 @@ export class WebhookService {
       case 'account_update':
       case 'account_review_update':
         return this.contaAtualizada(mudanca);
+      case 'smb_app_state_sync':
+      case 'history':
+        return this.sincronizacaoDoApp(tipo, mudanca);
+      case 'smb_message_echoes':
+        return this.ecoDeMensagem(mudanca);
       default:
         this.log.debug(`Evento "${tipo}" recebido e guardado, sem tratamento próprio.`);
     }
@@ -198,6 +203,76 @@ export class WebhookService {
           `código ${codigo ?? '—'} · ${traduzido.titulo} · classe ${traduzido.classe}`,
       );
     }
+  }
+
+  /**
+   * Sincronização da coexistência: contatos e histórico do app do celular.
+   *
+   * Chega em FASES (0, 1, 2) — só a última significa concluído. Marcar como
+   * pronto na primeira faria o produto anunciar dado que ainda não chegou.
+   *
+   * O código `2593109` tem significado próprio: o cliente recusou compartilhar.
+   * Não é falha nossa nem da Meta, e a diferença importa — um pede retentativa,
+   * o outro pede conversa com o cliente.
+   */
+  private async sincronizacaoDoApp(tipo: string, m: Mudanca): Promise<void> {
+    const v = m.value ?? {};
+    const phoneNumberId = this.phoneNumberIdDe(m);
+    if (!phoneNumberId) return;
+
+    const erros = Array.isArray(v.errors) ? (v.errors as Array<Record<string, unknown>>) : [];
+    const recusado = erros.some((e) => Number(e.code) === 2593109);
+
+    if (recusado) {
+      await this.marcarSincronizacao(phoneNumberId, 'falhou', 'O cliente não autorizou compartilhar os dados do app.');
+      this.log.warn(
+        `Sincronização recusada pelo cliente no número ${this.mascarar(phoneNumberId)} (2593109).`,
+      );
+      return;
+    }
+
+    // A Meta manda a fase em `chunk_order`/`phase`; a última traz `progress`
+    // completo. Sem um marcador confiável, o seguro é só concluir quando ela
+    // sinalizar o fim — e continuar "sincronizando" enquanto houver dúvida.
+    const fim =
+      v.sync_status === 'COMPLETED' ||
+      v.status === 'COMPLETED' ||
+      Number(v.progress) >= 100;
+
+    if (fim) {
+      await this.marcarSincronizacao(phoneNumberId, 'concluida', null);
+      this.log.log(`Sincronização (${tipo}) concluída no número ${this.mascarar(phoneNumberId)}.`);
+    } else {
+      this.log.debug(`Sincronização (${tipo}) em andamento no número ${this.mascarar(phoneNumberId)}.`);
+    }
+  }
+
+  /**
+   * Eco de mensagem: o cliente respondeu alguém pelo app do celular.
+   *
+   * Por ora só registramos. Na Fase 4 isto passa a importar de verdade: uma
+   * resposta do próprio lojista abre a janela de 24 horas com aquele contato, e
+   * o motor precisa saber disso para escolher entre modelo aprovado e texto
+   * livre.
+   */
+  private async ecoDeMensagem(m: Mudanca): Promise<void> {
+    const phoneNumberId = this.phoneNumberIdDe(m);
+    this.log.debug(
+      `Eco de mensagem do app no número ${phoneNumberId ? this.mascarar(phoneNumberId) : '?'}.`,
+    );
+  }
+
+  private async marcarSincronizacao(
+    phoneNumberId: string,
+    estado: 'concluida' | 'falhou',
+    erro: string | null,
+  ): Promise<void> {
+    await this.ctx.comEscopoSistema('meta.webhook.sincronizacao', async (db) => {
+      await db
+        .update(waNumero)
+        .set({ sincronizacao: estado, sincronizacaoEm: new Date(), sincronizacaoErro: erro })
+        .where(eq(waNumero.phoneNumberId, phoneNumberId));
+    });
   }
 
   private async contaAtualizada(m: Mudanca): Promise<void> {

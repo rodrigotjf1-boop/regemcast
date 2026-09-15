@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 /**
  * O que o Embedded Signup devolve ao navegador.
@@ -19,8 +19,26 @@ export class ConcluirSignupDto {
   @Matches(/^\d{5,30}$/, { message: 'O identificador da conta de WhatsApp é inválido.' })
   wabaId!: string;
 
-  @ApiProperty({ description: 'ID do número comercial.' })
+  /**
+   * Opcional de propósito: no fluxo de coexistência a Meta nem sempre devolve
+   * o `phone_number_id` no `sessionInfo`. Quando faltar, o servidor descobre o
+   * número consultando a WABA — o cliente não digita nada.
+   */
+  @ApiProperty({ required: false, description: 'ID do número comercial.' })
+  @IsOptional()
   @IsString({ message: 'Informe o identificador do número.' })
   @Matches(/^\d{5,30}$/, { message: 'O identificador do número é inválido.' })
-  phoneNumberId!: string;
+  phoneNumberId?: string;
+
+  /**
+   * O cliente escolheu manter o WhatsApp Business no celular (coexistência).
+   * Muda o onboarding: pula o /register e dispara a sincronização de 24h.
+   */
+  @ApiProperty({
+    required: false,
+    description: 'O cliente mantém o WhatsApp Business no celular.',
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'Informe se o número é de coexistência.' })
+  coexistencia?: boolean;
 }

@@ -120,6 +120,19 @@ export interface ConfigSignup {
 export type QualidadeNumero = 'verde' | 'amarela' | 'vermelha' | 'desconhecida';
 export type StatusNumero = 'pendente' | 'registrado' | 'suspenso' | 'removido';
 
+/**
+ * Estado da cópia dos dados do app do celular (coexistência).
+ *
+ * `nao_se_aplica` é o caso do número dedicado — não há app de onde copiar.
+ */
+export type SincronizacaoNumero =
+  | 'nao_se_aplica'
+  | 'pendente'
+  | 'sincronizando'
+  | 'concluida'
+  | 'expirada'
+  | 'falhou';
+
 export interface NumeroWhatsapp {
   phoneNumberId: string;
   telefone: string | null;
@@ -129,6 +142,18 @@ export interface NumeroWhatsapp {
   tierLimite: number | null;
   tierNome: string | null;
   status: StatusNumero;
+  /** O número também segue no app WhatsApp Business do celular. */
+  coexistencia: boolean;
+  sincronizacao: SincronizacaoNumero;
+  sincronizacaoEm: string | null;
+  onboardadoEm: string | null;
+  /**
+   * Horas que faltam para o prazo de 24h da Meta. `null` = não há prazo
+   * correndo. O servidor calcula para a tela não precisar conhecer a regra.
+   */
+  horasParaSincronizar: number | null;
+  /** Teto de mensagens por segundo: 20 na coexistência, 80 no número dedicado. */
+  vazaoMaxima: number;
 }
 
 export interface ContaWhatsapp {
@@ -154,6 +179,8 @@ export interface ResultadoConexao {
   telefone: string | null;
   nome: string | null;
   registrado: boolean;
+  /** O número segue também no app do celular. */
+  coexistencia: boolean;
   /** O que ainda falta o cliente fazer, já em pt-BR. */
   pendencias: string[];
 }

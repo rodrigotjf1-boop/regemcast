@@ -6,6 +6,7 @@ import { Alerta } from '@/components/ui/alerta';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { mensagemDoErro } from '@/lib/api';
+import { cn } from '@/lib/cn';
 import { whatsapp } from '@/lib/servicos';
 import type { ConfigSignup, ResultadoConexao } from '@/lib/tipos';
 
@@ -25,6 +26,13 @@ import type { ConfigSignup, ResultadoConexao } from '@/lib/tipos';
  * registrado ANTES de abrir a janela, e o resultado fica guardado numa ref —
  * estado do React não serve aqui, porque o callback do SDK lê o valor no
  * momento em que dispara, e um `setState` ainda não teria propagado.
+ *
+ * ## Os dois caminhos
+ *
+ * Manter o WhatsApp Business no celular (coexistência) ou usar um número novo
+ * muda o `featureType` que abre a janela da Meta — e não dá para corrigir
+ * depois: é outro fluxo, desde o primeiro clique. Por isso a pergunta vem
+ * ANTES do botão, e não como configuração escondida.
  */
 
 interface SdkFacebook {
@@ -49,15 +57,32 @@ interface InfoDaSessao {
 }
 
 type Etapa = 'carregando' | 'pronto' | 'conectando' | 'concluido' | 'erro';
+type Modo = 'coexistencia' | 'dedicado';
+
+/**
+ * `featureType` que a Meta espera em cada caminho.
+ *
+ * O valor da coexistência é o que faz a janela aceitar um número que já está
+ * em uso no aplicativo. Com string vazia, a Meta trata como número dedicado e
+ * recusa o número do celular com a mensagem de "já registrado" — que foi
+ * exatamente o que travou o primeiro teste.
+ */
+const FEATURE_TYPE: Record<Modo, string> = {
+  coexistencia: 'whatsapp_business_app_onboarding',
+  dedicado: '',
+};
 
 export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
   const [etapa, setEtapa] = useState<Etapa>('carregando');
   const [erro, setErro] = useState('');
   const [resultado, setResultado] = useState<ResultadoConexao | null>(null);
   const [config, setConfig] = useState<ConfigSignup | null>(null);
+  const [modo, setModo] = useState<Modo>('coexistencia');
 
   /** Preenchido pelo postMessage, lido no callback do SDK. Ver comentário acima. */
   const infoRef = useRef<InfoDaSessao>({});
+  /** O modo escolhido, lido dentro do callback do SDK pelo mesmo motivo da ref acima. */
+  const modoRef = useRef<Modo>('coexistencia');
 
   // 1. Busca a configuração e carrega o SDK.
   useEffect(() => {
@@ -89,7 +114,10 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
     function aoReceber(evento: MessageEvent) {
       // Só aceita mensagem vinda do domínio da Meta. Sem esta checagem,
       // qualquer página aberta em outra aba poderia mandar um payload forjado.
-      if (evento.origin !== 'https://www.facebook.com' && evento.origin !== 'https://web.facebook.com') {
+      if (
+        evento.origin !== 'https://www.facebook.com' &&
+        evento.origin !== 'https://web.facebook.com'
+      ) {
         return;
       }
       try {
@@ -99,11 +127,14 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
           data?: InfoDaSessao;
         };
         if (dados.type !== 'WA_EMBEDDED_SIGNUP') return;
+
+        // Guarda cada identificador assim que aparece, em vez de exigir os dois
+        // juntos: na coexistência a Meta pode mandar o `waba_id` sem o
+        // `phone_number_id`, e exigir os dois faria a mensagem inteira ser
+        // descartada — perdendo junto a WABA, que veio.
+        if (dados.data?.waba_id) infoRef.current.waba_id = dados.data.waba_id;
         if (dados.data?.phone_number_id) {
-          infoRef.current = {
-            phone_number_id: dados.data.phone_number_id,
-            waba_id: dados.data.waba_id,
-          };
+          infoRef.current.phone_number_id = dados.data.phone_number_id;
         }
       } catch {
         // A janela manda outras mensagens que não são JSON. Ignorar é o
@@ -115,11 +146,18 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
     return () => window.removeEventListener('message', aoReceber);
   }, []);
 
+  const escolher = useCallback((novo: Modo) => {
+    setModo(novo);
+    modoRef.current = novo;
+  }, []);
+
   const abrir = useCallback(() => {
     if (!config || !window.FB) return;
     setErro('');
     setEtapa('conectando');
     infoRef.current = {};
+
+    const escolhido = modoRef.current;
 
     window.FB.login(
       (resposta) => {
@@ -132,17 +170,22 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
           setErro('A conexão foi cancelada antes de terminar. Você pode tentar de novo.');
           return;
         }
-        if (!phoneNumberId || !wabaId) {
+        if (!wabaId) {
           setEtapa('erro');
-          setErro(
-            'A Meta não informou qual número foi conectado. Feche a janela e tente de novo.',
-          );
+          setErro('A Meta não informou qual conta foi conectada. Feche a janela e tente de novo.');
           return;
         }
 
-        // Direto para o servidor. O código expira em 30 segundos.
+        // O `phone_number_id` pode faltar na coexistência — a Meta documenta
+        // isso. Em vez de barrar o cliente, o servidor descobre o número
+        // perguntando à WABA.
         whatsapp
-          .conectar({ code, wabaId, phoneNumberId })
+          .conectar({
+            code,
+            wabaId,
+            ...(phoneNumberId ? { phoneNumberId } : {}),
+            coexistencia: escolhido === 'coexistencia',
+          })
           .then((r) => {
             setResultado(r);
             setEtapa('concluido');
@@ -157,7 +200,11 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
         config_id: config.configId,
         response_type: 'code',
         override_default_response_type: true,
-        extras: { setup: {}, featureType: '', sessionInfoVersion: '3' },
+        extras: {
+          setup: {},
+          featureType: FEATURE_TYPE[escolhido],
+          sessionInfoVersion: '3',
+        },
       },
     );
   }, [config, aoConectar]);
@@ -177,6 +224,13 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
           <strong>{resultado.nome ?? 'Conta conectada'}</strong>
           {resultado.telefone ? ` · ${resultado.telefone}` : ''}
         </Alerta>
+
+        {resultado.coexistencia && (
+          <Alerta tom="atencao">
+            Deixe o WhatsApp Business aberto no celular pelos próximos minutos. Estamos copiando
+            seus contatos e conversas, e a cópia só acontece com o aplicativo aberto.
+          </Alerta>
+        )}
 
         {resultado.pendencias.length > 0 && (
           <div className="space-y-2">
@@ -198,13 +252,13 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {erro && <Alerta tom="erro">{erro}</Alerta>}
 
       <div className="space-y-2 text-sm leading-relaxed text-tinta-suave">
         <p>
-          Você vai autorizar o Regemcast a enviar pela sua própria conta do WhatsApp Business.
-          A conta continua sendo sua — nós não hospedamos número para ninguém.
+          Você vai autorizar o Regemcast a enviar pela sua própria conta do WhatsApp Business. A
+          conta continua sendo sua — nós não hospedamos número para ninguém.
         </p>
         <p>
           Não é preciso criar conta de desenvolvedor nem manusear chave nenhuma. A janela é da
@@ -212,10 +266,123 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
         </p>
       </div>
 
+      <fieldset className="space-y-3" disabled={etapa === 'conectando'}>
+        <legend className="text-sm font-semibold text-tinta">Como você quer enviar?</legend>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <OpcaoModo
+            valor="coexistencia"
+            atual={modo}
+            aoEscolher={escolher}
+            titulo="Manter meu WhatsApp Business"
+            resumo="Mesmo número, mesmo aplicativo no celular."
+            marcadores={[
+              'Você continua atendendo pelo celular, normalmente',
+              'Seus contatos e conversas são copiados para cá',
+              'Envia até 20 mensagens por segundo',
+            ]}
+            recomendado
+          />
+
+          <OpcaoModo
+            valor="dedicado"
+            atual={modo}
+            aoEscolher={escolher}
+            titulo="Usar um número só para campanhas"
+            resumo="Um número que ainda não está em nenhum WhatsApp."
+            marcadores={[
+              'O número não pode estar em uso no aplicativo',
+              'Começa vazio: sem contatos e sem histórico',
+              'Envia até 80 mensagens por segundo',
+            ]}
+          />
+        </div>
+
+        <p className="text-xs leading-relaxed text-tinta-suave">
+          {modo === 'coexistencia'
+            ? 'Depois de conectar, mantenha o WhatsApp Business aberto no celular por alguns minutos: é quando a cópia acontece. O prazo é de 24 horas — passou disso, a Meta desfaz a conexão e você refaz tudo.'
+            : 'Se o número já estiver em uso no aplicativo do WhatsApp, a Meta recusa a conexão. Nesse caso, volte e escolha a primeira opção.'}
+        </p>
+      </fieldset>
+
       <Button onClick={abrir} carregando={etapa === 'conectando'}>
         {etapa === 'conectando' ? 'Conectando…' : 'Conectar meu número'}
       </Button>
     </div>
+  );
+}
+
+/**
+ * Uma das duas formas de conectar.
+ *
+ * É `<input type="radio">` de verdade, só escondido: assim o grupo anda com as
+ * setas do teclado e o leitor de tela anuncia "opção 1 de 2" sem termos que
+ * reimplementar nada disso com `div` e `aria-*`.
+ */
+function OpcaoModo({
+  valor,
+  atual,
+  aoEscolher,
+  titulo,
+  resumo,
+  marcadores,
+  recomendado,
+}: {
+  valor: Modo;
+  atual: Modo;
+  aoEscolher: (m: Modo) => void;
+  titulo: string;
+  resumo: string;
+  marcadores: string[];
+  recomendado?: boolean;
+}) {
+  const escolhida = atual === valor;
+
+  return (
+    <label
+      className={cn(
+        'flex cursor-pointer flex-col gap-2 rounded-card border p-3 transition',
+        'focus-within:ring-2 focus-within:ring-acento/40',
+        escolhida
+          ? 'border-acento bg-acento-suave'
+          : 'border-borda bg-superficie hover:border-acento/40',
+      )}
+    >
+      <span className="flex items-start gap-2">
+        <input
+          type="radio"
+          name="modo-conexao"
+          value={valor}
+          checked={escolhida}
+          onChange={() => aoEscolher(valor)}
+          className="sr-only"
+        />
+        <span
+          aria-hidden="true"
+          className={cn(
+            'mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border',
+            escolhida ? 'border-acento' : 'border-borda',
+          )}
+        >
+          {escolhida && <span className="h-2 w-2 rounded-full bg-acento" />}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold text-tinta">{titulo}</span>
+          <span className="block text-xs text-tinta-suave">{resumo}</span>
+        </span>
+        {recomendado && (
+          <span className="shrink-0 rounded-full border border-acento/25 bg-superficie px-2 py-0.5 text-[11px] font-medium text-acento-forte">
+            Recomendado
+          </span>
+        )}
+      </span>
+
+      <ul className="list-disc space-y-1 pl-9 text-xs leading-relaxed text-tinta-suave">
+        {marcadores.map((m) => (
+          <li key={m}>{m}</li>
+        ))}
+      </ul>
+    </label>
   );
 }
 

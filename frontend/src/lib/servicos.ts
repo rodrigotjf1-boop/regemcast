@@ -119,7 +119,14 @@ export const conta = {
 export interface DadosConexao {
   code: string;
   wabaId: string;
-  phoneNumberId: string;
+  /**
+   * Opcional porque no fluxo de coexistência a Meta nem sempre devolve o
+   * `phone_number_id` no `sessionInfo`. Quando faltar, o servidor descobre o
+   * número consultando a WABA — o cliente não digita nada.
+   */
+  phoneNumberId?: string;
+  /** O cliente escolheu manter o WhatsApp Business no celular. */
+  coexistencia?: boolean;
 }
 
 /** Corpo de `POST /whatsapp/registrar-numero` (RegistrarNumeroDto). */
