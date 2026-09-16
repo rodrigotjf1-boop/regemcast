@@ -13,7 +13,11 @@
 import { api } from './api';
 import type {
   ConfigSignup,
+  ConfirmacaoDaImportacao,
   ConvitePendente,
+  ListaDeContatos,
+  PaginaDeContatos,
+  PreviaDaImportacao,
   DestinatarioCampanha,
   ModeloDeMensagem,
   NovaCampanha,
@@ -174,4 +178,38 @@ export const whatsapp = {
   /** `POST /whatsapp/registrar-numero` */
   registrarNumero: (dados: DadosRegistroNumero) =>
     api.post<{ registrado: boolean; mensagem: string }>('/whatsapp/registrar-numero', dados),
+};
+
+export const contatos = {
+  /** `GET /contatos` */
+  listar: (pagina = 1, porPagina = 50) =>
+    api.get<PaginaDeContatos>(`/contatos?pagina=${pagina}&porPagina=${porPagina}`),
+
+  /**
+   * `POST /contatos/importacao/arquivo` — prévia a partir de um arquivo.
+   * **Nada é gravado.** O formato sai da extensão, no servidor.
+   */
+  previaDeArquivo: (arquivo: File) =>
+    api.enviarArquivo<PreviaDaImportacao>('/contatos/importacao/arquivo', 'arquivo', arquivo),
+
+  /** `POST /contatos/importacao/texto` — prévia de números colados. */
+  previaDeTexto: (texto: string) =>
+    api.post<PreviaDaImportacao>('/contatos/importacao/texto', { texto }),
+
+  /** `POST /contatos/importacao` — aqui sim os contatos são gravados. */
+  importar: (dados: ConfirmacaoDaImportacao) =>
+    api.post<{ importacaoId: string; gravados: number; jaExistiam: number }>(
+      '/contatos/importacao',
+      dados,
+    ),
+
+  /** `GET /contatos/listas` */
+  listas: () => api.get<ListaDeContatos[]>('/contatos/listas'),
+
+  /** `POST /contatos/listas` */
+  criarLista: (nome: string, descricao?: string) =>
+    api.post<{ id: string }>('/contatos/listas', { nome, descricao }),
+
+  /** `DELETE /contatos/:id` — marca como descadastrado; não apaga. */
+  descadastrar: (id: string) => api.delete<{ ok: boolean }>(`/contatos/${id}`),
 };

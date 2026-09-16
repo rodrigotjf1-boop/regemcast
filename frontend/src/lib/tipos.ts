@@ -256,3 +256,71 @@ export interface ResultadoConexao {
   /** O que ainda falta o cliente fazer, já em pt-BR. */
   pendencias: string[];
 }
+
+// ------------------------------------------------------------------ contatos
+
+/** Um contato da base, como a tela lista. */
+export interface Contato {
+  id: string;
+  nome: string | null;
+  telefone: string;
+  /** `true` quando a pessoa pediu para sair. Ela não recebe mais nada. */
+  optOut: boolean;
+  consentimentoOrigem: string | null;
+  consentimentoEm: string | null;
+  criadoEm: string;
+}
+
+/** `GET /contatos` */
+export interface PaginaDeContatos {
+  total: number;
+  pagina: number;
+  porPagina: number;
+  itens: Contato[];
+}
+
+/** Um público. É o que a campanha vai escolher. */
+export interface ListaDeContatos {
+  id: string;
+  nome: string;
+  descricao: string | null;
+  total: number;
+  criadoEm: string;
+}
+
+/** Uma linha da prévia: já normalizada, ainda não gravada. */
+export interface ContatoDaPrevia {
+  nome: string;
+  telefone: string;
+  /** `false` quando este número já está na base. */
+  novo: boolean;
+  /** `true` quando faltava o código do país e nós acrescentamos. */
+  assumiuPais: boolean;
+}
+
+/** `POST /contatos/importacao/arquivo` e `/texto` — nada foi gravado ainda. */
+export interface PreviaDaImportacao {
+  totalLidos: number;
+  validos: number;
+  invalidos: number;
+  novos: number;
+  jaExistem: number;
+  /** Quantos tiveram o código do país acrescentado por nós. */
+  assumiramPais: number;
+  limite: number;
+  truncado: boolean;
+  contatos: ContatoDaPrevia[];
+  formato: 'vcard' | 'csv' | 'xlsx' | 'texto';
+  arquivoNome?: string;
+}
+
+/** `POST /contatos/importacao` */
+export interface ConfirmacaoDaImportacao {
+  formato: 'vcard' | 'csv' | 'xlsx' | 'texto';
+  arquivoNome?: string;
+  listaId?: string;
+  /** A empresa declara que estes contatos autorizaram. Sem isso, nada entra. */
+  consentimento: boolean;
+  evidencia?: string;
+  contatos: { telefone: string; nome?: string }[];
+}

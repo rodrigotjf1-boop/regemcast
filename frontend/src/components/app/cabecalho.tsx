@@ -13,6 +13,7 @@ const ITENS: ReadonlyArray<{ href: string; rotulo: string }> = [
   { href: '/painel', rotulo: 'Painel' },
   { href: '/whatsapp', rotulo: 'WhatsApp' },
   { href: '/modelos', rotulo: 'Modelos' },
+  { href: '/contatos', rotulo: 'Contatos' },
   { href: '/campanhas', rotulo: 'Campanhas' },
   { href: '/conta', rotulo: 'Conta' },
 ];
