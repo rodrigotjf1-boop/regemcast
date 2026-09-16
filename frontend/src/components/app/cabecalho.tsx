@@ -12,6 +12,7 @@ import { cn } from '@/lib/cn';
 const ITENS: ReadonlyArray<{ href: string; rotulo: string }> = [
   { href: '/painel', rotulo: 'Painel' },
   { href: '/whatsapp', rotulo: 'WhatsApp' },
+  { href: '/modelos', rotulo: 'Modelos' },
   { href: '/conta', rotulo: 'Conta' },
 ];
 

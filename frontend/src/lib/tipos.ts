@@ -172,6 +172,29 @@ export type SituacaoWhatsapp =
   | { conectado: false }
   | { conectado: true; conta: ContaWhatsapp; numeros: NumeroWhatsapp[] };
 
+/**
+ * `GET /whatsapp/modelos`
+ *
+ * `categoria` e `status` chegam em português, mas como **texto livre**: se a
+ * Meta inventar um valor novo, ele aparece cru em vez de sumir. Por isso não
+ * são união de literais aqui — seria uma garantia falsa.
+ */
+export interface ModeloDeMensagem {
+  id: string;
+  nome: string;
+  idioma: string;
+  categoria: string;
+  status: string;
+  /** Por que a Meta recusou. `null` quando não recusou. */
+  motivo: string | null;
+  cabecalho: string | null;
+  corpo: string;
+  rodape: string | null;
+  /** Quantas variáveis o corpo espera — o maior `{{n}}`, não as ocorrências. */
+  variaveis: number;
+  botoes: string[];
+}
+
 /** `POST /whatsapp/conectar` */
 export interface ResultadoConexao {
   wabaId: string;
