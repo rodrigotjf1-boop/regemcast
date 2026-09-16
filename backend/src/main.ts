@@ -7,6 +7,7 @@ import helmet from 'helmet';
 
 import { AppModule } from './app.module';
 import { ErroFilter } from './common/erro.filter';
+import { TelemetriaService } from './modules/telemetria/telemetria.service';
 import { env } from './config/env';
 
 async function bootstrap() {
@@ -38,7 +39,7 @@ async function bootstrap() {
       transformOptions: { enableImplicitConversion: false },
     }),
   );
-  app.useGlobalFilters(new ErroFilter());
+  app.useGlobalFilters(new ErroFilter(app.get(TelemetriaService)));
   app.enableShutdownHooks();
 
   if (env.rede.swagger) {

@@ -31,10 +31,11 @@ import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { paraCloudApi } from '../../common/telefone';
 import { ContextoDb } from '../../db/contexto';
-import { campanha, campanhaDestinatario, conta, waNumero } from '../../db/schema';
+import { assinatura, campanha, campanhaDestinatario, conta, waNumero } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { ErroGraph, GraphService } from '../meta/graph.service';
 import { MetaService } from '../meta/meta.service';
+import { TelemetriaService } from '../telemetria/telemetria.service';
 import type { CriarCampanhaDto } from './dto/criar-campanha.dto';
 import { decidir, momentoNoFuso, type RegraDeEnvio } from './janela';
 
@@ -77,6 +78,7 @@ export class CampanhaService {
     private readonly meta: MetaService,
     private readonly graph: GraphService,
     private readonly auditoria: AuditoriaService,
+    private readonly telemetria: TelemetriaService,
   ) {}
 
   /** Cria a campanha com os destinatários em `pendente`. Nada é enviado aqui. */
@@ -336,9 +338,13 @@ export class CampanhaService {
           maxPorSemana: campanha.maxPorSemana,
           maxPorMes: campanha.maxPorMes,
           fuso: conta.timezone,
+          // O ciclo em que o disparo conta. É o MESMO campo que a tela de Conta
+          // usa para ler o consumo — duas definições de ciclo divergiriam.
+          cicloInicio: assinatura.cicloInicio,
         })
         .from(campanha)
         .innerJoin(conta, eq(conta.id, campanha.contaId))
+        .leftJoin(assinatura, eq(assinatura.contaId, campanha.contaId))
         .where(eq(campanha.id, campanhaId))
         .limit(1);
 
@@ -457,6 +463,8 @@ export class CampanhaService {
         c,
         acesso.phoneNumberId,
         acesso.credencial.token,
+        c.cicloInicio,
+        campanhaId,
       );
     }
 
@@ -528,6 +536,8 @@ export class CampanhaService {
     alvo: { modeloNome: string; modeloIdioma: string },
     phoneNumberId: string,
     token: string,
+    cicloInicio: Date | null,
+    campanhaId: string,
   ): Promise<void> {
     const variaveis = Array.isArray(destinatario.variaveis)
       ? destinatario.variaveis.map((v) => String(v))
@@ -550,17 +560,51 @@ export class CampanhaService {
        * se chegou ao aparelho, quem diz é o webhook. Chamar isto de entregue é
        * a mentira que faz a campanha do Regem marcar 100% de sucesso.
        */
-      await this.ctx.comConta(contaId, (db) =>
-        db
+      /*
+       * O status e o contador na MESMA transação. Separados, uma queda entre os
+       * dois deixaria mensagem enviada sem contar (a cobrança perde) ou contada
+       * sem enviar (o cliente paga pelo que não saiu).
+       *
+       * Até esta mudança, `uso_ciclo.disparos` NUNCA era incrementado: a tela
+       * de Conta mostrava consumo zero para sempre, e a cobrança por faixa de
+       * disparos não tinha contador.
+       *
+       * O upsert com `disparos + 1` é atômico no Postgres: dez envios
+       * simultâneos somam dez, e não um — que é o que um "ler, somar, gravar"
+       * em código faria.
+       */
+      await this.ctx.comConta(contaId, async (db) => {
+        await db
           .update(campanhaDestinatario)
           .set({ status: 'enviada', waMessageId: wamid, enviadaEm: new Date() })
-          .where(eq(campanhaDestinatario.id, destinatario.id)),
-      );
+          .where(eq(campanhaDestinatario.id, destinatario.id));
+
+        if (cicloInicio) {
+          await db.execute(sql`
+            insert into uso_ciclo (conta_id, ciclo_inicio, disparos)
+            values (${contaId}, ${cicloInicio}, 1)
+            on conflict (conta_id, ciclo_inicio)
+            do update set disparos = uso_ciclo.disparos + 1, atualizado_em = now()
+          `);
+        }
+      });
     } catch (erro) {
       const g = erro instanceof ErroGraph ? erro : null;
       const detalhe = g ? g.detalheParaLog : String(erro);
 
       this.log.warn(`Falha ao enviar para ${this.mascarar(destinatario.telefone)}: ${detalhe}`);
+
+      // Sem o telefone: a telemetria agrupa por conta e código, e não precisa
+      // saber para quem era a mensagem.
+      void this.telemetria.registrar({
+        contaId,
+        origem: 'meta',
+        classe: g?.classe ?? null,
+        codigo: g?.codigo ?? null,
+        status: g?.status ?? null,
+        mensagem: detalhe,
+        detalhe: { campanhaId, traceId: g?.traceId ?? null },
+      });
 
       await this.ctx.comConta(contaId, (db) =>
         db
