@@ -270,3 +270,96 @@ export const midia = {
     return null;
   },
 };
+
+// ------------------------------------------------------------- distribuição
+//
+// O console da DISTRIBUIÇÃO. Sessão própria, separada da do cliente: os cookies
+// vivem só em /api/v1/distribuicao, e o navegador nunca os manda para as rotas
+// de cliente.
+
+export interface OperadorLogado {
+  id: string;
+  nome: string;
+  email: string;
+}
+
+export type EtapaLogin = 'codigo' | 'cadastrar_codigo';
+
+export type SituacaoConta = 'ativa' | 'em_risco' | 'inativa' | 'nunca_usou';
+
+export interface ContaNoConsole {
+  id: string;
+  nome: string;
+  cnpj: string | null;
+  contaStatus: string;
+  criadaEm: string;
+  assinaturaStatus: string | null;
+  planoNome: string | null;
+  cicloInicio: string | null;
+  cicloFim: string | null;
+  gratisAte: string | null;
+  usoCiclo: number;
+  teto: number | null;
+  usoPercentual: number | null;
+  ultimoEnvio: string | null;
+  envios30d: number;
+  ultimoLogin: string | null;
+  erros7d: number;
+  whatsappPronto: boolean;
+  situacao: SituacaoConta;
+}
+
+export interface ResumoDoConsole {
+  contas: { total: number; ativas: number; emRisco: number; inativas: number; nuncaUsaram: number };
+  assinaturas: Record<string, number>;
+  disparos: { ciclo: number; ultimos7d: number; ultimas24h: number };
+  erros: { ultimas24h: number; contasAfetadas24h: number };
+  campanhasEmAndamento: number;
+  perto_do_teto: number;
+}
+
+export interface TelemetriaDoConsole {
+  dias: number;
+  porCodigo: {
+    codigo: number | null;
+    classe: string | null;
+    origem: string;
+    ocorrencias: number;
+    contas: number;
+    ultima: string | null;
+  }[];
+  recentes: {
+    id: string;
+    criadoEm: string | null;
+    origem: string;
+    classe: string | null;
+    codigo: number | null;
+    status: number | null;
+    metodo: string | null;
+    rota: string | null;
+    referencia: string | null;
+    mensagem: string | null;
+    contaNome: string | null;
+    contaId: string | null;
+  }[];
+}
+
+/** Sem redirecionar para o login DO CLIENTE no 401: aqui o login é outro. */
+const SEM_REDIRECT_DIST = { redirecionarNo401: false } as const;
+
+export const distribuicao = {
+  eu: () => api.get<OperadorLogado>('/distribuicao/eu', SEM_REDIRECT_DIST),
+  entrar: (email: string, senha: string) =>
+    api.post<{ etapa: EtapaLogin }>('/distribuicao/entrar', { email, senha }, SEM_REDIRECT_DIST),
+  confirmarCodigo: (codigo: string) =>
+    api.post<{ ok: boolean }>('/distribuicao/entrar/codigo', { codigo }, SEM_REDIRECT_DIST),
+  iniciarCodigo: () =>
+    api.post<{ endereco: string; segredo: string }>('/distribuicao/codigo/iniciar', {}, SEM_REDIRECT_DIST),
+  confirmarCadastro: (codigo: string) =>
+    api.post<{ ok: boolean }>('/distribuicao/codigo/confirmar', { codigo }, SEM_REDIRECT_DIST),
+  sair: () => api.post<{ ok: boolean }>('/distribuicao/sair', {}, SEM_REDIRECT_DIST),
+  resumo: () => api.get<ResumoDoConsole>('/distribuicao/resumo', SEM_REDIRECT_DIST),
+  contas: () => api.get<ContaNoConsole[]>('/distribuicao/contas', SEM_REDIRECT_DIST),
+  telemetria: (dias = 7) =>
+    api.get<TelemetriaDoConsole>(`/distribuicao/telemetria?dias=${dias}`, SEM_REDIRECT_DIST),
+};
