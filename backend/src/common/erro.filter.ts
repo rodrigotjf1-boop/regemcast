@@ -35,9 +35,12 @@ import {
   HttpException,
   HttpStatus,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
+
+import { TelemetriaService } from '../modules/telemetria/telemetria.service';
 
 interface CorpoErro {
   mensagem: string;
@@ -98,6 +101,28 @@ interface Traduzido {
 export class ErroFilter implements ExceptionFilter {
   private readonly log = new Logger('Erro');
 
+  /**
+   * Opcional porque o filtro é registrado duas vezes: pela injeção (APP_FILTER)
+   * e à mão no `main.ts`. As duas instâncias recebem a telemetria — senão o
+   * erro seria gravado ou não dependendo de qual delas o tratou.
+   */
+  constructor(@Optional() private readonly telemetria?: TelemetriaService) {}
+
+  /** Grava o que é defeito NOSSO. 4xx é o cliente errando e não é incidente. */
+  private registrar(req: Request, status: number, mensagem: string, referencia?: string) {
+    if (!this.telemetria || status < 500) return;
+    const usuario = (req as Request & { usuario?: { contaId?: string } }).usuario;
+    void this.telemetria.registrar({
+      contaId: usuario?.contaId ?? null,
+      referencia: referencia ?? null,
+      rota: req.url,
+      metodo: req.method,
+      status,
+      origem: 'api',
+      mensagem,
+    });
+  }
+
   catch(excecao: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const res = ctx.getResponse<Response>();
@@ -112,6 +137,7 @@ export class ErroFilter implements ExceptionFilter {
           `${req.method} ${req.url} → ${status}: ${interno ?? mensagem}`,
           excecao.stack,
         );
+        this.registrar(req, status, interno ?? mensagem);
       } else if (interno) {
         // 4xx traduzido: o que a biblioteca escreveu fica aqui, não na tela.
         this.log.debug(`${req.method} ${req.url} → ${status}: ${interno}`);
@@ -133,6 +159,13 @@ export class ErroFilter implements ExceptionFilter {
         (erro?.code ? ` (code ${erro.code})` : '') +
         (erro?.detail ? ` — ${erro.detail}` : ''),
       erro?.stack,
+    );
+
+    this.registrar(
+      req,
+      HttpStatus.INTERNAL_SERVER_ERROR,
+      `${erro?.name ?? 'Erro'}: ${erro?.message ?? String(excecao)}` + (erro?.code ? ` (code ${erro.code})` : ''),
+      referencia,
     );
 
     res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({

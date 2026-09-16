@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { DrizzleModule } from '../../db/drizzle.module';
 import { ContaController } from './conta.controller';
 import { ContaService } from './conta.service';
+import { AssinaturaJob } from './assinatura.job';
 
 /**
  * `DrizzleModule` é global, mas a dependência é declarada mesmo assim: módulo
@@ -13,7 +14,7 @@ import { ContaService } from './conta.service';
 @Module({
   imports: [DrizzleModule],
   controllers: [ContaController],
-  providers: [ContaService],
+  providers: [ContaService, AssinaturaJob],
   exports: [ContaService],
 })
 export class ContaModule {}

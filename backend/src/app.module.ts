@@ -18,6 +18,7 @@ import { ListaEsperaModule } from './modules/lista-espera/lista-espera.module';
 import { CampanhaModule } from './modules/campanha/campanha.module';
 import { MetaModule } from './modules/meta/meta.module';
 import { MidiaModule } from './modules/midia/midia.module';
+import { TelemetriaModule } from './modules/telemetria/telemetria.module';
 import { ModeloModule } from './modules/modelo/modelo.module';
 import { SaudeModule } from './modules/saude/saude.module';
 
@@ -53,6 +54,7 @@ import { SaudeModule } from './modules/saude/saude.module';
         ...(env.producao ? { storage: new ThrottlerStorageRedisService(env.redis.url) } : {}),
       }),
     }),
+    TelemetriaModule,
     AuditoriaModule,
     AuthModule,
     ContaModule,

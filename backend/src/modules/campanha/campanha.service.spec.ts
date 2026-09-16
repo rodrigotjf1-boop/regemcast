@@ -30,7 +30,7 @@ type Encadeavel = Record<string, unknown>;
 
 function consulta(linhas: unknown[], diario: Escrita[], tipo?: 'update' | 'insert'): Encadeavel {
   const alvo: Encadeavel = {};
-  for (const metodo of ['from', 'where', 'orderBy', 'groupBy', 'limit', 'returning', 'innerJoin']) {
+  for (const metodo of ['from', 'where', 'orderBy', 'groupBy', 'limit', 'returning', 'innerJoin', 'leftJoin']) {
     alvo[metodo] = () => alvo;
   }
   alvo.set = (v: Record<string, unknown>) => {
@@ -81,6 +81,7 @@ function montar() {
   };
 
   const registrar = jest.fn().mockResolvedValue(undefined);
+  const telemetria = { registrar: jest.fn().mockResolvedValue(undefined) };
 
   const ctx = {
     db,
@@ -98,9 +99,10 @@ function montar() {
     { registrar, registrarForaDeContexto: jest.fn() } as unknown as ConstructorParameters<
       typeof CampanhaService
     >[3],
+    telemetria as unknown as ConstructorParameters<typeof CampanhaService>[4],
   );
 
-  return { service, db, meta, graph, registrar, diario, consulta: (l: unknown[]) => consulta(l, diario) };
+  return { service, db, meta, graph, registrar, telemetria, diario, consulta: (l: unknown[]) => consulta(l, diario) };
 }
 
 beforeAll(() => {
@@ -223,6 +225,7 @@ describe('rodada do worker', () => {
     maxPorSemana: null,
     maxPorMes: null,
     fuso: 'America/Sao_Paulo',
+    cicloInicio: new Date('2026-09-01T03:00:00Z'),
   };
 
   /** Uma rodada completa: ler, contar, reivindicar, conectar, enviar, concluir. */
@@ -333,5 +336,51 @@ describe('rodada do worker', () => {
     await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
 
     expect(m.graph.enviarModelo).not.toHaveBeenCalled();
+  });
+
+  it('CONTA o disparo no ciclo da assinatura, junto com o status', async () => {
+    // Até esta mudança o contador nunca era incrementado: a tela de Conta
+    // mostrava consumo zero para sempre e a cobrança não tinha o que medir.
+    const m = montar();
+    prepararRodada(m, [{ id: 'd1', telefone_e164: '5521999998888', variaveis: [] }]);
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    const chamadas = m.db.execute.mock.calls.map((c) => JSON.stringify(c[0]));
+    const contagem = chamadas.find((t) => t.includes('uso_ciclo'));
+    expect(contagem).toBeDefined();
+    // Upsert atômico: somar no banco, e nunca ler-somar-gravar em código.
+    expect(contagem).toContain('disparos + 1');
+  });
+
+  it('NÃO conta o disparo que a Meta recusou', async () => {
+    const m = montar();
+    prepararRodada(m, [{ id: 'd1', telefone_e164: '5521999998888', variaveis: [] }]);
+    m.graph.enviarModelo.mockRejectedValueOnce(
+      new ErroGraph({ status: 400, codigo: 131026, traduzido: traduzirErroMeta(131026) }),
+    );
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    const chamadas = m.db.execute.mock.calls.map((c) => JSON.stringify(c[0]));
+    expect(chamadas.find((t) => t.includes('uso_ciclo'))).toBeUndefined();
+  });
+
+  it('manda a recusa da Meta para a telemetria — SEM o telefone', async () => {
+    const m = montar();
+    prepararRodada(m, [{ id: 'd1', telefone_e164: '5521999998888', variaveis: [] }]);
+    m.graph.enviarModelo.mockRejectedValueOnce(
+      new ErroGraph({ status: 400, codigo: 131049, traduzido: traduzirErroMeta(131049) }),
+    );
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(m.telemetria.registrar).toHaveBeenCalledWith(
+      expect.objectContaining({ origem: 'meta', codigo: 131049, contaId: CONTA }),
+    );
+    // A telemetria é da distribuição e agrupa por conta e código. O telefone
+    // de quem ia receber não tem nada a fazer lá.
+    const gravado = JSON.stringify(m.telemetria.registrar.mock.calls[0][0]);
+    expect(gravado).not.toContain('5521999998888');
   });
 });
