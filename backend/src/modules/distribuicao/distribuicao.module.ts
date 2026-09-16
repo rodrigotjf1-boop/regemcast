@@ -3,6 +3,8 @@ import { Module } from '@nestjs/common';
 import { DrizzleModule } from '../../db/drizzle.module';
 import { DistribuicaoAuthController } from './distribuicao-auth.controller';
 import { DistribuicaoAuthService } from './distribuicao-auth.service';
+import { DistribuicaoLeituraController } from './distribuicao-leitura.controller';
+import { DistribuicaoLeituraService } from './distribuicao-leitura.service';
 import { DistribuicaoGuard } from './distribuicao.guard';
 
 /**
@@ -14,8 +16,8 @@ import { DistribuicaoGuard } from './distribuicao.guard';
  */
 @Module({
   imports: [DrizzleModule],
-  controllers: [DistribuicaoAuthController],
-  providers: [DistribuicaoAuthService, DistribuicaoGuard],
+  controllers: [DistribuicaoAuthController, DistribuicaoLeituraController],
+  providers: [DistribuicaoAuthService, DistribuicaoGuard, DistribuicaoLeituraService],
   exports: [DistribuicaoAuthService, DistribuicaoGuard],
 })
 export class DistribuicaoModule {}

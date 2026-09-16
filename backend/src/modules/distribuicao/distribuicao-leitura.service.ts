@@ -1,0 +1,294 @@
+/**
+ * O que o console de distribuição lê: contas, uso e erros.
+ *
+ * ## "Ativa" quer dizer uso, não status de cobrança
+ *
+ * A cobrança ainda não existe: toda assinatura está em `cortesia`. Classificar
+ * por status diria "todas ativas" — verdade no banco e mentira na operação.
+ * Por isso a situação vem do que a conta FAZ:
+ *
+ * - `ativa`      — enviou nos últimos 30 dias
+ * - `em_risco`   — o último envio foi entre 30 e 60 dias atrás
+ * - `inativa`    — mais de 60 dias sem enviar
+ * - `nunca_usou` — nunca enviou uma mensagem
+ *
+ * `em_risco` é a categoria que mais vale no painel: é quem ainda dá para
+ * recuperar com um contato. Quando vira `inativa`, geralmente já foi.
+ *
+ * ## Uma consulta, não uma por conta
+ *
+ * Tudo é agregado no banco. Montar a lista buscando o último envio conta a
+ * conta faria o console, com quinhentos clientes, abrir quinhentas consultas —
+ * e o banco é o mesmo que atende o painel dos clientes.
+ *
+ * ## Todo acesso fica registrado
+ *
+ * Cada leitura grava em `acesso_distribuicao` quem viu o quê. Num console que
+ * mostra todas as contas, "quem abriu estes dados?" é a pergunta que vem depois
+ * de qualquer incidente.
+ */
+import { Injectable } from '@nestjs/common';
+import { sql } from 'drizzle-orm';
+
+import { ContextoDb } from '../../db/contexto';
+
+export type Situacao = 'ativa' | 'em_risco' | 'inativa' | 'nunca_usou';
+
+export interface ContaNoConsole {
+  id: string;
+  nome: string;
+  cnpj: string | null;
+  contaStatus: string;
+  criadaEm: string;
+  assinaturaStatus: string | null;
+  planoNome: string | null;
+  cicloInicio: string | null;
+  cicloFim: string | null;
+  gratisAte: string | null;
+  usoCiclo: number;
+  teto: number | null;
+  /** Uso sobre o teto, de 0 a 100+. Nulo quando não há teto. */
+  usoPercentual: number | null;
+  ultimoEnvio: string | null;
+  envios30d: number;
+  ultimoLogin: string | null;
+  erros7d: number;
+  whatsappPronto: boolean;
+  situacao: Situacao;
+}
+
+export interface ResumoDoConsole {
+  contas: { total: number; ativas: number; emRisco: number; inativas: number; nuncaUsaram: number };
+  assinaturas: Record<string, number>;
+  disparos: { ciclo: number; ultimos7d: number; ultimas24h: number };
+  erros: { ultimas24h: number; contasAfetadas24h: number };
+  campanhasEmAndamento: number;
+  /** Contas acima de 80% do teto: quem vai precisar de plano maior. */
+  perto_do_teto: number;
+}
+
+const iso = (v: unknown): string | null => (v ? new Date(String(v)).toISOString() : null);
+const num = (v: unknown): number => Number(v ?? 0);
+
+/**
+ * A base de tudo: uma linha por conta, com uso, atividade e erros.
+ *
+ * Os CTEs agregam cada tabela UMA vez antes do join. Juntar as tabelas cruas e
+ * agregar no fim multiplicaria as linhas (cada envio × cada erro × cada login)
+ * e as contagens sairiam infladas sem aviso.
+ */
+const BASE = sql`
+  with ultimo_envio as (
+    select conta_id,
+           max(enviada_em) as ultimo,
+           count(*) filter (where enviada_em > now() - interval '30 days') as envios_30d
+      from campanha_destinatario
+     where enviada_em is not null
+     group by conta_id
+  ),
+  ultimo_login as (
+    select conta_id, max(ultimo_login_em) as ultimo
+      from usuario
+     group by conta_id
+  ),
+  erros as (
+    select conta_id, count(*) as erros_7d
+      from evento_erro
+     where criado_em > now() - interval '7 days' and conta_id is not null
+     group by conta_id
+  ),
+  numero as (
+    select conta_id, bool_or(status = 'registrado') as pronto
+      from wa_numero
+     group by conta_id
+  )
+  select c.id, c.nome, c.cnpj, c.status as conta_status, c.criado_em,
+         a.status as assinatura_status, a.ciclo_inicio, a.ciclo_fim, a.gratis_ate,
+         p.nome as plano_nome, p.disparos_mes as teto,
+         coalesce(u.disparos, 0) as uso_ciclo,
+         ue.ultimo as ultimo_envio,
+         coalesce(ue.envios_30d, 0) as envios_30d,
+         ul.ultimo as ultimo_login,
+         coalesce(e.erros_7d, 0) as erros_7d,
+         coalesce(n.pronto, false) as whatsapp_pronto,
+         case
+           when ue.ultimo is null then 'nunca_usou'
+           when ue.ultimo > now() - interval '30 days' then 'ativa'
+           when ue.ultimo > now() - interval '60 days' then 'em_risco'
+           else 'inativa'
+         end as situacao
+    from conta c
+    left join assinatura a on a.conta_id = c.id
+    left join plano p on p.id = coalesce(a.plano_id, c.plano_id)
+    -- O uso é do ciclo CORRENTE: casar só por conta somaria os ciclos passados.
+    left join uso_ciclo u on u.conta_id = c.id and u.ciclo_inicio = a.ciclo_inicio
+    left join ultimo_envio ue on ue.conta_id = c.id
+    left join ultimo_login ul on ul.conta_id = c.id
+    left join erros e on e.conta_id = c.id
+    left join numero n on n.conta_id = c.id
+`;
+
+@Injectable()
+export class DistribuicaoLeituraService {
+  constructor(private readonly ctx: ContextoDb) {}
+
+  async contas(): Promise<ContaNoConsole[]> {
+    return this.ctx.comEscopoSistema('distribuicao.contas', async (db) => {
+      const r = await db.execute(sql`${BASE} order by ue.ultimo desc nulls last, c.criado_em desc limit 500`);
+      return r.rows.map((l: Record<string, unknown>) => {
+        const teto = l.teto === null || l.teto === undefined ? null : num(l.teto);
+        const uso = num(l.uso_ciclo);
+        return {
+          id: String(l.id),
+          nome: String(l.nome),
+          cnpj: (l.cnpj as string) ?? null,
+          contaStatus: String(l.conta_status),
+          criadaEm: iso(l.criado_em)!,
+          assinaturaStatus: (l.assinatura_status as string) ?? null,
+          planoNome: (l.plano_nome as string) ?? null,
+          cicloInicio: iso(l.ciclo_inicio),
+          cicloFim: iso(l.ciclo_fim),
+          gratisAte: iso(l.gratis_ate),
+          usoCiclo: uso,
+          teto,
+          usoPercentual: teto ? Math.round((uso / teto) * 100) : null,
+          ultimoEnvio: iso(l.ultimo_envio),
+          envios30d: num(l.envios_30d),
+          ultimoLogin: iso(l.ultimo_login),
+          erros7d: num(l.erros_7d),
+          whatsappPronto: Boolean(l.whatsapp_pronto),
+          situacao: String(l.situacao) as Situacao,
+        };
+      });
+    });
+  }
+
+  async resumo(): Promise<ResumoDoConsole> {
+    return this.ctx.comEscopoSistema('distribuicao.resumo', async (db) => {
+      const r = await db.execute(sql`
+        with base as (${BASE})
+        select
+          count(*)                                              as total,
+          count(*) filter (where situacao = 'ativa')            as ativas,
+          count(*) filter (where situacao = 'em_risco')         as em_risco,
+          count(*) filter (where situacao = 'inativa')          as inativas,
+          count(*) filter (where situacao = 'nunca_usou')       as nunca_usaram,
+          coalesce(sum(uso_ciclo), 0)                           as disparos_ciclo,
+          count(*) filter (where teto > 0 and uso_ciclo >= teto * 0.8) as perto_do_teto
+        from base
+      `);
+
+      const assinaturas = await db.execute(sql`
+        -- a.status, e não status sem prefixo: conta e assinatura têm as duas
+        -- essa coluna, e o nome sozinho é ambíguo (42702). Pego pelo teste
+        -- ponta a ponta — a verificação isolada do SQL não cobria esta consulta.
+        select coalesce(a.status, 'sem_assinatura') as status, count(*) as total
+          from conta c left join assinatura a on a.conta_id = c.id
+         group by 1
+      `);
+
+      const atividade = await db.execute(sql`
+        select
+          count(*) filter (where enviada_em > now() - interval '7 days')  as ultimos_7d,
+          count(*) filter (where enviada_em > now() - interval '24 hours') as ultimas_24h
+        from campanha_destinatario
+        where enviada_em > now() - interval '7 days'
+      `);
+
+      const erros = await db.execute(sql`
+        select count(*) as total, count(distinct conta_id) as contas
+          from evento_erro
+         where criado_em > now() - interval '24 hours'
+      `);
+
+      const campanhas = await db.execute(sql`
+        select count(*) as total from campanha where status in ('agendada', 'enviando')
+      `);
+
+      const b = r.rows[0] as Record<string, unknown>;
+      const at = atividade.rows[0] as Record<string, unknown>;
+      const er = erros.rows[0] as Record<string, unknown>;
+
+      return {
+        contas: {
+          total: num(b.total),
+          ativas: num(b.ativas),
+          emRisco: num(b.em_risco),
+          inativas: num(b.inativas),
+          nuncaUsaram: num(b.nunca_usaram),
+        },
+        assinaturas: Object.fromEntries(
+          (assinaturas.rows as Record<string, unknown>[]).map((l) => [String(l.status), num(l.total)]),
+        ),
+        disparos: {
+          ciclo: num(b.disparos_ciclo),
+          ultimos7d: num(at.ultimos_7d),
+          ultimas24h: num(at.ultimas_24h),
+        },
+        erros: { ultimas24h: num(er.total), contasAfetadas24h: num(er.contas) },
+        campanhasEmAndamento: num((campanhas.rows[0] as Record<string, unknown>).total),
+        perto_do_teto: num(b.perto_do_teto),
+      };
+    });
+  }
+
+  /**
+   * Telemetria: erros agrupados e os mais recentes.
+   *
+   * Agrupado por código porque é assim que o problema se mostra: um erro 190
+   * em doze contas é UM problema (token vencendo em massa), não doze.
+   */
+  async telemetria(dias = 7) {
+    const janela = Math.min(Math.max(Math.floor(dias), 1), 90);
+
+    return this.ctx.comEscopoSistema('distribuicao.telemetria', async (db) => {
+      const porCodigo = await db.execute(sql`
+        select codigo, classe, origem,
+               count(*) as ocorrencias,
+               count(distinct conta_id) as contas,
+               max(criado_em) as ultima
+          from evento_erro
+         where criado_em > now() - make_interval(days => ${janela})
+         group by codigo, classe, origem
+         order by ocorrencias desc
+         limit 50
+      `);
+
+      const recentes = await db.execute(sql`
+        select e.id, e.criado_em, e.origem, e.classe, e.codigo, e.status,
+               e.metodo, e.rota, e.referencia, e.mensagem, c.nome as conta_nome, e.conta_id
+          from evento_erro e
+          left join conta c on c.id = e.conta_id
+         where e.criado_em > now() - make_interval(days => ${janela})
+         order by e.criado_em desc
+         limit 100
+      `);
+
+      return {
+        dias: janela,
+        porCodigo: (porCodigo.rows as Record<string, unknown>[]).map((l) => ({
+          codigo: l.codigo === null ? null : num(l.codigo),
+          classe: (l.classe as string) ?? null,
+          origem: String(l.origem),
+          ocorrencias: num(l.ocorrencias),
+          contas: num(l.contas),
+          ultima: iso(l.ultima),
+        })),
+        recentes: (recentes.rows as Record<string, unknown>[]).map((l) => ({
+          id: String(l.id),
+          criadoEm: iso(l.criado_em),
+          origem: String(l.origem),
+          classe: (l.classe as string) ?? null,
+          codigo: l.codigo === null ? null : num(l.codigo),
+          status: l.status === null ? null : num(l.status),
+          metodo: (l.metodo as string) ?? null,
+          rota: (l.rota as string) ?? null,
+          referencia: (l.referencia as string) ?? null,
+          mensagem: (l.mensagem as string) ?? null,
+          contaNome: (l.conta_nome as string) ?? null,
+          contaId: (l.conta_id as string) ?? null,
+        })),
+      };
+    });
+  }
+}
