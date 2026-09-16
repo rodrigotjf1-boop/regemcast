@@ -173,6 +173,55 @@ export type SituacaoWhatsapp =
   | { conectado: true; conta: ContaWhatsapp; numeros: NumeroWhatsapp[] };
 
 /**
+ * `GET /campanhas` e `GET /campanhas/:id`
+ *
+ * `porStatus` é contado no banco a cada leitura, não guardado. Contador
+ * denormalizado precisa ser mantido no envio E no webhook, e o dia em que um
+ * dos dois falha o número na tela mente sem ninguém perceber.
+ */
+export interface ResumoCampanha {
+  id: string;
+  nome: string;
+  modeloNome: string;
+  modeloIdioma: string;
+  status: string;
+  criadoEm: string;
+  iniciadaEm: string | null;
+  concluidaEm: string | null;
+  porStatus: Record<string, number>;
+  total: number;
+}
+
+/**
+ * `GET /campanhas/:id/destinatarios`
+ *
+ * `enviada` e `entregue` são estados diferentes: o primeiro diz que a Meta
+ * aceitou, o segundo que chegou ao aparelho. Confundir os dois é o defeito que
+ * faz uma campanha marcar 100% de sucesso com 100% de falha.
+ */
+export interface DestinatarioCampanha {
+  id: string;
+  telefone: string;
+  status: string;
+  erroTitulo: string | null;
+  erroDetalhe: string | null;
+  enviadaEm: string | null;
+  entregueEm: string | null;
+  lidaEm: string | null;
+  falhouEm: string | null;
+}
+
+/** Corpo de `POST /campanhas`. */
+export interface NovaCampanha {
+  nome: string;
+  modeloNome: string;
+  modeloIdioma: string;
+  modeloId?: string;
+  modeloCategoria?: string;
+  destinatarios: Array<{ telefone: string; variaveis?: string[] }>;
+}
+
+/**
  * `GET /whatsapp/modelos`
  *
  * `categoria` e `status` chegam em português, mas como **texto livre**: se a

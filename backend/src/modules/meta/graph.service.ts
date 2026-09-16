@@ -332,6 +332,79 @@ export class GraphService {
   }
 
   /**
+   * Envia uma mensagem de modelo e devolve o `wamid`.
+   *
+   * O `wamid` é o que importa aqui — não o 200. Ele é a única chave que liga
+   * esta mensagem aos webhooks de entrega que chegam depois. Descartá-lo é
+   * exatamente o que faz uma campanha marcar "enviada" e nunca descobrir que
+   * todas falharam.
+   *
+   * `tentativas: 0` de propósito. Retentar envio no mesmo request duplica
+   * mensagem quando o primeiro POST chegou e só a resposta se perdeu — e
+   * mensagem duplicada queima o destinatário e cobra duas vezes. Retentativa é
+   * trabalho de quem tem estado (a fila), não deste método.
+   */
+  async enviarModelo(
+    phoneNumberId: string,
+    dados: {
+      para: string;
+      modelo: string;
+      idioma: string;
+      variaveis: string[];
+    },
+    tokenDoCliente: string,
+  ): Promise<string> {
+    const corpo: Record<string, unknown> = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: dados.para,
+      type: 'template',
+      template: {
+        name: dados.modelo,
+        language: { code: dados.idioma },
+        // Componente de corpo só entra quando há variável: mandar `parameters`
+        // vazio num modelo sem variável faz a Meta recusar com 132000.
+        ...(dados.variaveis.length > 0
+          ? {
+              components: [
+                {
+                  type: 'body',
+                  parameters: dados.variaveis.map((v) => ({ type: 'text', text: v })),
+                },
+              ],
+            }
+          : {}),
+      },
+    };
+
+    const r = await this.chamar<{ messages?: Array<{ id?: string }> }>(
+      `${phoneNumberId}/messages`,
+      { metodo: 'POST', token: tokenDoCliente, corpo, tentativas: 0 },
+    );
+
+    const wamid = r.messages?.[0]?.id;
+    if (!wamid) {
+      // A Meta respondeu 200 sem identificador. Não dá para reconciliar depois,
+      // então é melhor tratar como falha agora do que gravar "enviada" numa
+      // mensagem que nunca terá status.
+      throw new ErroGraph({
+        status: 200,
+        codigo: null,
+        traduzido: {
+          codigo: 0,
+          classe: 'transitorio',
+          titulo: 'A Meta aceitou sem devolver o identificador',
+          explicacao:
+            'A Meta respondeu sem o identificador da mensagem, então não temos como acompanhar a entrega. Vamos tentar de novo.',
+          esperaSegundos: 30,
+        },
+        corpo: r,
+      });
+    }
+    return wamid;
+  }
+
+  /**
    * Modelos de mensagem da WABA.
    *
    * `limit` alto de propósito: a paginação da Graph é por cursor, e uma conta

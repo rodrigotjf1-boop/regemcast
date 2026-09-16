@@ -295,3 +295,68 @@ export const waEvento = pgTable('wa_evento', {
   chaveUq: uniqueIndex('uq_wa_evento_chave').on(t.chaveIdempotencia),
   pendenteIdx: index('idx_wa_evento_pendente').on(t.recebidoEm).where(sql`processado_em is null`),
 }));
+
+/**
+ * Campanha: um disparo.
+ *
+ * O modelo fica gravado **por valor** (nome, idioma, categoria), não só por
+ * referência. Modelo pode ser editado ou excluído na Meta depois, e o registro
+ * do que foi enviado não pode mudar retroativamente — uma campanha que diz
+ * "enviei o modelo X" precisa continuar dizendo isso no ano que vem.
+ */
+export const campanha = pgTable('campanha', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contaId: uuid('conta_id').notNull(),
+  nome: text('nome').notNull(),
+  /** Id do modelo na Meta. Pode sumir de lá; por isso não é a única cópia. */
+  modeloId: text('modelo_id'),
+  modeloNome: text('modelo_nome').notNull(),
+  modeloIdioma: text('modelo_idioma').notNull(),
+  modeloCategoria: text('modelo_categoria'),
+  status: text('status').notNull().default('rascunho'),
+  criadaPor: uuid('criada_por'),
+  iniciadaEm: timestamp('iniciada_em', { withTimezone: true }),
+  concluidaEm: timestamp('concluida_em', { withTimezone: true }),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  contaIdx: index('idx_campanha_conta').on(t.contaId, t.criadoEm),
+}));
+
+/**
+ * Um destinatário da campanha, e o que de fato aconteceu com a mensagem dele.
+ *
+ * `waMessageId` (o `wamid`) é a peça central: é por ele que o webhook de status
+ * encontra esta linha. Sem ele, "enviada" nunca vira "entregue" nem "falhou", e
+ * a campanha mente. É o defeito que o Regem tem hoje.
+ *
+ * Sem contador agregado na campanha, de propósito: contador denormalizado tem
+ * que ser mantido no envio E no webhook, e o dia em que um dos dois falha o
+ * número na tela mente sem ninguém perceber. Contar daqui é sempre verdade.
+ */
+export const campanhaDestinatario = pgTable('campanha_destinatario', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contaId: uuid('conta_id').notNull(),
+  campanhaId: uuid('campanha_id').notNull(),
+  /** E.164 sem o '+': país + DDD + número, só dígitos. */
+  telefoneE164: text('telefone_e164').notNull(),
+  /** Valores das variáveis, em ordem: o primeiro item é `{{1}}`. */
+  variaveis: jsonb('variaveis').notNull().default(sql`'[]'::jsonb`),
+  status: text('status').notNull().default('pendente'),
+  waMessageId: text('wa_message_id'),
+  erroCodigo: integer('erro_codigo'),
+  erroTitulo: text('erro_titulo'),
+  erroDetalhe: text('erro_detalhe'),
+  enviadaEm: timestamp('enviada_em', { withTimezone: true }),
+  entregueEm: timestamp('entregue_em', { withTimezone: true }),
+  lidaEm: timestamp('lida_em', { withTimezone: true }),
+  falhouEm: timestamp('falhou_em', { withTimezone: true }),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  unicoUq: uniqueIndex('idx_campanha_destinatario_unico').on(t.campanhaId, t.telefoneE164),
+  statusIdx: index('idx_campanha_destinatario_status').on(t.campanhaId, t.status),
+  wamidUq: uniqueIndex('idx_campanha_destinatario_wamid')
+    .on(t.waMessageId)
+    .where(sql`wa_message_id is not null`),
+}));

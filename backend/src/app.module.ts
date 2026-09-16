@@ -14,6 +14,7 @@ import { AuditoriaModule } from './modules/auditoria/auditoria.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ContaModule } from './modules/conta/conta.module';
 import { ListaEsperaModule } from './modules/lista-espera/lista-espera.module';
+import { CampanhaModule } from './modules/campanha/campanha.module';
 import { MetaModule } from './modules/meta/meta.module';
 import { SaudeModule } from './modules/saude/saude.module';
 
@@ -54,6 +55,7 @@ import { SaudeModule } from './modules/saude/saude.module';
     ContaModule,
     ListaEsperaModule,
     MetaModule,
+    CampanhaModule,
     SaudeModule,
   ],
   providers: [
