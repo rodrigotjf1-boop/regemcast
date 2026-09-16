@@ -11,6 +11,7 @@ import { mensagemDoErro } from '@/lib/api';
 import { modelos } from '@/lib/servicos';
 import type {
   BotaoDoModelo,
+  FormatoCabecalho,
   CartaoDoModelo,
   CategoriaModelo,
   DadosModelo,
@@ -50,6 +51,15 @@ const VAZIO: DadosModelo = {
 };
 
 const CARTAO_VAZIO: CartaoDoModelo = { imagem: '', corpo: '', botoes: [] };
+
+/** As quatro formas de cabeçalho da Meta, mais "nenhum". */
+const FORMATOS: { valor: FormatoCabecalho | 'NENHUM'; rotulo: string; glifo: string }[] = [
+  { valor: 'NENHUM', rotulo: 'Sem cabeçalho', glifo: '—' },
+  { valor: 'TEXT', rotulo: 'Texto', glifo: 'T' },
+  { valor: 'IMAGE', rotulo: 'Imagem', glifo: '🖼' },
+  { valor: 'VIDEO', rotulo: 'Vídeo', glifo: '▶' },
+  { valor: 'DOCUMENT', rotulo: 'Documento', glifo: '📄' },
+];
 
 /** Quantas variáveis distintas o corpo usa. Serve só para montar os campos. */
 function variaveisDoCorpo(corpo: string): number[] {
@@ -232,38 +242,96 @@ export function EditorModelo({
 
           {!ehCarrossel && (
             <Secao numero={2} titulo="Cabeçalho" opcional problemas={problemasDe('cabecalho')}>
-              <div className="space-y-1.5">
-                <Label htmlFor="m-cabecalho">Título curto acima da mensagem</Label>
-                <Campo
-                  id="m-cabecalho"
-                  valor={dados.cabecalhoTexto ?? ''}
-                  limite={60}
-                  invalido={problemasDe('cabecalho').length > 0}
-                  aoMudar={(v) => {
-                    mudar('cabecalhoTexto', v);
-                    mudar('cabecalhoFormato', v ? 'TEXT' : undefined);
-                  }}
-                  placeholder="Oferta da semana"
-                />
-                <p className="text-xs leading-relaxed text-tinta-suave">
-                  Sem emoji, quebra de linha ou formatação. Pode usar{' '}
-                  <Codigo>{'{{1}}'}</Codigo> uma vez.
-                </p>
+              {/*
+                O cabeçalho da Meta tem quatro formas, e até aqui só a de texto
+                estava na tela. Imagem é a mais usada em campanha de varejo — a
+                foto do produto acima da mensagem —, e não oferecê-la obrigava o
+                cliente a voltar para o WhatsApp Manager, que é justamente o que
+                este módulo existe para evitar.
+              */}
+              <div
+                className="flex flex-wrap gap-1.5"
+                role="radiogroup"
+                aria-label="Tipo de cabeçalho"
+              >
+                {FORMATOS.map((f) => {
+                  const ativo = (dados.cabecalhoFormato ?? 'NENHUM') === f.valor;
+                  return (
+                    <button
+                      key={f.valor}
+                      type="button"
+                      role="radio"
+                      aria-checked={ativo}
+                      onClick={() => {
+                        mudar(
+                          'cabecalhoFormato',
+                          f.valor === 'NENHUM' ? undefined : f.valor,
+                        );
+                        // Limpa o que a outra forma não usa. Mandar para a Meta
+                        // um campo que sobrou da escolha anterior é recusa certa.
+                        if (f.valor !== 'TEXT') {
+                          mudar('cabecalhoTexto', undefined);
+                          mudar('cabecalhoExemplo', undefined);
+                        }
+                        if (f.valor === 'TEXT' || f.valor === 'NENHUM') {
+                          mudar('cabecalhoMidia', undefined);
+                        }
+                      }}
+                      className={[
+                        'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors',
+                        ativo
+                          ? 'border-transparent bg-acento text-acento-contraste'
+                          : 'border-borda bg-superficie text-tinta-suave hover:border-acento hover:text-tinta',
+                      ].join(' ')}
+                    >
+                      <span aria-hidden>{f.glifo}</span>
+                      {f.rotulo}
+                    </button>
+                  );
+                })}
               </div>
 
-              {/\{\{\s*1\s*\}\}/.test(dados.cabecalhoTexto ?? '') && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="m-cab-exemplo">Exemplo do valor no cabeçalho</Label>
-                  <Input
-                    id="m-cab-exemplo"
-                    value={dados.cabecalhoExemplo ?? ''}
-                    onChange={(e) => mudar('cabecalhoExemplo', e.target.value)}
-                    placeholder="Maria"
-                  />
-                  <p className="text-xs text-tinta-suave">
-                    A Meta exige o exemplo quando há variável no cabeçalho.
-                  </p>
-                </div>
+              {dados.cabecalhoFormato && dados.cabecalhoFormato !== 'TEXT' && (
+                <SeletorDeMidia
+                  formato={dados.cabecalhoFormato}
+                  valor={dados.cabecalhoMidia ?? ''}
+                  aoMudar={(v) => mudar('cabecalhoMidia', v)}
+                />
+              )}
+
+              {dados.cabecalhoFormato === 'TEXT' && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="m-cabecalho">Título curto acima da mensagem</Label>
+                    <Campo
+                      id="m-cabecalho"
+                      valor={dados.cabecalhoTexto ?? ''}
+                      limite={60}
+                      invalido={problemasDe('cabecalho').length > 0}
+                      aoMudar={(v) => mudar('cabecalhoTexto', v)}
+                      placeholder="Oferta da semana"
+                    />
+                    <p className="text-xs leading-relaxed text-tinta-suave">
+                      Sem emoji, quebra de linha ou formatação. Pode usar{' '}
+                      <Codigo>{'{{1}}'}</Codigo> uma vez.
+                    </p>
+                  </div>
+
+                  {/\{\{\s*1\s*\}\}/.test(dados.cabecalhoTexto ?? '') && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="m-cab-exemplo">Exemplo do valor no cabeçalho</Label>
+                      <Input
+                        id="m-cab-exemplo"
+                        value={dados.cabecalhoExemplo ?? ''}
+                        onChange={(e) => mudar('cabecalhoExemplo', e.target.value)}
+                        placeholder="Maria"
+                      />
+                      <p className="text-xs text-tinta-suave">
+                        A Meta exige o exemplo quando há variável no cabeçalho.
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
             </Secao>
           )}
@@ -696,6 +764,45 @@ function Cartoes({
           + Cartão
         </Button>
       )}
+    </div>
+  );
+}
+
+/**
+ * Escolha da mídia do cabeçalho.
+ *
+ * Por enquanto só por endereço. O arquivo do computador exige guardar o binário
+ * e trocá-lo por um `header_handle` na Meta antes de submeter o modelo — a Meta
+ * não busca a URL, ela recebe os bytes. Isso pede tabela própria e vem no PR
+ * seguinte; prometer o seletor de arquivo aqui e ele não funcionar seria pior
+ * do que dizer o que falta.
+ */
+function SeletorDeMidia({
+  formato,
+  valor,
+  aoMudar,
+}: {
+  formato: FormatoCabecalho;
+  valor: string;
+  aoMudar: (v: string) => void;
+}) {
+  const rotulo =
+    formato === 'IMAGE' ? 'imagem' : formato === 'VIDEO' ? 'vídeo' : 'documento';
+
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor="m-midia">Endereço {formato === 'DOCUMENT' ? 'do' : 'da'} {rotulo}</Label>
+      <Input
+        id="m-midia"
+        value={valor}
+        onChange={(e) => aoMudar(e.target.value)}
+        placeholder="https://sualoja.com.br/produto.jpg"
+      />
+      <p className="text-xs leading-relaxed text-tinta-suave">
+        A {rotulo} precisa estar acessível publicamente. <strong>Enviar do computador</strong> entra
+        na próxima atualização — a Meta não busca o endereço, ela recebe o arquivo, e isso exige
+        guardarmos o arquivo antes.
+      </p>
     </div>
   );
 }

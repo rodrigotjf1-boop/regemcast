@@ -8,8 +8,16 @@ import { Spinner } from './spinner';
 type Variante = 'primario' | 'secundario' | 'discreto' | 'perigo';
 type Tamanho = 'md' | 'sm';
 
+/**
+ * O hover do primário usa `acento-escuro`, e NÃO `acento-forte`.
+ *
+ * `acento-forte` é o token de TEXTO do acento — ameixa no tema claro, porque
+ * lima não se lê sobre fundo claro. Usá-lo como FUNDO pintava o botão de
+ * ameixa por baixo do texto, que também é ameixa: contraste 1,00, botão mudo
+ * ao passar o mouse. Token de texto e token de fundo são trabalhos diferentes.
+ */
 const VARIANTES: Record<Variante, string> = {
-  primario: 'bg-acento text-acento-contraste hover:bg-acento-forte',
+  primario: 'bg-acento text-acento-contraste hover:bg-acento-escuro active:bg-acento-escuro',
   secundario: 'bg-superficie text-tinta border border-borda hover:bg-superficie-2',
   discreto: 'bg-transparent text-tinta-suave hover:bg-superficie-2 hover:text-tinta',
   perigo: 'bg-transparent text-erro border border-erro/40 hover:bg-erro/10',

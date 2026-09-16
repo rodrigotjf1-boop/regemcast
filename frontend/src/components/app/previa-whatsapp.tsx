@@ -149,9 +149,37 @@ export function PreviaWhatsapp({
         </div>
       </div>
 
-      {/* Moldura do aparelho */}
-      <div className="mx-auto w-full max-w-[17.5rem] rounded-[2rem] bg-tinta p-[3px] shadow-card ring-1 ring-black/10">
-        <div className="overflow-hidden rounded-[1.85rem]" style={{ backgroundColor: c.fundo }}>
+      {/*
+        A moldura do aparelho.
+        Botões laterais, entalhe da câmera e uma borda interna clara: são os
+        três detalhes que fazem o olho reconhecer "celular" antes de ler
+        qualquer coisa. Sem eles, a prévia é um retângulo escuro com conteúdo
+        dentro, e a pessoa julga a mensagem na escala da NOSSA tela, não na do
+        aparelho dela — que é o erro que a prévia existe para evitar.
+      */}
+      <div className="relative mx-auto w-full max-w-[17.5rem]">
+        <span
+          aria-hidden
+          className="absolute -left-[2px] top-[5.5rem] h-10 w-[3px] rounded-l-sm bg-tinta/70"
+        />
+        <span
+          aria-hidden
+          className="absolute -left-[2px] top-[7.6rem] h-7 w-[3px] rounded-l-sm bg-tinta/70"
+        />
+        <span
+          aria-hidden
+          className="absolute -right-[2px] top-[6.2rem] h-14 w-[3px] rounded-r-sm bg-tinta/70"
+        />
+
+        <div className="rounded-[2.2rem] bg-tinta p-[5px] shadow-flutuante ring-1 ring-black/15">
+          <div
+            className="relative overflow-hidden rounded-[1.9rem] ring-1 ring-white/10"
+            style={{ backgroundColor: c.fundo }}
+          >
+            <span
+              aria-hidden
+              className="absolute left-1/2 top-[3px] z-20 h-[18px] w-[72px] -translate-x-1/2 rounded-full bg-tinta"
+            />
           <BarraDeStatus cor={c} />
           <BarraDoTopo cor={c} />
 
@@ -213,7 +241,8 @@ export function PreviaWhatsapp({
             {ehCarrossel && <Carrossel cartoes={dados.cartoes ?? []} cor={c} />}
           </div>
 
-          <BarraDeEntrada cor={c} />
+            <BarraDeEntrada cor={c} />
+          </div>
         </div>
       </div>
 

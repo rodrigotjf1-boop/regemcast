@@ -9,7 +9,7 @@ export default function LayoutApp({ children }: { children: React.ReactNode }) {
     <SessaoProvider>
       <div className="flex min-h-screen flex-col">
         <Cabecalho />
-        <main id="conteudo" className="mx-auto w-full max-w-conteudo flex-1 px-4 py-6 sm:px-6 sm:py-8">
+        <main id="conteudo" className="anima-entrada mx-auto w-full max-w-conteudo flex-1 px-4 py-6 sm:px-6 sm:py-8">
           {children}
         </main>
       </div>

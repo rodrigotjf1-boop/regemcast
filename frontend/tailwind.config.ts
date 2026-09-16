@@ -25,6 +25,7 @@ const config: Config = {
         acento: cor('cor-acento'),
         'acento-forte': cor('cor-acento-forte'),
         'acento-suave': cor('cor-acento-suave'),
+        'acento-escuro': cor('cor-acento-escuro'),
         'acento-contraste': cor('cor-acento-contraste'),
         sucesso: cor('cor-sucesso'),
         atencao: cor('cor-atencao'),
