@@ -16,6 +16,7 @@ import { LIMITE_BOTOES, LIMITE_CORPO, LIMITE_NOME } from '../regras-modelo';
 export const CATEGORIAS = ['MARKETING', 'UTILITY', 'AUTHENTICATION'] as const;
 export const FORMATOS_CABECALHO = ['TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT'] as const;
 export const TIPOS_BOTAO = ['URL', 'PHONE_NUMBER', 'QUICK_REPLY', 'COPY_CODE'] as const;
+export const TIPOS_MODELO = ['simples', 'carrossel'] as const;
 
 export class BotaoDto {
   @ApiProperty({ enum: TIPOS_BOTAO })
@@ -48,7 +49,41 @@ export class BotaoDto {
  * limitado, exemplo do cabeçalho) ficam em `regras-modelo.ts` e rodam no envio,
  * não no salvamento: rascunho pode estar errado, é rascunho.
  */
+export class CartaoDto {
+  @ApiProperty({ required: false, description: 'Referencia da imagem do cartao.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  imagem?: string;
+
+  @ApiProperty()
+  @IsString()
+  @MaxLength(320)
+  corpo!: string;
+
+  @ApiProperty({ required: false, type: [BotaoDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(2)
+  @ValidateNested({ each: true })
+  @Type(() => BotaoDto)
+  botoes?: BotaoDto[];
+}
+
 export class SalvarModeloDto {
+  @ApiProperty({ enum: TIPOS_MODELO, required: false, description: 'simples ou carrossel.' })
+  @IsOptional()
+  @IsIn(TIPOS_MODELO, { message: 'Tipo de modelo nao reconhecido.' })
+  tipo?: (typeof TIPOS_MODELO)[number];
+
+  @ApiProperty({ required: false, type: [CartaoDto], description: 'Cartoes do carrossel.' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => CartaoDto)
+  cartoes?: CartaoDto[];
+
   @ApiProperty({ description: 'Nome técnico: minúsculas, números e underline.' })
   @IsString({ message: 'Dê um nome técnico ao modelo.' })
   @MaxLength(LIMITE_NOME)

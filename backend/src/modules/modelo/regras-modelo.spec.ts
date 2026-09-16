@@ -242,3 +242,87 @@ describe('limites de tamanho', () => {
     expect(problemasDe(m, 'cabecalho').join(' ')).toContain('60');
   });
 });
+
+describe('carrossel', () => {
+  /** Um carrossel mínimo que passa: dois cartões iguais em estrutura. */
+  function carrosselValido(): ModeloParaValidar {
+    const cartao = {
+      imagem: 'midia/1',
+      corpo: 'Hambúrguer artesanal com fritas.',
+      botoes: [{ tipo: 'URL' as const, texto: 'Peça agora', url: 'https://loja.com' }],
+    };
+    return {
+      nome: 'catalogo_semana',
+      idioma: 'pt_BR',
+      categoria: 'MARKETING',
+      tipo: 'carrossel',
+      corpo: 'Olá {{1}}, veja o que separamos para hoje.',
+      corpoExemplos: ['Maria'],
+      cartoes: [cartao, { ...cartao, imagem: 'midia/2' }],
+    };
+  }
+
+  it('passa com dois cartões bem formados', () => {
+    expect(conferirModelo(carrosselValido())).toEqual([]);
+  });
+
+  it('exige pelo menos dois cartões', () => {
+    const m = { ...carrosselValido(), cartoes: [carrosselValido().cartoes![0]] };
+    expect(problemasDe(m, 'cartoes').join(' ')).toContain('2 cartões');
+  });
+
+  it('recusa mais de dez cartões', () => {
+    const base = carrosselValido();
+    const m = { ...base, cartoes: Array.from({ length: 11 }, () => base.cartoes![0]) };
+    expect(problemasDe(m, 'cartoes').join(' ')).toContain('10 cartões');
+  });
+
+  it('cobra imagem e texto de cada cartão', () => {
+    const base = carrosselValido();
+    const m = {
+      ...base,
+      cartoes: [{ ...base.cartoes![0], imagem: '' }, { ...base.cartoes![1], corpo: '' }],
+    };
+    const achados = problemasDe(m, 'cartoes').join(' ');
+    expect(achados).toContain('Cartão 1');
+    expect(achados).toContain('Cartão 2');
+  });
+
+  it('cobra ao menos um botão por cartão', () => {
+    const base = carrosselValido();
+    const m = { ...base, cartoes: base.cartoes!.map((c) => ({ ...c, botoes: [] })) };
+    expect(problemasDe(m, 'cartoes').join(' ')).toContain('pelo menos um botão');
+  });
+
+  it('exige a MESMA estrutura de botões em todos os cartões', () => {
+    // É a recusa que a Meta não explica: ela devolve o carrossel inteiro
+    // recusado, sem dizer qual cartão está diferente.
+    const base = carrosselValido();
+    const m = {
+      ...base,
+      cartoes: [
+        base.cartoes![0],
+        { ...base.cartoes![1], botoes: [{ tipo: 'QUICK_REPLY' as const, texto: 'Quero' }] },
+      ],
+    };
+    expect(problemasDe(m, 'cartoes').join(' ')).toContain('cartão 2 está diferente');
+  });
+
+  it('avisa que carrossel não tem cabeçalho, rodapé nem oferta', () => {
+    const m: ModeloParaValidar = {
+      ...carrosselValido(),
+      cabecalhoFormato: 'TEXT',
+      cabecalhoTexto: 'Oferta',
+      rodape: 'Válido hoje',
+      ltoAtivo: true,
+    };
+    expect(problemasDe(m, 'cabecalho')).not.toHaveLength(0);
+    expect(problemasDe(m, 'rodape')).not.toHaveLength(0);
+    expect(problemasDe(m, 'lto')).not.toHaveLength(0);
+  });
+
+  it('continua cobrando as regras de variável do corpo principal', () => {
+    const m = { ...carrosselValido(), corpo: 'Veja o que separamos {{1}}' };
+    expect(problemasDe(m, 'corpo').join(' ')).toContain('terminar');
+  });
+});

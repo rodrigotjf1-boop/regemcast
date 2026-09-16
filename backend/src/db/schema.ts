@@ -461,6 +461,8 @@ export const contatoListaItem = pgTable('contato_lista_item', {
 export const modelo = pgTable('modelo', {
   id: uuid('id').primaryKey().defaultRandom(),
   contaId: uuid('conta_id').notNull(),
+  /** simples | carrossel. Carrossel não tem cabeçalho, rodapé nem oferta. */
+  tipo: text('tipo').notNull().default('simples'),
   /** Nome técnico da Meta: minúsculas, números e '_'. */
   nome: text('nome').notNull(),
   idioma: text('idioma').notNull().default('pt_BR'),
@@ -482,6 +484,8 @@ export const modelo = pgTable('modelo', {
   /** Oferta por tempo limitado: só MARKETING, e proíbe rodapé e cabeçalho de texto. */
   ltoAtivo: boolean('lto_ativo').notNull().default(false),
   ltoTexto: text('lto_texto'),
+  /** Os cartões do carrossel, em ordem: { imagem, corpo, botoes[] }. */
+  cartoes: jsonb('cartoes').notNull().default(sql`'[]'::jsonb`),
   status: text('status').notNull().default('rascunho'),
   motivo: text('motivo'),
   metaTemplateId: text('meta_template_id'),

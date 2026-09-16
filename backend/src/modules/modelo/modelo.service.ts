@@ -24,13 +24,20 @@ import {
   conferirModelo,
   quantasVariaveis,
   type BotaoDoModelo,
+  type CartaoDoModelo,
   type ModeloParaValidar,
   type ProblemaNoModelo,
 } from './regras-modelo';
 
-/** Um modelo como a tela lista. */
+/**
+ * Um modelo como a tela lista.
+ *
+ * Vem INTEIRO, e nao so o resumo, porque a tela precisa reabrir o rascunho para
+ * edicao. Rascunho que nao da para reabrir nao e rascunho.
+ */
 export interface ResumoModelo {
   id: string;
+  tipo: string;
   nome: string;
   idioma: string;
   categoria: string;
@@ -39,8 +46,15 @@ export interface ResumoModelo {
   status: string;
   motivo: string | null;
   corpo: string;
+  cabecalhoFormato: string | null;
   cabecalhoTexto: string | null;
+  cabecalhoExemplo: string | null;
+  corpoExemplos: string[];
   rodape: string | null;
+  botoes: unknown[];
+  cartoes: unknown[];
+  ltoAtivo: boolean;
+  ltoTexto: string | null;
   /** Quantas variáveis distintas o corpo usa. */
   variaveis: number;
   criadoEm: Date;
@@ -73,6 +87,7 @@ export class ModeloService {
 
       return linhas.map((l) => ({
         id: l.id,
+        tipo: l.tipo,
         nome: l.nome,
         idioma: l.idioma,
         categoria: l.categoria,
@@ -80,8 +95,15 @@ export class ModeloService {
         status: l.status,
         motivo: l.motivo,
         corpo: l.corpo,
+        cabecalhoFormato: l.cabecalhoFormato,
         cabecalhoTexto: l.cabecalhoTexto,
+        cabecalhoExemplo: l.cabecalhoExemplo,
+        corpoExemplos: (l.corpoExemplos as string[]) ?? [],
         rodape: l.rodape,
+        botoes: (l.botoes as unknown[]) ?? [],
+        cartoes: (l.cartoes as unknown[]) ?? [],
+        ltoAtivo: l.ltoAtivo,
+        ltoTexto: l.ltoTexto,
         variaveis: quantasVariaveis(l.corpo),
         criadoEm: l.criadoEm,
       }));
@@ -108,6 +130,8 @@ export class ModeloService {
       const valores = {
         contaId,
         nome,
+        tipo: dto.tipo ?? 'simples',
+        cartoes: dto.cartoes ?? [],
         idioma: dto.idioma ?? 'pt_BR',
         categoria: dto.categoria ?? 'MARKETING',
         cabecalhoFormato: dto.cabecalhoFormato ?? null,
@@ -297,6 +321,8 @@ export class ModeloService {
   /** O DTO no formato que as regras entendem. */
   private paraValidacao(dto: SalvarModeloDto): ModeloParaValidar {
     return {
+      tipo: dto.tipo ?? 'simples',
+      cartoes: (dto.cartoes ?? []) as CartaoDoModelo[],
       nome: dto.nome ?? '',
       idioma: dto.idioma ?? 'pt_BR',
       categoria: (dto.categoria ?? 'MARKETING') as ModeloParaValidar['categoria'],
@@ -326,6 +352,41 @@ export class ModeloService {
   private montarComponentes(dto: SalvarModeloDto): Record<string, unknown> {
     const componentes: Record<string, unknown>[] = [];
     const ehLto = !!dto.ltoAtivo;
+
+    // O carrossel é outra forma, não uma variação: BODY (o balão que aparece
+    // acima) seguido de um CAROUSEL com os cartões. Sem cabeçalho, sem rodapé,
+    // sem oferta — por isso sai por um caminho próprio em vez de acumular
+    // condicionais no caminho do modelo simples.
+    if (dto.tipo === 'carrossel') {
+      const corpoCarrossel: Record<string, unknown> = { type: 'BODY', text: dto.corpo };
+      const exemplosCarrossel = (dto.corpoExemplos ?? []).filter((e) => (e ?? '').trim().length > 0);
+      if (exemplosCarrossel.length) {
+        corpoCarrossel.example = { body_text: [exemplosCarrossel] };
+      }
+      componentes.push(corpoCarrossel);
+
+      componentes.push({
+        type: 'CAROUSEL',
+        cards: (dto.cartoes ?? []).map((cartao) => ({
+          components: [
+            {
+              type: 'HEADER',
+              format: 'IMAGE',
+              example: { header_handle: [cartao.imagem] },
+            },
+            { type: 'BODY', text: cartao.corpo },
+            { type: 'BUTTONS', buttons: this.montarBotoes((cartao.botoes ?? []) as BotaoDoModelo[]) },
+          ],
+        })),
+      });
+
+      return {
+        name: dto.nome,
+        language: dto.idioma ?? 'pt_BR',
+        category: dto.categoria ?? 'MARKETING',
+        components: componentes,
+      };
+    }
 
     if (dto.cabecalhoFormato === 'TEXT' && !ehLto) {
       const cabecalho: Record<string, unknown> = {
