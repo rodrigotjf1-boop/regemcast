@@ -463,6 +463,108 @@ export class GraphService {
   }
 
   /**
+   * Envia um arquivo à Meta e devolve o `header_handle` do modelo.
+   *
+   * A Meta NÃO busca a URL da mídia de um modelo: ela recebe os bytes, por um
+   * protocolo de upload em DOIS passos (Resumable Upload API):
+   *
+   * 1. `POST /{app-id}/uploads` abre uma sessão e devolve o id dela.
+   * 2. `POST /{sessão}` com os bytes crus devolve o handle (`h`).
+   *
+   * O segundo passo foge ao resto da Graph em dois detalhes que derrubam quem
+   * reaproveita o cliente JSON: o cabeçalho é `Authorization: OAuth …` (e não
+   * `Bearer`), e o corpo é o arquivo cru, com `file_offset` indicando de onde
+   * começar. Por isso este método não passa por `chamar()`.
+   *
+   * O token é o do APP, não o do cliente: a sessão de upload pertence ao app.
+   */
+  async enviarMidiaParaModelo(conteudo: Buffer, tipoMime: string): Promise<string> {
+    if (!env.meta.appId || !env.meta.appSecret) {
+      throw new ErroGraph({
+        status: 0,
+        codigo: null,
+        traduzido: {
+          codigo: 0,
+          classe: 'config',
+          titulo: 'Envio de mídia indisponível',
+          explicacao:
+            'O envio de arquivos à Meta não está configurado neste servidor. Use o endereço da imagem por enquanto.',
+          esperaSegundos: 0,
+        },
+        corpo: { error: { message: 'META_APP_ID ou META_APP_SECRET ausentes' } },
+      });
+    }
+
+    // Passo 1: abrir a sessão.
+    const sessao = await this.chamar<{ id: string }>(`${env.meta.appId}/uploads`, {
+      metodo: 'POST',
+      query: { file_length: conteudo.length, file_type: tipoMime },
+      tentativas: 0,
+    });
+
+    if (!sessao?.id) {
+      throw new ErroGraph({
+        status: 0,
+        codigo: null,
+        traduzido: traduzirErroMeta(null, 'A Meta não abriu a sessão de upload.'),
+        corpo: sessao,
+      });
+    }
+
+    // Passo 2: os bytes crus. `OAuth` e não `Bearer` — é o formato que esta rota
+    // específica aceita.
+    let resposta: Response;
+    try {
+      resposta = await fetch(`${this.base}/${sessao.id}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `OAuth ${this.tokenDoApp}`,
+          file_offset: '0',
+        },
+        // O fetch do Node aceita Uint8Array; o tipo de Buffer da versão atual
+        // não casa com BodyInit, embora seja o mesmo dado em tempo de execução.
+        body: new Uint8Array(conteudo),
+        signal: AbortSignal.timeout(60_000),
+      });
+    } catch (erro) {
+      const e = erro as Error;
+      throw new ErroGraph({
+        status: 0,
+        codigo: null,
+        traduzido: {
+          codigo: 0,
+          classe: 'transitorio',
+          titulo: 'Não conseguimos enviar o arquivo à Meta',
+          explicacao: 'A conexão caiu durante o envio do arquivo. Tente de novo.',
+          esperaSegundos: 30,
+        },
+        corpo: { error: { message: `${e?.name ?? 'Erro'}: ${e?.message ?? String(erro)}` } },
+      });
+    }
+
+    const texto = await resposta.text().catch(() => '');
+    let dados: { h?: string } & Record<string, unknown> = {};
+    try {
+      dados = texto ? JSON.parse(texto) : {};
+    } catch {
+      dados = { error: { message: texto.slice(0, 500) } };
+    }
+
+    if (!resposta.ok || !dados.h) {
+      const codigo = codigoDoErro(dados);
+      throw new ErroGraph({
+        status: resposta.status,
+        codigo,
+        traduzido: traduzirErroMeta(codigo, mensagemDoErroMeta(dados)),
+        traceId: resposta.headers.get('x-fb-trace-id') ?? undefined,
+        corpo: dados,
+      });
+    }
+
+    return dados.h;
+  }
+
+  /**
    * Pede à Meta a sincronização dos dados do app do celular (coexistência).
    *
    * Os dados NÃO voltam nesta resposta: ela só enfileira o pedido, e o

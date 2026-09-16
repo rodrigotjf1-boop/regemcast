@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 
+import { midia } from '@/lib/servicos';
 import type { DadosModelo } from '@/lib/tipos';
 
 /**
@@ -188,6 +189,14 @@ export function PreviaWhatsapp({
             style={{ backgroundColor: c.fundo, backgroundImage: c.papel }}
           >
             <Balao cor={c} temBotoes={botoes.length > 0}>
+              {!ehCarrossel && dados.cabecalhoFormato && dados.cabecalhoFormato !== 'TEXT' && (
+                <MidiaDoCabecalho
+                  formato={dados.cabecalhoFormato}
+                  referencia={dados.cabecalhoMidia}
+                  cor={c}
+                />
+              )}
+
               {dados.ltoAtivo && !ehCarrossel && (
                 <p className="text-[0.72rem] font-semibold" style={{ color: c.botao }}>
                   ⏳ {dados.ltoTexto?.trim() || 'Oferta!'} · termina em 23:59
@@ -303,6 +312,65 @@ function BarraDoTopo({ cor }: { cor: Cor }) {
   );
 }
 
+/**
+ * A mídia no topo do balão, como o WhatsApp mostra.
+ *
+ * Imagem aparece de verdade — é o que a pessoa precisa conferir. Vídeo e
+ * documento aparecem como o WhatsApp os desenha antes de tocar: um quadro com
+ * o botão de play, e uma faixa com o ícone do arquivo.
+ */
+function MidiaDoCabecalho({
+  formato,
+  referencia,
+  cor,
+}: {
+  formato: string;
+  referencia?: string;
+  cor: Cor;
+}) {
+  const endereco = referencia ? midia.endereco(referencia) : null;
+
+  if (formato === 'IMAGE') {
+    return (
+      <div
+        className="-mx-1 -mt-1 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-[0.35rem] text-[0.65rem]"
+        style={{ backgroundColor: cor.placeholder, color: cor.secundario }}
+      >
+        {endereco ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={endereco} alt="" className="h-full w-full object-cover" />
+        ) : (
+          'Escolha a imagem'
+        )}
+      </div>
+    );
+  }
+
+  if (formato === 'VIDEO') {
+    return (
+      <div className="-mx-1 -mt-1 flex aspect-video items-center justify-center rounded-[0.35rem] bg-black/80">
+        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-sm text-black">
+          ▶
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="-mx-1 -mt-1 flex items-center gap-2 rounded-[0.35rem] px-2 py-2"
+      style={{ backgroundColor: cor.placeholder }}
+    >
+      <span className="text-base" aria-hidden>
+        📄
+      </span>
+      <span className="truncate text-[0.72rem]" style={{ color: cor.texto }}>
+        {referencia ? 'documento.pdf' : 'Escolha o documento'}
+      </span>
+    </div>
+  );
+}
+
 /** O balão da mensagem recebida, com a ponta à esquerda. */
 function Balao({
   cor,
@@ -354,10 +422,15 @@ function Carrossel({
           style={{ backgroundColor: cor.cartao }}
         >
           <div
-            className="flex h-[5.5rem] items-center justify-center text-[0.6rem]"
+            className="flex h-[5.5rem] items-center justify-center overflow-hidden text-[0.6rem]"
             style={{ backgroundColor: cor.placeholder, color: cor.secundario }}
           >
-            {c.imagem ? '🖼 imagem' : 'sem imagem'}
+            {c.imagem && midia.endereco(c.imagem) ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={midia.endereco(c.imagem)!} alt="" className="h-full w-full object-cover" />
+            ) : (
+              'sem imagem'
+            )}
           </div>
           <p
             className="line-clamp-3 px-2 py-1.5 text-[0.72rem] leading-snug"

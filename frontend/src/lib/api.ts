@@ -24,6 +24,17 @@ function base(): string {
   return configDoCliente().apiUrl;
 }
 
+/**
+ * Endereço absoluto de uma rota da API, para uso em `<img src>`.
+ *
+ * Existe para a prévia de mídia: a imagem que o cliente acabou de enviar ainda
+ * não tem endereço público — está só no nosso banco, atrás da autenticação. O
+ * cookie de sessão vai junto porque web e API estão no mesmo site.
+ */
+export function enderecoDaApi(caminho: string): string {
+  return `${base()}${caminho}`;
+}
+
 export interface CorpoErro {
   mensagem?: string;
   referencia?: string;

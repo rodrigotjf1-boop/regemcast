@@ -388,6 +388,7 @@ export interface ModeloSalvo {
   cabecalhoFormato: FormatoCabecalho | null;
   cabecalhoTexto: string | null;
   cabecalhoExemplo: string | null;
+  cabecalhoMidia: string | null;
   corpoExemplos: string[];
   rodape: string | null;
   botoes: BotaoDoModelo[];
