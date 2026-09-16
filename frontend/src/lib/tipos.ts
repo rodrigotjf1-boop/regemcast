@@ -219,6 +219,16 @@ export interface NovaCampanha {
   modeloId?: string;
   modeloCategoria?: string;
   destinatarios: Array<{ telefone: string; variaveis?: string[] }>;
+  /** 0 = domingo … 6 = sábado. Vazio = qualquer dia. */
+  janelaDias?: number[];
+  /** HH:MM, no fuso da conta. */
+  janelaInicio?: string;
+  janelaFim?: string;
+  /** Segundos entre uma mensagem e a próxima. */
+  pausaSegundos?: number;
+  maxPorDia?: number;
+  maxPorSemana?: number;
+  maxPorMes?: number;
 }
 
 /**

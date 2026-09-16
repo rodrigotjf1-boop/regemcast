@@ -163,6 +163,9 @@ export const campanhas = {
 
   /** `POST /campanhas/:id/disparar` — só funciona uma vez. */
   disparar: (id: string) => api.post<ResumoCampanha>(`/campanhas/${id}/disparar`, {}),
+
+  /** `POST /campanhas/:id/retomar` — volta a enviar uma campanha pausada. */
+  retomar: (id: string) => api.post<ResumoCampanha>(`/campanhas/${id}/retomar`, {}),
 };
 
 export const whatsapp = {

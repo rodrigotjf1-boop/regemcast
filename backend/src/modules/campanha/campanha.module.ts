@@ -4,6 +4,7 @@ import { DrizzleModule } from '../../db/drizzle.module';
 import { MetaModule } from '../meta/meta.module';
 import { CampanhaController } from './campanha.controller';
 import { CampanhaService } from './campanha.service';
+import { CampanhaWorker } from './campanha.worker';
 
 /**
  * `MetaModule` entra pelo token do cliente e pelo cliente da Graph — os dois
@@ -13,7 +14,7 @@ import { CampanhaService } from './campanha.service';
 @Module({
   imports: [DrizzleModule, MetaModule],
   controllers: [CampanhaController],
-  providers: [CampanhaService],
+  providers: [CampanhaService, CampanhaWorker],
   exports: [CampanhaService],
 })
 export class CampanhaModule {}

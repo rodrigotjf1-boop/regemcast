@@ -27,15 +27,32 @@
  * recusa explícita em vez de timeout no meio.
  */
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, count, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { paraCloudApi } from '../../common/telefone';
 import { ContextoDb } from '../../db/contexto';
-import { campanha, campanhaDestinatario, waNumero } from '../../db/schema';
+import { campanha, campanhaDestinatario, conta, waNumero } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { ErroGraph, GraphService } from '../meta/graph.service';
 import { MetaService } from '../meta/meta.service';
 import type { CriarCampanhaDto } from './dto/criar-campanha.dto';
+import { decidir, momentoNoFuso, type RegraDeEnvio } from './janela';
+
+/** Estados em que a campanha ainda tem trabalho para o worker. */
+const ESTADOS_ATIVOS = ['agendada', 'enviando'] as const;
+
+/**
+ * Quantas mensagens por rodada, no máximo.
+ *
+ * Pequeno de propósito: a rodada fala com a Meta uma vez por destinatário, e
+ * uma rodada longa atrasa as campanhas de todas as outras contas que esperam
+ * a vez. Vinte por rodada, a cada poucos segundos, mantém a fila andando para
+ * todo mundo.
+ */
+const LOTE_POR_RODADA = 20;
+
+/** Depois de quanto tempo um destinatário em "enviando" é considerado preso. */
+const MINUTOS_PRESO = 10;
 
 export interface ResumoCampanha {
   id: string;
@@ -105,6 +122,20 @@ export class CampanhaService {
       );
     }
 
+    // O banco também barra tetos fora de ordem (constraint da migration 011),
+    // mas o erro dele chegaria como 500. Conferir aqui devolve a frase certa.
+    const tetos = [dto.maxPorDia, dto.maxPorSemana, dto.maxPorMes];
+    const [dia, semana, mes] = tetos;
+    if (
+      (dia && semana && dia > semana) ||
+      (semana && mes && semana > mes) ||
+      (dia && mes && dia > mes)
+    ) {
+      throw new BadRequestException(
+        'Os limites precisam ser crescentes: o do dia não pode passar o da semana, nem o da semana o do mês.',
+      );
+    }
+
     const [criada] = await this.ctx.db
       .insert(campanha)
       .values({
@@ -116,6 +147,16 @@ export class CampanhaService {
         modeloCategoria: dto.modeloCategoria ?? null,
         status: 'rascunho',
         criadaPor: usuarioId,
+        janelaDias: dto.janelaDias ?? [],
+        // Só grava a janela quando vier COMPLETA. Início sem fim não é uma
+        // regra: é um formulário pela metade, e tratá-lo como janela deixaria
+        // a campanha parada por uma decisão que ninguém tomou.
+        janelaInicio: dto.janelaInicio && dto.janelaFim ? dto.janelaInicio : null,
+        janelaFim: dto.janelaInicio && dto.janelaFim ? dto.janelaFim : null,
+        pausaSegundos: dto.pausaSegundos ?? 0,
+        maxPorDia: dto.maxPorDia ?? null,
+        maxPorSemana: dto.maxPorSemana ?? null,
+        maxPorMes: dto.maxPorMes ?? null,
       })
       .returning({ id: campanha.id });
 
@@ -146,12 +187,22 @@ export class CampanhaService {
   }
 
   /**
-   * Dispara a campanha.
+   * Dispara a campanha — isto é, AGENDA.
    *
-   * Cada destinatário é tratado isoladamente: uma falha não interrompe os
-   * outros, e o motivo real fica gravado na linha dele. Interromper tudo no
-   * primeiro erro é o que faz uma campanha parar por causa de um número
-   * inválido no meio da lista.
+   * Nenhuma mensagem sai dentro deste request. A campanha vira `agendada` e o
+   * worker a envia, rodada a rodada, respeitando janela, pausa e tetos.
+   *
+   * Duas razões para não enviar aqui, e as duas são defeitos que o envio
+   * síncrono tinha:
+   *
+   * 1. Respeitar "só das 9 às 20" é impossível dentro do request: se a janela
+   *    está fechada, alguém precisa enviar depois.
+   * 2. O request segurava uma conexão de banco durante TODAS as chamadas à
+   *    Meta. Com dez destinatários era tolerável; numa campanha de verdade, é
+   *    o que esgota o pool e derruba o painel de todas as contas.
+   *
+   * Tudo que pode falhar de forma previsível é conferido AGORA, para o cliente
+   * receber o erro na tela e não descobrir uma campanha parada horas depois.
    */
   async disparar(
     contaId: string,
@@ -173,35 +224,18 @@ export class CampanhaService {
       throw new BadRequestException('Conecte sua conta do WhatsApp antes de disparar.');
     }
 
-    const numero = await this.numeroDeEnvio(contaId);
+    // Falha cedo: sem número registrado a campanha ficaria agendada para sempre.
+    await this.numeroDeEnvio(contaId);
 
     await this.ctx.db
       .update(campanha)
-      .set({ status: 'enviando', iniciadaEm: new Date() })
+      .set({ status: 'agendada', iniciadaEm: new Date() })
       .where(eq(campanha.id, campanhaId));
 
-    const pendentes = await this.ctx.db
-      .select({
-        id: campanhaDestinatario.id,
-        telefone: campanhaDestinatario.telefoneE164,
-        variaveis: campanhaDestinatario.variaveis,
-      })
+    const [{ total }] = await this.ctx.db
+      .select({ total: count(campanhaDestinatario.id) })
       .from(campanhaDestinatario)
-      .where(
-        and(
-          eq(campanhaDestinatario.campanhaId, campanhaId),
-          eq(campanhaDestinatario.status, 'pendente'),
-        ),
-      );
-
-    for (const d of pendentes) {
-      await this.enviarUm(d, alvo, numero, credencial.token);
-    }
-
-    await this.ctx.db
-      .update(campanha)
-      .set({ status: 'concluida', concluidaEm: new Date() })
-      .where(eq(campanha.id, campanhaId));
+      .where(eq(campanhaDestinatario.campanhaId, campanhaId));
 
     await this.auditoria.registrar({
       contaId,
@@ -210,14 +244,286 @@ export class CampanhaService {
       acao: 'campanha.disparada',
       entidade: 'campanha',
       entidadeId: campanhaId,
-      detalhe: { destinatarios: pendentes.length, modelo: alvo.modeloNome },
+      detalhe: { destinatarios: Number(total), modelo: alvo.modeloNome },
     });
 
     return this.detalhe(contaId, campanhaId);
   }
 
-  /** Envia para um destinatário e grava o resultado, seja qual for. */
+  /**
+   * Retoma uma campanha pausada.
+   *
+   * A campanha pausa quando a conexão com o WhatsApp cai no meio do envio. Os
+   * destinatários que faltavam voltaram para a fila, intactos — e é isto que
+   * os coloca de volta para andar.
+   *
+   * Confere a conexão ANTES de reagendar. Retomar sem ela só pausaria de novo
+   * na rodada seguinte, e o cliente veria o botão "funcionar" e nada sair.
+   */
+  async retomar(contaId: string, usuarioId: string, campanhaId: string): Promise<ResumoCampanha> {
+    const alvo = await this.buscar(contaId, campanhaId);
+
+    if (alvo.status !== 'pausada') {
+      throw new BadRequestException(`Só dá para retomar uma campanha pausada — esta está "${alvo.status}".`);
+    }
+
+    const credencial = await this.meta.tokenDaConta(contaId);
+    if (!credencial) {
+      throw new BadRequestException('Reconecte o WhatsApp antes de retomar: a conexão ainda está fora.');
+    }
+    await this.numeroDeEnvio(contaId);
+
+    await this.ctx.db
+      .update(campanha)
+      .set({ status: 'agendada' })
+      .where(and(eq(campanha.id, campanhaId), eq(campanha.status, 'pausada')));
+
+    await this.auditoria.registrar({
+      contaId,
+      atorTipo: 'usuario',
+      atorUsuarioId: usuarioId,
+      acao: 'campanha.retomada',
+      entidade: 'campanha',
+      entidadeId: campanhaId,
+      detalhe: { modelo: alvo.modeloNome },
+    });
+
+    return this.detalhe(contaId, campanhaId);
+  }
+
+  // ----------------------------------------------------------------- worker
+  //
+  // Tudo daqui para baixo roda FORA de request, chamado pelo worker. Não há
+  // contexto de banco pronto: cada acesso abre o próprio, curto. E nenhuma
+  // transação fica aberta durante uma chamada à Meta.
+
+  /** Campanhas com trabalho pendente. Escopo de sistema: o worker não é conta nenhuma. */
+  async campanhasAtivas(): Promise<string[]> {
+    return this.ctx.comEscopoSistema('campanha.worker.listar', async (db) => {
+      const linhas = await db
+        .select({ id: campanha.id })
+        .from(campanha)
+        .where(inArray(campanha.status, [...ESTADOS_ATIVOS]))
+        .limit(200);
+      return linhas.map((l) => l.id);
+    });
+  }
+
+  /**
+   * Uma rodada de uma campanha.
+   *
+   * O passo que mais importa é a reivindicação com `FOR UPDATE SKIP LOCKED`.
+   * Duas réplicas da API — ou duas rodadas sobrepostas — podem olhar a mesma
+   * campanha ao mesmo tempo; sem o lock, as duas pegariam os mesmos
+   * destinatários e cada pessoa receberia a mensagem duas vezes, cobrada duas
+   * vezes. Com ele, a segunda pula o que a primeira já pegou. É o lock do
+   * próprio Postgres: não precisa de Redis para isto.
+   */
+  async processarRodada(campanhaId: string, agora = new Date()): Promise<void> {
+    const estado = await this.ctx.comEscopoSistema('campanha.worker.ler', async (db) => {
+      const [linha] = await db
+        .select({
+          id: campanha.id,
+          contaId: campanha.contaId,
+          status: campanha.status,
+          modeloNome: campanha.modeloNome,
+          modeloIdioma: campanha.modeloIdioma,
+          janelaDias: campanha.janelaDias,
+          janelaInicio: campanha.janelaInicio,
+          janelaFim: campanha.janelaFim,
+          pausaSegundos: campanha.pausaSegundos,
+          maxPorDia: campanha.maxPorDia,
+          maxPorSemana: campanha.maxPorSemana,
+          maxPorMes: campanha.maxPorMes,
+          fuso: conta.timezone,
+        })
+        .from(campanha)
+        .innerJoin(conta, eq(conta.id, campanha.contaId))
+        .where(eq(campanha.id, campanhaId))
+        .limit(1);
+
+      if (!linha) return null;
+
+      // Os períodos são contados no FUSO DA CONTA. "Hoje" em UTC começa às 21h
+      // de São Paulo — o teto diário zeraria no meio da noite do cliente.
+      const contagem = await db.execute(sql`
+        select
+          count(*) filter (where enviada_em >= date_trunc('day',   now() at time zone ${linha.fuso}) at time zone ${linha.fuso}) as dia,
+          count(*) filter (where enviada_em >= date_trunc('week',  now() at time zone ${linha.fuso}) at time zone ${linha.fuso}) as semana,
+          count(*) filter (where enviada_em >= date_trunc('month', now() at time zone ${linha.fuso}) at time zone ${linha.fuso}) as mes,
+          max(enviada_em) as ultimo
+        from campanha_destinatario
+        where campanha_id = ${campanhaId} and enviada_em is not null
+      `);
+
+      return { campanha: linha, contagem: contagem.rows[0] as Record<string, unknown> };
+    });
+
+    if (!estado || !ESTADOS_ATIVOS.includes(estado.campanha.status as (typeof ESTADOS_ATIVOS)[number])) {
+      return;
+    }
+
+    const c = estado.campanha;
+    const regra: RegraDeEnvio = {
+      janelaDias: (c.janelaDias as number[] | null) ?? [],
+      janelaInicio: c.janelaInicio,
+      janelaFim: c.janelaFim,
+      pausaSegundos: c.pausaSegundos,
+      maxPorDia: c.maxPorDia,
+      maxPorSemana: c.maxPorSemana,
+      maxPorMes: c.maxPorMes,
+    };
+
+    const ultimo = estado.contagem.ultimo ? new Date(String(estado.contagem.ultimo)) : null;
+    const decisao = decidir(
+      regra,
+      momentoNoFuso(agora, c.fuso),
+      {
+        dia: Number(estado.contagem.dia ?? 0),
+        semana: Number(estado.contagem.semana ?? 0),
+        mes: Number(estado.contagem.mes ?? 0),
+      },
+      ultimo,
+      agora,
+      LOTE_POR_RODADA,
+    );
+
+    if (!decisao.pode) return;
+
+    // Reivindicação atômica. `SKIP LOCKED` é o que impede envio duplicado.
+    const reivindicados = await this.ctx.comEscopoSistema('campanha.worker.reivindicar', async (db) => {
+      const r = await db.execute(sql`
+        update campanha_destinatario
+           set status = 'enviando', atualizado_em = now()
+         where id in (
+           select id from campanha_destinatario
+            where campanha_id = ${campanhaId} and status = 'pendente'
+            order by criado_em
+            for update skip locked
+            limit ${decisao.quantas}
+         )
+        returning id, telefone_e164, variaveis
+      `);
+      return r.rows as { id: string; telefone_e164: string; variaveis: unknown }[];
+    });
+
+    if (!reivindicados.length) {
+      await this.concluirSeTerminou(campanhaId);
+      return;
+    }
+
+    await this.ctx.comEscopoSistema('campanha.worker.iniciar', (db) =>
+      db
+        .update(campanha)
+        .set({ status: 'enviando' })
+        .where(and(eq(campanha.id, campanhaId), eq(campanha.status, 'agendada'))),
+    );
+
+    // Credencial lida agora, e não guardada do disparo: o token pode ter vencido
+    // entre o agendamento e esta rodada.
+    const acesso = await this.ctx.comConta(c.contaId, async () => {
+      const credencial = await this.meta.tokenDaConta(c.contaId);
+      const [numero] = await this.ctx.db
+        .select({ phoneNumberId: waNumero.phoneNumberId })
+        .from(waNumero)
+        .where(and(eq(waNumero.contaId, c.contaId), eq(waNumero.status, 'registrado')))
+        .limit(1);
+      return { credencial, phoneNumberId: numero?.phoneNumberId ?? null };
+    });
+
+    if (!acesso.credencial || !acesso.phoneNumberId) {
+      // A conexão caiu entre o disparo e agora. Os destinatários VOLTAM para a
+      // fila — não é culpa deles, e queimá-los como "falhou" seria perder a
+      // campanha por um token vencido. A campanha pausa, para não girar em
+      // falso a cada rodada.
+      await this.ctx.comEscopoSistema('campanha.worker.pausar', async (db) => {
+        await db
+          .update(campanhaDestinatario)
+          .set({ status: 'pendente' })
+          .where(inArray(campanhaDestinatario.id, reivindicados.map((d) => d.id)));
+        await db.update(campanha).set({ status: 'pausada' }).where(eq(campanha.id, campanhaId));
+      });
+
+      this.log.warn(
+        `Campanha ${campanhaId} pausada: a conta ${c.contaId} perdeu a conexão com a Meta antes do envio.`,
+      );
+      return;
+    }
+
+    for (const d of reivindicados) {
+      await this.enviarUm(
+        c.contaId,
+        { id: d.id, telefone: d.telefone_e164, variaveis: d.variaveis },
+        c,
+        acesso.phoneNumberId,
+        acesso.credencial.token,
+      );
+    }
+
+    await this.concluirSeTerminou(campanhaId);
+  }
+
+  /**
+   * Destinatários presos em `enviando`.
+   *
+   * Acontece quando o processo cai DEPOIS de reivindicar e ANTES de gravar o
+   * resultado. A pergunta é o que fazer com eles, e a resposta é deliberada:
+   * **viram `falhou`, e nunca voltam para `pendente` sozinhos.**
+   *
+   * Porque não dá para saber se a Meta recebeu. Se o processo caiu depois de a
+   * Meta aceitar e antes de gravarmos o `wamid`, reenviar entregaria a mesma
+   * mensagem duas vezes — cobrada duas vezes, na pessoa que talvez já tenha
+   * lido a primeira. Entre perder uma mensagem e duplicá-la, numa campanha de
+   * marketing, perder é o erro mais barato. E fica registrado, com motivo.
+   */
+  async recuperarPresos(): Promise<number> {
+    return this.ctx.comEscopoSistema('campanha.worker.presos', async (db) => {
+      const r = await db.execute(sql`
+        update campanha_destinatario
+           set status = 'falhou',
+               falhou_em = now(),
+               erro_titulo = 'Envio interrompido',
+               erro_detalhe = 'O envio foi interrompido e não dá para saber se a mensagem chegou. Para não correr o risco de enviar duas vezes, ela não foi reenviada.'
+         where status = 'enviando'
+           and atualizado_em < now() - make_interval(mins => ${MINUTOS_PRESO})
+        returning id
+      `);
+      return r.rows.length;
+    });
+  }
+
+  /** Conclui a campanha quando não sobra ninguém para enviar. */
+  private async concluirSeTerminou(campanhaId: string): Promise<void> {
+    await this.ctx.comEscopoSistema('campanha.worker.concluir', async (db) => {
+      const [{ restam }] = await db
+        .select({ restam: count(campanhaDestinatario.id) })
+        .from(campanhaDestinatario)
+        .where(
+          and(
+            eq(campanhaDestinatario.campanhaId, campanhaId),
+            inArray(campanhaDestinatario.status, ['pendente', 'enviando']),
+          ),
+        );
+
+      if (Number(restam) === 0) {
+        await db
+          .update(campanha)
+          .set({ status: 'concluida', concluidaEm: new Date() })
+          .where(and(eq(campanha.id, campanhaId), inArray(campanha.status, [...ESTADOS_ATIVOS])));
+      }
+    });
+  }
+
+  /**
+   * Envia para um destinatário e grava o resultado, seja qual for.
+   *
+   * Cada destinatário é tratado isoladamente: uma falha não interrompe os
+   * outros, e o motivo real fica gravado na linha dele. A gravação abre uma
+   * transação curta DEPOIS da chamada à Meta — nunca uma que fique aberta
+   * durante ela.
+   */
   private async enviarUm(
+    contaId: string,
     destinatario: { id: string; telefone: string; variaveis: unknown },
     alvo: { modeloNome: string; modeloIdioma: string },
     phoneNumberId: string,
@@ -244,29 +550,31 @@ export class CampanhaService {
        * se chegou ao aparelho, quem diz é o webhook. Chamar isto de entregue é
        * a mentira que faz a campanha do Regem marcar 100% de sucesso.
        */
-      await this.ctx.db
-        .update(campanhaDestinatario)
-        .set({ status: 'enviada', waMessageId: wamid, enviadaEm: new Date() })
-        .where(eq(campanhaDestinatario.id, destinatario.id));
+      await this.ctx.comConta(contaId, (db) =>
+        db
+          .update(campanhaDestinatario)
+          .set({ status: 'enviada', waMessageId: wamid, enviadaEm: new Date() })
+          .where(eq(campanhaDestinatario.id, destinatario.id)),
+      );
     } catch (erro) {
       const g = erro instanceof ErroGraph ? erro : null;
       const detalhe = g ? g.detalheParaLog : String(erro);
 
-      this.log.warn(
-        `Falha ao enviar para ${this.mascarar(destinatario.telefone)}: ${detalhe}`,
-      );
+      this.log.warn(`Falha ao enviar para ${this.mascarar(destinatario.telefone)}: ${detalhe}`);
 
-      await this.ctx.db
-        .update(campanhaDestinatario)
-        .set({
-          status: 'falhou',
-          falhouEm: new Date(),
-          erroCodigo: g?.codigo ?? null,
-          erroTitulo: g?.traduzido.titulo ?? 'Falha no envio',
-          // A explicação é o que a tela mostra; o detalhe técnico fica no log.
-          erroDetalhe: g?.mensagemParaUsuario ?? 'Não conseguimos enviar esta mensagem.',
-        })
-        .where(eq(campanhaDestinatario.id, destinatario.id));
+      await this.ctx.comConta(contaId, (db) =>
+        db
+          .update(campanhaDestinatario)
+          .set({
+            status: 'falhou',
+            falhouEm: new Date(),
+            erroCodigo: g?.codigo ?? null,
+            erroTitulo: g?.traduzido.titulo ?? 'Falha no envio',
+            // A explicação é o que a tela mostra; o detalhe técnico fica no log.
+            erroDetalhe: g?.mensagemParaUsuario ?? 'Não conseguimos enviar esta mensagem.',
+          })
+          .where(eq(campanhaDestinatario.id, destinatario.id)),
+      );
     }
   }
 

@@ -56,6 +56,7 @@ export default function PaginaCampanha() {
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(true);
   const [disparando, setDisparando] = useState(false);
+  const [retomando, setRetomando] = useState(false);
   const [aviso, setAviso] = useState('');
 
   const carregar = useCallback(async () => {
@@ -77,6 +78,45 @@ export default function PaginaCampanha() {
     void carregar();
   }, [carregar]);
 
+  /*
+   * O envio acontece no servidor, rodada a rodada. Enquanto a campanha está
+   * agendada ou saindo, a tela se atualiza sozinha — pedir para a pessoa ficar
+   * clicando em "Atualizar" para ver o próprio disparo andar é transferir para
+   * ela um trabalho que a tela faz melhor.
+   *
+   * Silenciosa (sem o spinner de carregamento) para não piscar a tabela a cada
+   * poucos segundos.
+   */
+  const emAndamento = campanha?.status === 'agendada' || campanha?.status === 'enviando';
+  useEffect(() => {
+    if (!emAndamento || !id) return;
+    const t = setInterval(async () => {
+      try {
+        const [c, d] = await Promise.all([campanhas.detalhe(id), campanhas.destinatarios(id)]);
+        setCampanha(c);
+        setDestinatarios(d);
+      } catch {
+        /* A próxima volta tenta de novo; um soluço de rede não vira erro na tela. */
+      }
+    }, 5000);
+    return () => clearInterval(t);
+  }, [emAndamento, id]);
+
+  async function retomar() {
+    setAviso('');
+    setErro('');
+    setRetomando(true);
+    try {
+      await campanhas.retomar(id);
+      await carregar();
+      setAviso('Envio retomado. Quem faltava volta a sair pelo servidor.');
+    } catch (e) {
+      setErro(mensagemDoErro(e));
+    } finally {
+      setRetomando(false);
+    }
+  }
+
   async function disparar() {
     setAviso('');
     setErro('');
@@ -85,7 +125,7 @@ export default function PaginaCampanha() {
       await campanhas.disparar(id);
       await carregar();
       setAviso(
-        'Campanha disparada. Os estados de entrega chegam da Meta nos próximos segundos — use Atualizar para acompanhar.',
+        'Campanha agendada. As mensagens saem pelo servidor, respeitando a janela e o ritmo que você definiu — esta tela se atualiza sozinha.',
       );
     } catch (e) {
       setErro(mensagemDoErro(e));
@@ -147,10 +187,30 @@ export default function PaginaCampanha() {
         }
       />
 
-      {disparando && (
+      {campanha.status === 'enviando' && (
         <Card>
-          <LoaderDisparo rotulo="Enviando as mensagens. Isso fala com a Meta uma vez por pessoa — não feche a página." />
+          <LoaderDisparo rotulo="Enviando. As mensagens saem pelo servidor — você pode fechar esta página." />
         </Card>
+      )}
+
+      {campanha.status === 'agendada' && (
+        <Alerta tom="informacao">
+          Agendada. As mensagens começam a sair na próxima abertura da janela de envio.
+        </Alerta>
+      )}
+
+      {campanha.status === 'pausada' && (
+        <Alerta tom="atencao">
+          <div className="space-y-2">
+            <p>
+              Pausada: a conexão com o WhatsApp caiu antes de terminar. Ninguém foi marcado como
+              falha — quem faltava continua na fila. Reconecte o WhatsApp e retome.
+            </p>
+            <Button tamanho="sm" onClick={() => void retomar()} carregando={retomando}>
+              Retomar envio
+            </Button>
+          </div>
+        </Alerta>
       )}
 
       {erro && <Alerta tom="erro">{erro}</Alerta>}

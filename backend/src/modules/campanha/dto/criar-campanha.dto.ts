@@ -4,14 +4,21 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsInt,
   IsOptional,
   IsString,
+  Matches,
+  Max,
   MaxLength,
+  Min,
   MinLength,
   ValidateNested,
 } from 'class-validator';
 
 import { EhTelefoneE164 } from '../../lista-espera/dto/telefone';
+
+/** HH:MM de 00:00 a 23:59. */
+const HORA = new RegExp('^([01][0-9]|2[0-3]):[0-5][0-9]$');
 
 /**
  * Teto de destinatários por campanha, **enquanto o disparo for síncrono**.
@@ -93,4 +100,55 @@ export class CriarCampanhaDto {
   @ValidateNested({ each: true })
   @Type(() => DestinatarioDto)
   destinatarios!: DestinatarioDto[];
+
+  // ---- janela de envio (opcional)
+  //
+  // Sem nada disso a campanha sai assim que disparada. Com janela, o worker só
+  // envia dentro dos dias e horários marcados, no fuso da conta.
+
+  @ApiProperty({ required: false, type: [Number], description: 'Dias: 0=domingo … 6=sábado. Vazio = qualquer dia.' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(7)
+  @IsInt({ each: true })
+  @Min(0, { each: true, message: 'Dia da semana inválido.' })
+  @Max(6, { each: true, message: 'Dia da semana inválido.' })
+  janelaDias?: number[];
+
+  @ApiProperty({ required: false, description: 'Início da janela, HH:MM.' })
+  @IsOptional()
+  @Matches(HORA, { message: 'Horário de início inválido. Use HH:MM.' })
+  janelaInicio?: string;
+
+  @ApiProperty({ required: false, description: 'Fim da janela, HH:MM.' })
+  @IsOptional()
+  @Matches(HORA, { message: 'Horário de fim inválido. Use HH:MM.' })
+  janelaFim?: string;
+
+  // ---- ritmo (opcional)
+
+  @ApiProperty({ required: false, description: 'Segundos entre uma mensagem e a próxima.' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(3600, { message: 'A pausa entre envios pode ser de até 1 hora.' })
+  pausaSegundos?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxPorDia?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxPorSemana?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxPorMes?: number;
 }

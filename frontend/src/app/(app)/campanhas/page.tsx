@@ -4,6 +4,13 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
 import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
+import {
+  JANELA_VAZIA,
+  JanelaEnvio,
+  janelaParaEnvio,
+  problemaDosTetos,
+  type Janela,
+} from '@/components/app/janela-envio';
 import { Alerta } from '@/components/ui/alerta';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -177,6 +184,7 @@ function FormularioCampanha({ aoCriar }: { aoCriar: () => void }) {
   const [variaveis, setVariaveis] = useState<string[]>([]);
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
+  const [janela, setJanela] = useState<Janela>(JANELA_VAZIA);
 
   useEffect(() => {
     let vivo = true;
@@ -219,9 +227,16 @@ function FormularioCampanha({ aoCriar }: { aoCriar: () => void }) {
       return;
     }
 
+    const problemaJanela = janela.ativa ? problemaDosTetos(janela) : null;
+    if (problemaJanela) {
+      setErro(problemaJanela);
+      return;
+    }
+
     setSalvando(true);
     try {
       const { id } = await campanhas.criar({
+        ...janelaParaEnvio(janela),
         nome: nome.trim(),
         modeloNome: escolhido.nome,
         modeloIdioma: escolhido.idioma,
@@ -352,6 +367,8 @@ function FormularioCampanha({ aoCriar }: { aoCriar: () => void }) {
             <strong className="numerico">{numeros.length}</strong> de {TETO_DESTINATARIOS}.
           </p>
         </div>
+
+        <JanelaEnvio valor={janela} aoMudar={setJanela} />
 
         <Button onClick={() => void enviar()} carregando={salvando}>
           Montar campanha
