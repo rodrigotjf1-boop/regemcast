@@ -10,7 +10,7 @@
  * `ValidationPipe` global do backend roda com `forbidNonWhitelisted`, então um
  * campo a mais no corpo não é ignorado — é 400 na cara do usuário.
  */
-import { api } from './api';
+import { api, enderecoDaApi } from './api';
 import type {
   ConfigSignup,
   ConfirmacaoDaImportacao,
@@ -244,4 +244,26 @@ export const modelos = {
 
   /** `DELETE /modelos/:id` — só rascunho e recusado. */
   excluir: (id: string) => api.delete<{ ok: boolean }>(`/modelos/${id}`),
+};
+
+export const midia = {
+  /**
+   * `POST /midia` — guarda o arquivo e devolve a referência do modelo.
+   *
+   * A Meta não busca a URL da imagem: ela recebe os bytes. Por isso o arquivo
+   * passa por nós antes, e só vira `header_handle` na hora de submeter.
+   */
+  enviar: (arquivo: File) =>
+    api.enviarArquivo<{ id: string; referencia: string; formato: string; nome: string }>(
+      '/midia',
+      'arquivo',
+      arquivo,
+    ),
+
+  /** Endereço da mídia guardada, para a prévia. */
+  endereco: (referencia: string): string | null => {
+    if (referencia.startsWith('midia:')) return enderecoDaApi(`/midia/${referencia.slice(6)}`);
+    if (/^https?:\/\//i.test(referencia)) return referencia;
+    return null;
+  },
 };

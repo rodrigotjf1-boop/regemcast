@@ -19,6 +19,7 @@ import { modelo } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { ErroGraph, GraphService } from '../meta/graph.service';
 import { MetaService } from '../meta/meta.service';
+import { MidiaService } from '../midia/midia.service';
 import type { SalvarModeloDto } from './dto/salvar-modelo.dto';
 import {
   conferirModelo,
@@ -49,6 +50,7 @@ export interface ResumoModelo {
   cabecalhoFormato: string | null;
   cabecalhoTexto: string | null;
   cabecalhoExemplo: string | null;
+  cabecalhoMidia: string | null;
   corpoExemplos: string[];
   rodape: string | null;
   botoes: unknown[];
@@ -69,6 +71,7 @@ export class ModeloService {
     private readonly meta: MetaService,
     private readonly graph: GraphService,
     private readonly auditoria: AuditoriaService,
+    private readonly midia: MidiaService,
   ) {}
 
   /** Confere sem gravar nada. É o botão "conferir regras" da tela. */
@@ -98,6 +101,7 @@ export class ModeloService {
         cabecalhoFormato: l.cabecalhoFormato,
         cabecalhoTexto: l.cabecalhoTexto,
         cabecalhoExemplo: l.cabecalhoExemplo,
+        cabecalhoMidia: l.cabecalhoMidia,
         corpoExemplos: (l.corpoExemplos as string[]) ?? [],
         rodape: l.rodape,
         botoes: (l.botoes as unknown[]) ?? [],
@@ -216,7 +220,23 @@ export class ModeloService {
       });
     }
 
-    const corpo = this.montarComponentes(atual as unknown as SalvarModeloDto);
+    // A mídia chega como REFERÊNCIA (arquivo guardado ou endereço) e precisa
+    // virar `header_handle` antes de montar o modelo: a Meta não busca a URL,
+    // ela recebe os bytes. Trocar aqui, e não ao salvar o rascunho, evita subir
+    // arquivo para a Meta de um modelo que talvez nunca seja enviado.
+    let comHandles: SalvarModeloDto;
+    try {
+      comHandles = await this.resolverMidias(contaId, atual as unknown as SalvarModeloDto);
+    } catch (erro) {
+      const g = erro instanceof ErroGraph ? erro : null;
+      if (g) {
+        this.log.warn(`Mídia do modelo ${atual.nome} recusada: ${g.detalheParaLog}`);
+        throw new BadRequestException(g.mensagemParaUsuario);
+      }
+      throw erro;
+    }
+
+    const corpo = this.montarComponentes(comHandles);
 
     // A chamada fica FORA da transação: uma ida à Meta pode levar segundos, e
     // segurar a conexão de banco enquanto isso é o que esgota o pool sob carga.
@@ -302,6 +322,36 @@ export class ModeloService {
   }
 
   // ------------------------------------------------------------------ apoio
+
+  /**
+   * Troca cada referência de mídia pelo handle da Meta.
+   *
+   * Em sequência, e não em paralelo: um carrossel de dez cartões subindo dez
+   * arquivos ao mesmo tempo bate no limite de chamadas do app, e o que falha
+   * primeiro derruba os outros nove sem dizer qual.
+   */
+  private async resolverMidias(contaId: string, dto: SalvarModeloDto): Promise<SalvarModeloDto> {
+    const resolvido: SalvarModeloDto = { ...dto };
+
+    const ehMidia = dto.cabecalhoFormato && dto.cabecalhoFormato !== 'TEXT';
+    if (dto.tipo !== 'carrossel' && ehMidia && dto.cabecalhoMidia) {
+      resolvido.cabecalhoMidia = await this.midia.handleParaModelo(contaId, dto.cabecalhoMidia);
+    }
+
+    if (dto.tipo === 'carrossel' && dto.cartoes?.length) {
+      const cartoes = [];
+      for (const cartao of dto.cartoes) {
+        cartoes.push({
+          ...cartao,
+          imagem: cartao.imagem ? await this.midia.handleParaModelo(contaId, cartao.imagem) : cartao.imagem,
+        });
+      }
+      resolvido.cartoes = cartoes;
+    }
+
+    return resolvido;
+  }
+
 
   private async buscar(
     db: Parameters<Parameters<ContextoDb['comConta']>[1]>[0],

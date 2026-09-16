@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 import { PreviaWhatsapp } from '@/components/app/previa-whatsapp';
 import { Alerta } from '@/components/ui/alerta';
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { mensagemDoErro } from '@/lib/api';
-import { modelos } from '@/lib/servicos';
+import { midia, modelos } from '@/lib/servicos';
 import type {
   BotaoDoModelo,
   FormatoCabecalho,
@@ -80,6 +80,7 @@ function daListaParaEdicao(m: ModeloSalvo): DadosModelo {
     cabecalhoFormato: m.cabecalhoFormato ?? undefined,
     cabecalhoTexto: m.cabecalhoTexto ?? undefined,
     cabecalhoExemplo: m.cabecalhoExemplo ?? undefined,
+    cabecalhoMidia: m.cabecalhoMidia ?? undefined,
     corpo: m.corpo,
     corpoExemplos: m.corpoExemplos ?? [],
     rodape: m.rodape ?? undefined,
@@ -714,13 +715,13 @@ function Cartoes({
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor={`c-img-${i}`}>Imagem</Label>
-                <Input
-                  id={`c-img-${i}`}
-                  value={c.imagem ?? ''}
-                  onChange={(e) => atualizar(i, { imagem: e.target.value })}
-                  placeholder="https://… ou id da mídia"
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>Imagem do cartão</Label>
+                <SeletorDeMidia
+                  formato="IMAGE"
+                  compacto
+                  valor={c.imagem ?? ''}
+                  aoMudar={(v) => atualizar(i, { imagem: v })}
                 />
               </div>
               <div className="space-y-1.5">
@@ -769,40 +770,123 @@ function Cartoes({
 }
 
 /**
- * Escolha da mídia do cabeçalho.
+ * Escolha da mídia: arquivo do computador OU endereço.
  *
- * Por enquanto só por endereço. O arquivo do computador exige guardar o binário
- * e trocá-lo por um `header_handle` na Meta antes de submeter o modelo — a Meta
- * não busca a URL, ela recebe os bytes. Isso pede tabela própria e vem no PR
- * seguinte; prometer o seletor de arquivo aqui e ele não funcionar seria pior
- * do que dizer o que falta.
+ * O arquivo é o caminho principal, e o endereço é a alternativa — não o
+ * contrário. Quase ninguém tem a foto do produto hospedada num endereço
+ * público; quase todo mundo tem ela no computador.
+ *
+ * A Meta não busca a URL da mídia: ela recebe os bytes. Então o arquivo sobe
+ * para nós agora e só vira `header_handle` na hora de submeter o modelo — o
+ * que evita mandar arquivo à Meta de um rascunho que talvez nunca seja enviado.
  */
 function SeletorDeMidia({
   formato,
   valor,
   aoMudar,
+  compacto,
 }: {
   formato: FormatoCabecalho;
   valor: string;
   aoMudar: (v: string) => void;
+  /** Versão menor, para dentro do cartão do carrossel. */
+  compacto?: boolean;
 }) {
-  const rotulo =
-    formato === 'IMAGE' ? 'imagem' : formato === 'VIDEO' ? 'vídeo' : 'documento';
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState('');
+  const [nome, setNome] = useState('');
+  const [porEndereco, setPorEndereco] = useState(() => /^https?:/i.test(valor));
+  const campo = useRef<HTMLInputElement>(null);
+
+  const rotulo = formato === 'IMAGE' ? 'imagem' : formato === 'VIDEO' ? 'vídeo' : 'documento';
+  const aceita =
+    formato === 'IMAGE' ? 'image/jpeg,image/png' : formato === 'VIDEO' ? 'video/mp4,video/3gpp' : 'application/pdf';
+  const limite = formato === 'IMAGE' ? '5 MB' : '16 MB';
+
+  const endereco = valor ? midia.endereco(valor) : null;
+
+  async function escolher(arquivo: File) {
+    setErro('');
+    setEnviando(true);
+    try {
+      const r = await midia.enviar(arquivo);
+      setNome(r.nome);
+      aoMudar(r.referencia);
+    } catch (e) {
+      setErro(mensagemDoErro(e));
+    } finally {
+      setEnviando(false);
+      if (campo.current) campo.current.value = '';
+    }
+  }
 
   return (
-    <div className="space-y-1.5">
-      <Label htmlFor="m-midia">Endereço {formato === 'DOCUMENT' ? 'do' : 'da'} {rotulo}</Label>
-      <Input
-        id="m-midia"
-        value={valor}
-        onChange={(e) => aoMudar(e.target.value)}
-        placeholder="https://sualoja.com.br/produto.jpg"
-      />
-      <p className="text-xs leading-relaxed text-tinta-suave">
-        A {rotulo} precisa estar acessível publicamente. <strong>Enviar do computador</strong> entra
-        na próxima atualização — a Meta não busca o endereço, ela recebe o arquivo, e isso exige
-        guardarmos o arquivo antes.
-      </p>
+    <div className="space-y-2">
+      {!porEndereco ? (
+        <div
+          className={[
+            'flex items-center gap-3 rounded-lg border border-dashed p-3 transition-colors',
+            valor ? 'border-acento bg-acento-suave/40' : 'border-borda bg-superficie',
+          ].join(' ')}
+        >
+          {/* Miniatura: confirmar que é a foto certa antes de seguir. */}
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md bg-superficie-2 text-lg">
+            {valor && formato === 'IMAGE' && endereco ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={endereco} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <span aria-hidden>{formato === 'IMAGE' ? '🖼' : formato === 'VIDEO' ? '▶' : '📄'}</span>
+            )}
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-tinta">
+              {valor ? nome || `${rotulo[0].toUpperCase()}${rotulo.slice(1)} escolhida` : `Nenhum${formato === 'DOCUMENT' ? '' : 'a'} ${rotulo}`}
+            </p>
+            {!compacto && (
+              <p className="text-xs text-tinta-suave">
+                {formato === 'IMAGE' ? 'JPG ou PNG' : formato === 'VIDEO' ? 'MP4' : 'PDF'} · até {limite}
+              </p>
+            )}
+          </div>
+
+          <input
+            ref={campo}
+            type="file"
+            accept={aceita}
+            className="sr-only"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void escolher(f);
+            }}
+            aria-label={`Escolher ${rotulo} do computador`}
+          />
+          <Button variante="secundario" tamanho="sm" carregando={enviando} onClick={() => campo.current?.click()}>
+            {valor ? 'Trocar' : 'Escolher arquivo'}
+          </Button>
+        </div>
+      ) : (
+        <Input
+          value={valor}
+          onChange={(e) => aoMudar(e.target.value)}
+          placeholder={`https://sualoja.com.br/${formato === 'IMAGE' ? 'produto.jpg' : formato === 'VIDEO' ? 'video.mp4' : 'catalogo.pdf'}`}
+        />
+      )}
+
+      {erro && <p className="text-xs text-erro">{erro}</p>}
+
+      <button
+        type="button"
+        onClick={() => {
+          setPorEndereco((v) => !v);
+          aoMudar('');
+          setNome('');
+          setErro('');
+        }}
+        className="text-xs text-tinta-suave underline-offset-4 hover:text-tinta hover:underline"
+      >
+        {porEndereco ? 'Enviar arquivo do computador' : 'Usar um endereço da internet'}
+      </button>
     </div>
   );
 }

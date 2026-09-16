@@ -11,6 +11,7 @@
  */
 import { sql } from 'drizzle-orm';
 import {
+  customType,
   bigint,
   bigserial,
   boolean,
@@ -500,4 +501,62 @@ export const modelo = pgTable('modelo', {
   metaIdUq: uniqueIndex('idx_modelo_meta_id')
     .on(t.metaTemplateId)
     .where(sql`meta_template_id is not null`),
+}));
+
+/**
+ * `bytea` do Postgres. O Drizzle não traz o tipo pronto no pg-core; sem ele o
+ * binário viraria texto e cada byte fora do ASCII seria corrompido na volta.
+ */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return 'bytea';
+  },
+});
+
+/**
+ * Arquivo enviado pelo cliente para cabeçalho de modelo.
+ *
+ * A Meta NÃO busca a URL da mídia de um modelo — ela recebe os bytes e devolve
+ * um `header_handle`. Por isso o arquivo precisa ficar guardado aqui até a
+ * submissão, e o handle fica junto para reenviar sem subir de novo.
+ */
+export const midia = pgTable('midia', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contaId: uuid('conta_id').notNull(),
+  nomeArquivo: text('nome_arquivo').notNull(),
+  tipoMime: text('tipo_mime').notNull(),
+  tamanhoBytes: integer('tamanho_bytes').notNull(),
+  /** Os bytes. Podem ser expurgados depois que `metaHandle` existe. */
+  conteudo: bytea('conteudo'),
+  metaHandle: text('meta_handle'),
+  metaHandleEm: timestamp('meta_handle_em', { withTimezone: true }),
+  criadoPor: uuid('criado_por'),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  contaIdx: index('idx_midia_conta').on(t.contaId, t.criadoEm),
+}));
+
+/**
+ * Telemetria de erro. Escopo de DISTRIBUIÇÃO: o cliente nunca lê esta tabela
+ * (a policy é `rc_sistema`). O `contaId` serve para agrupar, não dá acesso.
+ */
+export const eventoErro = pgTable('evento_erro', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contaId: uuid('conta_id'),
+  referencia: text('referencia'),
+  rota: text('rota'),
+  metodo: text('metodo'),
+  status: integer('status'),
+  /** api | meta | banco | fila | webhook */
+  origem: text('origem').notNull().default('api'),
+  classe: text('classe'),
+  codigo: integer('codigo'),
+  /** Mensagem técnica — nunca a traduzida ao cliente. */
+  mensagem: text('mensagem'),
+  /** Sem telefone inteiro, sem token, sem corpo de mensagem. */
+  detalhe: jsonb('detalhe').notNull().default(sql`'{}'::jsonb`),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  tempoIdx: index('idx_evento_erro_tempo').on(t.criadoEm),
 }));
