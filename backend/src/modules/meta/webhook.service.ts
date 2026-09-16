@@ -15,10 +15,10 @@
  */
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { ContextoDb } from '../../db/contexto';
-import { waEvento, waNumero } from '../../db/schema';
+import { campanhaDestinatario, waEvento, waNumero } from '../../db/schema';
 import { codigoDoErro, mensagemDoErroMeta, traduzirErroMeta } from './erros-meta';
 
 /** Quantos eventos processar por passada. */
@@ -36,6 +36,27 @@ const QUALIDADE: Record<string, string> = {
   YELLOW: 'amarela',
   RED: 'vermelha',
   UNKNOWN: 'desconhecida',
+};
+
+/** Status da Meta × o nosso. O que não está aqui não muda estado nenhum. */
+const ESTADO_DA_META: Record<string, 'enviada' | 'entregue' | 'lida'> = {
+  sent: 'enviada',
+  delivered: 'entregue',
+  read: 'lida',
+};
+
+/**
+ * De quais estados se pode ir para cada novo estado.
+ *
+ * `falhou` não aceita vir de `entregue` nem de `lida`: mensagem que chegou não
+ * falhou, e aceitar isso apagaria a entrega por causa de um evento fora de
+ * ordem.
+ */
+const ANTERIORES_VALIDOS: Record<string, string[]> = {
+  enviada: ['pendente', 'enviando'],
+  entregue: ['pendente', 'enviando', 'enviada'],
+  lida: ['pendente', 'enviando', 'enviada', 'entregue'],
+  falhou: ['pendente', 'enviando', 'enviada'],
 };
 
 @Injectable()
@@ -195,14 +216,80 @@ export class WebhookService {
     const statuses = Array.isArray(v.statuses) ? v.statuses : [];
 
     for (const s of statuses as Array<Record<string, unknown>>) {
-      if (s.status !== 'failed') continue;
-      const codigo = codigoDoErro(s);
-      const traduzido = traduzirErroMeta(codigo, mensagemDoErroMeta(s));
-      this.log.warn(
-        `Mensagem ${String(s.id ?? '?').slice(-8)} falhou — ` +
-          `código ${codigo ?? '—'} · ${traduzido.titulo} · classe ${traduzido.classe}`,
-      );
+      const wamid = typeof s.id === 'string' ? s.id : null;
+      const bruto = typeof s.status === 'string' ? s.status : '';
+      const nosso = ESTADO_DA_META[bruto];
+
+      if (bruto === 'failed') {
+        const codigo = codigoDoErro(s);
+        const traduzido = traduzirErroMeta(codigo, mensagemDoErroMeta(s));
+        this.log.warn(
+          `Mensagem ${String(s.id ?? '?').slice(-8)} falhou — ` +
+            `código ${codigo ?? '—'} · ${traduzido.titulo} · classe ${traduzido.classe}`,
+        );
+        if (wamid) {
+          await this.aplicarStatus(wamid, 'falhou', {
+            erroCodigo: codigo,
+            erroTitulo: traduzido.titulo,
+            erroDetalhe: traduzido.explicacao,
+          });
+        }
+        continue;
+      }
+
+      if (wamid && nosso) await this.aplicarStatus(wamid, nosso, {});
     }
+  }
+
+  /**
+   * Leva o destinatário ao novo estado — e só para frente.
+   *
+   * A Meta não garante ordem: o `delivered` pode chegar antes do `sent`, e um
+   * reenvio do mesmo evento chega depois de tudo. Sem a guarda, um `sent`
+   * atrasado rebaixaria uma mensagem já lida, e a tela passaria a mostrar menos
+   * do que aconteceu.
+   *
+   * A guarda vai no `where`, não em ler-decidir-gravar: dois webhooks do mesmo
+   * wamid podem chegar ao mesmo tempo, e aí o segundo sobrescreveria a decisão
+   * do primeiro. O banco resolve isso; a aplicação não.
+   */
+  private async aplicarStatus(
+    wamid: string,
+    novo: 'enviada' | 'entregue' | 'lida' | 'falhou',
+    erro: { erroCodigo?: number | null; erroTitulo?: string; erroDetalhe?: string },
+  ): Promise<void> {
+    const agora = new Date();
+    const carimbo: Record<string, Date> = {
+      enviada: agora,
+      entregue: agora,
+      lida: agora,
+      falhou: agora,
+    };
+
+    await this.ctx.comEscopoSistema('meta.webhook.status', async (db) => {
+      await db
+        .update(campanhaDestinatario)
+        .set({
+          status: novo,
+          ...(novo === 'enviada' ? { enviadaEm: carimbo.enviada } : {}),
+          ...(novo === 'entregue' ? { entregueEm: carimbo.entregue } : {}),
+          ...(novo === 'lida' ? { lidaEm: carimbo.lida } : {}),
+          ...(novo === 'falhou'
+            ? {
+                falhouEm: carimbo.falhou,
+                erroCodigo: erro.erroCodigo ?? null,
+                erroTitulo: erro.erroTitulo ?? null,
+                erroDetalhe: erro.erroDetalhe ?? null,
+              }
+            : {}),
+        })
+        .where(
+          and(
+            eq(campanhaDestinatario.waMessageId, wamid),
+            inArray(campanhaDestinatario.status, ANTERIORES_VALIDOS[novo]),
+          ),
+        );
+    });
   }
 
   /**

@@ -14,7 +14,10 @@ import { api } from './api';
 import type {
   ConfigSignup,
   ConvitePendente,
+  DestinatarioCampanha,
   ModeloDeMensagem,
+  NovaCampanha,
+  ResumoCampanha,
   Conta,
   ResumoConta,
   Sessao,
@@ -136,6 +139,24 @@ export interface DadosRegistroNumero {
   /** Só quando o número tem verificação em duas etapas. */
   pin?: string;
 }
+
+export const campanhas = {
+  /** `GET /campanhas` */
+  listar: () => api.get<ResumoCampanha[]>('/campanhas'),
+
+  /** `GET /campanhas/:id` */
+  detalhe: (id: string) => api.get<ResumoCampanha>(`/campanhas/${id}`),
+
+  /** `GET /campanhas/:id/destinatarios` */
+  destinatarios: (id: string) =>
+    api.get<DestinatarioCampanha[]>(`/campanhas/${id}/destinatarios`),
+
+  /** `POST /campanhas` — monta a campanha, sem enviar nada. */
+  criar: (dados: NovaCampanha) => api.post<{ id: string }>('/campanhas', dados),
+
+  /** `POST /campanhas/:id/disparar` — só funciona uma vez. */
+  disparar: (id: string) => api.post<ResumoCampanha>(`/campanhas/${id}/disparar`, {}),
+};
 
 export const whatsapp = {
   /** `GET /whatsapp/config` */
