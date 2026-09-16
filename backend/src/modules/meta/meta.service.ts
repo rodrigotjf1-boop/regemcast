@@ -54,6 +54,8 @@ interface ParametrosConexao {
   wabaId: string;
   phoneNumberId: string;
   coexistencia: boolean;
+  /** O número já está registrado na Cloud API; pular o `/register`. */
+  jaRegistrado: boolean;
 }
 
 export interface ResultadoOnboarding {
@@ -196,6 +198,9 @@ export class MetaService {
       wabaId,
       phoneNumberId,
       coexistencia,
+      // No Embedded Signup nunca sabemos de antemão: o registro é tentado e o
+      // erro, se houver, vira pendência com instrução.
+      jaRegistrado: false,
     });
   }
 
@@ -219,7 +224,7 @@ export class MetaService {
    */
   async conectarManual(
     contaId: string,
-    dados: { wabaId: string; phoneNumberId?: string; token: string },
+    dados: { wabaId: string; phoneNumberId?: string; token: string; jaRegistrado?: boolean },
   ): Promise<ResultadoOnboarding> {
     // A conta precisa existir. Escopo de sistema porque a rota não tem sessão:
     // quem chama é a distribuição, e a conta ainda não é "a do request".
@@ -257,6 +262,7 @@ export class MetaService {
         // Coexistência exige Acesso Avançado, que é justamente o que ainda não
         // temos. Número de teste é sempre dedicado.
         coexistencia: false,
+        jaRegistrado: dados.jaRegistrado === true,
       }),
     );
   }
@@ -276,6 +282,7 @@ export class MetaService {
    */
   private async conectarComToken(p: ParametrosConexao): Promise<ResultadoOnboarding> {
     const { contaId, atorUsuarioId, token, expiraEm, wabaId, phoneNumberId, coexistencia } = p;
+    const jaRegistrado = p.jaRegistrado;
 
     // 2. Dados da WABA. Se isto falhar, o token é inválido e não adianta seguir.
     const waba = await this.graph.dadosDaWaba(wabaId, token).catch((erro) => {
@@ -359,6 +366,19 @@ export class MetaService {
        */
       registrado = true;
       await this.iniciarSincronizacao(numero.id, idDoNumero!, token, pendencias);
+    } else if (numero && jaRegistrado) {
+      /*
+       * Já registrado por quem trouxe o número — o caso do número de teste da
+       * Meta. Chamar `/register` aqui devolve erro de PIN e deixaria a tela
+       * mostrando "Registro pendente" num número que envia normalmente. Estado
+       * errado é pior que estado ausente: manda o cliente resolver o que não
+       * está quebrado.
+       */
+      registrado = true;
+      await this.ctx.db
+        .update(waNumero)
+        .set({ status: 'registrado', registradoEm: new Date() })
+        .where(eq(waNumero.id, numero.id));
     } else if (numero) {
       try {
         // PIN de 6 dígitos gerado por nós. Não guardamos: se o número já tiver
@@ -402,6 +422,10 @@ export class MetaService {
         phoneNumberId: idDoNumero ?? null,
         registrado,
         coexistencia,
+        // Fica na trilha porque é DECLARAÇÃO de quem conectou, não fato que
+        // verificamos. Se um dia um número aparecer marcado como registrado sem
+        // estar, é aqui que se descobre quem disse o quê.
+        jaRegistradoDeclarado: jaRegistrado,
         nome: waba.name ?? null,
       },
     });
