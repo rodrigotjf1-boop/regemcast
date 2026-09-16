@@ -114,3 +114,168 @@ export function IconeSeta(p: Props) {
     </Base>
   );
 }
+
+/** Mais: criar algo novo. */
+export function IconeMais(p: Props) {
+  return (
+    <Base {...p}>
+      <path d="M12 5v14M5 12h14" />
+    </Base>
+  );
+}
+
+/** Seta para a direita: seguir para o detalhe. */
+export function IconeSetaDireita(p: Props) {
+  return (
+    <Base {...p}>
+      <path d="M5 12h14M13 6l6 6-6 6" />
+    </Base>
+  );
+}
+
+/** Seta para a esquerda: voltar. */
+export function IconeVoltar(p: Props) {
+  return (
+    <Base {...p}>
+      <path d="M19 12H5M11 18l-6-6 6-6" />
+    </Base>
+  );
+}
+
+/** Atualizar: duas setas em círculo. */
+export function IconeAtualizar(p: Props) {
+  return (
+    <Base {...p}>
+      <path d="M20 11a8 8 0 0 0-14.3-4.9L4 8" />
+      <path d="M4 4v4h4" />
+      <path d="M4 13a8 8 0 0 0 14.3 4.9L20 16" />
+      <path d="M20 20v-4h-4" />
+    </Base>
+  );
+}
+
+/** Confirmado. */
+export function IconeCheck(p: Props) {
+  return (
+    <Base {...p}>
+      <path d="m5 12.5 4.5 4.5L19 7.5" />
+    </Base>
+  );
+}
+
+/** Relógio: agendado, janela de envio. */
+export function IconeRelogio(p: Props) {
+  return (
+    <Base {...p}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 2" />
+    </Base>
+  );
+}
+
+/** Menu (três linhas), para abrir a navegação no celular. */
+export function IconeMenu(p: Props) {
+  return (
+    <Base {...p}>
+      <path d="M4 7h16M4 12h16M4 17h16" />
+    </Base>
+  );
+}
+
+/** Fechar. */
+export function IconeFechar(p: Props) {
+  return (
+    <Base {...p}>
+      <path d="M6 6l12 12M18 6 6 18" />
+    </Base>
+  );
+}
+
+/** Atenção. */
+export function IconeAlerta(p: Props) {
+  return (
+    <Base {...p}>
+      <path d="M12 3.5 21.5 20h-19L12 3.5Z" />
+      <path d="M12 10v4.5M12 17.2v.1" />
+    </Base>
+  );
+}
+
+/** Telefone celular. */
+export function IconeCelular(p: Props) {
+  return (
+    <Base {...p}>
+      <rect x="6.5" y="2.5" width="11" height="19" rx="2.5" />
+      <path d="M10.5 18.5h3" />
+    </Base>
+  );
+}
+
+/** Escudo: segurança, verificação. */
+export function IconeEscudo(p: Props) {
+  return (
+    <Base {...p}>
+      <path d="M12 3 19.5 6v5.5c0 4.6-3.2 8.3-7.5 9.5-4.3-1.2-7.5-4.9-7.5-9.5V6L12 3Z" />
+      <path d="m9 12 2.2 2.2L15.5 10" />
+    </Base>
+  );
+}
+
+/** Gráfico de linha: desempenho. */
+export function IconeGrafico(p: Props) {
+  return (
+    <Base {...p}>
+      <path d="M3.5 20.5h17" />
+      <path d="m5 15 4.5-4.5 3.5 3.5L19.5 7.5" />
+      <path d="M15 7.5h4.5V12" />
+    </Base>
+  );
+}
+
+/** Olho: lida. */
+export function IconeOlho(p: Props) {
+  return (
+    <Base {...p}>
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+      <circle cx="12" cy="12" r="2.8" />
+    </Base>
+  );
+}
+
+/** Upload: importar arquivo. */
+export function IconeImportar(p: Props) {
+  return (
+    <Base {...p}>
+      <path d="M12 15.5V3.5M7 8.5l5-5 5 5" />
+      <path d="M4 14.5v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" />
+    </Base>
+  );
+}
+
+/** Raio: energia, velocidade de envio. */
+export function IconeRaio(p: Props) {
+  return (
+    <Base {...p}>
+      <path d="M13 2.5 4.5 13.5H12l-1 8 8.5-11H12l1-8Z" />
+    </Base>
+  );
+}
+
+/** Lixeira. */
+export function IconeLixeira(p: Props) {
+  return (
+    <Base {...p}>
+      <path d="M4.5 6.5h15M9.5 6.5V4.5h5v2M6.5 6.5l1 13a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5l1-13" />
+    </Base>
+  );
+}
+
+/** Lápis: editar. */
+export function IconeEditar(p: Props) {
+  return (
+    <Base {...p}>
+      <path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3Z" />
+      <path d="m14.5 7.5 3 3" />
+    </Base>
+  );
+}

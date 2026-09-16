@@ -230,26 +230,47 @@
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
 }
 
 /* ============================================================================
+ * SUPERFÍCIES ESCURAS DA MARCA
+ *
+ * A barra lateral, a faixa de destaque do painel e o lado da cena no login são
+ * SEMPRE ameixa, nos dois temas. É a assinatura visual do produto: o kit manda
+ * "ameixa como base", e um painel inteiro claro não mostra a marca em lugar
+ * nenhum. Por isso estes tokens não mudam no tema escuro.
+ *
+ * Sobre ameixa o lima pode ser texto (9,6:1) — é o único lugar onde ele é.
+ * ========================================================================== */
+:root {
+  --cor-lateral: 24 15 34;           /* #180F22 */
+  --cor-lateral-2: 36 24 50;         /* #241832 */
+  --cor-lateral-borda: 58 44 76;     /* #3A2C4C */
+  --cor-lateral-tinta: 242 238 246;  /* #F2EEF6 — 15,9:1 */
+  --cor-lateral-suave: 176 166 190;  /* #B0A6BE — 7,4:1 */
+}
+
+/* ============================================================================
  * MOVIMENTO
  *
- * Uma animação só, curta, na entrada do conteúdo. O objetivo é dar a sensação
- * de que a tela ACONTECEU, em vez de aparecer pronta — é o que separa um app
- * de uma página estática.
+ * O produto dispara mensagens: a interface precisa parecer VIVA — o pulso do
+ * logotipo corre, os números contam até o valor, os blocos entram em sequência.
+ * Mas movimento tem regra:
  *
- * 180 ms e 6 px: abaixo disso ninguém percebe, acima disso vira espera. E toda
- * ela é desligada em `prefers-reduced-motion`, que não é preferência estética:
- * para quem tem sensibilidade vestibular, movimento na tela causa enjoo.
+ * 1. Toda animação termina num estado legível. Quem desliga movimento no
+ *    sistema (`prefers-reduced-motion`) vê o quadro final, nunca um bloco
+ *    invisível esperando uma animação que não vai rodar.
+ * 2. Nada anima em loop atrás de texto que se lê. Loop só em peça decorativa.
+ * 3. Entradas são curtas (até ~400 ms). Acima disso a tela parece lenta.
  * ========================================================================== */
 @keyframes entrada {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -257,8 +278,191 @@
   }
 }
 
-@media (prefers-reduced-motion: no-preference) {
+@keyframes pulso-traco {
+  0% {
+    stroke-dashoffset: 120;
+  }
+  55%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes flutuar {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes onda {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+@keyframes brilho {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes surgir {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sinal {
+  0% {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}
+
+@keyframes aurora {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(4%, -6%) scale(1.08);
+  }
+}
+
+@keyframes preencher {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@layer utilities {
   .anima-entrada {
-    animation: entrada 180ms ease-out both;
+    animation: entrada 320ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+
+  /* Filhos entram em sequência. Até 12 passos; depois disso todos juntos —
+     escada longa demais vira espera. */
+  .escalonado > * {
+    animation: entrada 380ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .escalonado > *:nth-child(2) { animation-delay: 50ms; }
+  .escalonado > *:nth-child(3) { animation-delay: 100ms; }
+  .escalonado > *:nth-child(4) { animation-delay: 150ms; }
+  .escalonado > *:nth-child(5) { animation-delay: 200ms; }
+  .escalonado > *:nth-child(6) { animation-delay: 250ms; }
+  .escalonado > *:nth-child(7) { animation-delay: 300ms; }
+  .escalonado > *:nth-child(8) { animation-delay: 350ms; }
+  .escalonado > *:nth-child(9) { animation-delay: 400ms; }
+  .escalonado > *:nth-child(10) { animation-delay: 450ms; }
+  .escalonado > *:nth-child(11) { animation-delay: 500ms; }
+  .escalonado > *:nth-child(12) { animation-delay: 550ms; }
+
+  .anima-pulso-traco {
+    stroke-dasharray: 120;
+    animation: pulso-traco 2.4s cubic-bezier(0.6, 0, 0.3, 1) infinite;
+  }
+
+  .anima-flutuar {
+    animation: flutuar 6s ease-in-out infinite;
+  }
+
+  .anima-surgir {
+    animation: surgir 420ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+
+  .anima-aurora {
+    animation: aurora 14s ease-in-out infinite;
+  }
+
+  .anima-preencher {
+    transform-origin: left;
+    animation: preencher 900ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+
+  /* Anel que se expande a partir de um ponto: "isto está ao vivo". */
+  .ponto-vivo {
+    position: relative;
+  }
+  .ponto-vivo::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background: currentColor;
+    animation: onda 1.8s ease-out infinite;
+  }
+
+  /* Esqueleto de carregamento: brilho que atravessa. */
+  .esqueleto {
+    background: linear-gradient(
+      90deg,
+      rgb(var(--cor-superficie-2)) 25%,
+      rgb(var(--cor-borda) / 0.9) 37%,
+      rgb(var(--cor-superficie-2)) 63%
+    );
+    background-size: 400% 100%;
+    animation: brilho 1.6s ease infinite;
+  }
+
+  /* Textura de pontos: dá profundidade ao fundo sem competir com o conteúdo. */
+  .fundo-pontos {
+    background-image: radial-gradient(rgb(var(--cor-tinta) / 0.07) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  .fundo-pontos-claro {
+    background-image: radial-gradient(rgb(255 255 255 / 0.07) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  /* Cartão que responde ao ponteiro: sobe um pouco e ganha borda de marca. */
+  .cartao-interativo {
+    transition:
+      transform 200ms cubic-bezier(0.2, 0.7, 0.2, 1),
+      box-shadow 200ms ease,
+      border-color 200ms ease;
+  }
+  .cartao-interativo:hover {
+    transform: translateY(-2px);
+    border-color: rgb(var(--cor-acento) / 0.7);
+    box-shadow:
+      0 2px 4px rgb(var(--cor-sombra) / 0.06),
+      0 18px 40px -18px rgb(var(--cor-sombra) / 0.35);
+  }
+
+  .texto-gradiente-marca {
+    background: linear-gradient(100deg, rgb(var(--cor-acento)), rgb(var(--cor-realce)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
 }

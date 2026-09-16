@@ -5,8 +5,9 @@ import { forwardRef, type InputHTMLAttributes, type SelectHTMLAttributes } from 
 import { cn } from '@/lib/cn';
 
 const BASE_CAMPO =
-  'w-full rounded-lg border border-borda bg-superficie px-3 py-2 text-sm text-tinta ' +
-  'placeholder:text-tinta-suave/70 transition-colors ' +
+  'w-full rounded-xl border border-borda bg-superficie px-3 py-2 text-sm text-tinta shadow-sm ' +
+  'placeholder:text-tinta-suave/70 transition-[border-color,box-shadow] duration-200 ' +
+  'hover:border-tinta/25 focus:border-acento-escuro focus:shadow-[0_0_0_4px_rgb(var(--cor-acento)/0.25)] ' +
   'read-only:bg-superficie-2 read-only:text-tinta-suave ' +
   'disabled:cursor-not-allowed disabled:bg-superficie-2 disabled:text-tinta-suave';
 

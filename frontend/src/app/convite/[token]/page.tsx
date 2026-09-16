@@ -4,13 +4,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
-import { Logotipo } from '@/components/marca/logotipo';
+import { LayoutAcesso } from '@/components/app/layout-acesso';
 import { Alerta } from '@/components/ui/alerta';
 import { Button } from '@/components/ui/button';
-import { Card, CardCorpo } from '@/components/ui/card';
+import { Esqueleto } from '@/components/ui/esqueleto';
 import { AjudaCampo, Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Spinner } from '@/components/ui/spinner';
 import { mensagemDoErro } from '@/lib/api';
 import { AJUDA_SENHA, SENHA_MINIMO, erroDaSenha } from '@/lib/senha';
 import { auth } from '@/lib/servicos';
@@ -88,128 +87,130 @@ export default function Convite({ params }: { params: { token: string } }) {
     }
   }
 
+  if (carregando) {
+    return (
+      <LayoutAcesso titulo="Criar sua conta" descricao="Conferindo o seu convite…">
+        <div role="status" aria-label="Conferindo o convite" className="space-y-4">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="space-y-2">
+              <Esqueleto className="h-3.5 w-28" />
+              <Esqueleto className="h-10 w-full" />
+            </div>
+          ))}
+        </div>
+      </LayoutAcesso>
+    );
+  }
+
+  // Sem convite e sem erro não existe estado neutro a mostrar: se a prévia não
+  // veio, o formulário não tem para quem criar a conta.
+  if (erroConvite || !convite) {
+    return (
+      <LayoutAcesso
+        titulo="Não consegui abrir este convite"
+        descricao="Convites vencem. Se o seu expirou, entre de novo na lista de espera que enviamos um link novo."
+      >
+        <div className="space-y-4">
+          <Alerta>
+            {erroConvite ?? 'Não recebemos os dados deste convite. Abra o link do e-mail de novo.'}
+          </Alerta>
+          <div className="flex flex-wrap gap-2">
+            <Button variante="secundario" onClick={() => void carregar()}>
+              Tentar de novo
+            </Button>
+            <Link href="/lista-espera">
+              <Button variante="discreto">Ir para a lista de espera</Button>
+            </Link>
+          </div>
+        </div>
+      </LayoutAcesso>
+    );
+  }
+
   return (
-    <main id="conteudo" className="flex min-h-screen items-center justify-center px-4 py-10">
-      <div className="w-full max-w-lg space-y-6">
-        <div className="space-y-2 text-center">
-          <Logotipo className="justify-center" />
-          <h1 className="text-2xl">Criar sua conta</h1>
+    <LayoutAcesso
+      titulo="Criar sua conta"
+      descricao="Confirme os dados e escolha a sua senha. Em um minuto você está no painel."
+    >
+      <form onSubmit={enviar} noValidate className="space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="email-convidado">E-mail convidado</Label>
+          <Input
+            id="email-convidado"
+            value={convite.email}
+            readOnly
+            aria-describedby="ajuda-convidado"
+          />
+          <AjudaCampo id="ajuda-convidado">
+            Este será o seu login. Convites vencem — conclua o cadastro agora.
+          </AjudaCampo>
         </div>
 
-        {carregando ? (
-          <Card>
-            <CardCorpo className="flex items-center justify-center gap-3 py-10 text-sm text-tinta-suave">
-              <Spinner rotulo={null} />
-              Conferindo o convite…
-            </CardCorpo>
-          </Card>
-        ) : erroConvite || !convite ? (
-          // Sem convite e sem erro não existe estado neutro a mostrar: se a
-          // prévia não veio, o formulário não tem para quem criar a conta.
-          <Card>
-            <CardCorpo className="space-y-4 text-center">
-              <h2 className="text-lg font-semibold">Não consegui abrir este convite</h2>
-              <Alerta>
-                {erroConvite ?? 'Não recebemos os dados deste convite. Abra o link do e-mail de novo.'}
-              </Alerta>
-              <p className="text-sm text-tinta-suave">
-                Convites vencem. Se o seu expirou, entre de novo na lista de espera que enviamos um
-                link novo.
-              </p>
-              <div className="flex flex-wrap justify-center gap-2 pt-1">
-                <Button variante="secundario" onClick={() => void carregar()}>
-                  Tentar de novo
-                </Button>
-                <Link href="/lista-espera">
-                  <Button variante="discreto">Ir para a lista de espera</Button>
-                </Link>
-              </div>
-            </CardCorpo>
-          </Card>
-        ) : (
-          <Card>
-            <CardCorpo>
-              <form onSubmit={enviar} noValidate className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="email-convidado">E-mail convidado</Label>
-                  <Input
-                    id="email-convidado"
-                    value={convite.email}
-                    readOnly
-                    aria-describedby="ajuda-convidado"
-                  />
-                  <AjudaCampo id="ajuda-convidado">
-                    Este será o seu login. Convites vencem — conclua o cadastro agora.
-                  </AjudaCampo>
-                </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="empresa">Nome da empresa</Label>
+            <Input
+              id="empresa"
+              name="empresa"
+              autoComplete="organization"
+              required
+              value={empresa}
+              onChange={(e) => setEmpresa(e.target.value)}
+              placeholder="Sua empresa"
+            />
+          </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="empresa">Nome da empresa</Label>
-                  <Input
-                    id="empresa"
-                    name="empresa"
-                    autoComplete="organization"
-                    required
-                    value={empresa}
-                    onChange={(e) => setEmpresa(e.target.value)}
-                    placeholder="Como sua empresa aparece para a equipe"
-                  />
-                </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="nome">Seu nome</Label>
+            <Input
+              id="nome"
+              name="nome"
+              autoComplete="name"
+              required
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+            />
+          </div>
+        </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="nome">Seu nome</Label>
-                  <Input
-                    id="nome"
-                    name="nome"
-                    autoComplete="name"
-                    required
-                    value={nome}
-                    onChange={(e) => setNome(e.target.value)}
-                  />
-                </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="senha">Senha</Label>
+            <Input
+              id="senha"
+              name="senha"
+              type="password"
+              autoComplete="new-password"
+              required
+              minLength={SENHA_MINIMO}
+              value={senha}
+              onChange={(e) => setSenha(e.target.value)}
+              aria-describedby="ajuda-senha"
+            />
+            <AjudaCampo id="ajuda-senha">{AJUDA_SENHA}</AjudaCampo>
+          </div>
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="senha">Senha</Label>
-                    <Input
-                      id="senha"
-                      name="senha"
-                      type="password"
-                      autoComplete="new-password"
-                      required
-                      minLength={SENHA_MINIMO}
-                      value={senha}
-                      onChange={(e) => setSenha(e.target.value)}
-                      aria-describedby="ajuda-senha"
-                    />
-                    <AjudaCampo id="ajuda-senha">{AJUDA_SENHA}</AjudaCampo>
-                  </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="confirmacao">Repita a senha</Label>
+            <Input
+              id="confirmacao"
+              name="confirmacao"
+              type="password"
+              autoComplete="new-password"
+              required
+              value={confirmacao}
+              onChange={(e) => setConfirmacao(e.target.value)}
+              invalido={Boolean(confirmacao) && confirmacao !== senha}
+            />
+          </div>
+        </div>
 
-                  <div className="space-y-1.5">
-                    <Label htmlFor="confirmacao">Repita a senha</Label>
-                    <Input
-                      id="confirmacao"
-                      name="confirmacao"
-                      type="password"
-                      autoComplete="new-password"
-                      required
-                      value={confirmacao}
-                      onChange={(e) => setConfirmacao(e.target.value)}
-                      invalido={Boolean(confirmacao) && confirmacao !== senha}
-                    />
-                  </div>
-                </div>
+        {erro ? <Alerta>{erro}</Alerta> : null}
 
-                {erro ? <Alerta>{erro}</Alerta> : null}
-
-                <Button type="submit" larguraTotal carregando={enviando}>
-                  {enviando ? 'Criando sua conta…' : 'Criar conta e entrar'}
-                </Button>
-              </form>
-            </CardCorpo>
-          </Card>
-        )}
-      </div>
-    </main>
+        <Button type="submit" larguraTotal carregando={enviando} className="h-11">
+          {enviando ? 'Criando sua conta…' : 'Criar conta e entrar'}
+        </Button>
+      </form>
+    </LayoutAcesso>
   );
 }

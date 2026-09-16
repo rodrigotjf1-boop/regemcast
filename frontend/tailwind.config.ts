@@ -32,6 +32,12 @@ const config: Config = {
         erro: cor('cor-erro'),
         /* Amarelo do kit. Preenchimento apenas — sobre ele, texto em ameixa. */
         realce: cor('cor-realce'),
+        /* Superfícies escuras da marca — iguais nos dois temas. */
+        lateral: cor('cor-lateral'),
+        'lateral-2': cor('cor-lateral-2'),
+        'lateral-borda': cor('cor-lateral-borda'),
+        'lateral-tinta': cor('cor-lateral-tinta'),
+        'lateral-suave': cor('cor-lateral-suave'),
       },
       fontFamily: {
         // Poppins vendorizada em src/fonts (o kit pede Poppins; next/font/google
@@ -49,9 +55,11 @@ const config: Config = {
            fixa têm a mesma elevação, nada parece estar por cima de nada. */
         flutuante:
           '0 2px 4px rgb(var(--cor-sombra) / 0.08), 0 16px 40px -16px rgb(var(--cor-sombra) / 0.28)',
+        /* Halo de lima no botão primário e no item ativo da navegação. */
+        brilho: '0 0 0 1px rgb(var(--cor-acento) / 0.35), 0 8px 24px -8px rgb(var(--cor-acento) / 0.55)',
       },
       maxWidth: {
-        conteudo: '72rem',
+        conteudo: '80rem',
       },
     },
   },

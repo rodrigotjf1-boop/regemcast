@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { DadosConta } from '@/components/app/dados-conta';
+import { IconeConta } from '@/components/app/icones';
 import { useSessao } from '@/components/app/sessao';
 import { UsuariosConta } from '@/components/app/usuarios-conta';
 import { Badge } from '@/components/ui/badge';
+import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
 import { Card, CardCorpo } from '@/components/ui/card';
+import { Esqueleto } from '@/components/ui/esqueleto';
 import { EstadoErro } from '@/components/ui/estado-erro';
-import { Spinner } from '@/components/ui/spinner';
 import { mensagemDoErro } from '@/lib/api';
 import { conta as servicoConta } from '@/lib/servicos';
 import type { Conta, ResumoConta, StatusConta } from '@/lib/tipos';
@@ -65,20 +67,30 @@ export default function ContaPage() {
   const status = resumo?.conta.status ?? sessao.conta.status;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl">Conta</h1>
-        <Badge tom={TOM_STATUS[status]}>{ROTULO_STATUS[status]}</Badge>
-        <Badge tom={ehDono ? 'acento' : 'neutro'}>
-          {ehDono ? 'Você é o dono' : 'Você é operador'}
-        </Badge>
-      </div>
+    <div className="space-y-6 lg:space-y-8">
+      <CabecalhoPagina
+        icone={<IconeConta />}
+        sobretitulo="Configuração"
+        titulo="Conta e usuários"
+        descricao="Dados da empresa, fuso de envio e quem tem acesso ao painel."
+        acao={
+          <>
+            <Badge tom={TOM_STATUS[status]} ponto>
+              {ROTULO_STATUS[status]}
+            </Badge>
+            <Badge tom={ehDono ? 'acento' : 'neutro'}>{ehDono ? 'Você é o dono' : 'Você é operador'}</Badge>
+          </>
+        }
+      />
 
       {carregando ? (
         <Card>
-          <CardCorpo className="flex items-center gap-3 py-10 text-sm text-tinta-suave">
-            <Spinner rotulo={null} />
-            Carregando dados da conta…
+          <CardCorpo className="space-y-4" role="status" aria-label="Carregando dados da conta">
+            <Esqueleto className="h-4 w-40" />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Esqueleto className="h-10" />
+              <Esqueleto className="h-10" />
+            </div>
           </CardCorpo>
         </Card>
       ) : erro || !resumo ? (

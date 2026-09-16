@@ -17,8 +17,10 @@ type Tamanho = 'md' | 'sm';
  * ao passar o mouse. Token de texto e token de fundo são trabalhos diferentes.
  */
 const VARIANTES: Record<Variante, string> = {
-  primario: 'bg-acento text-acento-contraste hover:bg-acento-escuro active:bg-acento-escuro',
-  secundario: 'bg-superficie text-tinta border border-borda hover:bg-superficie-2',
+  primario:
+    'bg-acento text-acento-contraste font-semibold shadow-[inset_0_1px_0_rgb(255_255_255/0.35)] hover:bg-acento-escuro hover:shadow-brilho active:bg-acento-escuro',
+  secundario:
+    'bg-superficie text-tinta border border-borda shadow-sm hover:border-tinta/25 hover:bg-superficie-2',
   discreto: 'bg-transparent text-tinta-suave hover:bg-superficie-2 hover:text-tinta',
   perigo: 'bg-transparent text-erro border border-erro/40 hover:bg-erro/10',
 };
@@ -57,8 +59,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       disabled={bloqueado}
       aria-busy={carregando || undefined}
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors',
-        'disabled:cursor-not-allowed disabled:opacity-50',
+        'inline-flex items-center justify-center gap-2 rounded-xl font-medium',
+        'transition-[background-color,border-color,box-shadow,transform] duration-200 active:scale-[0.98]',
+        '[&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0',
+        'disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none disabled:active:scale-100',
         VARIANTES[variante],
         TAMANHOS[tamanho],
         larguraTotal && 'w-full',

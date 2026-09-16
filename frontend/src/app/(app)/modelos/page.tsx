@@ -1,16 +1,26 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
 import { EditorModelo } from '@/components/app/editor-modelo';
+import {
+  IconeConversa,
+  IconeEditar,
+  IconeFechar,
+  IconeLixeira,
+  IconeMais,
+  IconeModelo,
+  IconeRaio,
+  IconeRelogio,
+} from '@/components/app/icones';
 import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
 import { Alerta } from '@/components/ui/alerta';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { EsqueletoLista } from '@/components/ui/esqueleto';
 import { EstadoErro } from '@/components/ui/estado-erro';
-import { Spinner } from '@/components/ui/spinner';
 import { mensagemDoErro } from '@/lib/api';
 import { modelos as modelosSalvos, whatsapp } from '@/lib/servicos';
 import type { ModeloDeMensagem, ModeloSalvo } from '@/lib/tipos';
@@ -48,17 +58,23 @@ export default function PaginaModelos() {
   const [criando, setCriando] = useState(false);
   // Rascunho aberto para edicao. Rascunho que nao da para reabrir nao e rascunho.
   const [editando, setEditando] = useState<ModeloSalvo | null>(null);
+  const [desconectado, setDesconectado] = useState(false);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
     setErro('');
     try {
-      setModelos(await whatsapp.modelos());
+      // Sem número conectado não há o que perguntar à Meta. Isso é um passo que
+      // falta, não uma falha — e a tela mostra o caminho, não um erro vermelho.
+      const situacao = await whatsapp.situacao();
+      setDesconectado(!situacao.conectado);
+      setModelos(situacao.conectado ? await whatsapp.modelos() : null);
     } catch (e) {
       // Lista vazia por engano é pior que erro visível: o cliente concluiria
       // que não tem modelo nenhum e iria criar um que já existe.
       setErro(mensagemDoErro(e));
       setModelos(null);
+      setDesconectado(false);
     } finally {
       setCarregando(false);
     }
@@ -96,119 +112,153 @@ export default function PaginaModelos() {
 
   const rascunhos = meus.filter((m) => m.status === 'rascunho' || m.status === 'rejeitado');
   const aguardando = meus.filter((m) => m.status === 'enviado');
+  const aprovados = modelos?.filter((m) => m.status === 'aprovado').length ?? 0;
+  const editorAberto = criando || editando;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 lg:space-y-8">
       <CabecalhoPagina
+        icone={<IconeModelo />}
+        sobretitulo={
+          modelos ? `${aprovados} ${aprovados === 1 ? 'aprovado' : 'aprovados'} pela Meta` : 'Operação'
+        }
         titulo="Modelos de mensagem"
         descricao={
           <>
-            No WhatsApp oficial, toda conversa que <strong>você</strong> começa precisa usar um
-            modelo aprovado pela Meta. Crie o seu aqui — conferimos as regras dela antes de enviar.
+            No WhatsApp oficial, toda conversa que <strong className="text-tinta">você</strong> começa
+            precisa usar um modelo aprovado pela Meta. Crie o seu aqui — conferimos as regras dela
+            antes de enviar.
           </>
         }
         acao={
           <Button
-            variante={criando ? 'secundario' : 'primario'}
-            onClick={() => setCriando((v) => !v)}
-            aria-expanded={criando}
+            variante={editorAberto ? 'secundario' : 'primario'}
+            onClick={() => {
+              if (editorAberto) {
+                setCriando(false);
+                setEditando(null);
+              } else {
+                setCriando(true);
+              }
+            }}
+            aria-expanded={Boolean(editorAberto)}
           >
-            {criando ? 'Cancelar' : 'Novo modelo'}
+            {editorAberto ? <IconeFechar /> : <IconeMais />}
+            {editorAberto ? 'Cancelar' : 'Novo modelo'}
           </Button>
         }
       />
 
-      {(criando || editando) && (
-        <EditorModelo
-          key={editando?.id ?? "novo"}
-          inicial={editando ?? undefined}
-          aoCancelar={() => {
-            setCriando(false);
-            setEditando(null);
-          }}
-          aoSalvar={() => {
-            setCriando(false);
-            setEditando(null);
-            void carregar();
-          }}
-        />
-      )}
-
-      {rascunhos.length > 0 && (
-        <Card>
-          <div className="space-y-3">
-            <h2 className="text-sm font-semibold text-tinta">Rascunhos e recusados</h2>
-            <ul className="space-y-3">
-              {rascunhos.map((m) => (
-                <li key={m.id} className="space-y-2 border-b border-borda/60 pb-3 last:border-0 last:pb-0">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="numerico break-words text-sm font-semibold text-tinta">{m.nome}</p>
-                      <p className="text-xs text-tinta-suave">{m.categoria} · {m.idioma}</p>
-                    </div>
-                    <Badge tom={m.status === 'rejeitado' ? 'erro' : 'neutro'}>{m.status}</Badge>
-                  </div>
-
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-tinta-suave">
-                    {m.corpo}
-                  </p>
-
-                  {/*
-                    O motivo da recusa fica aqui porque a Meta o diz UMA vez, na
-                    resposta do envio. Sem isto, o cliente tentaria de novo às cegas.
-                  */}
-                  {m.motivo && (
-                    <p className="rounded-card border border-erro/30 bg-erro/10 p-2 text-xs leading-relaxed text-erro">
-                      A Meta recusou: {m.motivo}
-                    </p>
-                  )}
-
-                  <div className="flex flex-wrap gap-3 text-xs">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCriando(false);
-                        setEditando(m);
-                      }}
-                      className="text-acento-forte underline-offset-4 hover:underline"
-                    >
-                      Editar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void enviar(m.id)}
-                      className="text-acento-forte underline-offset-4 hover:underline"
-                    >
-                      Enviar para aprovação
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void excluir(m.id)}
-                      className="text-tinta-suave underline-offset-4 hover:text-erro hover:underline"
-                    >
-                      Excluir
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </Card>
+      {editorAberto && (
+        <div className="anima-entrada">
+          <EditorModelo
+            key={editando?.id ?? 'novo'}
+            inicial={editando ?? undefined}
+            aoCancelar={() => {
+              setCriando(false);
+              setEditando(null);
+            }}
+            aoSalvar={() => {
+              setCriando(false);
+              setEditando(null);
+              void carregar();
+            }}
+          />
+        </div>
       )}
 
       {aguardando.length > 0 && (
         <Alerta tom="informacao">
-          {aguardando.length === 1
-            ? '1 modelo está em análise na Meta'
-            : `${aguardando.length} modelos estão em análise na Meta`}
-          . A resposta costuma levar de minutos a algumas horas, e aparece na lista abaixo.
+          <span className="inline-flex items-start gap-2">
+            <IconeRelogio className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              {aguardando.length === 1
+                ? '1 modelo está em análise na Meta'
+                : `${aguardando.length} modelos estão em análise na Meta`}
+              . A resposta costuma levar de minutos a algumas horas, e aparece na lista abaixo.
+            </span>
+          </span>
         </Alerta>
       )}
 
-      {carregando && (
-        <div className="flex items-center gap-3 text-sm text-tinta-suave">
-          <Spinner /> Carregando…
-        </div>
+      {rascunhos.length > 0 && (
+        <section aria-label="Rascunhos e recusados" className="anima-entrada space-y-3">
+          <h2 className="text-base font-semibold text-tinta">Rascunhos e recusados</h2>
+          <ul className="escalonado grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {rascunhos.map((m) => (
+              <li
+                key={m.id}
+                className="flex flex-col gap-3 rounded-card border border-dashed border-borda bg-superficie p-5 shadow-card"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="numerico break-words text-sm font-semibold text-tinta">{m.nome}</p>
+                    <p className="text-xs text-tinta-suave">
+                      {m.categoria} · {m.idioma}
+                    </p>
+                  </div>
+                  <Badge tom={m.status === 'rejeitado' ? 'erro' : 'neutro'} ponto>
+                    {m.status}
+                  </Badge>
+                </div>
+
+                <p className="line-clamp-4 whitespace-pre-wrap text-sm leading-relaxed text-tinta-suave">
+                  {m.corpo}
+                </p>
+
+                {/*
+                  O motivo da recusa fica aqui porque a Meta o diz UMA vez, na
+                  resposta do envio. Sem isto, o cliente tentaria de novo às cegas.
+                */}
+                {m.motivo && (
+                  <p className="rounded-xl border border-erro/30 bg-erro/10 p-2.5 text-xs leading-relaxed text-erro">
+                    A Meta recusou: {m.motivo}
+                  </p>
+                )}
+
+                <div className="mt-auto flex flex-wrap gap-2 border-t border-borda pt-3">
+                  <Button
+                    tamanho="sm"
+                    variante="secundario"
+                    onClick={() => {
+                      setCriando(false);
+                      setEditando(m);
+                    }}
+                  >
+                    <IconeEditar />
+                    Editar
+                  </Button>
+                  <Button tamanho="sm" onClick={() => void enviar(m.id)}>
+                    <IconeRaio />
+                    Enviar para aprovação
+                  </Button>
+                  <Button tamanho="sm" variante="discreto" onClick={() => void excluir(m.id)} className="hover:text-erro">
+                    <IconeLixeira />
+                    Excluir
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {carregando && <EsqueletoLista linhas={3} />}
+
+      {!carregando && !erro && desconectado && (
+        <EmptyState
+          icone={<IconeConversa />}
+          titulo="Conecte o número para ver os aprovados"
+          descricao="Os modelos aprovados ficam na sua conta da Meta. Você já pode escrever e salvar rascunhos aqui; para enviar à aprovação, conecte o número primeiro."
+          acao={
+            <Link href="/whatsapp">
+              <Button>
+                <IconeConversa />
+                Conectar o número
+              </Button>
+            </Link>
+          }
+        />
       )}
 
       {!carregando && erro && (
@@ -221,21 +271,31 @@ export default function PaginaModelos() {
 
       {!carregando && !erro && modelos?.length === 0 && (
         <EmptyState
+          icone={<IconeModelo />}
           titulo="Nenhum modelo aprovado ainda"
-          descricao={
-            <>
-              Crie o primeiro no botão acima. A Meta analisa cada modelo antes de liberar, o que costuma levar de alguns minutos a algumas horas.
-            </>
+          descricao="Crie o primeiro no botão acima. A Meta analisa cada modelo antes de liberar, o que costuma levar de alguns minutos a algumas horas."
+          acao={
+            editorAberto ? undefined : (
+              <Button onClick={() => setCriando(true)}>
+                <IconeMais />
+                Novo modelo
+              </Button>
+            )
           }
         />
       )}
 
       {!carregando && !erro && modelos && modelos.length > 0 && (
-        <div className="space-y-4">
-          {modelos.map((m) => (
-            <CartaoModelo key={m.id} modelo={m} />
-          ))}
-        </div>
+        <section aria-label="Modelos na Meta" className="space-y-3">
+          <h2 className="text-base font-semibold text-tinta">Na Meta</h2>
+          <ul className="escalonado grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {modelos.map((m) => (
+              <li key={m.id}>
+                <CartaoModelo modelo={m} />
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </div>
   );
@@ -243,60 +303,57 @@ export default function PaginaModelos() {
 
 function CartaoModelo({ modelo }: { modelo: ModeloDeMensagem }) {
   return (
-    <Card>
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="numerico break-words text-base font-semibold text-tinta">{modelo.nome}</p>
-            <p className="text-xs text-tinta-suave">
-              {modelo.categoria} · {modelo.idioma}
-            </p>
-          </div>
-          <Badge tom={tomDoStatus(modelo.status)}>{modelo.status}</Badge>
+    <article className="cartao-interativo flex h-full flex-col overflow-hidden rounded-card border border-borda bg-superficie shadow-card">
+      <div className="flex items-start justify-between gap-2 p-4">
+        <div className="min-w-0">
+          <p className="numerico break-words text-sm font-semibold text-tinta">{modelo.nome}</p>
+          <p className="text-xs capitalize text-tinta-suave">
+            {modelo.categoria} · {modelo.idioma}
+          </p>
         </div>
+        <Badge tom={tomDoStatus(modelo.status)} ponto>
+          {modelo.status}
+        </Badge>
+      </div>
 
-        {/*
-          A prévia mostra a mensagem como ela vai chegar, com as partes na ordem
-          em que o WhatsApp as exibe. Ler `{{1}}` numa lista de campos não diz
-          nada; ler a frase inteira diz na hora se o modelo serve.
-        */}
-        <div className="space-y-2 rounded-card border border-borda bg-superficie-2 p-3">
-          {modelo.cabecalho && (
-            <p className="text-sm font-semibold text-tinta">{modelo.cabecalho}</p>
-          )}
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-tinta">{modelo.corpo}</p>
-          {modelo.rodape && <p className="text-xs text-tinta-suave">{modelo.rodape}</p>}
-
+      {/*
+        A prévia mostra a mensagem como ela vai chegar, com as partes na ordem
+        em que o WhatsApp as exibe. Ler `{{1}}` numa lista de campos não diz
+        nada; ler a frase inteira diz na hora se o modelo serve.
+      */}
+      <div className="fundo-pontos flex-1 bg-superficie-2/70 px-4 py-5">
+        <div className="max-w-[92%] rounded-2xl rounded-tl-md bg-superficie p-3 shadow-sm">
+          {modelo.cabecalho && <p className="mb-1 text-sm font-semibold text-tinta">{modelo.cabecalho}</p>}
+          <p className="line-clamp-6 whitespace-pre-wrap text-sm leading-relaxed text-tinta">{modelo.corpo}</p>
+          {modelo.rodape && <p className="mt-1.5 text-xs text-tinta-suave">{modelo.rodape}</p>}
           {modelo.botoes.length > 0 && (
-            <ul className="flex flex-wrap gap-2 pt-1">
+            <ul className="mt-2 divide-y divide-borda border-t border-borda">
               {modelo.botoes.map((b) => (
-                <li
-                  key={b}
-                  className="rounded-lg border border-acento/25 bg-superficie px-2 py-1 text-xs font-medium text-acento-forte"
-                >
+                <li key={b} className="py-1.5 text-center text-xs font-medium text-acento-forte">
                   {b}
                 </li>
               ))}
             </ul>
           )}
         </div>
-
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-tinta-suave">
-          <span>
-            {modelo.variaveis === 0
-              ? 'Sem variáveis'
-              : modelo.variaveis === 1
-                ? '1 variável a preencher'
-                : `${modelo.variaveis} variáveis a preencher`}
-          </span>
-        </div>
-
-        {modelo.motivo && (
-          <p className="rounded-card border border-erro/30 bg-erro/10 p-3 text-sm leading-relaxed text-erro">
-            A Meta recusou este modelo. Motivo informado por ela: {modelo.motivo}. Crie outro aqui com um nome novo.
-          </p>
-        )}
       </div>
-    </Card>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-borda px-4 py-2.5 text-xs text-tinta-suave">
+        <span>
+          {modelo.variaveis === 0
+            ? 'Sem variáveis'
+            : modelo.variaveis === 1
+              ? '1 variável a preencher'
+              : `${modelo.variaveis} variáveis a preencher`}
+        </span>
+      </div>
+
+      {modelo.motivo && (
+        <p className="border-t border-erro/30 bg-erro/10 p-3 text-xs leading-relaxed text-erro">
+          A Meta recusou este modelo. Motivo informado por ela: {modelo.motivo}. Crie outro aqui com
+          um nome novo.
+        </p>
+      )}
+    </article>
   );
 }
