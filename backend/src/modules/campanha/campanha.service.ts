@@ -29,6 +29,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, count, desc, eq } from 'drizzle-orm';
 
+import { paraCloudApi } from '../../common/telefone';
 import { ContextoDb } from '../../db/contexto';
 import { campanha, campanhaDestinatario, waNumero } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
@@ -72,13 +73,35 @@ export class CampanhaService {
       );
     }
 
-    const telefones = dto.destinatarios.map((d) => d.telefone);
-    const repetido = telefones.find((t, i) => telefones.indexOf(t) !== i);
+    // Normaliza ANTES de qualquer outra coisa, por dois motivos.
+    //
+    // É este valor que vai para a Meta: quando a validação e a gravação usam
+    // funções diferentes, o número que passou no formulário não é o número que
+    // sai — foi assim que "21989751705", sem o 55, virou um destinatário
+    // internacional inexistente e um erro da Meta que não explicava nada.
+    //
+    // E é por ele que a duplicidade tem de ser medida: "21989751705" e
+    // "5521989751705" são a MESMA pessoa. Comparar o texto cru deixaria os dois
+    // passarem aqui para estourar depois no índice único, com uma mensagem do
+    // banco que ninguém entende.
+    const normalizados = dto.destinatarios.map((d) => {
+      const { e164 } = paraCloudApi(d.telefone);
+      if (!e164) {
+        throw new BadRequestException(
+          `O telefone ${d.telefone} não é válido. Informe DDD + número, por exemplo 21 99999-8888.`,
+        );
+      }
+      return { telefoneE164: e164, variaveis: d.variaveis ?? [] };
+    });
+
+    const repetido = normalizados.find(
+      (d, i) => normalizados.findIndex((o) => o.telefoneE164 === d.telefoneE164) !== i,
+    );
     if (repetido) {
       // O banco também barra (índice único), mas a mensagem dele não diz qual
       // número está repetido — e é isso que a pessoa precisa saber.
       throw new BadRequestException(
-        `O telefone ${repetido} aparece mais de uma vez. Cada pessoa recebe uma vez só.`,
+        `O telefone ${repetido.telefoneE164} aparece mais de uma vez. Cada pessoa recebe uma vez só.`,
       );
     }
 
@@ -97,11 +120,11 @@ export class CampanhaService {
       .returning({ id: campanha.id });
 
     await this.ctx.db.insert(campanhaDestinatario).values(
-      dto.destinatarios.map((d) => ({
+      normalizados.map((d) => ({
         contaId,
         campanhaId: criada!.id,
-        telefoneE164: d.telefone,
-        variaveis: d.variaveis ?? [],
+        telefoneE164: d.telefoneE164,
+        variaveis: d.variaveis,
       })),
     );
 

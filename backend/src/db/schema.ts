@@ -360,3 +360,88 @@ export const campanhaDestinatario = pgTable('campanha_destinatario', {
     .on(t.waMessageId)
     .where(sql`wa_message_id is not null`),
 }));
+
+/**
+ * Um público. É o que a campanha escolhe no lugar de uma caixa de texto.
+ *
+ * Lista é coleção explícita, e não filtro salvo, porque o cliente precisa saber
+ * exatamente quem vai receber antes de disparar. Filtro salvo muda de tamanho
+ * sozinho entre a conferência e o envio — e a conta da Meta chega maior.
+ */
+export const contatoLista = pgTable('contato_lista', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contaId: uuid('conta_id').notNull(),
+  nome: text('nome').notNull(),
+  descricao: text('descricao'),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  contaIdx: index('idx_contato_lista_conta').on(t.contaId, t.criadoEm),
+}));
+
+/**
+ * O registro de cada importação, com os totais como foram NO DIA.
+ *
+ * Recontar depois dá outro número, porque a base muda — e a pergunta "de onde
+ * veio este contato?" precisa ter resposta.
+ */
+export const importacao = pgTable('importacao', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contaId: uuid('conta_id').notNull(),
+  /** vcard | csv | xlsx | texto */
+  formato: text('formato').notNull(),
+  arquivoNome: text('arquivo_nome'),
+  totalLidos: integer('total_lidos').notNull().default(0),
+  validos: integer('validos').notNull().default(0),
+  invalidos: integer('invalidos').notNull().default(0),
+  novos: integer('novos').notNull().default(0),
+  jaExistiam: integer('ja_existiam').notNull().default(0),
+  listaId: uuid('lista_id'),
+  criadoPor: uuid('criado_por'),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  contaIdx: index('idx_importacao_conta').on(t.contaId, t.criadoEm),
+}));
+
+/**
+ * Uma pessoa que pode receber mensagem desta conta.
+ *
+ * `optOut` mora aqui, na mesma linha, de propósito: na auditoria do Regem o
+ * descadastro ficava em tabela separada e NÃO barrava o envio, porque o disparo
+ * lia a base e nunca cruzava com a lista de saída. Juntos, esquecer de cruzar
+ * deixa de ser possível.
+ */
+export const contato = pgTable('contato', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contaId: uuid('conta_id').notNull(),
+  /** E.164 sem o '+', COM o código do país — o formato que a Cloud API aceita. */
+  telefoneE164: text('telefone_e164').notNull(),
+  nome: text('nome'),
+  /** declarado | formulario | conversa | api */
+  consentimentoOrigem: text('consentimento_origem'),
+  consentimentoEm: timestamp('consentimento_em', { withTimezone: true }),
+  consentimentoEvidencia: text('consentimento_evidencia'),
+  optOut: boolean('opt_out').notNull().default(false),
+  optOutEm: timestamp('opt_out_em', { withTimezone: true }),
+  optOutOrigem: text('opt_out_origem'),
+  importacaoId: uuid('importacao_id'),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  unicoUq: uniqueIndex('idx_contato_unico').on(t.contaId, t.telefoneE164),
+  contaIdx: index('idx_contato_conta').on(t.contaId, t.criadoEm),
+  elegivelIdx: index('idx_contato_elegivel').on(t.contaId).where(sql`opt_out = false`),
+}));
+
+/** Quem está em qual lista. `contaId` próprio para a RLS não precisar de junção. */
+export const contatoListaItem = pgTable('contato_lista_item', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contaId: uuid('conta_id').notNull(),
+  listaId: uuid('lista_id').notNull(),
+  contatoId: uuid('contato_id').notNull(),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  unicoUq: uniqueIndex('idx_contato_lista_item_unico').on(t.listaId, t.contatoId),
+  listaIdx: index('idx_contato_lista_item_lista').on(t.contaId, t.listaId),
+  contatoIdx: index('idx_contato_lista_item_contato').on(t.contaId, t.contatoId),
+}));

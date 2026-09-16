@@ -13,6 +13,7 @@ import { DrizzleModule } from './db/drizzle.module';
 import { AuditoriaModule } from './modules/auditoria/auditoria.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ContaModule } from './modules/conta/conta.module';
+import { ContatoModule } from './modules/contato/contato.module';
 import { ListaEsperaModule } from './modules/lista-espera/lista-espera.module';
 import { CampanhaModule } from './modules/campanha/campanha.module';
 import { MetaModule } from './modules/meta/meta.module';
@@ -56,6 +57,7 @@ import { SaudeModule } from './modules/saude/saude.module';
     ListaEsperaModule,
     MetaModule,
     CampanhaModule,
+    ContatoModule,
     SaudeModule,
   ],
   providers: [
