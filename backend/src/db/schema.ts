@@ -571,3 +571,38 @@ export const eventoErro = pgTable('evento_erro', {
 }, (t) => ({
   tempoIdx: index('idx_evento_erro_tempo').on(t.criadoEm),
 }));
+
+/**
+ * Operador da distribuição: login próprio, separado dos clientes, com
+ * verificação em duas etapas obrigatória. Escopo de SISTEMA.
+ */
+export const operadorDistribuicao = pgTable('operador_distribuicao', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  nome: text('nome').notNull(),
+  email: text('email').notNull(),
+  senhaHash: text('senha_hash').notNull(),
+  /** Cifrado com DIST_TOTP_CHAVE. Em claro, quem lê o banco gera os códigos. */
+  totpSegredoCifrado: text('totp_segredo_cifrado'),
+  /** Só vira verdade depois que o operador confirma um código válido. */
+  totpAtivo: boolean('totp_ativo').notNull().default(false),
+  status: text('status').notNull().default('ativo'),
+  tokenVersao: integer('token_versao').notNull().default(1),
+  tentativasFalhas: integer('tentativas_falhas').notNull().default(0),
+  bloqueadoAte: timestamp('bloqueado_ate', { withTimezone: true }),
+  ultimoLoginEm: timestamp('ultimo_login_em', { withTimezone: true }),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** O que cada operador viu ou fez. Append-only — o banco recusa update e delete. */
+export const acessoDistribuicao = pgTable('acesso_distribuicao', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  operadorId: uuid('operador_id'),
+  operadorNome: text('operador_nome'),
+  acao: text('acao').notNull(),
+  contaId: uuid('conta_id'),
+  detalhe: jsonb('detalhe').notNull().default(sql`'{}'::jsonb`),
+  ip: inet('ip'),
+  userAgent: text('user_agent'),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+});
