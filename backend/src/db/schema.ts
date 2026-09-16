@@ -13,6 +13,8 @@ import { sql } from 'drizzle-orm';
 import {
   customType,
   bigint,
+  smallint,
+  time,
   bigserial,
   boolean,
   inet,
@@ -316,6 +318,15 @@ export const campanha = pgTable('campanha', {
   modeloCategoria: text('modelo_categoria'),
   status: text('status').notNull().default('rascunho'),
   criadaPor: uuid('criada_por'),
+  /** 0 = domingo … 6 = sábado. Vazio = qualquer dia. */
+  janelaDias: smallint('janela_dias').array().notNull().default(sql`'{}'`),
+  /** 'HH:MM:SS' no fuso da conta. `time`, não instante: a regra é "das 9 às 20 todo dia". */
+  janelaInicio: time('janela_inicio'),
+  janelaFim: time('janela_fim'),
+  pausaSegundos: integer('pausa_segundos').notNull().default(0),
+  maxPorDia: integer('max_por_dia'),
+  maxPorSemana: integer('max_por_semana'),
+  maxPorMes: integer('max_por_mes'),
   iniciadaEm: timestamp('iniciada_em', { withTimezone: true }),
   concluidaEm: timestamp('concluida_em', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),

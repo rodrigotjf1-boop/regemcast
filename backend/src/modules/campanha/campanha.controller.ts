@@ -55,4 +55,10 @@ export class CampanhaController {
   ) {
     return this.servico.disparar(usuario.contaId, usuario.id, id);
   }
+
+  /** Retoma uma campanha que pausou porque a conexão caiu. */
+  @Post(':id/retomar')
+  retomar(@UsuarioAtual() usuario: UsuarioAutenticado, @Param('id', ParseUUIDPipe) id: string) {
+    return this.servico.retomar(usuario.contaId, usuario.id, id);
+  }
 }
