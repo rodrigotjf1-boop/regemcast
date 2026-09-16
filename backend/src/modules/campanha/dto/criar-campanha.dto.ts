@@ -6,11 +6,12 @@ import {
   IsArray,
   IsOptional,
   IsString,
-  Matches,
   MaxLength,
   MinLength,
   ValidateNested,
 } from 'class-validator';
+
+import { EhTelefoneE164 } from '../../lista-espera/dto/telefone';
 
 /**
  * Teto de destinatários por campanha, **enquanto o disparo for síncrono**.
@@ -26,15 +27,21 @@ export const TETO_DESTINATARIOS = 10;
 
 export class DestinatarioDto {
   /**
-   * E.164 sem o `+`: país + DDD + número, só dígitos.
+   * Telefone com DDD. O país é assumido como Brasil quando não vier.
    *
    * Validado aqui e não só no envio porque a Meta cobra a tentativa e o erro
    * dela (131026) não diz que o problema foi formato.
+   *
+   * O validador é o MESMO do resto do produto (`libphonenumber-js`), e é essa
+   * unificação que corrige um defeito real: a regra anterior aceitava qualquer
+   * coisa entre 8 e 15 dígitos, então "21989751705" — o jeito como todo
+   * brasileiro escreve o próprio número — passava sem o 55 e a Meta o lia como
+   * um número internacional inexistente.
    */
-  @ApiProperty({ description: 'Telefone em E.164 sem o +, ex.: 5521999998888.' })
+  @ApiProperty({ description: 'Telefone com DDD, ex.: 21 99999-8888 ou 5521999998888.' })
   @IsString({ message: 'Informe o telefone.' })
-  @Matches(/^[1-9]\d{7,14}$/, {
-    message: 'O telefone precisa ter país + DDD + número, só dígitos. Exemplo: 5521999998888.',
+  @EhTelefoneE164({
+    message: 'Informe um telefone válido com DDD, por exemplo 21 99999-8888.',
   })
   telefone!: string;
 

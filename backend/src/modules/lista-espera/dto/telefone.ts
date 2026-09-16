@@ -1,42 +1,24 @@
 /**
- * Telefone em E.164, validado e normalizado no MESMO lugar.
+ * Validador de telefone da lista de espera.
  *
- * A validação e a gravação usam a mesma função de propósito: quando são duas
- * implementações, o que o validador aceita e o que o banco recebe divergem — e
- * o sintoma só aparece na hora do disparo, quando a Meta recusa o número.
+ * A normalização em si mora em `src/common/telefone.ts`, que é a única do
+ * produto — este arquivo só embrulha aquela função num decorator de
+ * `class-validator`. Quando eram duas implementações, o que o validador
+ * aceitava e o que a campanha enviava divergiram, e o sintoma só apareceu na
+ * hora do disparo, com a Meta recusando o número.
  *
- * Guardamos sempre com o "+". Sem ele, o mesmo assinante entra duas vezes na
- * base ("11987654321" e "+5511987654321") e recebe a campanha duas vezes.
+ * Os re-exports abaixo existem para não quebrar quem já importa daqui.
  */
 import { registerDecorator, type ValidationOptions } from 'class-validator';
-import { parsePhoneNumberFromString } from 'libphonenumber-js';
 
-/**
- * País assumido quando o número vem sem DDI. O produto nasce no Brasil; um
- * cliente de fora precisa informar o "+DDI" e o parser respeita.
- */
-export const PAIS_PADRAO = 'BR' as const;
+import { normalizarTelefoneE164 } from '../../../common/telefone';
 
-/** Devolve o número em E.164 (com "+") ou `null` se não for um telefone válido. */
-export function normalizarTelefoneE164(bruto: unknown): string | null {
-  if (typeof bruto !== 'string') return null;
-  const limpo = bruto.trim();
-  if (!limpo) return null;
-
-  const numero = parsePhoneNumberFromString(limpo, PAIS_PADRAO);
-  if (!numero || !numero.isValid()) return null;
-  return String(numero.number);
-}
-
-/**
- * Esconde o miolo do número para log e auditoria: `+5511*****4321`.
- * Nunca registramos o telefone inteiro.
- */
-export function mascararTelefone(e164: string | null): string | null {
-  if (!e164) return null;
-  if (e164.length <= 8) return '*'.repeat(e164.length);
-  return `${e164.slice(0, 5)}${'*'.repeat(e164.length - 9)}${e164.slice(-4)}`;
-}
+export {
+  PAIS_PADRAO,
+  mascararTelefone,
+  normalizarTelefoneE164,
+  paraCloudApi,
+} from '../../../common/telefone';
 
 /** Valida telefone aceitando formato local (com DDD) ou internacional. */
 export function EhTelefoneE164(opcoes?: ValidationOptions) {
