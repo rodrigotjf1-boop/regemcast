@@ -45,6 +45,8 @@ export default function PaginaModelos() {
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(true);
   const [criando, setCriando] = useState(false);
+  // Rascunho aberto para edicao. Rascunho que nao da para reabrir nao e rascunho.
+  const [editando, setEditando] = useState<ModeloSalvo | null>(null);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -113,11 +115,17 @@ export default function PaginaModelos() {
         </Button>
       </header>
 
-      {criando && (
+      {(criando || editando) && (
         <EditorModelo
-          aoCancelar={() => setCriando(false)}
+          key={editando?.id ?? "novo"}
+          inicial={editando ?? undefined}
+          aoCancelar={() => {
+            setCriando(false);
+            setEditando(null);
+          }}
           aoSalvar={() => {
             setCriando(false);
+            setEditando(null);
             void carregar();
           }}
         />
@@ -153,6 +161,16 @@ export default function PaginaModelos() {
                   )}
 
                   <div className="flex flex-wrap gap-3 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCriando(false);
+                        setEditando(m);
+                      }}
+                      className="text-acento-forte underline-offset-4 hover:underline"
+                    >
+                      Editar
+                    </button>
                     <button
                       type="button"
                       onClick={() => void enviar(m.id)}

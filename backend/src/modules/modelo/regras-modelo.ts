@@ -14,8 +14,25 @@
  * e pergunta a ESTE arquivo quando precisa de uma resposta.
  */
 
+/** Um cartão do carrossel. */
+export interface CartaoDoModelo {
+  /** Referência da imagem. Obrigatória: cartão sem imagem a Meta não aceita. */
+  imagem?: string | null;
+  corpo: string;
+  botoes?: BotaoDoModelo[];
+}
+
 /** O que o cliente escreveu, antes de virar componentes da Meta. */
 export interface ModeloParaValidar {
+  /**
+   * `simples` ou `carrossel`.
+   *
+   * Não é uma variação: o carrossel é outra forma. A Meta o monta como um BODY
+   * seguido de um CAROUSEL com 2 a 10 cartões, e ele **não tem** cabeçalho,
+   * rodapé nem oferta por tempo limitado.
+   */
+  tipo?: 'simples' | 'carrossel';
+  cartoes?: CartaoDoModelo[];
   nome: string;
   idioma: string;
   categoria: 'MARKETING' | 'UTILITY' | 'AUTHENTICATION';
@@ -43,9 +60,16 @@ export interface BotaoDoModelo {
 /** Um problema encontrado, já escrito para o cliente ler. */
 export interface ProblemaNoModelo {
   /** Qual parte do formulário destacar. */
-  campo: 'nome' | 'categoria' | 'cabecalho' | 'corpo' | 'rodape' | 'botoes' | 'lto';
+  campo: 'nome' | 'categoria' | 'cabecalho' | 'corpo' | 'rodape' | 'botoes' | 'lto' | 'cartoes';
   mensagem: string;
 }
+
+// Limites do carrossel, documentados pela Meta.
+export const MIN_CARTOES = 2;
+export const MAX_CARTOES = 10;
+export const LIMITE_CARTAO_CORPO = 160;
+export const MIN_BOTOES_CARTAO = 1;
+export const MAX_BOTOES_CARTAO = 2;
 
 // Limites documentados pela Meta.
 export const LIMITE_NOME = 512;
@@ -109,6 +133,16 @@ export function conferirModelo(m: ModeloParaValidar): ProblemaNoModelo[] {
   }
 
   if (corpo) problemas.push(...conferirVariaveis(corpo, m.corpoExemplos ?? []));
+
+  // -------------------------------------------------------------- carrossel
+  //
+  // O carrossel exclui três coisas de uma vez. Conferir isso ANTES das regras
+  // de cabeçalho e rodapé evita cobrar do cliente um campo que a forma dele
+  // nem tem.
+  if (m.tipo === 'carrossel') {
+    problemas.push(...conferirCarrossel(m));
+    return problemas;
+  }
 
   // -------------------------------------------------------- oferta por tempo
   const ehLto = !!m.ltoAtivo;
@@ -229,6 +263,77 @@ function conferirVariaveis(corpo: string, exemplos: string[]): ProblemaNoModelo[
   if (informados < distintas.length) {
     p(
       `Preencha um exemplo para cada variável: são ${distintas.length}, e você informou ${informados}. A Meta recusa o modelo sem eles.`,
+    );
+  }
+
+  return problemas;
+}
+
+/**
+ * As regras do carrossel.
+ *
+ * A que mais derruba modelo é a última: **todos os cartões precisam ter a mesma
+ * estrutura de botões**. A Meta monta um carrossel como um componente único, e
+ * um cartão com dois botões ao lado de outro com um só é recusado inteiro — sem
+ * dizer qual cartão está diferente.
+ */
+function conferirCarrossel(m: ModeloParaValidar): ProblemaNoModelo[] {
+  const problemas: ProblemaNoModelo[] = [];
+  const p = (campo: ProblemaNoModelo['campo'], mensagem: string) =>
+    problemas.push({ campo, mensagem });
+
+  // O carrossel não tem estas partes. Avisar é melhor do que ignorar em
+  // silêncio: o cliente escreveu o rodapé e precisa saber que ele não vai.
+  if ((m.rodape ?? '').trim()) {
+    p('rodape', 'Carrossel não tem rodapé. Remova o rodapé ou volte para o modelo simples.');
+  }
+  if (m.cabecalhoFormato) {
+    p('cabecalho', 'Carrossel não tem cabeçalho — a imagem fica em cada cartão.');
+  }
+  if (m.ltoAtivo) {
+    p('lto', 'Oferta por tempo limitado não funciona com carrossel. Escolha um dos dois.');
+  }
+
+  const cartoes = m.cartoes ?? [];
+
+  if (cartoes.length < MIN_CARTOES) {
+    p('cartoes', `Um carrossel precisa de pelo menos ${MIN_CARTOES} cartões.`);
+    return problemas;
+  }
+  if (cartoes.length > MAX_CARTOES) {
+    p('cartoes', `Um carrossel aceita até ${MAX_CARTOES} cartões.`);
+  }
+
+  cartoes.forEach((c, i) => {
+    const onde = `Cartão ${i + 1}`;
+
+    if (!(c.imagem ?? '').trim()) p('cartoes', `${onde}: escolha a imagem.`);
+
+    const corpo = (c.corpo ?? '').trim();
+    if (!corpo) p('cartoes', `${onde}: escreva o texto.`);
+    else if (corpo.length > LIMITE_CARTAO_CORPO) {
+      p('cartoes', `${onde}: o texto precisa ter até ${LIMITE_CARTAO_CORPO} caracteres.`);
+    }
+
+    const botoes = c.botoes ?? [];
+    if (botoes.length < MIN_BOTOES_CARTAO) {
+      p('cartoes', `${onde}: cada cartão precisa de pelo menos um botão.`);
+    } else if (botoes.length > MAX_BOTOES_CARTAO) {
+      p('cartoes', `${onde}: cada cartão aceita no máximo ${MAX_BOTOES_CARTAO} botões.`);
+    }
+
+    conferirBotoes(botoes).forEach((prob) => p('cartoes', `${onde}: ${prob.mensagem}`));
+  });
+
+  // A regra que a Meta não explica na recusa: mesma estrutura em todos.
+  const assinatura = (c: CartaoDoModelo) =>
+    (c.botoes ?? []).map((b) => b.tipo).join('|');
+  const primeira = assinatura(cartoes[0]);
+  const diferente = cartoes.findIndex((c) => assinatura(c) !== primeira);
+  if (diferente > 0) {
+    p(
+      'cartoes',
+      `Todos os cartões precisam ter os mesmos botões, na mesma ordem. O cartão ${diferente + 1} está diferente do primeiro.`,
     );
   }
 

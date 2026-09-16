@@ -327,6 +327,7 @@ export interface ConfirmacaoDaImportacao {
 
 // ------------------------------------------------------------------ modelos
 
+export type TipoModelo = 'simples' | 'carrossel';
 export type CategoriaModelo = 'MARKETING' | 'UTILITY' | 'AUTHENTICATION';
 export type FormatoCabecalho = 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
 export type TipoBotao = 'URL' | 'PHONE_NUMBER' | 'QUICK_REPLY' | 'COPY_CODE';
@@ -338,8 +339,18 @@ export interface BotaoDoModelo {
   telefone?: string;
 }
 
+/** Um cartão do carrossel. */
+export interface CartaoDoModelo {
+  imagem?: string;
+  corpo: string;
+  botoes?: BotaoDoModelo[];
+}
+
 /** O modelo como o cliente escreve — o corpo de `POST /modelos`. */
 export interface DadosModelo {
+  /** `simples` ou `carrossel`. Carrossel não tem cabeçalho, rodapé nem oferta. */
+  tipo?: TipoModelo;
+  cartoes?: CartaoDoModelo[];
   nome: string;
   idioma?: string;
   categoria?: CategoriaModelo;
@@ -357,13 +368,14 @@ export interface DadosModelo {
 
 /** Um problema encontrado pelas regras da Meta, já em português. */
 export interface ProblemaNoModelo {
-  campo: 'nome' | 'categoria' | 'cabecalho' | 'corpo' | 'rodape' | 'botoes' | 'lto';
+  campo: 'nome' | 'categoria' | 'cabecalho' | 'corpo' | 'rodape' | 'botoes' | 'lto' | 'cartoes';
   mensagem: string;
 }
 
 /** `GET /modelos` — o que está gravado aqui, incluindo rascunho. */
 export interface ModeloSalvo {
   id: string;
+  tipo: TipoModelo;
   nome: string;
   idioma: string;
   categoria: string;
@@ -373,8 +385,15 @@ export interface ModeloSalvo {
   /** Por que a Meta recusou. Ela diz uma vez só. */
   motivo: string | null;
   corpo: string;
+  cabecalhoFormato: FormatoCabecalho | null;
   cabecalhoTexto: string | null;
+  cabecalhoExemplo: string | null;
+  corpoExemplos: string[];
   rodape: string | null;
+  botoes: BotaoDoModelo[];
+  cartoes: CartaoDoModelo[];
+  ltoAtivo: boolean;
+  ltoTexto: string | null;
   variaveis: number;
   criadoEm: string;
 }
