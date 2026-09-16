@@ -130,6 +130,19 @@ defensável (a análise leva ~24h e um "aprovado" adianta o outro pedido). Mas
 submeter `whatsapp_business_messaging` com vídeo que não mostra envio é pedir
 rejeição — e rejeição entra no histórico do app.
 
+## Antes de gravar — regras que valem para os dois
+
+- **Grave a tela do painel do lojista** (`cast.dmsregem.com`), com a URL
+  visível. A Meta é explícita: *"The screencast recording should be made in the
+  business interface, not in the consumer experience."* Painel da Meta, terminal
+  e Explorador da Graph **não servem** — são a interface dela, não a nossa.
+- **Sem narração.** Não é exigida, e legenda errada atrapalha. Se quiser
+  explicar, use texto na tela, em inglês.
+- **Nada de token, segredo ou tela de desenvolvedor** aparecendo, nem por um
+  quadro.
+- **Um take só, sem corte.** Corte levanta a pergunta "o que foi cortado".
+- Dois minutos bastam. Mais que isso, o revisor pula.
+
 ## Vídeo 1 — `whatsapp_business_management` (pode ser gravado hoje)
 
 A Meta exige *"a short recording that shows clear evidence of how your app uses
@@ -139,23 +152,28 @@ os números e os modelos de mensagem do cliente**.
 Grave a tela do **painel do lojista** (`cast.dmsregem.com`), não a do
 desenvolvedor, não o Business Manager da Meta.
 
-Roteiro, sem cortes:
+Roteiro, tomada a tomada:
 
-1. Faça login no painel com uma conta de cliente. Deixe a URL visível.
-2. Vá em **WhatsApp**. Mostre a tela de conexão com as duas opções — manter o
-   WhatsApp Business ou número dedicado.
-3. Clique em **Conectar meu número**. Deixe a janela da Meta abrir e passe pelo
-   fluxo até o fim. É este o pedaço que prova que a conexão é do cliente, pelo
-   Embedded Signup, e não um número nosso.
-4. De volta ao painel, mostre o cartão do número: telefone, nome de exibição,
-   **qualidade** e **limite da Meta**. Esses três vêm de
-   `GET /{waba-id}/phone_numbers` — é a permissão em uso, na tela.
-5. Se o número exigir PIN, mostre a tela de registro do número.
-6. Encerre mostrando o estado da sincronização (coexistência) ou o crachá
-   "Pronto para enviar".
+1. **Login.** `cast.dmsregem.com`, entrar com a conta. Deixe a barra de
+   endereço visível.
+2. **Menu → WhatsApp.** Espere a tela carregar por inteiro.
+3. **Pare no cartão do número** por uns três segundos, com o mouse passando
+   por: telefone, nome de exibição, crachá **Pronto para enviar**, crachá de
+   **qualidade** e o bloco **Limite da Meta**. Esses dados vêm de
+   `GET /{waba-id}/phone_numbers` — é a permissão em uso, na tela, e é o que o
+   revisor precisa ver.
+4. **Menu → Modelos.** Espere carregar.
+5. **Percorra a lista devagar.** Cada cartão mostra nome, categoria, idioma,
+   **status de aprovação** e a mensagem como ela chega. Isso vem de
+   `GET /{waba-id}/message_templates` — a segunda metade da permissão.
+6. **Pare num modelo com variável** (os do Jasper's Market têm `{{1}}`) e
+   deixe visível o "2 variáveis a preencher".
+7. Fim.
 
-Não fale — a narração não é exigida e legenda errada atrapalha. Se quiser
-explicar, use texto na tela em inglês.
+Se quiser reforçar, abra também a tela de conexão (**WhatsApp → Conectar meu
+número**) e mostre a janela do Embedded Signup abrindo — prova que a conta é do
+cliente e não um número nosso. Feche sem concluir; não é necessário ir até o
+fim.
 
 ## Vídeo 2 — `whatsapp_business_messaging` (depois da Fase 4)
 
@@ -163,17 +181,33 @@ Exigência textual da Meta: *"The screencast recording should be made in the
 business interface, not in the consumer experience."* Ou seja: a tela do
 lojista, não a do consumidor recebendo.
 
-Roteiro, para quando existir envio:
+Roteiro, tomada a tomada:
 
-1. Login no painel, mesma conta.
-2. Mostre a lista de contatos com o **opt-in registrado** (origem, data, prova).
-   Isso responde antes da pergunta que o revisor sempre faz.
-3. Mostre o modelo de mensagem aprovado que será usado.
-4. Dispare uma campanha pequena — dois ou três contatos de teste, de números
-   que você controla.
-5. Mostre o resultado por destinatário: enviada, entregue, lida. Esses estados
-   chegam por webhook, e mostrá-los prova o "receive".
-6. Mostre o celular recebendo, **de relance**. O foco do vídeo é o painel.
+1. **Login.** Mesma conta, URL visível.
+2. **Menu → Campanhas → Nova campanha.**
+3. **Preencha o nome** e **escolha o modelo** no seletor. Repare que só modelo
+   **aprovado** aparece — vale deixar isso visível, porque responde antes a
+   pergunta "vocês enviam texto livre?". A resposta é não.
+4. **A prévia aparece** com a mensagem que será enviada. Pare nela.
+5. **Digite o número de teste** e deixe visível o contador "1 de 10".
+6. **Montar campanha.** A tela muda para a campanha, com o aviso de que ela
+   ainda não saiu.
+7. **Disparar agora.**
+8. **Pare na tabela de destinatários.** O estado estará **enviada**.
+9. **Espere alguns segundos e clique em Atualizar.** O estado vira **entregue**,
+   e depois **lida**. É aqui que o vídeo prova o "receive": esses estados não
+   foram digitados por ninguém, chegaram da Meta por webhook.
+10. **Mostre o celular recebendo, de relance** — dois segundos bastam. O foco é
+    o painel.
+
+O passo 9 é o coração do vídeo. Se a Meta só aceitasse e nós não
+reconciliássemos, a tela ficaria em "enviada" para sempre — e é exatamente isso
+que diferencia uma integração completa de uma pela metade.
+
+**Antes de gravar, confira:** o número que vai receber precisa estar em
+**Gerenciar lista de números de telefone** na tela do número de teste, e o token
+da conexão não pode ter vencido (se venceu, reconecte — a tela avisa com
+mensagem legível).
 
 ## Textos da submissão
 
