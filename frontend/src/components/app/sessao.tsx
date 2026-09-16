@@ -12,7 +12,7 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { EstadoErro } from '@/components/ui/estado-erro';
-import { Spinner } from '@/components/ui/spinner';
+import { CarregandoMarca } from '@/components/marca/carregando-marca';
 import { ErroApi, mensagemDoErro } from '@/lib/api';
 import { auth } from '@/lib/servicos';
 import type { Sessao } from '@/lib/tipos';
@@ -126,14 +126,7 @@ export function SessaoProvider({ children }: { children: ReactNode }) {
   }
 
   if (carregando || !sessao) {
-    return (
-      <div className="grid min-h-screen place-items-center p-6">
-        <p className="flex items-center gap-3 text-sm text-tinta-suave">
-          <Spinner rotulo={null} />
-          Carregando…
-        </p>
-      </div>
-    );
+    return <CarregandoMarca texto="Carregando…" />;
   }
 
   return (

@@ -88,21 +88,21 @@ export default function EntrarDistribuicao() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#140E1B] px-4 py-10">
-      <div className="w-full max-w-sm space-y-6">
+    <div className="relative isolate flex min-h-screen items-center justify-center overflow-hidden bg-lateral px-4 py-10">
+      <div aria-hidden="true" className="fundo-pontos-claro absolute inset-0 -z-10" />
+      <div aria-hidden="true" className="anima-aurora absolute left-1/2 top-1/3 -z-10 h-96 w-96 -translate-x-1/2 rounded-full bg-acento/15 blur-3xl" />
+      <div className="anima-entrada w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center gap-3 text-center">
-          <div className="rounded-xl bg-white/95 px-3 py-2">
-            <Logotipo />
-          </div>
+          <Logotipo sobreEscuro animado tamanho="lg" />
           <span className="rounded-full bg-acento px-3 py-1 text-xs font-semibold uppercase tracking-wider text-acento-contraste">
             Distribuição
           </span>
-          <p className="text-sm text-white/60">
+          <p className="text-sm text-lateral-suave">
             Console interno. Aqui você vê dados de todas as contas — cada acesso fica registrado.
           </p>
         </div>
 
-        <div className="rounded-card border border-white/10 bg-superficie p-5 shadow-flutuante">
+        <div className="rounded-2xl border border-white/10 bg-superficie p-6 shadow-flutuante">
           {erro && (
             <div className="mb-4">
               <Alerta tom="erro">{erro}</Alerta>

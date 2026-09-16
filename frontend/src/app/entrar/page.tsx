@@ -4,10 +4,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 
-import { Logotipo } from '@/components/marca/logotipo';
+import { IconeSetaDireita } from '@/components/app/icones';
+import { LayoutAcesso } from '@/components/app/layout-acesso';
 import { Alerta } from '@/components/ui/alerta';
 import { Button } from '@/components/ui/button';
-import { Card, CardCorpo } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { mensagemDoErro } from '@/lib/api';
@@ -52,69 +52,64 @@ export default function Entrar() {
   }
 
   return (
-    <main id="conteudo" className="flex min-h-screen items-center justify-center px-4 py-10">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="space-y-2 text-center">
-          <Logotipo className="justify-center" />
-          <p className="text-sm text-tinta-suave">
-            Entre para gerenciar seus disparos.
-          </p>
-        </div>
-
-        <Card>
-          <CardCorpo>
-            <form onSubmit={enviar} noValidate className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="email">E-mail</Label>
-                <Input
-                  ref={campoEmail}
-                  id="email"
-                  name="email"
-                  type="email"
-                  inputMode="email"
-                  autoComplete="username"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="voce@suaempresa.com.br"
-                  invalido={Boolean(erro)}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="senha">Senha</Label>
-                <Input
-                  id="senha"
-                  name="senha"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  value={senha}
-                  onChange={(e) => setSenha(e.target.value)}
-                  invalido={Boolean(erro)}
-                />
-              </div>
-
-              {erro ? <Alerta>{erro}</Alerta> : null}
-
-              <Button type="submit" larguraTotal carregando={enviando}>
-                {enviando ? 'Entrando…' : 'Entrar'}
-              </Button>
-            </form>
-          </CardCorpo>
-        </Card>
-
-        <p className="text-center text-sm text-tinta-suave">
+    <LayoutAcesso
+      titulo="Bem-vindo de volta"
+      descricao="Entre para acompanhar e disparar suas campanhas."
+      rodape={
+        <>
           Ainda não tem acesso?{' '}
           <Link
             href="/lista-espera"
-            className="font-medium text-acento-forte underline underline-offset-4 decoration-acento decoration-2 hover:decoration-4"
+            className="font-medium text-acento-forte underline decoration-acento decoration-2 underline-offset-4 hover:decoration-4"
           >
             Entre na lista de espera
           </Link>
-          .
-        </p>
-      </div>
-    </main>
+        </>
+      }
+    >
+      <form onSubmit={enviar} noValidate className="space-y-5">
+        <div className="space-y-1.5">
+          <Label htmlFor="email">E-mail</Label>
+          <Input
+            ref={campoEmail}
+            id="email"
+            name="email"
+            type="email"
+            inputMode="email"
+            autoComplete="username"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="voce@suaempresa.com.br"
+            invalido={Boolean(erro)}
+            className="h-11"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="senha">Senha</Label>
+          <Input
+            id="senha"
+            name="senha"
+            type="password"
+            autoComplete="current-password"
+            required
+            value={senha}
+            onChange={(e) => setSenha(e.target.value)}
+            invalido={Boolean(erro)}
+            className="h-11"
+          />
+        </div>
+
+        {erro ? <Alerta>{erro}</Alerta> : null}
+
+        <Button type="submit" larguraTotal carregando={enviando} className="group h-11 text-[0.95rem]">
+          {enviando ? 'Entrando…' : 'Entrar'}
+          {enviando ? null : (
+            <IconeSetaDireita className="transition-transform duration-200 group-hover:translate-x-1" />
+          )}
+        </Button>
+      </form>
+    </LayoutAcesso>
   );
 }

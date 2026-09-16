@@ -3,10 +3,13 @@
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { IconeAtualizar, IconeSair } from '@/components/app/icones';
+import { CarregandoMarca } from '@/components/marca/carregando-marca';
 import { Logotipo } from '@/components/marca/logotipo';
 import { Alerta } from '@/components/ui/alerta';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
+import { EsqueletoLista } from '@/components/ui/esqueleto';
+import { NumeroAnimado } from '@/components/ui/numero-animado';
 import { ErroApi, mensagemDoErro } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import {
@@ -104,37 +107,36 @@ export default function ConsoleDistribuicao() {
   }
 
   if (carregando) {
-    return (
-      <div className="flex min-h-screen items-center justify-center gap-3 bg-fundo text-sm text-tinta-suave">
-        <Spinner /> Abrindo o console…
-      </div>
-    );
+    return <CarregandoMarca texto="Abrindo o console…" />;
   }
 
   return (
     <div className="min-h-screen bg-fundo">
-      <header className="sticky top-0 z-40 bg-[#140E1B] text-white shadow-flutuante">
-        <div className="mx-auto flex max-w-[90rem] items-center gap-3 px-4 py-2.5 sm:px-6">
-          <div className="rounded-lg bg-white/95 px-2 py-1">
-            <Logotipo />
-          </div>
+      <header className="sticky top-0 z-40 overflow-hidden border-b border-lateral-borda bg-lateral text-lateral-tinta shadow-flutuante">
+        <div aria-hidden="true" className="fundo-pontos-claro pointer-events-none absolute inset-0" />
+        <div className="relative mx-auto flex max-w-[90rem] items-center gap-3 px-4 py-3 sm:px-6">
+          <Logotipo sobreEscuro animado />
           <span className="rounded-full bg-acento px-2.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider text-acento-contraste">
             Distribuição
           </span>
-          <div className="ml-auto flex items-center gap-3">
-            <span className="hidden text-sm text-white/70 sm:inline">{operador?.nome}</span>
+          <div className="ml-auto flex items-center gap-2">
+            <span className="hidden items-center gap-2 text-sm text-lateral-suave sm:inline-flex">
+              <span className="ponto-vivo h-2 w-2 rounded-full bg-acento text-acento" aria-hidden="true" />
+              {operador?.nome}
+            </span>
             <button
               type="button"
               onClick={() => void sair()}
-              className="rounded-lg px-2.5 py-1.5 text-sm text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm text-lateral-suave transition-colors hover:bg-white/10 hover:text-lateral-tinta"
             >
+              <IconeSair className="h-4 w-4" />
               Sair
             </button>
           </div>
         </div>
       </header>
 
-      <main className="anima-entrada mx-auto max-w-[90rem] space-y-6 px-4 py-6 sm:px-6">
+      <main className="anima-entrada mx-auto max-w-[90rem] space-y-6 px-4 py-6 sm:px-6 lg:py-8">
         {erro && <Alerta tom="erro">{erro}</Alerta>}
 
         {resumo && <Indicadores resumo={resumo} aoFiltrar={(s) => { setAba('contas'); setFiltro(s); }} />}
@@ -156,6 +158,7 @@ export default function ConsoleDistribuicao() {
             </button>
           ))}
           <Button variante="secundario" tamanho="sm" className="ml-auto mb-1" onClick={() => void carregar()}>
+            <IconeAtualizar />
             Atualizar
           </Button>
         </div>
@@ -183,7 +186,7 @@ function Indicadores({
   return (
     <div className="space-y-3">
       {/* A saúde da base: cada número leva à lista filtrada. */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="escalonado grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <Cartao rotulo="Contas" valor={r.contas.total} />
         <Cartao rotulo="Ativas" valor={r.contas.ativas} tom="sucesso" onClick={() => aoFiltrar('ativa')} ajuda="enviaram nos últimos 30 dias" />
         <Cartao rotulo="Em risco" valor={r.contas.emRisco} tom="realce" onClick={() => aoFiltrar('em_risco')} ajuda="30 a 60 dias sem enviar" />
@@ -191,7 +194,7 @@ function Indicadores({
         <Cartao rotulo="Nunca usaram" valor={r.contas.nuncaUsaram} onClick={() => aoFiltrar('nunca_usou')} />
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="escalonado grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <Cartao rotulo="Disparos no ciclo" valor={r.disparos.ciclo} />
         <Cartao rotulo="Disparos em 7 dias" valor={r.disparos.ultimos7d} ajuda={`${numero(r.disparos.ultimas24h)} nas últimas 24h`} />
         <Cartao rotulo="Campanhas saindo" valor={r.campanhasEmAndamento} />
@@ -226,8 +229,8 @@ function Cartao({
       type={onClick ? 'button' : undefined}
       onClick={onClick}
       className={cn(
-        'relative overflow-hidden rounded-card border border-borda bg-superficie p-3.5 text-left shadow-card',
-        onClick && 'transition-colors hover:border-acento',
+        'relative overflow-hidden rounded-card border border-borda bg-superficie p-4 text-left shadow-card',
+        onClick && 'cartao-interativo',
       )}
     >
       {/* Faixa lateral de estado: lida antes do número. */}
@@ -243,7 +246,7 @@ function Cartao({
         />
       )}
       <p className="text-xs font-medium text-tinta-suave">{rotulo}</p>
-      <p className="mt-1 font-mono text-2xl font-semibold tabular-nums text-tinta">{numero(valor)}</p>
+      <NumeroAnimado valor={valor} className="numerico mt-1 block text-2xl font-semibold text-tinta" />
       {ajuda && <p className="mt-0.5 text-[0.7rem] text-tinta-suave">{ajuda}</p>}
     </Tag>
   );
@@ -375,11 +378,7 @@ function PainelTelemetria({
   aoMudarDias: (d: number) => void;
 }) {
   if (!telemetria) {
-    return (
-      <div className="flex items-center gap-3 text-sm text-tinta-suave">
-        <Spinner /> Carregando telemetria…
-      </div>
-    );
+    return <EsqueletoLista linhas={4} />;
   }
 
   return (

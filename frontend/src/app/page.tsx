@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
-import { Spinner } from '@/components/ui/spinner';
+import { CarregandoMarca } from '@/components/marca/carregando-marca';
 import { auth } from '@/lib/servicos';
 
 /**
@@ -32,12 +32,5 @@ export default function Raiz() {
     };
   }, [router]);
 
-  return (
-    <main id="conteudo" className="grid min-h-screen place-items-center p-6">
-      <p className="flex items-center gap-3 text-sm text-tinta-suave">
-        <Spinner rotulo={null} />
-        Abrindo o Regemcast…
-      </p>
-    </main>
-  );
+  return <CarregandoMarca texto="Abrindo o RegemCast…" />;
 }

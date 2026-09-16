@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { ConectarWhatsapp } from '@/components/app/conectar-whatsapp';
+import { IconeCelular, IconeConversa, IconeEscudo, IconeRaio } from '@/components/app/icones';
 import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import { EsqueletoLista } from '@/components/ui/esqueleto';
 import { EstadoErro } from '@/components/ui/estado-erro';
-import { Spinner } from '@/components/ui/spinner';
 import { mensagemDoErro } from '@/lib/api';
 import { whatsapp } from '@/lib/servicos';
 import type {
@@ -58,17 +59,15 @@ export default function PaginaWhatsapp() {
   }, [carregar]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 lg:space-y-8">
       <CabecalhoPagina
+        icone={<IconeConversa />}
+        sobretitulo="Configuração"
         titulo="WhatsApp"
         descricao="Conecte a conta de WhatsApp Business da sua empresa para poder enviar campanhas."
       />
 
-      {carregando && (
-        <div className="flex items-center gap-3 text-sm text-tinta-suave">
-          <Spinner /> Carregando…
-        </div>
-      )}
+      {carregando && <EsqueletoLista linhas={2} />}
 
       {!carregando && erro && (
         <EstadoErro
@@ -79,37 +78,59 @@ export default function PaginaWhatsapp() {
       )}
 
       {!carregando && !erro && situacao?.conectado === false && (
-        <Card>
+        <Card className="anima-entrada">
           <ConectarWhatsapp aoConectar={() => void carregar()} />
         </Card>
       )}
 
       {!carregando && !erro && situacao?.conectado === true && (
-        <div className="space-y-4">
-          <Card>
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-base font-semibold text-tinta">
-                  {situacao.conta.nome ?? 'Conta conectada'}
-                </h2>
-                <Badge tom="sucesso">Conectada</Badge>
-                {situacao.conta.webhookAssinadoEm ? null : (
-                  <Badge tom="atencao">Status de entrega pendente</Badge>
-                )}
-              </div>
-              <p className="numerico text-xs text-tinta-suave">WABA {situacao.conta.wabaId}</p>
-              {situacao.conta.moeda && (
-                <p className="text-xs text-tinta-suave">
-                  Cobrança da Meta em {situacao.conta.moeda}
+        <div className="escalonado space-y-4">
+          <section className="relative isolate overflow-hidden rounded-3xl bg-lateral p-6 text-lateral-tinta shadow-flutuante sm:p-8">
+            <div aria-hidden="true" className="fundo-pontos-claro absolute inset-0 -z-10" />
+            <div
+              aria-hidden="true"
+              className="anima-aurora absolute -right-16 -top-24 -z-10 h-72 w-72 rounded-full bg-acento/25 blur-3xl"
+            />
+            <div className="flex flex-wrap items-center gap-5">
+              <span className="relative grid h-16 w-16 shrink-0 place-items-center">
+                <span aria-hidden="true" className="ponto-vivo absolute inset-3 rounded-2xl text-acento/40" />
+                <span className="relative grid h-16 w-16 place-items-center rounded-2xl bg-acento text-acento-contraste shadow-brilho">
+                  <IconeEscudo className="h-8 w-8" />
+                </span>
+              </span>
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-xl font-semibold text-lateral-tinta">
+                    {situacao.conta.nome ?? 'Conta conectada'}
+                  </h2>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-acento/40 bg-acento/10 px-2.5 py-0.5 text-xs font-medium text-acento">
+                    <span className="ponto-vivo h-1.5 w-1.5 rounded-full bg-acento" aria-hidden="true" />
+                    Conectada
+                  </span>
+                  {situacao.conta.webhookAssinadoEm ? null : (
+                    <span className="rounded-full border border-realce/50 bg-realce/10 px-2.5 py-0.5 text-xs font-medium text-realce">
+                      Status de entrega pendente
+                    </span>
+                  )}
+                </div>
+                <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-lateral-suave">
+                  <span className="numerico">WABA {situacao.conta.wabaId}</span>
+                  {situacao.conta.moeda && <span>Cobrança da Meta em {situacao.conta.moeda}</span>}
+                  <span>
+                    {situacao.numeros.length} {situacao.numeros.length === 1 ? 'número' : 'números'}
+                  </span>
                 </p>
-              )}
-              <AvisoExpiracao expiraEm={situacao.conta.tokenExpiraEm} />
+              </div>
             </div>
-          </Card>
+          </section>
 
-          {situacao.numeros.map((n) => (
-            <CartaoNumero key={n.phoneNumberId} numero={n} />
-          ))}
+          <AvisoExpiracao expiraEm={situacao.conta.tokenExpiraEm} />
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            {situacao.numeros.map((n) => (
+              <CartaoNumero key={n.phoneNumberId} numero={n} />
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -120,31 +141,47 @@ function CartaoNumero({ numero }: { numero: NumeroWhatsapp }) {
   const q = TOM_QUALIDADE[numero.qualidade];
 
   return (
-    <Card>
+    <Card className="cartao-interativo">
       <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="numerico text-base font-semibold text-tinta">
-              {numero.telefone ?? 'Número sem identificação'}
-            </p>
-            {numero.nome && <p className="text-sm text-tinta-suave">{numero.nome}</p>}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-realce text-tinta">
+              <IconeCelular className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="numerico truncate text-base font-semibold text-tinta">
+                {numero.telefone ?? 'Número sem identificação'}
+              </p>
+              {numero.nome && <p className="truncate text-sm text-tinta-suave">{numero.nome}</p>}
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge tom={q.tom}>Qualidade: {q.texto}</Badge>
-            {numero.coexistencia && <Badge tom="acento">Também no seu celular</Badge>}
-            {numero.status === 'registrado' ? (
-              <Badge tom="sucesso">Pronto para enviar</Badge>
-            ) : (
-              <Badge tom="atencao">Registro pendente</Badge>
-            )}
-          </div>
+          {numero.status === 'registrado' ? (
+            <Badge tom="sucesso" ponto>
+              Pronto para enviar
+            </Badge>
+          ) : (
+            <Badge tom="atencao" ponto vivo>
+              Registro pendente
+            </Badge>
+          )}
         </div>
 
-        <div className="rounded-card border border-borda bg-superficie-2 p-3">
-          <p className="text-xs font-medium uppercase tracking-wide text-tinta-suave">
+        <div className="flex flex-wrap gap-2">
+          <Badge tom={q.tom} ponto>
+            Qualidade: {q.texto}
+          </Badge>
+          {numero.coexistencia && <Badge tom="acento">Também no seu celular</Badge>}
+          <Badge tom="neutro">
+            <IconeRaio className="h-3 w-3" />
+            até {numero.vazaoMaxima} msg/s
+          </Badge>
+        </div>
+
+        <div className="rounded-xl border border-borda bg-superficie-2/60 p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-tinta-suave">
             Limite da Meta
           </p>
-          <p className="numerico mt-1 text-lg text-tinta">
+          <p className="numerico mt-1 text-2xl font-semibold text-tinta">
             {numero.tierLimite === null
               ? 'Sem teto'
               : numero.tierLimite
