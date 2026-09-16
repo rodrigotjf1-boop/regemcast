@@ -17,6 +17,7 @@ import { ContatoModule } from './modules/contato/contato.module';
 import { ListaEsperaModule } from './modules/lista-espera/lista-espera.module';
 import { CampanhaModule } from './modules/campanha/campanha.module';
 import { MetaModule } from './modules/meta/meta.module';
+import { DistribuicaoModule } from './modules/distribuicao/distribuicao.module';
 import { MidiaModule } from './modules/midia/midia.module';
 import { TelemetriaModule } from './modules/telemetria/telemetria.module';
 import { ModeloModule } from './modules/modelo/modelo.module';
@@ -64,6 +65,7 @@ import { SaudeModule } from './modules/saude/saude.module';
     ContatoModule,
     ModeloModule,
     MidiaModule,
+    DistribuicaoModule,
     SaudeModule,
   ],
   providers: [

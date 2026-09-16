@@ -198,6 +198,16 @@ export const env = {
    */
   distribuicao: {
     token: distToken(),
+    /**
+     * Cifra o segredo do código de duas etapas dos operadores. Chave PRÓPRIA de
+     * propósito — reusar a dos tokens da Meta faria um vazamento dela expor os
+     * tokens de todos os clientes E os códigos dos operadores de uma vez. Sem
+     * ela, o cadastro de duas etapas recusa em vez de cair na outra chave.
+     */
+    totpChave: opcional('DIST_TOTP_CHAVE'),
+    cookieNome: opcional('DIST_COOKIE_NOME', 'regemcast_dist'),
+    /** Sessão de operador é curta: é acesso a todas as contas. */
+    ttlHoras: numero('DIST_TTL_HORAS', 8),
   },
 
   storage: {
