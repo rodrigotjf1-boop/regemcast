@@ -17,6 +17,7 @@ import { ContatoModule } from './modules/contato/contato.module';
 import { ListaEsperaModule } from './modules/lista-espera/lista-espera.module';
 import { CampanhaModule } from './modules/campanha/campanha.module';
 import { MetaModule } from './modules/meta/meta.module';
+import { ModeloModule } from './modules/modelo/modelo.module';
 import { SaudeModule } from './modules/saude/saude.module';
 
 @Module({
@@ -58,6 +59,7 @@ import { SaudeModule } from './modules/saude/saude.module';
     MetaModule,
     CampanhaModule,
     ContatoModule,
+    ModeloModule,
     SaudeModule,
   ],
   providers: [

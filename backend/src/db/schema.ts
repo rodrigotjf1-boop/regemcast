@@ -445,3 +445,55 @@ export const contatoListaItem = pgTable('contato_lista_item', {
   listaIdx: index('idx_contato_lista_item_lista').on(t.contaId, t.listaId),
   contatoIdx: index('idx_contato_lista_item_contato').on(t.contaId, t.contatoId),
 }));
+
+/**
+ * Modelo de mensagem: o que o cliente escreve, e o que a Meta respondeu.
+ *
+ * Três colunas existem por motivos que só aparecem depois:
+ *
+ * - `status = 'rascunho'` — um modelo leva minutos para escrever e a Meta o
+ *   recusa por detalhe. Sem rascunho, cada recusa apaga o trabalho.
+ * - `motivo` — a Meta diz por que recusou UMA vez, na resposta do POST. Quem
+ *   não grava naquele instante nunca mais sabe, e o cliente tenta às cegas.
+ * - `categoriaMeta` — ela RECLASSIFICA marketing disfarçado de utilidade, e o
+ *   preço muda junto. Guardamos o que pedimos e o que ela devolveu.
+ */
+export const modelo = pgTable('modelo', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contaId: uuid('conta_id').notNull(),
+  /** Nome técnico da Meta: minúsculas, números e '_'. */
+  nome: text('nome').notNull(),
+  idioma: text('idioma').notNull().default('pt_BR'),
+  /** O que pedimos: MARKETING | UTILITY | AUTHENTICATION. */
+  categoria: text('categoria').notNull().default('MARKETING'),
+  /** O que a Meta devolveu, quando reclassificou. */
+  categoriaMeta: text('categoria_meta'),
+  /** TEXT | IMAGE | VIDEO | DOCUMENT. Nulo = sem cabeçalho. */
+  cabecalhoFormato: text('cabecalho_formato'),
+  cabecalhoTexto: text('cabecalho_texto'),
+  /** Vai para a Meta como array SIMPLES; o corpo usa array ANINHADO. */
+  cabecalhoExemplo: text('cabecalho_exemplo'),
+  cabecalhoMidia: text('cabecalho_midia'),
+  corpo: text('corpo').notNull(),
+  /** Exemplos das variáveis, em ordem: o primeiro item é `{{1}}`. */
+  corpoExemplos: jsonb('corpo_exemplos').notNull().default(sql`'[]'::jsonb`),
+  rodape: text('rodape'),
+  botoes: jsonb('botoes').notNull().default(sql`'[]'::jsonb`),
+  /** Oferta por tempo limitado: só MARKETING, e proíbe rodapé e cabeçalho de texto. */
+  ltoAtivo: boolean('lto_ativo').notNull().default(false),
+  ltoTexto: text('lto_texto'),
+  status: text('status').notNull().default('rascunho'),
+  motivo: text('motivo'),
+  metaTemplateId: text('meta_template_id'),
+  criadoPor: uuid('criado_por'),
+  enviadoEm: timestamp('enviado_em', { withTimezone: true }),
+  respondidoEm: timestamp('respondido_em', { withTimezone: true }),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  unicoUq: uniqueIndex('idx_modelo_unico').on(t.contaId, t.nome, t.idioma),
+  contaIdx: index('idx_modelo_conta').on(t.contaId, t.criadoEm),
+  metaIdUq: uniqueIndex('idx_modelo_meta_id')
+    .on(t.metaTemplateId)
+    .where(sql`meta_template_id is not null`),
+}));

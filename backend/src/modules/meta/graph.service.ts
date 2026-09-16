@@ -427,6 +427,42 @@ export class GraphService {
   }
 
   /**
+   * Cria um modelo de mensagem na WABA do cliente.
+   *
+   * A resposta traz `id`, `status` e, quando a Meta reclassifica, `category` —
+   * ela move para MARKETING o que considera marketing disfarçado de utilidade,
+   * e o preço da mensagem muda junto. Guardar as duas categorias separadas é o
+   * que permite explicar a cobrança depois.
+   *
+   * **Sem tentativa automática.** Criar modelo não é idempotente: a Meta recusa
+   * nome repetido, então reenviar depois de um timeout devolve "esse nome já
+   * existe" — um erro que parece defeito nosso quando, na verdade, o primeiro
+   * envio funcionou. Quem decide repetir é o cliente, vendo a lista.
+   */
+  async criarModelo(
+    wabaId: string,
+    tokenDoCliente: string,
+    corpo: Record<string, unknown>,
+  ): Promise<{ id: string; status?: string; category?: string }> {
+    return this.chamar(`${wabaId}/message_templates`, {
+      metodo: 'POST',
+      token: tokenDoCliente,
+      corpo,
+      tentativas: 0,
+    });
+  }
+
+  /** Apaga o modelo na Meta. O nome só volta a ficar livre depois disto. */
+  async excluirModelo(wabaId: string, tokenDoCliente: string, nome: string): Promise<void> {
+    await this.chamar(`${wabaId}/message_templates`, {
+      metodo: 'DELETE',
+      token: tokenDoCliente,
+      query: { name: nome },
+      tentativas: 0,
+    });
+  }
+
+  /**
    * Pede à Meta a sincronização dos dados do app do celular (coexistência).
    *
    * Os dados NÃO voltam nesta resposta: ela só enfileira o pedido, e o
