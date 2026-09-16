@@ -383,7 +383,7 @@ export function EditorModelo({
 
           {/* Barra de ação fixa: em formulário longo, rolar até o fim para salvar
               é o atrito que faz a pessoa perder o trabalho. */}
-          <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-2 border-t border-borda bg-superficie/95 p-4 backdrop-blur sm:p-5">
+          <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-2 border-t border-borda bg-superficie/95 p-4 shadow-flutuante backdrop-blur sm:p-5">
             <Button onClick={() => void salvar(true)} carregando={ocupado}>
               Enviar para aprovação
             </Button>

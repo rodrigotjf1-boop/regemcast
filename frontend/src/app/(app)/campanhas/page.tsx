@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
+import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
 import { Alerta } from '@/components/ui/alerta';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -57,22 +58,19 @@ export default function PaginaCampanhas() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight text-tinta">Campanhas</h1>
-          <p className="max-w-prose text-sm leading-relaxed text-tinta-suave">
-            Cada campanha usa um modelo aprovado e mostra, por pessoa, o que de fato aconteceu com
-            a mensagem.
-          </p>
-        </div>
-        <Button
-          variante={montando ? 'secundario' : 'primario'}
-          onClick={() => setMontando((v) => !v)}
-          aria-expanded={montando}
-        >
-          {montando ? 'Cancelar' : 'Nova campanha'}
-        </Button>
-      </header>
+      <CabecalhoPagina
+        titulo="Campanhas"
+        descricao="Cada campanha usa um modelo aprovado e mostra, por pessoa, o que de fato aconteceu com a mensagem."
+        acao={
+          <Button
+            variante={montando ? 'secundario' : 'primario'}
+            onClick={() => setMontando((v) => !v)}
+            aria-expanded={montando}
+          >
+            {montando ? 'Cancelar' : 'Nova campanha'}
+          </Button>
+        }
+      />
 
       {montando && (
         <FormularioCampanha

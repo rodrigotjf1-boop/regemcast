@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { ConectarWhatsapp } from '@/components/app/conectar-whatsapp';
+import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { EstadoErro } from '@/components/ui/estado-erro';
@@ -58,12 +59,10 @@ export default function PaginaWhatsapp() {
 
   return (
     <div className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-xl font-semibold tracking-tight text-tinta">WhatsApp</h1>
-        <p className="text-sm text-tinta-suave">
-          Conecte a conta de WhatsApp Business da sua empresa para poder enviar campanhas.
-        </p>
-      </header>
+      <CabecalhoPagina
+        titulo="WhatsApp"
+        descricao="Conecte a conta de WhatsApp Business da sua empresa para poder enviar campanhas."
+      />
 
       {carregando && (
         <div className="flex items-center gap-3 text-sm text-tinta-suave">
