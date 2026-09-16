@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 
 import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
+import { LoaderDisparo } from '@/components/marca/loader-disparo';
 import { Alerta } from '@/components/ui/alerta';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -145,6 +146,12 @@ export default function PaginaCampanha() {
           </div>
         }
       />
+
+      {disparando && (
+        <Card>
+          <LoaderDisparo rotulo="Enviando as mensagens. Isso fala com a Meta uma vez por pessoa — não feche a página." />
+        </Card>
+      )}
 
       {erro && <Alerta tom="erro">{erro}</Alerta>}
       {aviso && <Alerta tom="sucesso">{aviso}</Alerta>}

@@ -134,6 +134,13 @@
   --cor-acento: 163 230 53;          /* Lima   #A3E635 — só preenchimento */
   --cor-acento-forte: 35 22 50;      /* texto e link: ameixa (lima não lê aqui) */
   --cor-acento-suave: 238 248 219;   /* #EEF8DB — lima diluído */
+  /* Lima escurecido, para o ESTADO PRESSIONADO do preenchimento.
+     Existe por causa de um defeito real: o botão primário usava
+     `acento-forte` no hover, e `acento-forte` é AMEIXA no tema claro — a
+     mesma cor do texto do botão. Resultado: ameixa sobre ameixa, contraste
+     1,00, texto invisível ao passar o mouse. O token de TEXTO e o token de
+     FUNDO fazem trabalhos diferentes e agora são dois. */
+  --cor-acento-escuro: 140 207 36;   /* #8CCF24 — ameixa sobre ele: 9,0:1 */
   --cor-acento-contraste: 35 22 50;  /* sobre lima, SEMPRE ameixa — 11,3:1 */
   /* Amarelo do kit, que estava sem uso. Preenchimento apenas: sobre ele o
      texto é ameixa (11,8:1). Como TEXTO sobre fundo claro ele reprova — por
@@ -168,6 +175,7 @@
     --cor-acento: 163 230 53;
     --cor-acento-forte: 163 230 53;  /* sobre a superfície o lima tem 11,6:1 */
     --cor-acento-suave: 43 33 58;
+    --cor-acento-escuro: 140 207 36;
     --cor-acento-contraste: 35 22 50;
     --cor-realce: 255 209 102;       /* Amarelo #FFD166 */
     --cor-pulso: 30 22 40;
@@ -224,5 +232,33 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* ============================================================================
+ * MOVIMENTO
+ *
+ * Uma animação só, curta, na entrada do conteúdo. O objetivo é dar a sensação
+ * de que a tela ACONTECEU, em vez de aparecer pronta — é o que separa um app
+ * de uma página estática.
+ *
+ * 180 ms e 6 px: abaixo disso ninguém percebe, acima disso vira espera. E toda
+ * ela é desligada em `prefers-reduced-motion`, que não é preferência estética:
+ * para quem tem sensibilidade vestibular, movimento na tela causa enjoo.
+ * ========================================================================== */
+@keyframes entrada {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .anima-entrada {
+    animation: entrada 180ms ease-out both;
   }
 }

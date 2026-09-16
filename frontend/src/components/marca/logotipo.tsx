@@ -39,9 +39,9 @@ export function Logotipo({
         />
       </svg>
       {mostrarNome ? (
-        <span className="text-base font-bold tracking-tight text-tinta">regemcast</span>
+        <span className="text-base font-bold tracking-tight text-tinta">RegemCast</span>
       ) : (
-        <span className="sr-only">Regemcast</span>
+        <span className="sr-only">RegemCast</span>
       )}
     </span>
   );

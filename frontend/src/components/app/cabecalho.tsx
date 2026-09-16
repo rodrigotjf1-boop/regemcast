@@ -111,8 +111,8 @@ export function Cabecalho() {
                     className={cn(
                       'group inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-lg px-2.5 text-sm font-medium transition-colors',
                       estaAtivo
-                        ? 'bg-acento-suave text-acento-forte'
-                        : 'text-tinta-suave hover:bg-superficie-2 hover:text-tinta',
+                        ? 'bg-acento text-acento-contraste shadow-sm'
+                        : 'text-tinta-suave hover:bg-acento-suave hover:text-acento-forte',
                     )}
                   >
                     <Icone
