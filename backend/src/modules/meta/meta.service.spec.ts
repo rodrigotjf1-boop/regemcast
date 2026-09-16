@@ -36,6 +36,8 @@ jest.mock('../../config/env', () => ({
   },
 }));
 
+import { traduzirErroMeta } from './erros-meta';
+import { ErroGraph } from './graph.service';
 import { MetaService } from './meta.service';
 
 const CONTA = '11111111-1111-4111-8111-111111111111';
@@ -294,6 +296,46 @@ describe('concluirOnboarding — o que vai para a auditoria', () => {
     expect(guardado).toBeTruthy();
     expect(guardado).not.toContain(TOKEN);
     expect(guardado.startsWith('v1.')).toBe(true);
+  });
+});
+
+describe('token inválido (190) — o erro precisa dizer de quem é a culpa', () => {
+  /**
+   * Defeito real, visto em produção: `ErroGraph` não é `HttpException`, então o
+   * filtro global o convertia em 500 "algo deu errado do nosso lado" — que é
+   * falso. A falha era token vencido, conserto de dez segundos, e a mensagem
+   * mandava investigar o servidor.
+   */
+  function tokenVencido() {
+    return new ErroGraph({ status: 401, codigo: 190, traduzido: traduzirErroMeta(190) });
+  }
+
+  it('no Embedded Signup vira 400 com explicação, não 500 mudo', async () => {
+    const { service, graph } = montar();
+    graph.dadosDaWaba.mockRejectedValue(tokenVencido());
+
+    await expect(
+      service.concluirOnboarding(CONTA, USUARIO, {
+        code: 'codigo-de-30-segundos',
+        wabaId: 'WABA1',
+        phoneNumberId: 'PN1',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('na conexão manual também, e a mensagem chega inteira a quem opera', async () => {
+    const { service, db, diario, graph } = montar();
+    db.select.mockReturnValueOnce(consulta([{ id: CONTA }], diario));
+    graph.dadosDaWaba.mockRejectedValue(tokenVencido());
+
+    const erro = await service
+      .conectarManual(CONTA, { wabaId: 'WABA1', phoneNumberId: 'PN1', token: TOKEN })
+      .catch((e: unknown) => e);
+
+    expect(erro).toBeInstanceOf(BadRequestException);
+    // Não basta ser 400: a frase precisa dizer o que fazer. Erro que só diz
+    // "deu ruim" custa o mesmo tempo de investigação que erro nenhum.
+    expect((erro as BadRequestException).message).toContain('conta de WhatsApp');
   });
 });
 

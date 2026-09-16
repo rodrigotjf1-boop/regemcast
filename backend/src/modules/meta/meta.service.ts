@@ -281,6 +281,19 @@ export class MetaService {
     const waba = await this.graph.dadosDaWaba(wabaId, token).catch((erro) => {
       if (erro instanceof ErroGraph) {
         this.log.error(`Leitura da WABA ${wabaId} falhou: ${erro.detalheParaLog}`);
+        /*
+         * Traduz em vez de deixar subir. `ErroGraph` não é `HttpException`, e o
+         * filtro global converte tudo que não é HTTP em 500 "algo deu errado do
+         * nosso lado" — o que é **falso** e manda a pessoa errada investigar.
+         *
+         * Aqui a falha é quase sempre do outro lado da linha: token inválido ou
+         * vencido, ou identificador de WABA que não existe. Quem está na frente
+         * da tela consegue consertar isso em dez segundos, desde que a mensagem
+         * diga o que é. A frase traduzida do catálogo já diz.
+         */
+        throw new BadRequestException(
+          `Não conseguimos ler esta conta de WhatsApp na Meta. ${erro.mensagemParaUsuario}`,
+        );
       }
       throw erro;
     });
