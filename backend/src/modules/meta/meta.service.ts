@@ -29,7 +29,7 @@ import { ContextoDb } from '../../db/contexto';
 import { conta, waConta, waNumero } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { cifrarToken, decifrarToken } from './cripto';
-import { ErroGraph, GraphService } from './graph.service';
+import { ErroGraph, GraphService, type ModeloBruto } from './graph.service';
 
 export interface DadosDoSignup {
   code: string;
@@ -99,6 +99,116 @@ function limiteDoTier(tier: string | undefined): number | null | undefined {
     TIER_UNLIMITED: null,
   };
   return tier in mapa ? mapa[tier] : undefined;
+}
+
+/** Modelo de mensagem, já em português e sem o ruído da Graph. */
+export interface ModeloDeMensagem {
+  id: string;
+  nome: string;
+  idioma: string;
+  categoria: string;
+  status: string;
+  /** Por que a Meta recusou. `null` quando não recusou ou não explicou. */
+  motivo: string | null;
+  cabecalho: string | null;
+  corpo: string;
+  rodape: string | null;
+  /**
+   * Quantas variáveis o corpo espera.
+   *
+   * É o MAIOR índice usado, não quantas vezes aparecem. `{{1}}` repetido três
+   * vezes continua sendo uma variável — contar ocorrências faz o disparo mandar
+   * três valores e a Meta recusar com 132000. Esse defeito existe no Regem.
+   */
+  variaveis: number;
+  botoes: string[];
+}
+
+const STATUS_MODELO: Record<string, string> = {
+  APPROVED: 'aprovado',
+  PENDING: 'em análise',
+  IN_APPEAL: 'em recurso',
+  REJECTED: 'recusado',
+  PAUSED: 'pausado',
+  DISABLED: 'desativado',
+  PENDING_DELETION: 'sendo excluído',
+};
+
+const CATEGORIA_MODELO: Record<string, string> = {
+  MARKETING: 'marketing',
+  UTILITY: 'utilidade',
+  AUTHENTICATION: 'autenticação',
+};
+
+/**
+ * Traduz o modelo cru da Meta.
+ *
+ * Nome desconhecido devolve o próprio valor em minúsculas, e não 'desconhecido':
+ * quando a Meta inventar um status novo, a tela mostra o nome dele — feio, mas
+ * verdadeiro — em vez de esconder a informação atrás de uma palavra genérica.
+ */
+function traduzirModelo(m: ModeloBruto): ModeloDeMensagem {
+  const componentes = m.components ?? [];
+  const achar = (tipo: string) => componentes.find((c) => c.type?.toUpperCase() === tipo);
+
+  const cabecalho = achar('HEADER');
+  const corpo = achar('BODY');
+  const rodape = achar('FOOTER');
+  const botoes = achar('BUTTONS');
+
+  const texto = typeof corpo?.text === 'string' ? corpo.text : '';
+
+  return {
+    id: m.id,
+    nome: m.name,
+    idioma: m.language ?? '—',
+    categoria: traduzirOuMostrarCru(CATEGORIA_MODELO, m.category),
+    status: traduzirOuMostrarCru(STATUS_MODELO, m.status),
+    motivo: m.rejected_reason && m.rejected_reason !== 'NONE' ? m.rejected_reason : null,
+    // Cabeçalho de imagem/vídeo não tem texto: dizemos o formato, que é o que
+    // a pessoa precisa saber para montar o disparo.
+    cabecalho:
+      typeof cabecalho?.text === 'string'
+        ? cabecalho.text
+        : cabecalho
+          ? `(${(cabecalho.format ?? 'mídia').toLowerCase()})`
+          : null,
+    corpo: texto,
+    rodape: typeof rodape?.text === 'string' ? rodape.text : null,
+    variaveis: maiorIndiceDeVariavel(texto),
+    botoes: rotulosDosBotoes(botoes?.buttons),
+  };
+}
+
+/**
+ * Traduz pelo dicionário; sem entrada, devolve o valor cru em minúsculas.
+ *
+ * Nunca devolve "desconhecido": quando a Meta inventar um status novo, é melhor
+ * a tela mostrar o nome dele — feio, mas verdadeiro — do que esconder a
+ * informação atrás de uma palavra genérica que não ajuda ninguém a agir.
+ */
+function traduzirOuMostrarCru(dicionario: Record<string, string>, valor: string | undefined): string {
+  const bruto = (valor ?? '').trim();
+  if (!bruto) return '—';
+  return dicionario[bruto] ?? bruto.toLowerCase();
+}
+
+/** O maior `{{n}}` do texto. Zero quando não há variável. */
+function maiorIndiceDeVariavel(texto: string): number {
+  let maior = 0;
+  for (const achado of texto.matchAll(/\{\{\s*(\d+)\s*\}\}/g)) {
+    const n = Number(achado[1]);
+    if (Number.isFinite(n) && n > maior) maior = n;
+  }
+  return maior;
+}
+
+/** Rótulo de cada botão, ignorando o que não tiver forma reconhecível. */
+function rotulosDosBotoes(botoes: unknown): string[] {
+  if (!Array.isArray(botoes)) return [];
+  return botoes
+    .map((b) => (b && typeof b === 'object' ? (b as { text?: unknown }).text : null))
+    .filter((t): t is string => typeof t === 'string' && t.length > 0);
 }
 
 /**
@@ -643,6 +753,37 @@ export class MetaService {
         vazaoMaxima: n.coexistencia ? VAZAO_COEXISTENCIA : VAZAO_DEDICADA,
       })),
     };
+  }
+
+  /**
+   * Modelos de mensagem da conta.
+   *
+   * Lê direto da Meta em vez de manter cópia no nosso banco — de propósito. O
+   * status muda do lado dela (aprovação, recusa, pausa por qualidade) sem nos
+   * avisar em tempo real, e uma cópia desatualizada faria o cliente montar
+   * campanha com modelo que a Meta já recusou. Quando houver cache, ele será
+   * explícito e com validade curta, não silencioso.
+   */
+  async modelos(contaId: string): Promise<ModeloDeMensagem[]> {
+    const credencial = await this.tokenDaConta(contaId);
+    if (!credencial) {
+      throw new BadRequestException(
+        'Nenhuma conta de WhatsApp conectada. Conecte a conta para ver seus modelos.',
+      );
+    }
+
+    try {
+      const r = await this.graph.modelosDaWaba(credencial.wabaId, credencial.token);
+      return (r.data ?? []).map(traduzirModelo);
+    } catch (erro) {
+      if (erro instanceof ErroGraph) {
+        this.log.error(`Leitura dos modelos falhou: ${erro.detalheParaLog}`);
+        throw new BadRequestException(
+          `Não conseguimos carregar seus modelos. ${erro.mensagemParaUsuario}`,
+        );
+      }
+      throw erro;
+    }
   }
 
   /**

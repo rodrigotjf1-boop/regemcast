@@ -14,6 +14,7 @@ import { api } from './api';
 import type {
   ConfigSignup,
   ConvitePendente,
+  ModeloDeMensagem,
   Conta,
   ResumoConta,
   Sessao,
@@ -142,6 +143,9 @@ export const whatsapp = {
 
   /** `GET /whatsapp/situacao` */
   situacao: () => api.get<SituacaoWhatsapp>('/whatsapp/situacao'),
+
+  /** `GET /whatsapp/modelos` */
+  modelos: () => api.get<ModeloDeMensagem[]>('/whatsapp/modelos'),
 
   /** `POST /whatsapp/conectar` */
   conectar: (dados: DadosConexao) => api.post<ResultadoConexao>('/whatsapp/conectar', dados),

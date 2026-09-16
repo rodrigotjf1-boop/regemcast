@@ -36,6 +36,7 @@ jest.mock('../../config/env', () => ({
   },
 }));
 
+import { cifrarToken } from './cripto';
 import { traduzirErroMeta } from './erros-meta';
 import { ErroGraph } from './graph.service';
 import { MetaService } from './meta.service';
@@ -113,6 +114,7 @@ function montar() {
     }),
     registrarNumero: jest.fn().mockResolvedValue(undefined),
     sincronizarDadosDoApp: jest.fn().mockResolvedValue(undefined),
+    modelosDaWaba: jest.fn().mockResolvedValue({ data: [] }),
   };
 
   const registrar = jest.fn().mockResolvedValue(undefined);
@@ -457,6 +459,111 @@ describe('jaRegistrado — número que a Meta já registrou', () => {
     expect(registrar.mock.calls[0][0].detalhe).toMatchObject({
       jaRegistradoDeclarado: true,
     });
+  });
+});
+
+describe('modelos de mensagem', () => {
+  /** Linha de `wa_conta` como o `tokenDaConta` espera encontrar. */
+  function contaConectada() {
+    return {
+      tokenCifrado: cifrarToken(TOKEN, Buffer.alloc(32, 7).toString('base64')),
+      wabaId: 'WABA1',
+    };
+  }
+
+  it('conta o MAIOR índice de variável, não quantas vezes aparecem', async () => {
+    const { service, db, diario, graph } = montar();
+    db.select.mockReturnValueOnce(consulta([contaConectada()], diario));
+    graph.modelosDaWaba.mockResolvedValue({
+      data: [
+        {
+          id: '1',
+          name: 'promo',
+          language: 'pt_BR',
+          status: 'APPROVED',
+          category: 'MARKETING',
+          components: [
+            { type: 'BODY', text: 'Oi {{1}}, o pedido {{2}} chegou. Até logo, {{1}}!' },
+          ],
+        },
+      ],
+    });
+
+    const [m] = await service.modelos(CONTA);
+
+    /*
+     * Três ocorrências, duas variáveis. Contar ocorrências faria o disparo
+     * mandar três valores e a Meta recusar com 132000 — defeito que existe no
+     * Regem e que este teste impede de atravessar para cá.
+     */
+    expect(m!.variaveis).toBe(2);
+  });
+
+  it('traduz status e categoria para português', async () => {
+    const { service, db, diario, graph } = montar();
+    db.select.mockReturnValueOnce(consulta([contaConectada()], diario));
+    graph.modelosDaWaba.mockResolvedValue({
+      data: [
+        {
+          id: '1',
+          name: 'aviso',
+          language: 'pt_BR',
+          status: 'PENDING',
+          category: 'UTILITY',
+          components: [{ type: 'BODY', text: 'Seu pedido saiu para entrega.' }],
+        },
+      ],
+    });
+
+    const [m] = await service.modelos(CONTA);
+
+    expect(m!.status).toBe('em análise');
+    expect(m!.categoria).toBe('utilidade');
+    expect(m!.variaveis).toBe(0);
+  });
+
+  it('status novo da Meta aparece cru, em vez de virar "desconhecido"', async () => {
+    const { service, db, diario, graph } = montar();
+    db.select.mockReturnValueOnce(consulta([contaConectada()], diario));
+    graph.modelosDaWaba.mockResolvedValue({
+      data: [{ id: '1', name: 'x', status: 'ALGO_QUE_A_META_INVENTOU', components: [] }],
+    });
+
+    const [m] = await service.modelos(CONTA);
+
+    // Esconder informação atrás de "desconhecido" não ajuda ninguém a agir;
+    // mostrar o nome cru é feio e verdadeiro.
+    expect(m!.status).toBe('algo_que_a_meta_inventou');
+  });
+
+  it('cabeçalho de mídia diz o formato, já que não tem texto', async () => {
+    const { service, db, diario, graph } = montar();
+    db.select.mockReturnValueOnce(consulta([contaConectada()], diario));
+    graph.modelosDaWaba.mockResolvedValue({
+      data: [
+        {
+          id: '1',
+          name: 'banner',
+          components: [
+            { type: 'HEADER', format: 'IMAGE' },
+            { type: 'BODY', text: 'Promoção da semana' },
+            { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Ver ofertas' }] },
+          ],
+        },
+      ],
+    });
+
+    const [m] = await service.modelos(CONTA);
+
+    expect(m!.cabecalho).toBe('(image)');
+    expect(m!.botoes).toEqual(['Ver ofertas']);
+  });
+
+  it('sem conta conectada, explica em vez de estourar', async () => {
+    const { service, graph } = montar();
+
+    await expect(service.modelos(CONTA)).rejects.toBeInstanceOf(BadRequestException);
+    expect(graph.modelosDaWaba).not.toHaveBeenCalled();
   });
 });
 

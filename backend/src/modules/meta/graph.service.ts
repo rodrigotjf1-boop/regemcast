@@ -32,6 +32,29 @@ import {
   traduzirErroMeta,
 } from './erros-meta';
 
+/**
+ * Modelo como a Meta devolve — cru, sem tradução.
+ *
+ * Fica `unknown` nas partes que variam (botões, cartões de carrossel) porque a
+ * Meta muda a forma delas com frequência e tipar errado é pior que não tipar:
+ * o TypeScript passa a garantir uma mentira.
+ */
+export interface ModeloBruto {
+  id: string;
+  name: string;
+  language?: string;
+  status?: string;
+  category?: string;
+  rejected_reason?: string;
+  components?: Array<{
+    type?: string;
+    format?: string;
+    text?: string;
+    buttons?: unknown[];
+    [k: string]: unknown;
+  }>;
+}
+
 /** Erro de uma chamada à Graph, com tudo que serve para diagnosticar. */
 export class ErroGraph extends Error {
   readonly status: number;
@@ -304,6 +327,28 @@ export class GraphService {
       token: tokenDoCliente,
       query: {
         fields: 'id,display_phone_number,verified_name,quality_rating,messaging_limit_tier',
+      },
+    });
+  }
+
+  /**
+   * Modelos de mensagem da WABA.
+   *
+   * `limit` alto de propósito: a paginação da Graph é por cursor, e uma conta
+   * madura passa fácil dos 25 padrão. Buscar de 25 em 25 numa tela que só lista
+   * transformaria um request em cinco — e a Meta cobra rate limit por app, não
+   * por cliente.
+   */
+  async modelosDaWaba(
+    wabaId: string,
+    tokenDoCliente: string,
+    limite = 200,
+  ): Promise<{ data: ModeloBruto[] }> {
+    return this.chamar(`${wabaId}/message_templates`, {
+      token: tokenDoCliente,
+      query: {
+        fields: 'id,name,language,status,category,components,rejected_reason',
+        limit: limite,
       },
     });
   }

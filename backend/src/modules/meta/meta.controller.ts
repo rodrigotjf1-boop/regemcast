@@ -29,6 +29,17 @@ export class MetaController {
   }
 
   /**
+   * Modelos de mensagem da conta, lidos direto da Meta.
+   *
+   * Qualquer usuário da conta pode ver: escolher modelo é trabalho de quem faz
+   * campanha, não só do dono. Quem manuseia credencial é o servidor.
+   */
+  @Get('modelos')
+  modelos(@UsuarioAtual() usuario: UsuarioAutenticado) {
+    return this.servico.modelos(usuario.contaId);
+  }
+
+  /**
    * Conclui o onboarding. Só o dono conecta: é a credencial do WhatsApp da
    * empresa que está em jogo, não uma preferência de tela.
    */
