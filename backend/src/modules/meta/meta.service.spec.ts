@@ -407,6 +407,59 @@ describe('conectarManual — a porta da distribuição', () => {
   });
 });
 
+describe('jaRegistrado — número que a Meta já registrou', () => {
+  it('pula o /register e marca o número como pronto', async () => {
+    const { service, db, diario, graph } = montar();
+    db.select.mockReturnValueOnce(consulta([{ id: CONTA }], diario));
+
+    const r = await service.conectarManual(CONTA, {
+      wabaId: 'WABA1',
+      phoneNumberId: 'PN1',
+      token: TOKEN,
+      jaRegistrado: true,
+    });
+
+    // Chamar /register num número já registrado devolve erro de PIN, e a tela
+    // passaria a mostrar "Registro pendente" num número que envia normalmente.
+    expect(graph.registrarNumero).not.toHaveBeenCalled();
+    expect(r.registrado).toBe(true);
+    expect(ultimaEscritaCom(diario, 'status')?.status).toBe('registrado');
+  });
+
+  it('sem a declaração, tenta registrar como sempre', async () => {
+    const { service, db, diario, graph } = montar();
+    db.select.mockReturnValueOnce(consulta([{ id: CONTA }], diario));
+
+    await service.conectarManual(CONTA, {
+      wabaId: 'WABA1',
+      phoneNumberId: 'PN1',
+      token: TOKEN,
+    });
+
+    // O padrão é o comportamento antigo: quem não declara nada não ganha
+    // atalho. Um "já registrado" implícito esconderia número realmente pendente.
+    expect(graph.registrarNumero).toHaveBeenCalledTimes(1);
+  });
+
+  it('a declaração fica na trilha de auditoria', async () => {
+    const { service, db, diario, registrar } = montar();
+    db.select.mockReturnValueOnce(consulta([{ id: CONTA }], diario));
+
+    await service.conectarManual(CONTA, {
+      wabaId: 'WABA1',
+      phoneNumberId: 'PN1',
+      token: TOKEN,
+      jaRegistrado: true,
+    });
+
+    // É declaração de quem conectou, não fato verificado por nós. Se um dia um
+    // número aparecer pronto sem estar, é aqui que se descobre quem disse.
+    expect(registrar.mock.calls[0][0].detalhe).toMatchObject({
+      jaRegistradoDeclarado: true,
+    });
+  });
+});
+
 describe('retomarSincronizacao', () => {
   it('sem token da conta, não chama a Meta e diz por quê', async () => {
     const { service, graph } = montar();

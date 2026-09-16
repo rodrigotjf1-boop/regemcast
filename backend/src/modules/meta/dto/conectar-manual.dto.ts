@@ -1,5 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 /**
  * Corpo da conexão manual — rota da distribuição, não do cliente.
@@ -30,6 +38,25 @@ export class ConectarManualDto {
    * Nunca volta em resposta nenhuma: é cifrado antes de tocar o banco e só sai
    * decifrado para falar com a Meta.
    */
+  /**
+   * Declara que o número JÁ está registrado na Cloud API — é o caso do número
+   * de teste da Meta, que ela mesma registra.
+   *
+   * Existe como declaração do operador, e não como dedução nossa, de propósito:
+   * a Meta expõe um campo `platform_type` que parece dizer isso, mas a
+   * documentação não define os valores dele. Basear o estado do número numa
+   * suposição sobre campo alheio é exatamente o tipo de coisa que funciona até
+   * o dia em que não funciona, e aí ninguém lembra por quê. Quem conecta à mão
+   * sabe a resposta; que ela venha declarada e auditada.
+   */
+  @ApiProperty({
+    required: false,
+    description: 'O número já está registrado na Cloud API (número de teste da Meta, por exemplo).',
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'Informe se o número já está registrado.' })
+  jaRegistrado?: boolean;
+
   @ApiProperty({ description: 'Token de acesso com permissão sobre esta WABA.' })
   @IsString({ message: 'Informe o token de acesso.' })
   @MinLength(20, { message: 'O token parece incompleto.' })
