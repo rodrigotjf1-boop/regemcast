@@ -87,6 +87,13 @@ async function requisitar<T>(
   corpo?: unknown,
   opcoes?: OpcoesRequisicao,
 ): Promise<T> {
+  // Upload de arquivo vai como FormData. O `Content-Type` NÃO é definido por
+  // nós nesse caso: o navegador precisa escrevê-lo sozinho para incluir o
+  // `boundary` do multipart. Defini-lo à mão faz o servidor receber um corpo
+  // que não consegue separar, e o erro que volta fala de campo faltando — o que
+  // manda procurar o problema no lugar errado.
+  const ehArquivo = typeof FormData !== 'undefined' && corpo instanceof FormData;
+
   let resposta: Response;
   try {
     resposta = await fetch(`${base()}${caminho}`, {
@@ -94,11 +101,11 @@ async function requisitar<T>(
       credentials: 'include',
       cache: 'no-store',
       signal: opcoes?.sinal,
-      headers: corpo === undefined ? { Accept: 'application/json' } : {
+      headers: corpo === undefined || ehArquivo ? { Accept: 'application/json' } : {
         Accept: 'application/json',
         'Content-Type': 'application/json',
       },
-      body: corpo === undefined ? undefined : JSON.stringify(corpo),
+      body: corpo === undefined ? undefined : ehArquivo ? (corpo as FormData) : JSON.stringify(corpo),
     });
   } catch (erro) {
     // Servidor fora, DNS, CORS, offline. Não é 4xx: o cliente não errou nada.
@@ -130,6 +137,12 @@ export const api = {
     requisitar<T>('PATCH', caminho, corpo ?? {}, opcoes),
   delete: <T>(caminho: string, opcoes?: OpcoesRequisicao) =>
     requisitar<T>('DELETE', caminho, undefined, opcoes),
+  /** Envia um arquivo. O navegador monta o cabeçalho multipart sozinho. */
+  enviarArquivo: <T>(caminho: string, campo: string, arquivo: File, opcoes?: OpcoesRequisicao) => {
+    const dados = new FormData();
+    dados.append(campo, arquivo);
+    return requisitar<T>('POST', caminho, dados, opcoes);
+  },
 };
 
 /**
