@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { ImportarContatos } from '@/components/app/importar-contatos';
+import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -74,21 +75,19 @@ export default function PaginaContatos() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight text-tinta">Contatos</h1>
-          <p className="max-w-prose text-sm leading-relaxed text-tinta-suave">
-            Quem pode receber suas campanhas — com o registro de como cada pessoa autorizou.
-          </p>
-        </div>
-        <Button
-          variante={importando ? 'secundario' : 'primario'}
-          onClick={() => setImportando((v) => !v)}
-          aria-expanded={importando}
-        >
-          {importando ? 'Cancelar' : 'Importar contatos'}
-        </Button>
-      </header>
+      <CabecalhoPagina
+        titulo="Contatos"
+        descricao="Quem pode receber suas campanhas — com o registro de como cada pessoa autorizou."
+        acao={
+          <Button
+            variante={importando ? 'secundario' : 'primario'}
+            onClick={() => setImportando((v) => !v)}
+            aria-expanded={importando}
+          >
+            {importando ? 'Cancelar' : 'Importar contatos'}
+          </Button>
+        }
+      />
 
       {importando && (
         <ImportarContatos

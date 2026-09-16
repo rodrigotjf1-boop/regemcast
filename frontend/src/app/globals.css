@@ -123,22 +123,29 @@
 :root {
   color-scheme: light;
 
-  --cor-fundo: 255 243 234;          /* Creme  #FFF3EA */
+  /* O campo da aplicação. Creme a 25% da força: a temperatura da marca fica,
+     o viés alaranjado sai. Contraste da tinta: 15,7:1 (era 14,5:1). */
+  --cor-fundo: 248 245 242;          /* #F8F5F2 — creme diluído */
   --cor-superficie: 255 255 255;
-  --cor-superficie-2: 250 234 223;
-  --cor-tinta: 43 27 61;             /* Ameixa #2B1B3D */
-  --cor-tinta-suave: 110 92 128;
-  --cor-borda: 232 217 204;
+  --cor-superficie-2: 243 239 235;   /* #F3EFEB */
+  --cor-tinta: 35 22 50;             /* #231632 — ameixa mais profunda */
+  --cor-tinta-suave: 106 95 118;     /* #6A5F76 — 5,5:1 no campo, 6,0:1 no branco */
+  --cor-borda: 229 223 232;          /* #E5DFE8 — neutra com viés de ameixa */
   --cor-acento: 163 230 53;          /* Lima   #A3E635 — só preenchimento */
-  --cor-acento-forte: 43 27 61;      /* texto e link: ameixa (lima não lê aqui) */
-  --cor-acento-suave: 237 248 218;   /* lima diluído no creme */
-  --cor-acento-contraste: 43 27 61;  /* sobre lima, SEMPRE ameixa */
+  --cor-acento-forte: 35 22 50;      /* texto e link: ameixa (lima não lê aqui) */
+  --cor-acento-suave: 238 248 219;   /* #EEF8DB — lima diluído */
+  --cor-acento-contraste: 35 22 50;  /* sobre lima, SEMPRE ameixa — 11,3:1 */
+  /* Amarelo do kit, que estava sem uso. Preenchimento apenas: sobre ele o
+     texto é ameixa (11,8:1). Como TEXTO sobre fundo claro ele reprova — por
+     isso `--cor-atencao` continua sendo o âmbar escuro, e são tokens
+     diferentes de propósito. */
+  --cor-realce: 255 209 102;         /* Amarelo #FFD166 */
   /* Traço do pulso dentro do balão do símbolo — ver components/marca/logotipo. */
   --cor-pulso: 255 255 255;
   --cor-sucesso: 21 128 61;
   --cor-atencao: 138 90 0;
   --cor-erro: 179 38 30;
-  --cor-sombra: 43 27 61;
+  --cor-sombra: 35 22 50;
 
   --fonte-corpo: 'Poppins', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --fonte-mono: ui-monospace, SFMono-Regular, 'Cascadia Mono', Consolas, 'Courier New', monospace;
@@ -148,18 +155,22 @@
   :root {
     color-scheme: dark;
 
-    /* Aqui o ameixa vira o que o kit chama de base: fundo dominante. */
-    --cor-fundo: 30 18 41;
-    --cor-superficie: 43 27 61;      /* Ameixa #2B1B3D */
-    --cor-superficie-2: 58 38 81;
-    --cor-tinta: 255 243 234;        /* Creme  #FFF3EA */
-    --cor-tinta-suave: 195 178 209;
-    --cor-borda: 74 51 102;
+    /* Aqui o ameixa vira o que o kit chama de base: fundo dominante.
+       Mais profundo e menos saturado que antes — em área grande, o roxo forte
+       cansa e puxa o produto para o lado do brinquedo. A cor continua sendo
+       ameixa; o que mudou foi a dose. */
+    --cor-fundo: 20 14 27;           /* #140E1B */
+    --cor-superficie: 30 22 40;      /* #1E1628 */
+    --cor-superficie-2: 39 29 51;    /* #271D33 */
+    --cor-tinta: 242 238 246;        /* #F2EEF6 — 16,5:1 */
+    --cor-tinta-suave: 168 158 180;  /* #A89EB4 — 6,8:1 na superfície */
+    --cor-borda: 53 42 68;           /* #352A44 */
     --cor-acento: 163 230 53;
-    --cor-acento-forte: 163 230 53;  /* sobre ameixa o lima tem 9,6:1 */
-    --cor-acento-suave: 52 33 74;
-    --cor-acento-contraste: 43 27 61;
-    --cor-pulso: 43 27 61;
+    --cor-acento-forte: 163 230 53;  /* sobre a superfície o lima tem 11,6:1 */
+    --cor-acento-suave: 43 33 58;
+    --cor-acento-contraste: 35 22 50;
+    --cor-realce: 255 209 102;       /* Amarelo #FFD166 */
+    --cor-pulso: 30 22 40;
     --cor-sucesso: 134 239 172;
     --cor-atencao: 255 209 102;      /* Amarelo #FFD166 */
     --cor-erro: 252 165 165;

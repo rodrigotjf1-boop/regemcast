@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { EditorModelo } from '@/components/app/editor-modelo';
+import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
 import { Alerta } from '@/components/ui/alerta';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -98,22 +99,24 @@ export default function PaginaModelos() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight text-tinta">Modelos de mensagem</h1>
-          <p className="max-w-prose text-sm leading-relaxed text-tinta-suave">
+      <CabecalhoPagina
+        titulo="Modelos de mensagem"
+        descricao={
+          <>
             No WhatsApp oficial, toda conversa que <strong>você</strong> começa precisa usar um
             modelo aprovado pela Meta. Crie o seu aqui — conferimos as regras dela antes de enviar.
-          </p>
-        </div>
-        <Button
-          variante={criando ? 'secundario' : 'primario'}
-          onClick={() => setCriando((v) => !v)}
-          aria-expanded={criando}
-        >
-          {criando ? 'Cancelar' : 'Novo modelo'}
-        </Button>
-      </header>
+          </>
+        }
+        acao={
+          <Button
+            variante={criando ? 'secundario' : 'primario'}
+            onClick={() => setCriando((v) => !v)}
+            aria-expanded={criando}
+          >
+            {criando ? 'Cancelar' : 'Novo modelo'}
+          </Button>
+        }
+      />
 
       {(criando || editando) && (
         <EditorModelo

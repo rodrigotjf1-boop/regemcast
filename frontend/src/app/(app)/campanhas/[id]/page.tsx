@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 
+import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
 import { Alerta } from '@/components/ui/alerta';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -122,27 +123,28 @@ export default function PaginaCampanha() {
         </Link>
       </div>
 
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight text-tinta">{campanha.nome}</h1>
-          <p className="text-sm text-tinta-suave">
+      <CabecalhoPagina
+        titulo={campanha.nome}
+        descricao={
+          <>
             Modelo <span className="numerico">{campanha.modeloNome}</span> ·{' '}
             {campanha.modeloIdioma} ·{' '}
             {campanha.total === 1 ? '1 destinatário' : `${campanha.total} destinatários`}
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variante="secundario" onClick={() => void carregar()} carregando={carregando}>
-            Atualizar
-          </Button>
-          {podeDisparar && (
-            <Button onClick={() => void disparar()} carregando={disparando}>
-              Disparar agora
+          </>
+        }
+        acao={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variante="secundario" onClick={() => void carregar()} carregando={carregando}>
+              Atualizar
             </Button>
-          )}
-        </div>
-      </header>
+            {podeDisparar && (
+              <Button onClick={() => void disparar()} carregando={disparando}>
+                Disparar agora
+              </Button>
+            )}
+          </div>
+        }
+      />
 
       {erro && <Alerta tom="erro">{erro}</Alerta>}
       {aviso && <Alerta tom="sucesso">{aviso}</Alerta>}
