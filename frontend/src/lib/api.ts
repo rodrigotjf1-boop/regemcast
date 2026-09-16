@@ -135,6 +135,8 @@ export const api = {
     requisitar<T>('POST', caminho, corpo ?? {}, opcoes),
   patch: <T>(caminho: string, corpo?: unknown, opcoes?: OpcoesRequisicao) =>
     requisitar<T>('PATCH', caminho, corpo ?? {}, opcoes),
+  put: <T>(caminho: string, corpo?: unknown, opcoes?: OpcoesRequisicao) =>
+    requisitar<T>('PUT', caminho, corpo ?? {}, opcoes),
   delete: <T>(caminho: string, opcoes?: OpcoesRequisicao) =>
     requisitar<T>('DELETE', caminho, undefined, opcoes),
   /** Envia um arquivo. O navegador monta o cabeçalho multipart sozinho. */

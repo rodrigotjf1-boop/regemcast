@@ -324,3 +324,57 @@ export interface ConfirmacaoDaImportacao {
   evidencia?: string;
   contatos: { telefone: string; nome?: string }[];
 }
+
+// ------------------------------------------------------------------ modelos
+
+export type CategoriaModelo = 'MARKETING' | 'UTILITY' | 'AUTHENTICATION';
+export type FormatoCabecalho = 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
+export type TipoBotao = 'URL' | 'PHONE_NUMBER' | 'QUICK_REPLY' | 'COPY_CODE';
+
+export interface BotaoDoModelo {
+  tipo: TipoBotao;
+  texto: string;
+  url?: string;
+  telefone?: string;
+}
+
+/** O modelo como o cliente escreve — o corpo de `POST /modelos`. */
+export interface DadosModelo {
+  nome: string;
+  idioma?: string;
+  categoria?: CategoriaModelo;
+  cabecalhoFormato?: FormatoCabecalho;
+  cabecalhoTexto?: string;
+  cabecalhoExemplo?: string;
+  cabecalhoMidia?: string;
+  corpo: string;
+  corpoExemplos?: string[];
+  rodape?: string;
+  botoes?: BotaoDoModelo[];
+  ltoAtivo?: boolean;
+  ltoTexto?: string;
+}
+
+/** Um problema encontrado pelas regras da Meta, já em português. */
+export interface ProblemaNoModelo {
+  campo: 'nome' | 'categoria' | 'cabecalho' | 'corpo' | 'rodape' | 'botoes' | 'lto';
+  mensagem: string;
+}
+
+/** `GET /modelos` — o que está gravado aqui, incluindo rascunho. */
+export interface ModeloSalvo {
+  id: string;
+  nome: string;
+  idioma: string;
+  categoria: string;
+  /** A categoria que a Meta devolveu, quando reclassificou. */
+  categoriaMeta: string | null;
+  status: string;
+  /** Por que a Meta recusou. Ela diz uma vez só. */
+  motivo: string | null;
+  corpo: string;
+  cabecalhoTexto: string | null;
+  rodape: string | null;
+  variaveis: number;
+  criadoEm: string;
+}

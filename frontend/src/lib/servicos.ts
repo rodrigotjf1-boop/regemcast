@@ -19,7 +19,10 @@ import type {
   PaginaDeContatos,
   PreviaDaImportacao,
   DestinatarioCampanha,
+  DadosModelo,
   ModeloDeMensagem,
+  ModeloSalvo,
+  ProblemaNoModelo,
   NovaCampanha,
   ResumoCampanha,
   Conta,
@@ -212,4 +215,33 @@ export const contatos = {
 
   /** `DELETE /contatos/:id` — marca como descadastrado; não apaga. */
   descadastrar: (id: string) => api.delete<{ ok: boolean }>(`/contatos/${id}`),
+};
+
+export const modelos = {
+  /** `GET /modelos` — inclui rascunho, que a Meta não tem. */
+  listar: () => api.get<ModeloSalvo[]>('/modelos'),
+
+  /**
+   * `POST /modelos/conferir` — passa nas regras da Meta?
+   *
+   * A conferência mora no servidor de propósito. Validar de novo aqui criaria
+   * duas implementações da mesma regra, e elas divergem: foi assim que um
+   * telefone sem o código do país passou na tela e foi recusado pela Meta.
+   */
+  conferir: (dados: DadosModelo) =>
+    api.post<{ problemas: ProblemaNoModelo[] }>('/modelos/conferir', dados),
+
+  /** `POST /modelos` — grava o rascunho. Nada vai para a Meta ainda. */
+  criar: (dados: DadosModelo) => api.post<{ id: string }>('/modelos', dados),
+
+  /** `PUT /modelos/:id` */
+  atualizar: (id: string, dados: DadosModelo) =>
+    api.put<{ id: string }>(`/modelos/${id}`, dados),
+
+  /** `POST /modelos/:id/enviar` — submete à Meta. */
+  enviar: (id: string) =>
+    api.post<{ status: string; motivo: string | null }>(`/modelos/${id}/enviar`, {}),
+
+  /** `DELETE /modelos/:id` — só rascunho e recusado. */
+  excluir: (id: string) => api.delete<{ ok: boolean }>(`/modelos/${id}`),
 };

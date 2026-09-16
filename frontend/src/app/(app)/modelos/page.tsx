@@ -2,22 +2,29 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
+import { EditorModelo } from '@/components/app/editor-modelo';
+import { Alerta } from '@/components/ui/alerta';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { EstadoErro } from '@/components/ui/estado-erro';
 import { Spinner } from '@/components/ui/spinner';
 import { mensagemDoErro } from '@/lib/api';
-import { whatsapp } from '@/lib/servicos';
-import type { ModeloDeMensagem } from '@/lib/tipos';
+import { modelos as modelosSalvos, whatsapp } from '@/lib/servicos';
+import type { ModeloDeMensagem, ModeloSalvo } from '@/lib/tipos';
 
 /**
  * Modelos de mensagem.
  *
- * Os modelos vivem na Meta, não aqui — e esta tela lê de lá a cada visita, em
- * vez de mostrar cópia nossa. O status muda do lado dela sem aviso (aprovação,
- * recusa, pausa por qualidade), e uma cópia desatualizada faria o cliente
- * montar campanha com modelo que a Meta já recusou.
+ * A lista de aprovados é lida da Meta a cada visita, e não de cópia nossa: o
+ * status muda do lado dela sem aviso (aprovação, recusa, pausa por qualidade),
+ * e uma cópia desatualizada faria o cliente montar campanha com modelo que a
+ * Meta já recusou.
+ *
+ * O que é nosso são os RASCUNHOS — que a Meta não tem. Um modelo leva minutos
+ * para ser escrito e ela o recusa por detalhes; sem rascunho, cada recusa apaga
+ * o trabalho.
  *
  * Por isso a tela mostra o status com destaque: no WhatsApp oficial, **modelo
  * aprovado é a licença para iniciar conversa**. Sem ele não existe disparo, e
@@ -34,8 +41,10 @@ function tomDoStatus(status: string): 'sucesso' | 'atencao' | 'erro' | 'neutro' 
 
 export default function PaginaModelos() {
   const [modelos, setModelos] = useState<ModeloDeMensagem[] | null>(null);
+  const [meus, setMeus] = useState<ModeloSalvo[]>([]);
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(true);
+  const [criando, setCriando] = useState(false);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -50,21 +59,130 @@ export default function PaginaModelos() {
     } finally {
       setCarregando(false);
     }
+
+    // Os nossos são independentes: mesmo que a Meta esteja fora do ar, o
+    // rascunho que a pessoa escreveu precisa continuar aparecendo.
+    try {
+      setMeus(await modelosSalvos.listar());
+    } catch {
+      setMeus([]);
+    }
   }, []);
 
   useEffect(() => {
     void carregar();
   }, [carregar]);
 
+  async function enviar(id: string) {
+    try {
+      await modelosSalvos.enviar(id);
+      await carregar();
+    } catch (e) {
+      setErro(mensagemDoErro(e));
+    }
+  }
+
+  async function excluir(id: string) {
+    try {
+      await modelosSalvos.excluir(id);
+      await carregar();
+    } catch (e) {
+      setErro(mensagemDoErro(e));
+    }
+  }
+
+  const rascunhos = meus.filter((m) => m.status === 'rascunho' || m.status === 'rejeitado');
+  const aguardando = meus.filter((m) => m.status === 'enviado');
+
   return (
     <div className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-xl font-semibold tracking-tight text-tinta">Modelos de mensagem</h1>
-        <p className="max-w-prose text-sm leading-relaxed text-tinta-suave">
-          No WhatsApp oficial, toda conversa que <strong>você</strong> começa precisa usar um
-          modelo aprovado pela Meta. Estes são os seus, lidos direto da Meta agora.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold tracking-tight text-tinta">Modelos de mensagem</h1>
+          <p className="max-w-prose text-sm leading-relaxed text-tinta-suave">
+            No WhatsApp oficial, toda conversa que <strong>você</strong> começa precisa usar um
+            modelo aprovado pela Meta. Crie o seu aqui — conferimos as regras dela antes de enviar.
+          </p>
+        </div>
+        <Button
+          variante={criando ? 'secundario' : 'primario'}
+          onClick={() => setCriando((v) => !v)}
+          aria-expanded={criando}
+        >
+          {criando ? 'Cancelar' : 'Novo modelo'}
+        </Button>
       </header>
+
+      {criando && (
+        <EditorModelo
+          aoCancelar={() => setCriando(false)}
+          aoSalvar={() => {
+            setCriando(false);
+            void carregar();
+          }}
+        />
+      )}
+
+      {rascunhos.length > 0 && (
+        <Card>
+          <div className="space-y-3">
+            <h2 className="text-sm font-semibold text-tinta">Rascunhos e recusados</h2>
+            <ul className="space-y-3">
+              {rascunhos.map((m) => (
+                <li key={m.id} className="space-y-2 border-b border-borda/60 pb-3 last:border-0 last:pb-0">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="numerico break-words text-sm font-semibold text-tinta">{m.nome}</p>
+                      <p className="text-xs text-tinta-suave">{m.categoria} · {m.idioma}</p>
+                    </div>
+                    <Badge tom={m.status === 'rejeitado' ? 'erro' : 'neutro'}>{m.status}</Badge>
+                  </div>
+
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-tinta-suave">
+                    {m.corpo}
+                  </p>
+
+                  {/*
+                    O motivo da recusa fica aqui porque a Meta o diz UMA vez, na
+                    resposta do envio. Sem isto, o cliente tentaria de novo às cegas.
+                  */}
+                  {m.motivo && (
+                    <p className="rounded-card border border-erro/30 bg-erro/10 p-2 text-xs leading-relaxed text-erro">
+                      A Meta recusou: {m.motivo}
+                    </p>
+                  )}
+
+                  <div className="flex flex-wrap gap-3 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => void enviar(m.id)}
+                      className="text-acento-forte underline-offset-4 hover:underline"
+                    >
+                      Enviar para aprovação
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void excluir(m.id)}
+                      className="text-tinta-suave underline-offset-4 hover:text-erro hover:underline"
+                    >
+                      Excluir
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Card>
+      )}
+
+      {aguardando.length > 0 && (
+        <Alerta tom="informacao">
+          {aguardando.length === 1
+            ? '1 modelo está em análise na Meta'
+            : `${aguardando.length} modelos estão em análise na Meta`}
+          . A resposta costuma levar de minutos a algumas horas, e aparece na lista abaixo.
+        </Alerta>
+      )}
 
       {carregando && (
         <div className="flex items-center gap-3 text-sm text-tinta-suave">
@@ -82,12 +200,10 @@ export default function PaginaModelos() {
 
       {!carregando && !erro && modelos?.length === 0 && (
         <EmptyState
-          titulo="Nenhum modelo ainda"
+          titulo="Nenhum modelo aprovado ainda"
           descricao={
             <>
-              Modelos são criados no WhatsApp Manager da Meta e passam por aprovação, o que
-              costuma levar de alguns minutos a algumas horas. Assim que o primeiro for aprovado,
-              ele aparece aqui.
+              Crie o primeiro no botão acima. A Meta analisa cada modelo antes de liberar, o que costuma levar de alguns minutos a algumas horas.
             </>
           }
         />
@@ -156,8 +272,7 @@ function CartaoModelo({ modelo }: { modelo: ModeloDeMensagem }) {
 
         {modelo.motivo && (
           <p className="rounded-card border border-erro/30 bg-erro/10 p-3 text-sm leading-relaxed text-erro">
-            A Meta recusou este modelo. Motivo informado por ela: {modelo.motivo}. Corrija no
-            WhatsApp Manager e envie para análise de novo.
+            A Meta recusou este modelo. Motivo informado por ela: {modelo.motivo}. Crie outro aqui com um nome novo.
           </p>
         )}
       </div>
