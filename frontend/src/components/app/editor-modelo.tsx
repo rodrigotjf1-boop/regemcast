@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 
+import { PreviaWhatsapp } from '@/components/app/previa-whatsapp';
 import { Alerta } from '@/components/ui/alerta';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
@@ -405,7 +406,7 @@ export function EditorModelo({
         {/* --------------------------------------------------------- prévia */}
         <aside className="border-t border-borda bg-superficie-2 lg:border-l lg:border-t-0">
           <div className="lg:sticky lg:top-4">
-            <Previa dados={dados} variaveis={variaveis} />
+            <PreviaWhatsapp dados={dados} variaveis={variaveis} />
           </div>
         </aside>
       </div>
@@ -766,113 +767,6 @@ function Botoes({
           + Botão
         </Button>
       )}
-    </div>
-  );
-}
-
-/**
- * A prévia, dentro de um aparelho.
- *
- * As variáveis aparecem com os exemplos preenchidos, e não como `{{1}}`: é
- * assim que a mensagem chega, e ver o texto cru esconde o erro mais comum — a
- * frase que não fecha depois de a variável entrar.
- */
-function Previa({ dados, variaveis }: { dados: DadosModelo; variaveis: number[] }) {
-  const corpo = useMemo(() => {
-    let texto = dados.corpo || 'Sua mensagem aparece aqui.';
-    variaveis.forEach((n, i) => {
-      const exemplo = dados.corpoExemplos?.[i]?.trim() || `exemplo ${n}`;
-      texto = texto.replace(new RegExp(`\\{\\{\\s*${n}\\s*\\}\\}`, 'g'), exemplo);
-    });
-    return texto;
-  }, [dados.corpo, dados.corpoExemplos, variaveis]);
-
-  const cabecalho = (dados.cabecalhoTexto ?? '').replace(
-    /\{\{\s*1\s*\}\}/g,
-    dados.cabecalhoExemplo?.trim() || 'exemplo',
-  );
-
-  const ehCarrossel = dados.tipo === 'carrossel';
-
-  return (
-    <div className="space-y-3 p-4 sm:p-5">
-      <p className="text-xs font-semibold uppercase tracking-wider text-tinta-suave">
-        Como vai chegar
-      </p>
-
-      {/* Moldura do aparelho: dá escala real ao texto e à imagem, que é o que
-          a pessoa precisa julgar enquanto escreve. */}
-      <div className="mx-auto w-full max-w-[17rem] rounded-[1.75rem] border border-borda bg-tinta p-1.5 shadow-card">
-        <div className="overflow-hidden rounded-[1.4rem] bg-[#e4ddd4]">
-          <div className="flex items-center gap-2 bg-[#075e54] px-3 py-2">
-            <div className="h-6 w-6 rounded-full bg-white/25" />
-            <div className="min-w-0">
-              <p className="truncate text-[0.7rem] font-semibold text-white">Sua empresa</p>
-              <p className="text-[0.6rem] text-white/70">online</p>
-            </div>
-          </div>
-
-          <div className="max-h-[26rem] space-y-1.5 overflow-y-auto p-2.5">
-            <div className="space-y-1.5 rounded-lg rounded-tl-none bg-white p-2.5 shadow-sm">
-              {dados.ltoAtivo && !ehCarrossel && (
-                <p className="text-[0.7rem] font-semibold text-[#008069]">
-                  ⏳ {dados.ltoTexto?.trim() || 'Oferta!'}
-                </p>
-              )}
-              {cabecalho && !ehCarrossel && (
-                <p className="text-[0.8rem] font-semibold text-[#111b21]">{cabecalho}</p>
-              )}
-              <p className="whitespace-pre-wrap text-[0.8rem] leading-relaxed text-[#111b21]">
-                {corpo}
-              </p>
-              {dados.rodape && !dados.ltoAtivo && !ehCarrossel && (
-                <p className="text-[0.65rem] text-[#667781]">{dados.rodape}</p>
-              )}
-            </div>
-
-            {!ehCarrossel &&
-              (dados.botoes ?? []).map((b, i) => (
-                <div
-                  key={i}
-                  className="rounded-lg bg-white p-1.5 text-center text-[0.75rem] font-medium text-[#008069] shadow-sm"
-                >
-                  {b.texto || 'Botão'}
-                </div>
-              ))}
-
-            {/* O carrossel rola na horizontal, como no aparelho. */}
-            {ehCarrossel && (
-              <div className="-mx-0.5 flex snap-x gap-2 overflow-x-auto px-0.5 pb-1">
-                {(dados.cartoes ?? []).map((c, i) => (
-                  <div
-                    key={i}
-                    className="w-[8.5rem] shrink-0 snap-start overflow-hidden rounded-lg bg-white shadow-sm"
-                  >
-                    <div className="flex h-16 items-center justify-center bg-[#d9d2c8] text-[0.6rem] text-[#667781]">
-                      {c.imagem ? 'imagem' : 'sem imagem'}
-                    </div>
-                    <p className="line-clamp-3 p-2 text-[0.7rem] leading-snug text-[#111b21]">
-                      {c.corpo || 'Texto do cartão'}
-                    </p>
-                    {(c.botoes ?? []).map((b, j) => (
-                      <div
-                        key={j}
-                        className="border-t border-[#e9edef] p-1.5 text-center text-[0.7rem] font-medium text-[#008069]"
-                      >
-                        {b.texto || 'Botão'}
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <p className="text-xs leading-relaxed text-tinta-suave">
-        As variáveis aparecem com os exemplos preenchidos, que é como a mensagem chega de verdade.
-      </p>
     </div>
   );
 }
