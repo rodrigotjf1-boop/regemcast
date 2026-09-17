@@ -4,9 +4,11 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   Max,
   MaxLength,
@@ -21,16 +23,33 @@ import { EhTelefoneE164 } from '../../lista-espera/dto/telefone';
 const HORA = new RegExp('^([01][0-9]|2[0-3]):[0-5][0-9]$');
 
 /**
- * Teto de destinatários por campanha, **enquanto o disparo for síncrono**.
+ * Teto de números DIGITADOS numa campanha.
  *
- * Não é limite de produto: é limite de arquitetura, e some quando a fila
- * entrar. Enquanto o envio acontece dentro do request, uma campanha grande
- * seguraria a conexão de banco e o request por minutos — e um timeout no meio
- * deixaria metade enviada sem ninguém saber qual metade.
- *
- * Melhor recusar com explicação do que aceitar e falhar no meio.
+ * O envio já é do worker, em segundo plano — o antigo teto de 10 era do tempo
+ * em que ele acontecia dentro do request. O que resta é o tamanho do corpo:
+ * público grande vem de uma LISTA de contatos, que o servidor monta sozinho
+ * (com opt-out cruzado), sem trafegar milhares de números pelo navegador.
  */
-export const TETO_DESTINATARIOS = 10;
+export const TETO_DESTINATARIOS = 500;
+
+/** De onde sai o valor de uma variável quando o público é uma lista. */
+export const ORIGENS_VARIAVEL = ['fixo', 'nome', 'primeiro_nome'] as const;
+
+export class VariavelDeListaDto {
+  @ApiProperty({ enum: ORIGENS_VARIAVEL, description: 'fixo = o mesmo texto para todos; nome/primeiro_nome = do contato.' })
+  @IsIn(ORIGENS_VARIAVEL, { message: 'Origem da variável inválida.' })
+  origem!: (typeof ORIGENS_VARIAVEL)[number];
+
+  /**
+   * O texto (quando `fixo`) ou o que usar quando o contato não tem nome — a
+   * Meta recusa variável vazia.
+   */
+  @ApiProperty()
+  @IsString({ message: 'Preencha o valor da variável.' })
+  @MinLength(1, { message: 'Preencha o valor da variável.' })
+  @MaxLength(1024, { message: 'Cada variável precisa ter até 1024 caracteres.' })
+  valor!: string;
+}
 
 export class DestinatarioDto {
   /**
@@ -91,15 +110,31 @@ export class CriarCampanhaDto {
   @MaxLength(64)
   modeloCategoria?: string;
 
-  @ApiProperty({ type: [DestinatarioDto], description: 'Quem vai receber.' })
+  // ---- público: OU números digitados, OU uma lista de contatos
+
+  @ApiProperty({ required: false, type: [DestinatarioDto], description: 'Números digitados (até 500).' })
+  @IsOptional()
   @IsArray()
   @ArrayMinSize(1, { message: 'Escolha ao menos um destinatário.' })
   @ArrayMaxSize(TETO_DESTINATARIOS, {
-    message: `Por enquanto cada campanha aceita até ${TETO_DESTINATARIOS} destinatários. O envio em volume entra com a fila.`,
+    message: `Digitando, cada campanha aceita até ${TETO_DESTINATARIOS} números. Para mais, importe em Contatos e escolha a lista.`,
   })
   @ValidateNested({ each: true })
   @Type(() => DestinatarioDto)
-  destinatarios!: DestinatarioDto[];
+  destinatarios?: DestinatarioDto[];
+
+  @ApiProperty({ required: false, description: 'Lista de contatos que recebe a campanha.' })
+  @IsOptional()
+  @IsUUID('4', { message: 'Lista inválida.' })
+  listaId?: string;
+
+  @ApiProperty({ required: false, type: [VariavelDeListaDto], description: 'Variáveis, em ordem, quando o público é uma lista.' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10, { message: 'Um modelo aceita no máximo 10 variáveis.' })
+  @ValidateNested({ each: true })
+  @Type(() => VariavelDeListaDto)
+  variaveisLista?: VariavelDeListaDto[];
 
   // ---- janela de envio (opcional)
   //

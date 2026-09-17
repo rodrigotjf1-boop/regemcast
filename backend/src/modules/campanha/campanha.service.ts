@@ -32,7 +32,7 @@ import { and, count, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { paraCloudApi } from '../../common/telefone';
 import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
-import { assinatura, campanha, campanhaDestinatario, conta, waNumero } from '../../db/schema';
+import { assinatura, campanha, campanhaDestinatario, conta, contatoLista, waNumero } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { ErroGraph, GraphService } from '../meta/graph.service';
 import { MetaService } from '../meta/meta.service';
@@ -173,6 +173,9 @@ const ESTADOS_ATIVOS = ['agendada', 'enviando'] as const;
  */
 const LOTE_POR_RODADA = 20;
 
+/** Quantos destinatários a tela da campanha recebe, no máximo. */
+const LIMITE_DESTINATARIOS_TELA = 500;
+
 /** Depois de quanto tempo um destinatário em "enviando" é considerado preso. */
 const MINUTOS_PRESO = 10;
 
@@ -190,6 +193,8 @@ export interface ResumoCampanha {
   /** Contagem por status, derivada dos destinatários — nunca de contador guardado. */
   porStatus: Record<string, number>;
   total: number;
+  /** A lista de contatos de onde saiu o público; nulo quando os números foram digitados. */
+  listaNome: string | null;
 }
 
 @Injectable()
@@ -226,7 +231,12 @@ export class CampanhaService {
     // "5521989751705" são a MESMA pessoa. Comparar o texto cru deixaria os dois
     // passarem aqui para estourar depois no índice único, com uma mensagem do
     // banco que ninguém entende.
-    const normalizados = dto.destinatarios.map((d) => {
+    const porLista = Boolean(dto.listaId);
+    if (porLista === Boolean(dto.destinatarios?.length)) {
+      throw new BadRequestException('Escolha uma lista de contatos OU digite os números — um dos dois.');
+    }
+
+    const normalizados = (dto.destinatarios ?? []).map((d) => {
       const { e164 } = paraCloudApi(d.telefone);
       if (!e164) {
         throw new BadRequestException(
@@ -261,10 +271,21 @@ export class CampanhaService {
       );
     }
 
+    let lista: { id: string; nome: string } | undefined;
+    if (dto.listaId) {
+      [lista] = await this.ctx.db
+        .select({ id: contatoLista.id, nome: contatoLista.nome })
+        .from(contatoLista)
+        .where(and(eq(contatoLista.id, dto.listaId), eq(contatoLista.contaId, contaId)))
+        .limit(1);
+      if (!lista) throw new NotFoundException('Lista de contatos não encontrada.');
+    }
+
     const [criada] = await this.ctx.db
       .insert(campanha)
       .values({
         contaId,
+        listaId: lista?.id ?? null,
         nome: dto.nome.trim(),
         modeloId: dto.modeloId ?? null,
         modeloNome: dto.modeloNome,
@@ -285,14 +306,53 @@ export class CampanhaService {
       })
       .returning({ id: campanha.id });
 
-    await this.ctx.db.insert(campanhaDestinatario).values(
-      normalizados.map((d) => ({
-        contaId,
-        campanhaId: criada!.id,
-        telefoneE164: d.telefoneE164,
-        variaveis: d.variaveis,
-      })),
-    );
+    let totalDestinatarios = normalizados.length;
+    if (lista) {
+      // Uma query só, dentro do banco: a lista pode ter dezenas de milhares de
+      // contatos, e trazê-los para cá para devolver um por um seria o N+1 que
+      // derruba a request. Quem pediu para sair já fica de fora aqui.
+      const valores = (dto.variaveisLista ?? []).map((v) =>
+        v.origem === 'fixo'
+          ? sql`${v.valor}::text`
+          : v.origem === 'nome'
+            ? sql`coalesce(nullif(btrim(c.nome), ''), ${v.valor}::text)`
+            : sql`coalesce(nullif(split_part(btrim(c.nome), ' ', 1), ''), ${v.valor}::text)`,
+      );
+      // `count(*)` sobre o CTE, e não `returning id`: devolver 50 mil ids ao
+      // Node só para contá-los custa segundos de rede e memória.
+      const r = await this.ctx.db.execute(sql`
+        with inseridos as (
+        insert into campanha_destinatario (conta_id, campanha_id, telefone_e164, variaveis)
+        select ${contaId}, ${criada!.id}, c.telefone_e164,
+               ${valores.length ? sql`jsonb_build_array(${sql.join(valores, sql`, `)})` : sql`'[]'::jsonb`}
+          from contato_lista_item i
+          join contato c on c.id = i.contato_id and c.conta_id = i.conta_id
+         where i.conta_id = ${contaId}
+           and i.lista_id = ${lista.id}
+           and c.opt_out = false
+        on conflict (campanha_id, telefone_e164) do nothing
+        returning 1
+        )
+        select count(*)::int as total from inseridos
+      `);
+      totalDestinatarios = Number((r.rows[0] as { total: number } | undefined)?.total ?? 0);
+      if (totalDestinatarios === 0) {
+        // Desfaz a campanha junto (a request é uma transação): uma campanha
+        // vazia só confundiria a lista.
+        throw new BadRequestException(
+          `A lista "${lista.nome}" não tem ninguém que possa receber: está vazia ou todos pediram para sair.`,
+        );
+      }
+    } else {
+      await this.ctx.db.insert(campanhaDestinatario).values(
+        normalizados.map((d) => ({
+          contaId,
+          campanhaId: criada!.id,
+          telefoneE164: d.telefoneE164,
+          variaveis: d.variaveis,
+        })),
+      );
+    }
 
     // Já na montagem: a pessoa vê, antes de disparar, quem não vai receber e
     // por quê — em vez de descobrir no relatório depois.
@@ -308,7 +368,8 @@ export class CampanhaService {
       detalhe: {
         nome: dto.nome,
         modelo: dto.modeloNome,
-        destinatarios: dto.destinatarios.length,
+        destinatarios: totalDestinatarios,
+        lista: lista?.nome ?? null,
       },
     });
 
@@ -833,14 +894,21 @@ export class CampanhaService {
       .orderBy(desc(campanha.criadoEm))
       .limit(100);
 
-    return Promise.all(linhas.map((c) => this.comContagem(c)));
+    return this.comContagens(linhas);
   }
 
   async detalhe(contaId: string, campanhaId: string): Promise<ResumoCampanha> {
-    return this.comContagem(await this.buscar(contaId, campanhaId));
+    const [resumo] = await this.comContagens([await this.buscar(contaId, campanhaId)]);
+    return resumo;
   }
 
-  /** Destinatários de uma campanha, com o que aconteceu com cada um. */
+  /**
+   * Destinatários de uma campanha, com o que aconteceu com cada um.
+   *
+   * No máximo os 500 primeiros, com as FALHAS na frente — são elas que pedem
+   * ação. Uma campanha de 50 mil pessoas não cabe numa resposta; os totais por
+   * situação vêm do resumo, que conta tudo.
+   */
   async destinatarios(contaId: string, campanhaId: string) {
     await this.buscar(contaId, campanhaId);
 
@@ -858,7 +926,8 @@ export class CampanhaService {
       })
       .from(campanhaDestinatario)
       .where(eq(campanhaDestinatario.campanhaId, campanhaId))
-      .orderBy(campanhaDestinatario.criadoEm);
+      .orderBy(sql`(${campanhaDestinatario.status} = 'falhou') desc`, campanhaDestinatario.criadoEm)
+      .limit(LIMITE_DESTINATARIOS_TELA);
   }
 
   private async buscar(contaId: string, campanhaId: string) {
@@ -882,20 +951,44 @@ export class CampanhaService {
    * no webhook, e o dia em que um dos dois falha o número na tela mente sem
    * ninguém perceber.
    */
-  private async comContagem(c: typeof campanha.$inferSelect): Promise<ResumoCampanha> {
+  private async comContagens(campanhas: (typeof campanha.$inferSelect)[]): Promise<ResumoCampanha[]> {
+    if (!campanhas.length) return [];
+    const ids = campanhas.map((c) => c.id);
+
+    // Duas queries para a lista inteira, e não duas por campanha.
     const linhas = await this.ctx.db
-      .select({ status: campanhaDestinatario.status, quantos: count() })
+      .select({ campanhaId: campanhaDestinatario.campanhaId, status: campanhaDestinatario.status, quantos: count() })
       .from(campanhaDestinatario)
-      .where(eq(campanhaDestinatario.campanhaId, c.id))
-      .groupBy(campanhaDestinatario.status);
+      .where(inArray(campanhaDestinatario.campanhaId, ids))
+      .groupBy(campanhaDestinatario.campanhaId, campanhaDestinatario.status);
 
-    const porStatus: Record<string, number> = {};
-    let total = 0;
-    for (const l of linhas) {
-      porStatus[l.status] = Number(l.quantos);
-      total += Number(l.quantos);
-    }
+    const idsListas = [...new Set(campanhas.map((c) => c.listaId).filter((v): v is string => Boolean(v)))];
+    const listas = idsListas.length
+      ? await this.ctx.db
+          .select({ id: contatoLista.id, nome: contatoLista.nome })
+          .from(contatoLista)
+          .where(inArray(contatoLista.id, idsListas))
+      : [];
+    const nomeDaLista = new Map(listas.map((l) => [l.id, l.nome]));
 
+    return campanhas.map((c) => {
+      const porStatus: Record<string, number> = {};
+      let total = 0;
+      for (const l of linhas) {
+        if (l.campanhaId !== c.id) continue;
+        porStatus[l.status] = Number(l.quantos);
+        total += Number(l.quantos);
+      }
+      return this.montarResumo(c, porStatus, total, c.listaId ? (nomeDaLista.get(c.listaId) ?? null) : null);
+    });
+  }
+
+  private montarResumo(
+    c: typeof campanha.$inferSelect,
+    porStatus: Record<string, number>,
+    total: number,
+    listaNome: string | null,
+  ): ResumoCampanha {
     return {
       id: c.id,
       nome: c.nome,
@@ -908,6 +1001,7 @@ export class CampanhaService {
       concluidaEm: c.concluidaEm,
       porStatus,
       total,
+      listaNome,
     };
   }
 

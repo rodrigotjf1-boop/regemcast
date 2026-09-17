@@ -30,8 +30,8 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { mensagemDoErro } from '@/lib/api';
 import { formatarData, formatarNumero } from '@/lib/formato';
-import { campanhas, whatsapp } from '@/lib/servicos';
-import type { ModeloDeMensagem, ResumoCampanha } from '@/lib/tipos';
+import { campanhas, contatos, whatsapp } from '@/lib/servicos';
+import type { ListaDeContatos, ModeloDeMensagem, ResumoCampanha, VariavelDeLista } from '@/lib/tipos';
 
 /**
  * Campanhas.
@@ -47,7 +47,14 @@ import type { ModeloDeMensagem, ResumoCampanha } from '@/lib/tipos';
  * entrar —, e aparece na tela como número, não como surpresa.
  */
 
-const TETO_DESTINATARIOS = 10;
+/** Números digitados: o mesmo teto do servidor. Público maior vem de uma lista. */
+const TETO_DESTINATARIOS = 500;
+
+const ROTULO_ORIGEM: Record<VariavelDeLista['origem'], string> = {
+  nome: 'Nome do contato',
+  primeiro_nome: 'Primeiro nome do contato',
+  fixo: 'Texto igual para todos',
+};
 
 export default function PaginaCampanhas() {
   const [lista, setLista] = useState<ResumoCampanha[] | null>(null);
@@ -170,6 +177,12 @@ function CartaoCampanha({ campanha }: { campanha: ResumoCampanha }) {
               <IconeModelo className="h-3.5 w-3.5 shrink-0" />
               <span className="numerico truncate">{campanha.modeloNome}</span>
               <span aria-hidden="true">·</span>
+              {campanha.listaNome ? (
+                <>
+                  <span className="truncate">{campanha.listaNome}</span>
+                  <span aria-hidden="true">·</span>
+                </>
+              ) : null}
               {formatarData(campanha.criadoEm)}
             </p>
           </div>
@@ -218,9 +231,52 @@ function FormularioCampanha({ aoCriar }: { aoCriar: () => void }) {
   const [modeloId, setModeloId] = useState('');
   const [telefones, setTelefones] = useState('');
   const [variaveis, setVariaveis] = useState<string[]>([]);
+  const [listas, setListas] = useState<ListaDeContatos[] | null>(null);
+  const [publico, setPublico] = useState<'lista' | 'numeros'>('lista');
+  const [listaId, setListaId] = useState('');
+  const [alcance, setAlcance] = useState<number | null>(null);
+  const [origens, setOrigens] = useState<VariavelDeLista['origem'][]>([]);
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [janela, setJanela] = useState<Janela>(JANELA_VAZIA);
+
+  useEffect(() => {
+    let vivo = true;
+    contatos
+      .listas()
+      .then((l) => {
+        if (!vivo) return;
+        setListas(l);
+        // Sem lista nenhuma, o caminho que resta é digitar.
+        if (l.length === 0) setPublico('numeros');
+      })
+      .catch(() => {
+        if (vivo) {
+          setListas([]);
+          setPublico('numeros');
+        }
+      });
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  // Quantos da lista escolhida podem receber: quem pediu para sair não conta.
+  useEffect(() => {
+    if (!listaId) {
+      setAlcance(null);
+      return;
+    }
+    let vivo = true;
+    setAlcance(null);
+    contatos
+      .publicoDaLista(listaId)
+      .then((r) => vivo && setAlcance(r.total))
+      .catch(() => vivo && setAlcance(null));
+    return () => {
+      vivo = false;
+    };
+  }, [listaId]);
 
   useEffect(() => {
     let vivo = true;
@@ -252,15 +308,37 @@ function FormularioCampanha({ aoCriar }: { aoCriar: () => void }) {
       setErro('Escolha um modelo aprovado.');
       return;
     }
-    if (numeros.length === 0) {
-      setErro('Informe ao menos um número.');
-      return;
+    const nVars = escolhido.variaveis;
+    if (publico === 'lista') {
+      if (!listaId) {
+        setErro('Escolha a lista de contatos que vai receber.');
+        return;
+      }
+      if (alcance === 0) {
+        setErro('Essa lista não tem ninguém que possa receber: está vazia ou todos pediram para sair.');
+        return;
+      }
+    } else {
+      if (numeros.length === 0) {
+        setErro('Informe ao menos um número.');
+        return;
+      }
+      if (numeros.length > TETO_DESTINATARIOS) {
+        setErro(
+          `Digitando, cada campanha aceita até ${TETO_DESTINATARIOS} números. Para mais, importe em Contatos e escolha a lista.`,
+        );
+        return;
+      }
     }
-    if (numeros.length > TETO_DESTINATARIOS) {
-      setErro(
-        `Por enquanto cada campanha aceita até ${TETO_DESTINATARIOS} números. O envio em volume entra com a fila.`,
-      );
-      return;
+    for (let i = 0; i < nVars; i++) {
+      if (!(variaveis[i] ?? '').trim()) {
+        setErro(
+          publico === 'lista' && (origens[i] ?? 'fixo') !== 'fixo'
+            ? `Preencha o que usar em {{${i + 1}}} quando o contato não tiver nome.`
+            : `Preencha o valor de {{${i + 1}}}.`,
+        );
+        return;
+      }
     }
 
     const problemaJanela = janela.ativa ? problemaDosTetos(janela) : null;
@@ -278,12 +356,20 @@ function FormularioCampanha({ aoCriar }: { aoCriar: () => void }) {
         modeloIdioma: escolhido.idioma,
         modeloId: escolhido.id,
         modeloCategoria: escolhido.categoria,
-        destinatarios: numeros.map((telefone) => ({
-          telefone,
-          // Mesmas variáveis para todos nesta versão. Variável por pessoa vem
-          // com o import de contatos, onde cada linha traz os próprios valores.
-          variaveis: variaveis.slice(0, escolhido.variaveis),
-        })),
+        ...(publico === 'lista'
+          ? {
+              listaId,
+              variaveisLista: Array.from({ length: nVars }, (_, i) => ({
+                origem: origens[i] ?? 'fixo',
+                valor: (variaveis[i] ?? '').trim(),
+              })),
+            }
+          : {
+              destinatarios: numeros.map((telefone) => ({
+                telefone,
+                variaveis: variaveis.slice(0, nVars).map((v) => v.trim()),
+              })),
+            }),
       });
       aoCriar();
       // Leva direto para a campanha: é lá que se dispara e se acompanha.
@@ -335,7 +421,7 @@ function FormularioCampanha({ aoCriar }: { aoCriar: () => void }) {
           <div>
             <h2 className="text-base font-semibold text-tinta">Montar campanha</h2>
             <p className="text-xs text-tinta-suave">
-              Modelo, números e janela de envio. Nada sai antes de você disparar.
+              Modelo, público e janela de envio. Nada sai antes de você disparar.
             </p>
           </div>
         </div>
@@ -361,6 +447,7 @@ function FormularioCampanha({ aoCriar }: { aoCriar: () => void }) {
               onChange={(e) => {
                 setModeloId(e.target.value);
                 setVariaveis([]);
+                setOrigens([]);
               }}
             >
               <option value="">Escolha…</option>
@@ -381,40 +468,118 @@ function FormularioCampanha({ aoCriar }: { aoCriar: () => void }) {
 
             {escolhido.variaveis > 0 && (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {Array.from({ length: escolhido.variaveis }, (_, i) => (
-                  <div key={i} className="space-y-1">
-                    <Label htmlFor={`var-${i}`}>{`Valor de {{${i + 1}}}`}</Label>
-                    <Input
-                      id={`var-${i}`}
-                      value={variaveis[i] ?? ''}
-                      onChange={(e) => {
-                        const novo = [...variaveis];
-                        novo[i] = e.target.value;
-                        setVariaveis(novo);
-                      }}
-                    />
-                  </div>
-                ))}
+                {Array.from({ length: escolhido.variaveis }, (_, i) => {
+                  const origem = publico === 'lista' ? (origens[i] ?? 'fixo') : 'fixo';
+                  return (
+                    <div key={i} className="space-y-1.5 rounded-lg border border-borda bg-superficie p-2.5">
+                      <Label htmlFor={`var-${i}`}>{`Variável {{${i + 1}}}`}</Label>
+                      {publico === 'lista' ? (
+                        <Select
+                          aria-label={`De onde vem {{${i + 1}}}`}
+                          value={origem}
+                          onChange={(e) => {
+                            const novo = [...origens];
+                            novo[i] = e.target.value as VariavelDeLista['origem'];
+                            setOrigens(novo);
+                          }}
+                        >
+                          {(Object.keys(ROTULO_ORIGEM) as VariavelDeLista['origem'][]).map((o) => (
+                            <option key={o} value={o}>
+                              {ROTULO_ORIGEM[o]}
+                            </option>
+                          ))}
+                        </Select>
+                      ) : null}
+                      <Input
+                        id={`var-${i}`}
+                        value={variaveis[i] ?? ''}
+                        placeholder={origem === 'fixo' ? 'Texto' : 'Se não tiver nome, ex.: cliente'}
+                        onChange={(e) => {
+                          const novo = [...variaveis];
+                          novo[i] = e.target.value;
+                          setVariaveis(novo);
+                        }}
+                      />
+                      {origem !== 'fixo' ? (
+                        <p className="text-xs text-tinta-suave">Usado quando o contato não tem nome cadastrado.</p>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
         )}
 
-        <div className="space-y-1">
-          <Label htmlFor="numeros">Números</Label>
-          <textarea
-            id="numeros"
-            value={telefones}
-            onChange={(e) => setTelefones(e.target.value)}
-            rows={3}
-            placeholder="5521999998888, 5511988887777"
-            className="w-full rounded-lg border border-borda bg-superficie px-3 py-2 text-sm text-tinta"
-          />
-          <p className="text-xs text-tinta-suave">
-            País + DDD + número, separados por vírgula ou quebra de linha. Reconhecidos até agora:{' '}
-            <strong className="numerico">{numeros.length}</strong> de {TETO_DESTINATARIOS}.
-          </p>
-        </div>
+        <fieldset className="space-y-3">
+          <legend className="text-sm font-medium text-tinta">Quem recebe</legend>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Origem do público">
+            {(['lista', 'numeros'] as const).map((p) => (
+              <button
+                key={p}
+                type="button"
+                aria-pressed={publico === p}
+                disabled={p === 'lista' && listas !== null && listas.length === 0}
+                onClick={() => setPublico(p)}
+                className={
+                  'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ' +
+                  (publico === p
+                    ? 'border-transparent bg-acento text-acento-contraste'
+                    : 'border-borda bg-superficie text-tinta-suave hover:border-acento')
+                }
+              >
+                {p === 'lista' ? 'Uma lista de contatos' : 'Digitar números'}
+              </button>
+            ))}
+          </div>
+
+          {publico === 'lista' ? (
+            <div className="space-y-1">
+              <Label htmlFor="lista-campanha">Lista</Label>
+              <Select id="lista-campanha" value={listaId} onChange={(e) => setListaId(e.target.value)}>
+                <option value="">{listas === null ? 'Carregando listas…' : 'Escolha…'}</option>
+                {(listas ?? []).map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.nome} · {formatarNumero(l.total)} {l.total === 1 ? 'contato' : 'contatos'}
+                  </option>
+                ))}
+              </Select>
+              <p className="text-xs text-tinta-suave">
+                {listaId && alcance !== null ? (
+                  <>
+                    <strong className="numerico text-tinta">{formatarNumero(alcance)}</strong>{' '}
+                    {alcance === 1 ? 'pessoa vai receber' : 'pessoas vão receber'}. Quem pediu para sair fica de fora
+                    automaticamente.
+                  </>
+                ) : (
+                  <>
+                    As listas nascem na importação em{' '}
+                    <Link href="/contatos" className="text-acento-forte underline">
+                      Contatos
+                    </Link>
+                    .
+                  </>
+                )}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <Label htmlFor="numeros">Números</Label>
+              <textarea
+                id="numeros"
+                value={telefones}
+                onChange={(e) => setTelefones(e.target.value)}
+                rows={3}
+                placeholder="5521999998888, 5511988887777"
+                className="w-full rounded-lg border border-borda bg-superficie px-3 py-2 text-sm text-tinta"
+              />
+              <p className="text-xs text-tinta-suave">
+                País + DDD + número, separados por vírgula ou quebra de linha. Reconhecidos até agora:{' '}
+                <strong className="numerico">{numeros.length}</strong> de {TETO_DESTINATARIOS}.
+              </p>
+            </div>
+          )}
+        </fieldset>
 
         <JanelaEnvio valor={janela} aoMudar={setJanela} />
 

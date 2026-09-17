@@ -267,6 +267,9 @@ export const contatos = {
   /** `GET /contatos/listas` */
   listas: () => api.get<ListaDeContatos[]>('/contatos/listas'),
 
+  /** `GET /contatos/listas/:id/publico` — quantos da lista podem receber (sem quem pediu para sair). */
+  publicoDaLista: (id: string) => api.get<{ total: number }>(`/contatos/listas/${encodeURIComponent(id)}/publico`),
+
   /** `POST /contatos/listas` */
   criarLista: (nome: string, descricao?: string) =>
     api.post<{ id: string }>('/contatos/listas', { nome, descricao }),
