@@ -108,30 +108,53 @@ export class MercadoPagoService {
       );
     }
 
-    let resposta: Response;
-    try {
-      resposta = await fetch(BASE + caminho, {
-        method: metodo,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: corpo === undefined ? undefined : JSON.stringify(corpo),
-        signal: AbortSignal.timeout(15_000),
-      });
-    } catch (erro) {
-      this.registrar(metodo, caminho, null, `sem resposta: ${(erro as Error)?.message ?? erro}`);
+    // Nova tentativa só para o que pode ser repetido sem efeito duplo: leitura
+    // (GET) e alteração de estado (PUT, que grava o mesmo valor de novo). Criar
+    // assinatura (POST) NUNCA é repetido — geraria duas.
+    const repetivel = metodo === 'GET' || metodo === 'PUT';
+    const esperas = repetivel ? [0, 1_000, 3_000] : [0];
+
+    let resposta: Response | null = null;
+    let texto = '';
+    for (const espera of esperas) {
+      if (espera) await new Promise((r) => setTimeout(r, espera));
+      try {
+        resposta = await fetch(BASE + caminho, {
+          method: metodo,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: corpo === undefined ? undefined : JSON.stringify(corpo),
+          signal: AbortSignal.timeout(15_000),
+        });
+      } catch (erro) {
+        this.registrar(metodo, caminho, null, `sem resposta: ${(erro as Error)?.message ?? erro}`);
+        resposta = null;
+        continue;
+      }
+      texto = await resposta.text().catch(() => '');
+      // Limite de frequência (429) e instabilidade (5xx) passam com o tempo;
+      // qualquer outra resposta é definitiva.
+      if (resposta.status !== 429 && resposta.status < 500) break;
+      this.registrar(metodo, caminho, resposta.status, texto.slice(0, 500));
+    }
+
+    if (!resposta) {
       throw new ErroMercadoPago('Não conseguimos falar com o Mercado Pago agora. Tente de novo em alguns minutos.', null);
     }
 
-    const texto = await resposta.text().catch(() => '');
     if (!resposta.ok) {
-      this.registrar(metodo, caminho, resposta.status, texto.slice(0, 500));
+      if (resposta.status !== 429 && resposta.status < 500) {
+        this.registrar(metodo, caminho, resposta.status, texto.slice(0, 500));
+      }
       throw new ErroMercadoPago(
-        resposta.status >= 500
-          ? 'O Mercado Pago está instável agora. Tente de novo em alguns minutos.'
-          : 'O Mercado Pago recusou a operação. Confira os dados e tente de novo — se continuar, fale com o suporte.',
+        resposta.status === 429
+          ? 'O Mercado Pago está limitando pedidos agora. Nada foi alterado — tente de novo em alguns minutos.'
+          : resposta.status >= 500
+            ? 'O Mercado Pago está instável agora. Nada foi alterado — tente de novo em alguns minutos.'
+            : 'O Mercado Pago recusou a operação. Confira os dados e tente de novo — se continuar, fale com o suporte.',
         resposta.status,
       );
     }
