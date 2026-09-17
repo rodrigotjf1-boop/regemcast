@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import {
   IconeCampanha,
@@ -267,8 +267,29 @@ function Lateral({ aoFechar, caminho }: { aoFechar: () => void; caminho: string 
  * Só aparece com dado lido. Carregando, mostra o trilho vazio; falhou, some —
  * o painel tem o erro completo, e a lateral não é lugar de mensagem de erro.
  */
+/** Avisado pela tela de plano quando o plano muda, para o consumo não ficar velho. */
+export const EVENTO_PLANO_ALTERADO = 'regemcast:plano-alterado';
+
 function ConsumoLateral() {
-  const { dados } = useCarga(() => conta.resumo());
+  const { dados, recarregar } = useCarga(() => conta.resumo());
+  const caminho = usePathname();
+
+  // A casca monta uma vez só; sem isto o nome do plano e o teto ficavam os da
+  // entrada até recarregar a página. Relê ao trocar de tela e ao mudar o plano.
+  const primeiraTela = useRef(true);
+  useEffect(() => {
+    if (primeiraTela.current) {
+      primeiraTela.current = false;
+      return;
+    }
+    void recarregar();
+  }, [caminho, recarregar]);
+  useEffect(() => {
+    const ouvir = () => void recarregar();
+    window.addEventListener(EVENTO_PLANO_ALTERADO, ouvir);
+    return () => window.removeEventListener(EVENTO_PLANO_ALTERADO, ouvir);
+  }, [recarregar]);
+
   if (!dados?.uso) return null;
 
   const { disparos, teto } = dados.uso;
