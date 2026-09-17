@@ -45,9 +45,9 @@ const SECOES = [
     titulo: 'Operação',
     itens: [
       { href: '/painel', rotulo: 'Painel', Icone: IconePainel },
-      { href: '/campanhas', rotulo: 'Campanhas', Icone: IconeCampanha },
       { href: '/modelos', rotulo: 'Modelos', Icone: IconeModelo },
       { href: '/contatos', rotulo: 'Contatos', Icone: IconeContatos },
+      { href: '/campanhas', rotulo: 'Campanhas', Icone: IconeCampanha },
     ],
   },
   {

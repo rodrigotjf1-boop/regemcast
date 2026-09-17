@@ -279,7 +279,7 @@ export default function PaginaPlano() {
               })}
             </ul>
 
-            {ehDono && s.cobrancaDisponivel && s.mpStatus !== 'authorized' ? (
+            {ehDono && s.cobrancaDisponivel && s.mpStatus !== 'authorized' && !s.recontratarEm ? (
               <div className="space-y-2 text-sm">
                 <label className="inline-flex items-center gap-2 text-tinta-suave">
                   <input
