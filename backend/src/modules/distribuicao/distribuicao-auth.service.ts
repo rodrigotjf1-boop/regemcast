@@ -54,7 +54,7 @@ import { ContextoDb } from '../../db/contexto';
 import { acessoDistribuicao, operadorDistribuicao } from '../../db/schema';
 import { gerarHashSenha } from '../auth/argon2';
 import { cifrarToken, decifrarToken } from '../meta/cripto';
-import { codigoConfere, enderecoParaAplicativo, novoSegredo } from '../../common/totp';
+import { enderecoParaAplicativo, novoSegredo, passoDoCodigo } from '../../common/totp';
 
 /** Quantos erros seguidos travam o operador. */
 export const MAX_TENTATIVAS = 5;
@@ -197,6 +197,19 @@ export class DistribuicaoAuthService {
 
   // ----------------------------------------------------------------- código
 
+  /** Grava o passo aceito só se for posterior ao último (uso único, atômico). */
+  private async consumirPasso(operadorId: string, passo: number): Promise<boolean> {
+    const r = await this.ctx.comEscopoSistema('distribuicao.totp_passo', (db) =>
+      db.execute(sql`
+        update operador_distribuicao set totp_ultimo_passo = ${passo}
+         where id = ${operadorId}
+           and (totp_ultimo_passo is null or totp_ultimo_passo < ${passo})
+        returning id
+      `),
+    );
+    return r.rows.length > 0;
+  }
+
   /** Segundo passo, para quem já tem o código cadastrado. */
   async confirmarCodigo(preToken: string, codigo: string, meta: MetaRequisicao): Promise<string> {
     const pre = await this.lerPre(preToken, 'codigo');
@@ -206,10 +219,15 @@ export class DistribuicaoAuthService {
     this.conferirVersao(operador, pre.ver);
 
     const segredo = this.decifrarSegredo(operador.totpSegredoCifrado);
-    if (!segredo || !codigoConfere(segredo, codigo)) {
+    const passo = segredo ? passoDoCodigo(segredo, codigo) : null;
+    if (passo === null || !(await this.consumirPasso(operador.id, passo))) {
       await this.contarFalha(operador.id);
-      await this.registrar(operador.id, operador.nome, 'codigo_negado', meta, {});
-      throw new UnauthorizedException('Código não confere. Confira o aplicativo e tente de novo.');
+      await this.registrar(operador.id, operador.nome, 'codigo_negado', meta, { reuso: passo !== null });
+      throw new UnauthorizedException(
+        passo === null
+          ? 'Código não confere. Confira o aplicativo e tente de novo.'
+          : 'Este código já foi usado. Espere o próximo aparecer no aplicativo.',
+      );
     }
 
     return this.abrirSessao(operador, meta);
@@ -256,10 +274,15 @@ export class DistribuicaoAuthService {
     if (!segredo) {
       throw new BadRequestException('Comece o cadastro do código de novo.');
     }
-    if (!codigoConfere(segredo, codigo)) {
+    const passo = passoDoCodigo(segredo, codigo);
+    if (passo === null || !(await this.consumirPasso(operador.id, passo))) {
       await this.contarFalha(operador.id);
-      await this.registrar(operador.id, operador.nome, 'codigo_negado', meta, { cadastro: true });
-      throw new UnauthorizedException('Código não confere. Confira o aplicativo e tente de novo.');
+      await this.registrar(operador.id, operador.nome, 'codigo_negado', meta, { cadastro: true, reuso: passo !== null });
+      throw new UnauthorizedException(
+        passo === null
+          ? 'Código não confere. Confira o aplicativo e tente de novo.'
+          : 'Este código já foi usado. Espere o próximo aparecer no aplicativo.',
+      );
     }
 
     await this.ctx.comEscopoSistema('distribuicao.totp_ativar', (db) =>

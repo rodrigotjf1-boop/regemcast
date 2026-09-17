@@ -46,7 +46,7 @@ import argon2 from 'argon2';
 import { and, eq, sql } from 'drizzle-orm';
 
 import type { UsuarioAutenticado } from '../../common/auth.guard';
-import { codigoConfere, enderecoParaAplicativo, novoSegredo } from '../../common/totp';
+import { enderecoParaAplicativo, novoSegredo, passoDoCodigo } from '../../common/totp';
 import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
 import { usuario as tUsuario } from '../../db/schema';
@@ -166,8 +166,11 @@ export class SegundaEtapaService {
 
     if (u.doisFatores === 'app') {
       const segredo = this.decifrar(u.totpSegredoCifrado);
-      if (!segredo || !codigoConfere(segredo, codigo)) {
+      const passo = segredo ? passoDoCodigo(segredo, codigo) : null;
+      if (passo === null) {
         recusa = 'Código não confere. Confira o aplicativo autenticador e tente de novo.';
+      } else if (!(await this.consumirPasso(u.id, passo))) {
+        recusa = 'Este código já foi usado. Espere o próximo aparecer no aplicativo.';
       }
     } else if (u.doisFatores === 'email') {
       const resultado = await this.codigos.conferir({ finalidade: 'login', email: u.email, codigo });
@@ -301,8 +304,13 @@ export class SegundaEtapaService {
 
     const segredo = this.decifrar(u?.totpSegredoCifrado ?? null);
     if (!segredo) throw new BadRequestException('Comece o cadastro do aplicativo de novo.');
-    if (!codigoConfere(segredo, codigo)) {
+    const passo = passoDoCodigo(segredo, codigo);
+    if (passo === null) {
       throw new BadRequestException('Código não confere. Confira o aplicativo e tente de novo.');
+    }
+    // O código que ativou não serve de novo para entrar logo em seguida.
+    if (!(await this.consumirPasso(atual.id, passo))) {
+      throw new BadRequestException('Este código já foi usado. Espere o próximo aparecer no aplicativo.');
     }
 
     await this.ctx.db
@@ -423,6 +431,22 @@ export class SegundaEtapaService {
         `Muitas tentativas erradas. Este acesso está travado por mais ${minutos} minuto(s).`,
       );
     }
+  }
+
+  /**
+   * Grava o passo do código aceito — só se for POSTERIOR ao último. Atômico:
+   * dois pedidos com o mesmo código ao mesmo tempo, só um passa.
+   */
+  private async consumirPasso(usuarioId: string, passo: number): Promise<boolean> {
+    const r = await this.ctx.comEscopoSistema('segunda-etapa.passo', (db) =>
+      db.execute(sql`
+        update usuario set totp_ultimo_passo = ${passo}
+         where id = ${usuarioId}
+           and (totp_ultimo_passo is null or totp_ultimo_passo < ${passo})
+        returning id
+      `),
+    );
+    return r.rows.length > 0;
   }
 
   /** Incremento atômico: dez tentativas simultâneas de um robô contam dez. */

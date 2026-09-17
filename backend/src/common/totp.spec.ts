@@ -111,3 +111,16 @@ describe('segredo e endereço do aplicativo', () => {
     expect(url).toContain('period=30');
   });
 });
+
+describe('passoDoCodigo', () => {
+  it('devolve o passo em que o código está e null quando não confere', () => {
+    const { codigoDoPasso, deBase32, novoSegredo, passoDe, passoDoCodigo } = jest.requireActual('./totp');
+    const segredo = novoSegredo();
+    const agora = new Date('2026-09-17T12:00:10Z');
+    const passo = passoDe(agora);
+    expect(passoDoCodigo(segredo, codigoDoPasso(deBase32(segredo), passo), agora)).toBe(passo);
+    expect(passoDoCodigo(segredo, codigoDoPasso(deBase32(segredo), passo - 1), agora)).toBe(passo - 1);
+    expect(passoDoCodigo(segredo, codigoDoPasso(deBase32(segredo), passo + 5), agora)).toBeNull();
+    expect(passoDoCodigo(segredo, '12', agora)).toBeNull();
+  });
+});

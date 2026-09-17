@@ -161,10 +161,23 @@ describe('duas etapas, sempre', () => {
     const m = montar({ totpAtivo: true, totpSegredoCifrado: cifrarToken(segredo, ENV.distribuicao.totpChave) });
     const { preToken } = await m.service.entrar('rodrigo@dmsregem.com', 'senha-correta-123', META);
     const codigo = codigoDoPasso(deBase32(segredo), passoDe(new Date()));
+    // O banco aceita gravar o passo: é a primeira vez que este código aparece.
+    m.db.execute.mockResolvedValueOnce({ rows: [{ id: m.operador.id }] });
 
     const sessao = await m.service.confirmarCodigo(preToken, codigo, META);
     const payload = await m.jwt.verifyAsync(sessao, { secret: segredoDaDistribuicao() });
     expect(payload.tipo).toBe('sessao');
+  });
+
+  it('o mesmo código não abre uma segunda sessão (uso único)', async () => {
+    const segredo = novoSegredo();
+    const m = montar({ totpAtivo: true, totpSegredoCifrado: cifrarToken(segredo, ENV.distribuicao.totpChave) });
+    const { preToken } = await m.service.entrar('rodrigo@dmsregem.com', 'senha-correta-123', META);
+    const codigo = codigoDoPasso(deBase32(segredo), passoDe(new Date()));
+    // O banco NÃO grava o passo: já existe um igual ou posterior.
+    m.db.execute.mockResolvedValueOnce({ rows: [] });
+
+    await expect(m.service.confirmarCodigo(preToken, codigo, META)).rejects.toThrow('já foi usado');
   });
 
   it('com o código errado, recusa e CONTA a falha', async () => {
