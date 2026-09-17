@@ -59,6 +59,20 @@ export class DistribuicaoLeituraController {
     return r;
   }
 
+  @Get('contas/:id/acessos')
+  async acessos(@Req() req: RequestDeOperador, @Param('id', ParseUUIDPipe) id: string) {
+    await this.anotar(req, 'conta.acessos_lidos', { contaId: id });
+    return this.leitura.acessosDaConta(id);
+  }
+
+  @Post('usuarios/:id/zerar-duas-etapas')
+  @HttpCode(HttpStatus.OK)
+  async zerarDuasEtapas(@Req() req: RequestDeOperador, @Param('id', ParseUUIDPipe) id: string) {
+    const r = await this.leitura.zerarDuasEtapas(id, req.operador!.nome);
+    await this.anotar(req, 'usuario.duas_etapas_zeradas', { usuarioId: id, contaId: r.contaId });
+    return { ok: true };
+  }
+
   @Get('telemetria')
   async telemetria(@Req() req: RequestDeOperador, @Query('dias') dias?: string) {
     const janela = Number(dias) || 7;
