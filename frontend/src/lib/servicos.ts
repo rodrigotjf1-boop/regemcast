@@ -115,6 +115,18 @@ export const auth = {
   enviarCodigoConvite: (token: string) =>
     api.post<{ emailMascarado: string; minutos: number }>('/auth/convite/codigo', { token }, SEM_REDIRECT),
 
+  /** `POST /auth/senha/esqueci` — resposta sempre igual, exista o e-mail ou não. */
+  esqueciSenha: (email: string) =>
+    api.post<{ mensagem: string }>('/auth/senha/esqueci', { email }, SEM_REDIRECT),
+
+  /** `POST /auth/senha/redefinir` — cria a senha nova com o código do e-mail. */
+  redefinirSenha: (dados: { email: string; codigo: string; senhaNova: string }) =>
+    api.post<{ mensagem: string }>('/auth/senha/redefinir', dados, SEM_REDIRECT),
+
+  /** `POST /auth/senha` — troca a própria senha; encerra todas as sessões. */
+  trocarSenha: (senhaAtual: string, senhaNova: string) =>
+    api.post<{ mensagem: string }>('/auth/senha', { senhaAtual, senhaNova }, SEM_REDIRECT),
+
   /** `POST /auth/sair` — limpa o cookie e registra a saída na trilha. */
   sair: () => api.post<{ mensagem: string }>('/auth/sair', {}, SEM_REDIRECT),
 

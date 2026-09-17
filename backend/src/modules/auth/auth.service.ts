@@ -61,6 +61,7 @@ import {
 import { gerarHashSenha } from './argon2';
 import { AceitarConviteDto, FORMATO_TOKEN_CONVITE } from './dto/aceitar-convite.dto';
 import { LoginDto } from './dto/login.dto';
+import type { RedefinirSenhaDto } from './dto/recuperar-senha.dto';
 import { TrocarSenhaDto } from './dto/trocar-senha.dto';
 import { MINUTOS_TRAVA } from './segunda-etapa.service';
 
@@ -516,6 +517,102 @@ export class AuthService {
       },
       conta: contaSessao(c),
     };
+  }
+
+  // ------------------------------------------------------ esqueci a senha
+
+  /**
+   * Pede o código para criar uma senha nova.
+   *
+   * A resposta é SEMPRE a mesma e sai na hora, exista o e-mail ou não: esta
+   * rota é anônima e não pode virar consulta de "quem tem conta". Por isso o
+   * código é emitido e enviado em segundo plano — esperar por ele mudaria o
+   * tempo de resposta só para quem existe, e o aviso de "espere para pedir
+   * outro" contaria a mesma coisa.
+   */
+  esqueciSenha(email: string, meta: MetaRequisicao): { mensagem: string } {
+    const limpo = email.trim().toLowerCase();
+    void this.enviarCodigoDeRecuperacao(limpo, meta);
+    return {
+      mensagem: 'Se este e-mail tiver acesso ao RegemCast, o código chega em instantes. Ele vale por 10 minutos.',
+    };
+  }
+
+  private async enviarCodigoDeRecuperacao(email: string, meta: MetaRequisicao): Promise<void> {
+    try {
+      const u = await this.ctx.comEscopoSistema('auth.recuperar.buscar', async (db) => {
+        const [linha] = await db
+          .select({ id: tUsuario.id, contaId: tUsuario.contaId, status: tUsuario.status })
+          .from(tUsuario)
+          .where(eq(tUsuario.email, email))
+          .limit(1);
+        return linha;
+      });
+      if (!u || u.status !== 'ativo') return;
+
+      const { codigo, minutos } = await this.codigos.emitir({ finalidade: 'recuperar_senha', email, usuarioId: u.id });
+      await this.email.enviar(emailDeCodigo(email, 'recuperar_senha', codigo, minutos));
+
+      await this.auditoria.registrarForaDeContexto({
+        contaId: u.contaId,
+        atorTipo: 'usuario',
+        atorUsuarioId: u.id,
+        acao: 'usuario.recuperacao_senha_pedida',
+        entidade: 'usuario',
+        entidadeId: u.id,
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+    } catch (erro) {
+      // Espera entre envios, e-mail fora do ar: nada disso pode chegar a quem
+      // pediu (contaria que o e-mail existe). Fica no log, com o motivo.
+      this.log.warn(`Recuperação de senha não enviada: ${(erro as Error)?.message ?? erro}`);
+    }
+  }
+
+  /**
+   * Cria a senha nova com o código do e-mail.
+   *
+   * Derruba todas as sessões e destrava o acesso. NÃO desliga a verificação em
+   * duas etapas: quem tomou o e-mail de alguém não pode, por aqui, passar
+   * também pelo aplicativo autenticador. Quem perdeu o celular fala com o
+   * suporte, que confere a identidade antes de zerar.
+   */
+  async redefinirSenha(dto: RedefinirSenhaDto, meta: MetaRequisicao): Promise<{ mensagem: string }> {
+    const email = dto.email.trim().toLowerCase();
+    const resultado = await this.codigos.conferir({ finalidade: 'recuperar_senha', email, codigo: dto.codigo });
+    if (resultado !== 'ok') throw new BadRequestException(MENSAGEM_CODIGO[resultado]);
+
+    const senhaHash = await gerarHashSenha(dto.senhaNova);
+    const alterado = await this.ctx.comEscopoSistema('auth.recuperar.redefinir', async (db) => {
+      const [linha] = await db
+        .update(tUsuario)
+        .set({
+          senhaHash,
+          tokenVersao: sql`${tUsuario.tokenVersao} + 1`,
+          tentativasFalhas: 0,
+          bloqueadoAte: null,
+          // Quem recebeu o código no e-mail provou que o e-mail é dele.
+          emailVerificadoEm: sql`coalesce(${tUsuario.emailVerificadoEm}, now())`,
+        })
+        .where(and(eq(tUsuario.email, email), eq(tUsuario.status, 'ativo')))
+        .returning({ id: tUsuario.id, contaId: tUsuario.contaId });
+      return linha;
+    });
+    if (!alterado) throw new BadRequestException(MENSAGEM_CODIGO.expirado);
+
+    await this.auditoria.registrarForaDeContexto({
+      contaId: alterado.contaId,
+      atorTipo: 'usuario',
+      atorUsuarioId: alterado.id,
+      acao: 'usuario.senha_redefinida_por_email',
+      entidade: 'usuario',
+      entidadeId: alterado.id,
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+
+    return { mensagem: 'Senha nova criada. Entre com ela — as sessões abertas em outros aparelhos foram encerradas.' };
   }
 
   // ------------------------------------------------------------ troca senha

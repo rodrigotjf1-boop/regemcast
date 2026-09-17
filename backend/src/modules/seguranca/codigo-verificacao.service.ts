@@ -29,7 +29,7 @@ import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
 import { codigoVerificacao } from '../../db/schema';
 
-export type FinalidadeCodigo = 'convite' | 'login' | 'ativar_email';
+export type FinalidadeCodigo = 'convite' | 'login' | 'ativar_email' | 'recuperar_senha';
 
 export const MINUTOS_VALIDADE = 10;
 export const MAX_ERROS_POR_CODIGO = 5;
