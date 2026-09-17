@@ -28,6 +28,7 @@ import { ContaService, type OrigemRequest } from './conta.service';
 import { AtualizarContaDto } from './dto/atualizar-conta.dto';
 import { AtualizarUsuarioDto } from './dto/atualizar-usuario.dto';
 import { CriarUsuarioDto } from './dto/criar-usuario.dto';
+import { ipDoCliente } from '../../common/ip-cliente';
 
 /**
  * O ParseUUIDPipe padrão responde "Validation failed (uuid is expected)" em
@@ -38,7 +39,7 @@ const UuidUsuario = new ParseUUIDPipe({
 });
 
 function origemDo(req: RequestAutenticado): OrigemRequest {
-  return { ip: req.ip, userAgent: req.headers['user-agent'] };
+  return { ip: ipDoCliente(req), userAgent: req.headers['user-agent'] };
 }
 
 @ApiTags('Conta')

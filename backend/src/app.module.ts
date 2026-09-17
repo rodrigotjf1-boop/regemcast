@@ -3,9 +3,10 @@ import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 
 import { AuthGuard } from './common/auth.guard';
+import { LimitePorIpGuard } from './common/limite-por-ip.guard';
 import { ErroFilter } from './common/erro.filter';
 import { env } from './config/env';
 import { ContextoInterceptor } from './db/contexto.interceptor';
@@ -75,7 +76,7 @@ import { CobrancaModule } from './modules/cobranca/cobranca.module';
     SaudeModule,
   ],
   providers: [
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: LimitePorIpGuard },
     // Autenticação GLOBAL: rota nova nasce protegida. A exceção é explícita,
     // com @Publico().
     { provide: APP_GUARD, useClass: AuthGuard },

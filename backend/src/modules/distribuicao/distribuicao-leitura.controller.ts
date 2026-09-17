@@ -12,6 +12,7 @@ import { Publico } from '../../common/publico.decorator';
 import { DistribuicaoAuthService } from './distribuicao-auth.service';
 import { DistribuicaoLeituraService } from './distribuicao-leitura.service';
 import { DistribuicaoGuard, type RequestDeOperador } from './distribuicao.guard';
+import { ipDoCliente } from '../../common/ip-cliente';
 
 @ApiTags('Distribuição')
 @Controller('distribuicao')
@@ -28,7 +29,7 @@ export class DistribuicaoLeituraController {
       req.operador!.id,
       req.operador!.nome,
       acao,
-      { ip: req.ip, userAgent: req.headers['user-agent'] },
+      { ip: ipDoCliente(req), userAgent: req.headers['user-agent'] },
       detalhe,
     );
   }

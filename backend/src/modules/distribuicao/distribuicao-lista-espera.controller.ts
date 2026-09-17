@@ -29,6 +29,7 @@ import { RecusarListaEsperaDto } from '../lista-espera/dto/recusar-lista-espera.
 import { ListaEsperaService } from '../lista-espera/lista-espera.service';
 import { DistribuicaoAuthService } from './distribuicao-auth.service';
 import { DistribuicaoGuard, type RequestDeOperador } from './distribuicao.guard';
+import { ipDoCliente } from '../../common/ip-cliente';
 
 @ApiTags('Distribuição')
 @Controller('distribuicao/lista-espera')
@@ -42,7 +43,7 @@ export class DistribuicaoListaEsperaController {
 
   private meta(req: RequestDeOperador) {
     const ua = req.headers['user-agent'];
-    return { ip: req.ip, userAgent: typeof ua === 'string' ? ua.slice(0, 300) : undefined };
+    return { ip: ipDoCliente(req), userAgent: typeof ua === 'string' ? ua.slice(0, 300) : undefined };
   }
 
   private async anotar(req: RequestDeOperador, acao: string, detalhe: Record<string, unknown> = {}) {

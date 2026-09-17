@@ -9,7 +9,6 @@
  * vai para o cookie httpOnly e some do corpo. Devolver o token no JSON anularia
  * o httpOnly — qualquer XSS leria a resposta do login e levaria a sessão.
  */
-import { isIP } from 'node:net';
 
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Req, Res } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -17,9 +16,9 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 
 import type { UsuarioAutenticado } from '../../common/auth.guard';
+import { ipDoCliente } from '../../common/ip-cliente';
 import { Publico } from '../../common/publico.decorator';
 import { UsuarioAtual } from '../../common/usuario-atual.decorator';
-import { env } from '../../config/env';
 import {
   AuthService,
   type CnpjDoConvite,
@@ -43,24 +42,10 @@ export interface RespostaSegundaEtapa {
   emailMascarado: string;
 }
 
-function ipDoRequest(req: Request): string | undefined {
-  // Só confiamos no header do Cloudflare quando a configuração diz que ele
-  // existe — senão qualquer cliente escolhe o próprio IP na trilha. E o valor
-  // é conferido com isIP porque a coluna é `inet`: header forjado com lixo não
-  // pode derrubar a gravação da auditoria.
-  if (env.rede.trustCloudflare) {
-    const bruto = req.headers['cf-connecting-ip'];
-    const valor = (Array.isArray(bruto) ? bruto[0] : bruto)?.trim();
-    if (valor && isIP(valor)) return valor;
-  }
-  const ip = req.ip?.trim();
-  return ip && isIP(ip) ? ip : undefined;
-}
-
 export function metaDoRequest(req: Request): MetaRequisicao {
   const ua = req.headers['user-agent'];
   return {
-    ip: ipDoRequest(req),
+    ip: ipDoCliente(req),
     userAgent: typeof ua === 'string' ? ua.slice(0, 300) : undefined,
   };
 }

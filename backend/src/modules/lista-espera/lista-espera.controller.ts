@@ -32,7 +32,6 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { isIP } from 'node:net';
 import type { Request } from 'express';
 
 import { Publico } from '../../common/publico.decorator';
@@ -50,6 +49,7 @@ import {
   type RespostaConvite,
 } from './lista-espera.service';
 import type { StatusListaEspera } from './lista-espera.status';
+import { ipDoCliente } from '../../common/ip-cliente';
 
 /**
  * Extrai IP e user-agent para a auditoria.
@@ -60,7 +60,7 @@ import type { StatusListaEspera } from './lista-espera.status';
  * inteiro. Melhor auditar sem IP do que perder o cadastro.
  */
 function origemDoRequest(req: Request): OrigemRequest {
-  const ip = typeof req.ip === 'string' && isIP(req.ip) ? req.ip : undefined;
+  const ip = ipDoCliente(req);
   const ua = req.headers['user-agent'];
   return {
     ip,
