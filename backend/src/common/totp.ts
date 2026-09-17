@@ -134,8 +134,8 @@ export function codigoConfere(segredoBase32: string, digitado: string, agora = n
  * O `issuer` aparece como o nome da conta no aplicativo — é o que a pessoa lê
  * para saber qual dos códigos é o do console.
  */
-export function enderecoParaAplicativo(segredoBase32: string, email: string): string {
-  const emissor = 'RegemCast Distribuição';
+export function enderecoParaAplicativo(segredoBase32: string, email: string, emissorNome?: string): string {
+  const emissor = emissorNome ?? 'RegemCast Distribuição';
   const rotulo = encodeURIComponent(`${emissor}:${email}`);
   const parametros = new URLSearchParams({
     secret: segredoBase32,

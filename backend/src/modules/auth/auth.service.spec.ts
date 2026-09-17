@@ -83,6 +83,9 @@ function montar(dbf: DbFalso) {
     contextoFalso(dbf),
     jwt as unknown as JwtService,
     auditoria as unknown as AuditoriaService,
+    {} as never,
+    {} as never,
+    {} as never,
   );
   return { servico, auditoria, jwt };
 }
@@ -99,6 +102,8 @@ const usuarioAtivo = (extra: Record<string, unknown> = {}) => ({
   papel: 'dono',
   status: 'ativo',
   tokenVersao: 1,
+  doisFatores: 'nenhum',
+  bloqueadoAte: null,
   ...extra,
 });
 
@@ -183,7 +188,7 @@ describe('AuthService.login', () => {
     );
     const { servico, auditoria, jwt } = montar(dbf);
 
-    const emitida = await servico.login(
+    const resultado = await servico.login(
       { email: 'ana@empresa.com.br', senha: SENHA_CERTA } as LoginDto,
       { ip: '203.0.113.7', userAgent: 'jest' },
     );
@@ -191,6 +196,8 @@ describe('AuthService.login', () => {
     // O token sai à parte, para o controller gravar o cookie httpOnly. O que
     // vai no CORPO da resposta não pode ter token: devolvê-lo no JSON anula o
     // httpOnly, porque aí qualquer XSS lê a resposta do login.
+    if (resultado.tipo !== 'sessao') throw new Error('esperava sessão direto');
+    const emitida = resultado.sessao;
     expect(emitida.token).toBe('jwt-de-teste');
     expect(emitida.resposta).not.toHaveProperty('token');
     expect(emitida.resposta.usuario.papel).toBe('dono');
@@ -202,6 +209,40 @@ describe('AuthService.login', () => {
     expect(auditoria.registrar).toHaveBeenCalledWith(
       expect.objectContaining({ acao: 'usuario.login', contaId: 'conta-1' }),
     );
+  }, 20_000);
+
+  it('com duas etapas ligadas, senha certa NÃO abre sessão nem registra entrada', async () => {
+    const dbf = criarDbFalso(
+      [usuarioAtivo({ doisFatores: 'app' })],
+      [{ id: 'conta-1', nome: 'Padaria Aurora', timezone: 'America/Sao_Paulo', status: 'ativa' }],
+      [],
+    );
+    const { servico, auditoria, jwt } = montar(dbf);
+
+    const resultado = await servico.login(
+      { email: 'ana@empresa.com.br', senha: SENHA_CERTA } as LoginDto,
+      {},
+    );
+
+    // Senha vazada sozinha não pode virar sessão: nenhum token assinado e
+    // nenhuma entrada registrada antes do código.
+    expect(resultado.tipo).toBe('segunda_etapa');
+    expect(jwt.signAsync).not.toHaveBeenCalled();
+    expect(auditoria.registrar).not.toHaveBeenCalledWith(expect.objectContaining({ acao: 'usuario.login' }));
+  }, 20_000);
+
+  it('acesso travado por códigos errados recusa até com a senha certa', async () => {
+    const dbf = criarDbFalso(
+      [usuarioAtivo({ doisFatores: 'email', bloqueadoAte: new Date(Date.now() + 10 * 60_000) })],
+      [{ id: 'conta-1', nome: 'Padaria Aurora', timezone: 'America/Sao_Paulo', status: 'ativa' }],
+      [],
+    );
+    const { servico, jwt } = montar(dbf);
+
+    await expect(
+      servico.login({ email: 'ana@empresa.com.br', senha: SENHA_CERTA } as LoginDto, {}),
+    ).rejects.toThrow(/travado/);
+    expect(jwt.signAsync).not.toHaveBeenCalled();
   }, 20_000);
 });
 

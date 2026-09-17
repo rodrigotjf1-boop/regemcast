@@ -62,9 +62,17 @@ export const conta = pgTable('conta', {
   status: text('status').notNull().default('aprovada'),
   planoId: uuid('plano_id').references(() => plano.id, { onDelete: 'set null' }),
   aprovadaEm: timestamp('aprovada_em', { withTimezone: true }),
+  /** O que a Receita disse no cadastro (migration 014). */
+  cnpjRazaoSocial: text('cnpj_razao_social'),
+  cnpjSituacao: text('cnpj_situacao'),
+  /** Quando o CNPJ foi conferido como ATIVO. Nulo = nunca conferido. */
+  cnpjConferidoEm: timestamp('cnpj_conferido_em', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => ({
+  /** Um CNPJ, uma conta (índice único parcial, migration 014). */
+  cnpjUq: uniqueIndex('uq_conta_cnpj').on(t.cnpj).where(sql`cnpj is not null`),
+}));
 
 /**
  * `tokenVersao` invalida sessões sem tabela de sessão: o JWT carrega a versão
@@ -84,6 +92,14 @@ export const usuario = pgTable('usuario', {
   status: text('status').notNull().default('ativo'),
   tokenVersao: integer('token_versao').notNull().default(1),
   ultimoLoginEm: timestamp('ultimo_login_em', { withTimezone: true }),
+  /** Quando o e-mail foi confirmado por código. Nulo = nunca confirmado. */
+  emailVerificadoEm: timestamp('email_verificado_em', { withTimezone: true }),
+  /** nenhum | email | app — a segunda etapa do login. */
+  doisFatores: text('dois_fatores').notNull().default('nenhum'),
+  /** Cifrado com CONTA_TOTP_CHAVE. Preenchido sem 'app' = cadastro não confirmado. */
+  totpSegredoCifrado: text('totp_segredo_cifrado'),
+  tentativasFalhas: integer('tentativas_falhas').notNull().default(0),
+  bloqueadoAte: timestamp('bloqueado_ate', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
@@ -606,3 +622,23 @@ export const acessoDistribuicao = pgTable('acesso_distribuicao', {
   userAgent: text('user_agent'),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Códigos de 6 dígitos enviados por e-mail (migration 014). Só o HMAC do código.
+ * Escopo de SISTEMA: conferido antes de existir sessão.
+ */
+export const codigoVerificacao = pgTable('codigo_verificacao', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  /** convite | login | ativar_email */
+  finalidade: text('finalidade').notNull(),
+  email: text('email').notNull(),
+  usuarioId: uuid('usuario_id').references(() => usuario.id, { onDelete: 'cascade' }),
+  listaEsperaId: uuid('lista_espera_id').references(() => listaEspera.id, { onDelete: 'cascade' }),
+  codigoHash: text('codigo_hash').notNull(),
+  tentativas: integer('tentativas').notNull().default(0),
+  expiraEm: timestamp('expira_em', { withTimezone: true }).notNull(),
+  usadoEm: timestamp('usado_em', { withTimezone: true }),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  emailIdx: index('idx_codigo_verificacao_email').on(t.finalidade, t.email, t.criadoEm),
+}));

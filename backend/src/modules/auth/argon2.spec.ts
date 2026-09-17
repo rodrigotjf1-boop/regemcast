@@ -139,6 +139,9 @@ async function hashDaTrocaDeSenha(senhaAtual: string, senhaNova: string): Promis
     contextoFalso(db),
     { signAsync: jest.fn().mockResolvedValue('jwt-de-teste') } as never,
     auditoriaFalsa(),
+    {} as never,
+    {} as never,
+    {} as never,
   );
 
   await service.trocarSenha(dono, { senhaAtual, senhaNova } as TrocarSenhaDto, {});
@@ -183,6 +186,9 @@ describe('parâmetros do argon2', () => {
       contextoFalso(db),
       { signAsync: jest.fn() } as never,
       auditoriaFalsa(),
+      {} as never,
+      {} as never,
+      {} as never,
     );
 
     await service

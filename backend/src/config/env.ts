@@ -210,6 +210,36 @@ export const env = {
     ttlHoras: numero('DIST_TTL_HORAS', 8),
   },
 
+  /**
+   * Envio de e-mail (códigos de verificação e convites), pelo Resend.
+   *
+   * Sem a chave, fora de produção o e-mail vai para o LOG (dá para testar o
+   * fluxo inteiro na máquina); em produção o envio recusa com 503 dizendo qual
+   * variável falta — nunca finge que mandou.
+   */
+  email: {
+    resendChave: opcional('RESEND_API_KEY'),
+    remetente: opcional('EMAIL_REMETENTE', 'RegemCast <nao-responda@dmsregem.com>'),
+  },
+
+  /**
+   * Cifra o segredo do app autenticador dos CLIENTES. Chave própria, separada
+   * da dos operadores (DIST_TOTP_CHAVE) e da dos tokens da Meta: um vazamento
+   * de uma não abre as outras.
+   */
+  seguranca: {
+    totpChave: opcional('CONTA_TOTP_CHAVE'),
+  },
+
+  /**
+   * Quantos clientes novos a Meta deixa conectar por janela de 7 dias. É 10 até
+   * a Access Verification sair; depois, 200. Variável para subir sem deploy de
+   * código.
+   */
+  listaEspera: {
+    tetoSemana: numero('TETO_CLIENTES_NOVOS_7D', 10),
+  },
+
   storage: {
     url: opcional('SUPABASE_URL'),
     chave: opcional('SUPABASE_SERVICE_KEY'),

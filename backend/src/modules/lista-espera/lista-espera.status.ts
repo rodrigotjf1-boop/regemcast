@@ -14,8 +14,18 @@ export const STATUS_LISTA_ESPERA = [
 
 export type StatusListaEspera = (typeof STATUS_LISTA_ESPERA)[number];
 
+import { env } from '../../config/env';
+
 /** Teto da Meta para Tech Provider antes da Access Verification sair. */
 export const TETO_CONVITES_JANELA = 10;
+
+/**
+ * O teto que vale AGORA: 10 até a Access Verification, 200 depois. Vem de
+ * TETO_CLIENTES_NOVOS_7D para subir sem deploy de código quando a Meta liberar.
+ */
+export function tetoConvitesJanela(): number {
+  return env.listaEspera?.tetoSemana ?? TETO_CONVITES_JANELA;
+}
 
 /** Tamanho da janela rolling da Meta, em dias. Também é a validade do convite. */
 export const JANELA_CONVITE_DIAS = 7;

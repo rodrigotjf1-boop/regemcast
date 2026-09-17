@@ -54,7 +54,7 @@ import { ContextoDb } from '../../db/contexto';
 import { acessoDistribuicao, operadorDistribuicao } from '../../db/schema';
 import { gerarHashSenha } from '../auth/argon2';
 import { cifrarToken, decifrarToken } from '../meta/cripto';
-import { codigoConfere, enderecoParaAplicativo, novoSegredo } from './totp';
+import { codigoConfere, enderecoParaAplicativo, novoSegredo } from '../../common/totp';
 
 /** Quantos erros seguidos travam o operador. */
 export const MAX_TENTATIVAS = 5;

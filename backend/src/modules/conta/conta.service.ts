@@ -26,6 +26,7 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { and, asc, eq, sql, type SQL } from 'drizzle-orm';
 
@@ -39,6 +40,7 @@ import {
   usuario as tUsuario,
 } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { CnpjReceitaService } from '../seguranca/cnpj-receita.service';
 import { gerarHashSenha } from '../auth/argon2';
 import { cnpjValido, normalizarCnpj } from './cnpj';
 import { AtualizarContaDto } from './dto/atualizar-conta.dto';
@@ -119,6 +121,9 @@ export class ContaService {
   constructor(
     private readonly ctx: ContextoDb,
     private readonly auditoria: AuditoriaService,
+    // Opcional só para o teste montar o serviço sem rede; na aplicação o
+    // SegurancaModule é global e sempre injeta.
+    @Optional() private readonly cnpjReceita?: CnpjReceitaService,
   ) {}
 
   /** Dados da conta + assinatura + consumo do ciclo corrente, numa ida ao banco. */
@@ -239,7 +244,12 @@ export class ContaService {
     }
 
     const [antes] = await this.ctx.db
-      .select({ nome: tConta.nome, cnpj: tConta.cnpj, timezone: tConta.timezone })
+      .select({
+        nome: tConta.nome,
+        cnpj: tConta.cnpj,
+        timezone: tConta.timezone,
+        cnpjConferidoEm: tConta.cnpjConferidoEm,
+      })
       .from(tConta)
       .where(eq(tConta.id, contaId))
       .limit(1);
@@ -248,17 +258,43 @@ export class ContaService {
       throw new NotFoundException('Não encontramos esta conta. Entre de novo.');
     }
 
-    const [depois] = await this.ctx.db
-      .update(tConta)
-      .set(patch)
-      .where(eq(tConta.id, contaId))
-      .returning({
-        id: tConta.id,
-        nome: tConta.nome,
-        cnpj: tConta.cnpj,
-        timezone: tConta.timezone,
-        status: tConta.status,
-      });
+    // CNPJ conferido na Receita não se troca por aqui: é a identidade da conta
+    // na Meta e o que impede a mesma empresa de ter duas contas. Troca legítima
+    // (mudança societária) passa pelo suporte.
+    const extra: { cnpjRazaoSocial?: string; cnpjSituacao?: string; cnpjConferidoEm?: SQL } = {};
+    if (patch.cnpj !== undefined && patch.cnpj !== antes.cnpj) {
+      if (antes.cnpjConferidoEm) {
+        throw new BadRequestException(
+          'O CNPJ desta conta já foi conferido na Receita e não pode ser trocado por aqui. Fale com o suporte do Regemcast.',
+        );
+      }
+      if (patch.cnpj && this.cnpjReceita) {
+        const conferido = await this.cnpjReceita.exigirAtivo(patch.cnpj);
+        extra.cnpjRazaoSocial = conferido.razaoSocial;
+        extra.cnpjSituacao = conferido.situacao;
+        extra.cnpjConferidoEm = sql`now()`;
+      }
+    }
+
+    let depois: { id: string; nome: string; cnpj: string | null; timezone: string; status: string } | undefined;
+    try {
+      [depois] = await this.ctx.db
+        .update(tConta)
+        .set({ ...patch, ...extra })
+        .where(eq(tConta.id, contaId))
+        .returning({
+          id: tConta.id,
+          nome: tConta.nome,
+          cnpj: tConta.cnpj,
+          timezone: tConta.timezone,
+          status: tConta.status,
+        });
+    } catch (erro) {
+      if ((erro as { code?: string } | null)?.code === '23505') {
+        throw new ConflictException('Já existe uma conta no Regemcast com este CNPJ.');
+      }
+      throw erro;
+    }
 
     if (!depois) {
       throw new NotFoundException('Não encontramos esta conta. Entre de novo.');
