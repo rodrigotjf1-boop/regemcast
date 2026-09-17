@@ -108,6 +108,8 @@ const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOStrin
 @Injectable()
 export class CobrancaService {
   private readonly log = new Logger('Cobranca');
+  /** Quando o último aviso sem assinatura válida foi logado (limita o log). */
+  private ultimoAvisoInvalido = 0;
 
   constructor(
     private readonly ctx: ContextoDb,
@@ -316,7 +318,9 @@ export class CobrancaService {
   /**
    * Processa um aviso do Mercado Pago.
    *
-   * - `rejeitado`: a assinatura do aviso não conferiu. Gravado, nunca processado.
+   * - `rejeitado`: a assinatura do aviso não conferiu. Nem gravado: o endereço
+   *   é público, e gravar tudo o que chega sem assinatura deixaria qualquer um
+   *   encher a tabela. Fica no log (uma linha por minuto, no máximo).
    * - `duplicado`: o mesmo aviso já foi processado.
    * - `ok` / `ignorado`: processado (ou tópico que não nos interessa).
    *
@@ -335,6 +339,18 @@ export class CobrancaService {
       dataId: dados.dataId,
       segredo: env.mercadoPago.webhookSegredo,
     });
+
+    if (!autentico) {
+      const agora = Date.now();
+      if (agora - this.ultimoAvisoInvalido > 60_000) {
+        this.ultimoAvisoInvalido = agora;
+        this.log.warn(
+          `Aviso do Mercado Pago com assinatura inválida (${dados.topico.slice(0, 60)} ${dados.dataId.slice(0, 60)}) — ignorado. ` +
+            'Se forem todos, confira MP_WEBHOOK_SEGREDO.',
+        );
+      }
+      return 'rejeitado';
+    }
 
     const eventoId = await this.ctx.comEscopoSistema('cobranca.aviso.registrar', async (db) => {
       const r = await db.execute(sql`
@@ -360,12 +376,6 @@ export class CobrancaService {
     });
 
     if (eventoId === null) return 'duplicado';
-
-    if (!autentico) {
-      await this.marcarEvento(eventoId, 'assinatura do aviso não confere');
-      this.log.warn(`Aviso do Mercado Pago com assinatura inválida (${dados.topico} ${dados.dataId}) — ignorado.`);
-      return 'rejeitado';
-    }
 
     try {
       let resultado: 'ok' | 'ignorado' = 'ignorado';
