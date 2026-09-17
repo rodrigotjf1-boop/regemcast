@@ -62,6 +62,7 @@ import { gerarHashSenha } from './argon2';
 import { AceitarConviteDto, FORMATO_TOKEN_CONVITE } from './dto/aceitar-convite.dto';
 import { LoginDto } from './dto/login.dto';
 import { TrocarSenhaDto } from './dto/trocar-senha.dto';
+import { MINUTOS_TRAVA } from './segunda-etapa.service';
 
 /** Uma frase só para os dois casos, para não revelar qual deles falhou. */
 const CREDENCIAL_INVALIDA = 'E-mail ou senha incorretos.';
@@ -79,6 +80,13 @@ const CNPJ_JA_CADASTRADO =
   'Já existe uma conta no Regemcast com este CNPJ. Peça ao dono dessa conta um acesso de operador.';
 const PLANO_CORTESIA = 'cortesia';
 /** Duração da cortesia do primeiro ciclo. */
+/**
+ * Senhas erradas seguidas até travar o acesso. Mais folgado que os 5 códigos
+ * da segunda etapa: senha se erra digitando, e travar quem só esqueceu é pior
+ * que dar mais cinco chances a um robô que já está limitado por IP.
+ */
+export const MAX_ERROS_SENHA = 10;
+
 const DIAS_CORTESIA = 30;
 
 export type StatusConta = 'aprovada' | 'ativa' | 'suspensa' | 'cancelada';
@@ -237,10 +245,37 @@ export class AuthService {
         return { tipo: 'credencial' as const, usuarioId: null, contaId: null };
       }
 
+      // Travado (senhas ou códigos errados demais): recusa SEM conferir a
+      // senha. Conferir antes deixaria um robô continuar testando senhas
+      // durante a trava — só não saberia qual acertou. O tempo do argon2 é
+      // gasto igual, para a resposta não denunciar a trava pelo relógio.
+      if (u.bloqueadoAte && u.bloqueadoAte.getTime() > Date.now()) {
+        await this.gastarTempoDeVerificacao(dto.senha);
+        return {
+          tipo: 'travado' as const,
+          usuarioId: u.id,
+          contaId: u.contaId,
+          minutos: Math.ceil((u.bloqueadoAte.getTime() - Date.now()) / 60_000),
+        };
+      }
+
       // A senha é conferida ANTES do status: responder "suspenso" para quem
       // errou a senha contaria que a conta existe.
       const senhaOk = await this.conferirSenha(u.senhaHash, dto.senha, u.id);
       if (!senhaOk) {
+        // Contada no usuário, não só no IP: o limite por IP não segura um robô
+        // que troca de endereço. Incremento atômico, no mesmo contador dos
+        // códigos da segunda etapa.
+        await db.execute(sql`
+          update usuario
+             set tentativas_falhas = tentativas_falhas + 1,
+                 bloqueado_ate = case
+                   when tentativas_falhas + 1 >= ${MAX_ERROS_SENHA}
+                   then now() + make_interval(mins => ${MINUTOS_TRAVA})
+                   else bloqueado_ate
+                 end
+           where id = ${u.id}
+        `);
         return { tipo: 'credencial' as const, usuarioId: u.id, contaId: u.contaId };
       }
 
@@ -271,17 +306,6 @@ export class AuthService {
         return { tipo: 'conta-bloqueada' as const, usuarioId: u.id, contaId: c.id };
       }
 
-      // Travado por códigos errados: a trava vale também para a senha. Sem
-      // isto, quem tem a senha pediria códigos novos sem parar.
-      if (u.bloqueadoAte && u.bloqueadoAte.getTime() > Date.now()) {
-        return {
-          tipo: 'travado' as const,
-          usuarioId: u.id,
-          contaId: c.id,
-          minutos: Math.ceil((u.bloqueadoAte.getTime() - Date.now()) / 60_000),
-        };
-      }
-
       // Duas etapas: a senha certa NÃO abre sessão. Nada de último login nem
       // auditoria de entrada aqui — a entrada só acontece depois do código.
       if (u.doisFatores === 'email' || u.doisFatores === 'app') {
@@ -299,7 +323,7 @@ export class AuthService {
 
       await db
         .update(tUsuario)
-        .set({ ultimoLoginEm: sql`now()` })
+        .set({ ultimoLoginEm: sql`now()`, tentativasFalhas: 0, bloqueadoAte: null })
         .where(eq(tUsuario.id, u.id));
 
       await this.auditoria.registrar({
