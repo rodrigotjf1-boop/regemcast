@@ -219,7 +219,7 @@ export const env = {
    */
   email: {
     resendChave: opcional('RESEND_API_KEY'),
-    remetente: opcional('EMAIL_REMETENTE', 'RegemCast <nao-responda@dmsregem.com>'),
+    remetente: opcional('EMAIL_REMETENTE', 'RegemCast <nao-responda@dmstecnologias.com>'),
   },
 
   /**
