@@ -12,6 +12,8 @@
  */
 import { api, enderecoDaApi } from './api';
 import type {
+  ResultadoContratacao,
+  SituacaoCobranca,
   CnpjDoConvite,
   EtapaCodigoLogin,
   SituacaoSeguranca,
@@ -126,6 +128,14 @@ export const auth = {
   /** `POST /auth/convite/aceitar` — cria a conta e já devolve a sessão. */
   aceitarConvite: (dados: DadosAceiteConvite) =>
     api.post<SessaoCriada>('/auth/convite/aceitar', dados, SEM_REDIRECT),
+};
+
+/** Plano e pagamento da conta (Mercado Pago). */
+export const planoConta = {
+  situacao: () => api.get<SituacaoCobranca>('/plano'),
+  contratar: (planoId: string, emailPagador?: string) =>
+    api.post<ResultadoContratacao>('/plano/contratar', emailPagador ? { planoId, emailPagador } : { planoId }),
+  cancelar: () => api.post<{ vigenteAte: string | null }>('/plano/cancelar', {}),
 };
 
 /** Verificação em duas etapas de quem está logado. */
@@ -356,6 +366,7 @@ export interface ResumoDoConsole {
   erros: { ultimas24h: number; contasAfetadas24h: number };
   campanhasEmAndamento: number;
   perto_do_teto: number;
+  receita: { mrrCentavos: number; pagantes: number; inadimplentes: number; emGratis: number };
 }
 
 export interface TelemetriaDoConsole {
@@ -468,6 +479,8 @@ export const distribuicao = {
       { observacao },
       SEM_REDIRECT_DIST,
     ),
+  estenderGratis: (contaId: string, dias: number) =>
+    api.post<{ gratisAte: string }>('/distribuicao/contas/' + contaId + '/estender-gratis', { dias }, SEM_REDIRECT_DIST),
   planos: () => api.get<PlanoNoConsole[]>('/distribuicao/planos', SEM_REDIRECT_DIST),
   criarPlano: (dados: DadosPlano) =>
     api.post<{ id: string }>('/distribuicao/planos', dados, SEM_REDIRECT_DIST),

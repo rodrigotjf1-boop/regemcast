@@ -11,7 +11,7 @@
  */
 import { BadRequestException, Logger } from '@nestjs/common';
 
-jest.mock('../../config/env', () => ({ env: {} }));
+jest.mock('../../config/env', () => ({ env: { mercadoPago: { carenciaDias: 5 } } }));
 
 import { CampanhaService } from './campanha.service';
 import { ErroGraph } from '../meta/graph.service';
@@ -243,6 +243,7 @@ describe('rodada do worker', () => {
       .mockResolvedValueOnce({ rows: [{ dia: 0, semana: 0, mes: 0, ultimo: null }] }) // contagem
       .mockResolvedValueOnce({ rows: [] }) // tira da fila quem pediu para sair
       .mockResolvedValueOnce({ rows: [] }) // trava do teto da conta
+      .mockResolvedValueOnce({ rows: [] }) // bloqueio por inadimplência (sem assinatura: libera)
       .mockResolvedValueOnce({ rows: saldo === undefined ? [] : [{ teto: 100, usados: 100 - saldo, em_voo: 0 }] }) // saldo do plano
       .mockResolvedValueOnce({ rows: reivindicados }); // reivindicação
   }
@@ -325,6 +326,7 @@ describe('rodada do worker', () => {
       .mockResolvedValueOnce({ rows: [{ dia: 0, semana: 0, mes: 0, ultimo: null }] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ teto: 5000, usados: 5000, em_voo: 0 }] })
       .mockResolvedValueOnce({ rows: [] });
 
@@ -334,6 +336,24 @@ describe('rodada do worker', () => {
     const chamadas = m.db.execute.mock.calls.map((c) => JSON.stringify(c[0]));
     expect(chamadas.some((t) => t.includes('skip locked'))).toBe(false);
     expect(chamadas.some((t) => t.includes("pausa_motivo = 'teto_plano'"))).toBe(true);
+  });
+
+  it('inadimplente depois da carência: PAUSA por inadimplência, sem reivindicar', async () => {
+    const m = montar();
+    m.db.select.mockReturnValueOnce(m.consulta([ATIVA]));
+    m.db.execute
+      .mockResolvedValueOnce({ rows: [{ dia: 0, semana: 0, mes: 0, ultimo: null }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ status: 'inadimplente', gratis_vencido: false, carencia_vencida: true }] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(m.graph.enviarModelo).not.toHaveBeenCalled();
+    const chamadas = m.db.execute.mock.calls.map((c) => JSON.stringify(c[0]));
+    expect(chamadas.some((t) => t.includes('skip locked'))).toBe(false);
+    expect(chamadas.some((t) => t.includes("pausa_motivo = 'inadimplencia'"))).toBe(true);
   });
 
   it('com pouco saldo, reivindica só o que cabe no plano', async () => {
@@ -389,6 +409,7 @@ describe('rodada do worker', () => {
       .mockReturnValueOnce(m.consulta([{ phoneNumberId: 'PN1' }]));
     m.db.execute
       .mockResolvedValueOnce({ rows: [{ dia: 0, semana: 0, mes: 0, ultimo: null }] })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })

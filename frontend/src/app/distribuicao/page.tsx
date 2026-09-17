@@ -172,7 +172,13 @@ export default function ConsoleDistribuicao() {
         </div>
 
         {aba === 'contas' ? (
-          <TabelaContas contas={visiveis} filtro={filtro} aoFiltrar={setFiltro} total={contas.length} />
+          <TabelaContas
+            contas={visiveis}
+            filtro={filtro}
+            aoFiltrar={setFiltro}
+            total={contas.length}
+            aoAtualizar={() => void carregar()}
+          />
         ) : aba === 'lista' ? (
           <PainelListaEspera />
         ) : aba === 'planos' ? (
@@ -218,6 +224,19 @@ function Indicadores({
           ajuda={`${numero(r.erros.contasAfetadas24h)} conta(s) afetada(s)`}
         />
       </div>
+
+      {/* Dinheiro: o que entra todo mês e quem está atrasado. */}
+      <div className="escalonado grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Cartao rotulo="Receita mensal" valor={r.receita.mrrCentavos} moeda tom="sucesso" ajuda="assinaturas pagas e em dia" />
+        <Cartao rotulo="Pagantes" valor={r.receita.pagantes} />
+        <Cartao rotulo="Em grátis" valor={r.receita.emGratis} />
+        <Cartao
+          rotulo="Inadimplentes"
+          valor={r.receita.inadimplentes}
+          tom={r.receita.inadimplentes ? 'erro' : undefined}
+          ajuda="disparos param após a carência"
+        />
+      </div>
     </div>
   );
 }
@@ -228,12 +247,15 @@ function Cartao({
   tom,
   ajuda,
   onClick,
+  moeda = false,
 }: {
   rotulo: string;
   valor: number;
   tom?: 'sucesso' | 'realce' | 'erro';
   ajuda?: string;
   onClick?: () => void;
+  /** O valor vem em centavos e é mostrado em reais. */
+  moeda?: boolean;
 }) {
   const Tag = onClick ? 'button' : 'div';
   return (
@@ -258,7 +280,11 @@ function Cartao({
         />
       )}
       <p className="text-xs font-medium text-tinta-suave">{rotulo}</p>
-      <NumeroAnimado valor={valor} className="numerico mt-1 block text-2xl font-semibold text-tinta" />
+      <NumeroAnimado
+        valor={valor}
+        formatar={moeda ? (n) => (n / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : undefined}
+        className="numerico mt-1 block text-2xl font-semibold text-tinta"
+      />
       {ajuda && <p className="mt-0.5 text-[0.7rem] text-tinta-suave">{ajuda}</p>}
     </Tag>
   );
@@ -271,11 +297,13 @@ function TabelaContas({
   filtro,
   aoFiltrar,
   total,
+  aoAtualizar,
 }: {
   contas: ContaNoConsole[];
   filtro: SituacaoConta | 'todas';
   aoFiltrar: (f: SituacaoConta | 'todas') => void;
   total: number;
+  aoAtualizar: () => void;
 }) {
   const opcoes: (SituacaoConta | 'todas')[] = ['todas', 'em_risco', 'ativa', 'inativa', 'nunca_usou'];
 
@@ -312,12 +340,13 @@ function TabelaContas({
               <th scope="col" className="px-3 py-2.5 text-right font-medium">Envios 30d</th>
               <th scope="col" className="px-3 py-2.5 text-right font-medium">Erros 7d</th>
               <th scope="col" className="px-3 py-2.5 font-medium">WhatsApp</th>
+              <th scope="col" className="px-3 py-2.5 font-medium"><span className="sr-only">Ações</span></th>
             </tr>
           </thead>
           <tbody>
             {contas.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-3 py-8 text-center text-tinta-suave">
+                <td colSpan={8} className="px-3 py-8 text-center text-tinta-suave">
                   Nenhuma conta nesta situação.
                 </td>
               </tr>
@@ -347,6 +376,11 @@ function TabelaContas({
                   <span className={cn('text-xs', c.whatsappPronto ? 'text-sucesso' : 'text-tinta-suave')}>
                     {c.whatsappPronto ? '● pronto' : '○ não conectado'}
                   </span>
+                </td>
+                <td className="px-3 py-2.5 text-right">
+                  {c.assinaturaStatus && c.assinaturaStatus !== 'ativa' ? (
+                    <EstenderGratis contaId={c.id} nome={c.nome} aoConcluir={aoAtualizar} />
+                  ) : null}
                 </td>
               </tr>
             ))}
@@ -479,6 +513,63 @@ function PainelTelemetria({
           ))}
         </ul>
       </section>
+    </div>
+  );
+}
+
+/**
+ * Estende o grátis de uma conta (negociação, conta interna, revisão da Meta).
+ * Pede os dias ali mesmo, sem sair da tabela.
+ */
+function EstenderGratis({ contaId, nome, aoConcluir }: { contaId: string; nome: string; aoConcluir: () => void }) {
+  const [aberto, setAberto] = useState(false);
+  const [dias, setDias] = useState('30');
+  const [ocupado, setOcupado] = useState(false);
+  const [erro, setErro] = useState('');
+
+  if (!aberto) {
+    return (
+      <Button tamanho="sm" variante="discreto" onClick={() => setAberto(true)}>
+        Estender grátis
+      </Button>
+    );
+  }
+
+  async function confirmar() {
+    setErro('');
+    setOcupado(true);
+    try {
+      await distribuicao.estenderGratis(contaId, Number(dias));
+      setAberto(false);
+      aoConcluir();
+    } catch (e) {
+      setErro(mensagemDoErro(e));
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  return (
+    <div className="ml-auto flex max-w-[14rem] flex-col items-end gap-1.5">
+      <label className="flex items-center gap-2 text-xs text-tinta-suave">
+        Dias a mais para {nome}
+        <input
+          value={dias}
+          onChange={(e) => setDias(e.target.value.replace(/\D/g, ''))}
+          inputMode="numeric"
+          className="w-14 rounded-lg border border-borda bg-superficie px-2 py-1 text-right font-mono text-xs text-tinta"
+          aria-label="Dias"
+        />
+      </label>
+      {erro ? <p className="text-right text-xs text-erro">{erro}</p> : null}
+      <div className="flex gap-1.5">
+        <Button tamanho="sm" variante="discreto" onClick={() => setAberto(false)}>
+          Cancelar
+        </Button>
+        <Button tamanho="sm" carregando={ocupado} onClick={() => void confirmar()}>
+          Estender
+        </Button>
+      </div>
     </div>
   );
 }

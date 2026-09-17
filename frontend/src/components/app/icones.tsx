@@ -270,6 +270,16 @@ export function IconeLixeira(p: Props) {
   );
 }
 
+/** Cartão: plano e pagamento. */
+export function IconeCartao(p: Props) {
+  return (
+    <Base {...p}>
+      <rect x="2.5" y="5" width="19" height="14" rx="2.5" />
+      <path d="M2.5 10h19M6.5 15h4" />
+    </Base>
+  );
+}
+
 /** Lápis: editar. */
 export function IconeEditar(p: Props) {
   return (

@@ -24,6 +24,7 @@ import { ModeloModule } from './modules/modelo/modelo.module';
 import { SaudeModule } from './modules/saude/saude.module';
 import { EmailModule } from './modules/email/email.module';
 import { SegurancaModule } from './modules/seguranca/seguranca.module';
+import { CobrancaModule } from './modules/cobranca/cobranca.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { SegurancaModule } from './modules/seguranca/seguranca.module';
     ModeloModule,
     MidiaModule,
     DistribuicaoModule,
+    CobrancaModule,
     SaudeModule,
   ],
   providers: [

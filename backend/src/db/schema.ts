@@ -185,11 +185,56 @@ export const assinatura = pgTable('assinatura', {
   cicloFim: timestamp('ciclo_fim', { withTimezone: true }).notNull(),
   gratisAte: timestamp('gratis_ate', { withTimezone: true }),
   provedorRef: text('provedor_ref'),
+  /** Id da assinatura (preapproval) no Mercado Pago — migration 016. */
+  mpAssinaturaId: text('mp_assinatura_id'),
+  /** pending | authorized | paused | cancelled — espelho do Mercado Pago. */
+  mpStatus: text('mp_status'),
+  mpCheckoutUrl: text('mp_checkout_url'),
+  planoContratadoId: uuid('plano_contratado_id').references(() => plano.id, { onDelete: 'set null' }),
+  /** Plano menor escolhido: vale na virada do ciclo. */
+  planoProximoCicloId: uuid('plano_proximo_ciclo_id').references(() => plano.id, { onDelete: 'set null' }),
+  inadimplenteDesde: timestamp('inadimplente_desde', { withTimezone: true }),
+  avisosEnviados: text('avisos_enviados').array().notNull().default(sql`'{}'::text[]`),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   contaUq: uniqueIndex('uq_assinatura_conta').on(t.contaId),
+  mpUq: uniqueIndex('uq_assinatura_mp').on(t.mpAssinaturaId).where(sql`mp_assinatura_id is not null`),
 }));
+
+/** Uma cobrança mensal do Mercado Pago (migration 016). RLS por conta. */
+export const cobranca = pgTable('cobranca', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contaId: uuid('conta_id').notNull().references(() => conta.id, { onDelete: 'cascade' }),
+  assinaturaId: uuid('assinatura_id').references(() => assinatura.id, { onDelete: 'set null' }),
+  planoId: uuid('plano_id').references(() => plano.id, { onDelete: 'set null' }),
+  mpFaturaId: text('mp_fatura_id'),
+  mpPagamentoId: text('mp_pagamento_id'),
+  valorCentavos: integer('valor_centavos').notNull(),
+  /** pendente | aprovada | recusada | cancelada | estornada */
+  status: text('status').notNull().default('pendente'),
+  meio: text('meio'),
+  vencimento: timestamp('vencimento', { withTimezone: true }),
+  pagoEm: timestamp('pago_em', { withTimezone: true }),
+  motivo: text('motivo'),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  faturaUq: uniqueIndex('uq_cobranca_fatura').on(t.mpFaturaId).where(sql`mp_fatura_id is not null`),
+  contaIdx: index('idx_cobranca_conta').on(t.contaId, t.criadoEm),
+}));
+
+/** Aviso (webhook) recebido do Mercado Pago (migration 016). Escopo de sistema. */
+export const eventoMercadopago = pgTable('evento_mercadopago', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  topico: text('topico').notNull(),
+  recursoId: text('recurso_id').notNull(),
+  requestId: text('request_id'),
+  assinaturaOk: boolean('assinatura_ok').notNull().default(false),
+  processadoEm: timestamp('processado_em', { withTimezone: true }),
+  erro: text('erro'),
+  recebidoEm: timestamp('recebido_em', { withTimezone: true }).notNull().defaultNow(),
+});
 
 /**
  * Contador materializado por ciclo. O incremento é atômico

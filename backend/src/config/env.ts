@@ -236,6 +236,21 @@ export const env = {
    * a Access Verification sair; depois, 200. Variável para subir sem deploy de
    * código.
    */
+  /**
+   * Mercado Pago (conta da SISTER TECNOLOGIA): assinaturas dos clientes.
+   *
+   * Sem o token, contratar um plano responde 503 dizendo o que falta — nunca
+   * cria assinatura pela metade. Sem o segredo do webhook, os avisos são
+   * gravados e NUNCA processados: aviso sem assinatura conferida não ativa
+   * plano de ninguém.
+   */
+  mercadoPago: {
+    accessToken: opcional('MP_ACCESS_TOKEN'),
+    webhookSegredo: opcional('MP_WEBHOOK_SEGREDO'),
+    /** Dias depois do vencimento sem pagamento até os disparos pararem. */
+    carenciaDias: numero('CARENCIA_DIAS', 5),
+  },
+
   listaEspera: {
     tetoSemana: numero('TETO_CLIENTES_NOVOS_7D', 10),
   },

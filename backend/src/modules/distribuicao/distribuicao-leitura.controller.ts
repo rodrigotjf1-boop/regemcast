@@ -5,7 +5,7 @@
  * todas registrando o acesso. O registro acontece ANTES de devolver os dados:
  * se o registro falhasse depois, o operador teria visto sem ficar anotado.
  */
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
 import { Publico } from '../../common/publico.decorator';
@@ -43,6 +43,19 @@ export class DistribuicaoLeituraController {
   async contas(@Req() req: RequestDeOperador) {
     await this.anotar(req, 'contas.lidas');
     return this.leitura.contas();
+  }
+
+  @Post('contas/:id/estender-gratis')
+  @HttpCode(HttpStatus.OK)
+  async estenderGratis(
+    @Req() req: RequestDeOperador,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() corpo: { dias?: number },
+  ) {
+    const dias = Number(corpo?.dias);
+    const r = await this.leitura.estenderGratis(id, dias);
+    await this.anotar(req, 'conta.gratis_estendido', { dias, gratisAte: r.gratisAte });
+    return r;
   }
 
   @Get('telemetria')
