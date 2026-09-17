@@ -146,7 +146,9 @@ export class MercadoPagoService {
 
   private registrar(metodo: string, caminho: string, status: number | null, motivo: string): void {
     // O caminho tem só ids do Mercado Pago; e-mail do pagador nunca vai para cá.
-    const rota = caminho.replace(/\/[^/]+$/, '/:id');
+    // "/preapproval/abc123" vira "/preapproval/:id"; "/preapproval" fica como
+    // está — antes a rota de criação aparecia no log como "/:id".
+    const rota = caminho.replace(/^(\/[^/]+)\/[^/]+$/, '$1/:id');
     this.log.error(`Mercado Pago ${metodo} ${rota} → ${status ?? 'sem resposta'}: ${motivo}`);
     void this.telemetria.registrar({
       origem: 'api',
