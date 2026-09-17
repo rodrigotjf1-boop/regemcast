@@ -9,6 +9,19 @@ export class CodigoSegundaEtapaDto {
   codigo!: string;
 }
 
+/**
+ * Ativar o aplicativo autenticador exige o código E a senha. Só o código não
+ * basta: com uma sessão esquecida aberta, outra pessoa cadastraria o PRÓPRIO
+ * celular e trancaria o dono fora da conta.
+ */
+export class AtivarAppDto extends CodigoSegundaEtapaDto {
+  @ApiProperty()
+  @IsString({ message: 'Informe a sua senha.' })
+  @MinLength(1, { message: 'Informe a sua senha.' })
+  @MaxLength(200)
+  senha!: string;
+}
+
 /** Desligar as duas etapas exige a senha. */
 export class SenhaConfirmacaoDto {
   @ApiProperty()

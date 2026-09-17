@@ -13,7 +13,7 @@ import type { Request } from 'express';
 import type { UsuarioAutenticado } from '../../common/auth.guard';
 import { UsuarioAtual } from '../../common/usuario-atual.decorator';
 import { metaDoRequest } from './auth.controller';
-import { CodigoSegundaEtapaDto, SenhaConfirmacaoDto } from './dto/segunda-etapa.dto';
+import { AtivarAppDto, CodigoSegundaEtapaDto, SenhaConfirmacaoDto } from './dto/segunda-etapa.dto';
 import { SegundaEtapaService, type SituacaoSeguranca } from './segunda-etapa.service';
 
 @ApiTags('auth')
@@ -59,13 +59,13 @@ export class SegurancaController {
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
   @Post('app/ativar')
-  @ApiOperation({ summary: 'Confirma o primeiro código do app e ativa' })
+  @ApiOperation({ summary: 'Confirma o primeiro código do app e ativa (exige a senha)' })
   ativarApp(
     @UsuarioAtual() usuario: UsuarioAutenticado,
-    @Body() dto: CodigoSegundaEtapaDto,
+    @Body() dto: AtivarAppDto,
     @Req() req: Request,
   ): Promise<SituacaoSeguranca> {
-    return this.segundaEtapa.ativarApp(usuario, dto.codigo, metaDoRequest(req));
+    return this.segundaEtapa.ativarApp(usuario, dto.codigo, dto.senha, metaDoRequest(req));
   }
 
   @Throttle({ default: { ttl: 60_000, limit: 5 } })

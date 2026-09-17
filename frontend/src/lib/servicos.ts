@@ -145,7 +145,8 @@ export const seguranca = {
     api.post<{ emailMascarado: string; minutos: number }>('/auth/seguranca/email/codigo', {}),
   ativarEmail: (codigo: string) => api.post<SituacaoSeguranca>('/auth/seguranca/email/ativar', { codigo }),
   iniciarApp: () => api.post<{ endereco: string; segredo: string }>('/auth/seguranca/app/iniciar', {}),
-  ativarApp: (codigo: string) => api.post<SituacaoSeguranca>('/auth/seguranca/app/ativar', { codigo }),
+  ativarApp: (codigo: string, senha: string) =>
+    api.post<SituacaoSeguranca>('/auth/seguranca/app/ativar', { codigo, senha }),
   desativar: (senha: string) => api.post<SituacaoSeguranca>('/auth/seguranca/desativar', { senha }),
 };
 
