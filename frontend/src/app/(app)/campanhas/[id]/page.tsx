@@ -297,7 +297,9 @@ export default function PaginaCampanha() {
           <p className="text-xs leading-relaxed text-tinta-suave">
             <strong className="text-tinta">Enviada</strong> quer dizer que a Meta aceitou a mensagem
             — ainda não que ela chegou. <strong className="text-tinta">Entregue</strong> é a
-            confirmação de que chegou ao aparelho, e vem depois, pela própria Meta.
+            confirmação de que chegou ao aparelho, e vem depois, pela própria Meta.{' '}
+            <strong className="text-tinta">Lida</strong> só é informada quando a pessoa mantém a
+            confirmação de leitura ligada no WhatsApp — o número real de leituras pode ser maior.
           </p>
         </div>
       </Card>

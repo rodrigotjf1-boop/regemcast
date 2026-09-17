@@ -9,6 +9,7 @@ import {
   IconeContatos,
   IconeConta,
   IconeConversa,
+  IconeEscudo,
   IconeFechar,
   IconeMenu,
   IconeModelo,
@@ -54,6 +55,10 @@ const SECOES = [
       { href: '/whatsapp', rotulo: 'WhatsApp', Icone: IconeConversa },
       { href: '/conta', rotulo: 'Conta e usuários', Icone: IconeConta },
     ],
+  },
+  {
+    titulo: 'Ajuda',
+    itens: [{ href: '/regras', rotulo: 'Regras', Icone: IconeEscudo }],
   },
 ] as const;
 

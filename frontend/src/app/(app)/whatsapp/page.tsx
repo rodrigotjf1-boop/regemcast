@@ -211,7 +211,7 @@ function CartaoNumero({ numero }: { numero: NumeroWhatsapp }) {
         */}
         {numero.coexistencia && (
           <p className="text-xs leading-relaxed text-tinta-suave">
-            Abra o WhatsApp Business no celular ao menos <strong>uma vez a cada 14 dias</strong>.
+            Abra o WhatsApp Business no celular ao menos <strong>uma vez a cada 13 dias</strong>.
             Sem isso a Meta encerra a conexão e você precisa conectar o número de novo.
           </p>
         )}
