@@ -18,6 +18,7 @@ import { createHash } from 'node:crypto';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { ContextoDb } from '../../db/contexto';
+import { AuditoriaService } from '../auditoria/auditoria.service';
 import { campanhaDestinatario, waEvento, waNumero } from '../../db/schema';
 import { codigoDoErro, mensagemDoErroMeta, traduzirErroMeta } from './erros-meta';
 
@@ -37,6 +38,39 @@ const QUALIDADE: Record<string, string> = {
   RED: 'vermelha',
   UNKNOWN: 'desconhecida',
 };
+
+/**
+ * As palavras que valem como "não quero mais receber".
+ *
+ * Comparação sobre o texto INTEIRO, sem acento e sem pontuação: "parar" sozinho
+ * é pedido de saída; "não vou parar de comprar com vocês" não é. Bloquear por
+ * palavra solta no meio da frase tiraria da base quem não pediu nada.
+ */
+const PEDIDOS_DE_SAIDA = new Set([
+  'parar promocoes',
+  'parar',
+  'pare',
+  'sair',
+  'sair da lista',
+  'stop',
+  'stop promotions',
+  'cancelar',
+  'descadastrar',
+  'remover',
+  'nao quero mais receber',
+  'nao quero receber mais',
+]);
+
+export function ehPedidoDeSaida(texto: string): boolean {
+  const limpo = (texto ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return limpo.length > 0 && PEDIDOS_DE_SAIDA.has(limpo);
+}
 
 /** Status da Meta × o nosso. O que não está aqui não muda estado nenhum. */
 const ESTADO_DA_META: Record<string, 'enviada' | 'entregue' | 'lida'> = {
@@ -63,7 +97,10 @@ const ANTERIORES_VALIDOS: Record<string, string[]> = {
 export class WebhookService {
   private readonly log = new Logger('MetaWebhook');
 
-  constructor(private readonly ctx: ContextoDb) {}
+  constructor(
+    private readonly ctx: ContextoDb,
+    private readonly auditoria: AuditoriaService,
+  ) {}
 
   /** Grava cada mudança do payload como um evento próprio. */
   async registrar(corpo: unknown): Promise<void> {
@@ -215,6 +252,8 @@ export class WebhookService {
     const v = m.value ?? {};
     const statuses = Array.isArray(v.statuses) ? v.statuses : [];
 
+    await this.pedidosDeSaida(m);
+
     for (const s of statuses as Array<Record<string, unknown>>) {
       const wamid = typeof s.id === 'string' ? s.id : null;
       const bruto = typeof s.status === 'string' ? s.status : '';
@@ -239,6 +278,103 @@ export class WebhookService {
 
       if (wamid && nosso) await this.aplicarStatus(wamid, nosso, {});
     }
+  }
+
+  /**
+   * Quem pediu para sair entra na lista de bloqueio da conta, na hora.
+   *
+   * É o outro lado do botão "Parar promoções" que todo modelo de marketing
+   * leva: o toque volta como mensagem, e é AQUI que ele vira efeito. Sem isto o
+   * botão seria enfeite — a pessoa pediria para sair, continuaria recebendo e
+   * bloquearia o número da empresa, que é o que derruba a qualidade.
+   *
+   * Vale também para quem escreve "sair", "parar" ou "stop": exigir o botão de
+   * quem respondeu por escrito seria fingir que não entendemos o pedido.
+   *
+   * O contato pode não existir na base (a campanha aceita número digitado):
+   * então a linha é criada já bloqueada, para uma importação futura não
+   * ressuscitar o envio para quem pediu para sair.
+   */
+  private async pedidosDeSaida(m: Mudanca): Promise<void> {
+    const v = m.value ?? {};
+    const mensagens = Array.isArray(v.messages) ? v.messages : [];
+    if (!mensagens.length) return;
+
+    const phoneNumberId = this.phoneNumberIdDe(m);
+    if (!phoneNumberId) return;
+
+    for (const msg of mensagens as Array<Record<string, unknown>>) {
+      const de = typeof msg.from === 'string' ? msg.from.replace(/\D/g, '') : '';
+      if (!de) continue;
+
+      const botao = msg.button as { text?: unknown; payload?: unknown } | undefined;
+      const interativo = msg.interactive as { button_reply?: { title?: unknown } } | undefined;
+      const texto = msg.text as { body?: unknown } | undefined;
+
+      const dito =
+        (typeof botao?.text === 'string' && botao.text) ||
+        (typeof botao?.payload === 'string' && botao.payload) ||
+        (typeof interativo?.button_reply?.title === 'string' && interativo.button_reply.title) ||
+        (typeof texto?.body === 'string' && texto.body) ||
+        '';
+
+      if (!ehPedidoDeSaida(dito)) continue;
+
+      const origem = msg.button || msg.interactive ? 'botao_modelo' : 'mensagem';
+      await this.bloquearContato(phoneNumberId, de, origem);
+    }
+  }
+
+  private async bloquearContato(phoneNumberId: string, telefone: string, origem: string): Promise<void> {
+    const contaId = await this.ctx.comEscopoSistema('meta.webhook.saida.conta', async (db) => {
+      const [linha] = await db
+        .select({ contaId: waNumero.contaId })
+        .from(waNumero)
+        .where(eq(waNumero.phoneNumberId, phoneNumberId))
+        .limit(1);
+      return linha?.contaId ?? null;
+    });
+    if (!contaId) {
+      this.log.warn(`Pedido de saída de um número que não é de nenhuma conta (${this.mascarar(phoneNumberId)}).`);
+      return;
+    }
+
+    const bloqueou = await this.ctx.comEscopoSistema('meta.webhook.saida.bloquear', async (db) => {
+      const r = await db.execute(sql`
+        insert into contato (conta_id, telefone_e164, opt_out, opt_out_em, opt_out_origem)
+        values (${contaId}, ${telefone}, true, now(), ${origem})
+        on conflict (conta_id, telefone_e164) do update
+           set opt_out = true,
+               opt_out_em = coalesce(contato.opt_out_em, now()),
+               opt_out_origem = coalesce(contato.opt_out_origem, excluded.opt_out_origem)
+         where contato.opt_out = false
+        returning id
+      `);
+
+      // O que ainda não saiu não sai mais: a campanha em fila para essa pessoa
+      // vira "descadastrado", com o motivo na tela.
+      await db.execute(sql`
+        update campanha_destinatario
+           set status = 'falhou',
+               erro_titulo = 'Pediu para sair',
+               erro_detalhe = 'Esta pessoa pediu para não receber mais mensagens da sua empresa. Nada foi enviado.',
+               falhou_em = now()
+         where conta_id = ${contaId} and telefone_e164 = ${telefone} and status = 'pendente'
+      `);
+
+      return r.rows.length > 0;
+    });
+
+    if (!bloqueou) return;
+
+    this.log.log(`Contato ${this.mascarar(telefone)} entrou na lista de bloqueio da conta (${origem}).`);
+    await this.auditoria.registrarForaDeContexto({
+      contaId,
+      atorTipo: 'sistema',
+      acao: 'contato.opt_out',
+      entidade: 'contato',
+      detalhe: { origem, telefone: this.mascarar(telefone) },
+    });
   }
 
   /**

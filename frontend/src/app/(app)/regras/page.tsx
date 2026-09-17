@@ -310,6 +310,14 @@ export default function PaginaRegras() {
           Use o nome da pessoa e diga logo por que ela está recebendo. Mensagem genérica é a que mais é
           denunciada.
         </Regra>
+        <Regra titulo='Todo modelo de marketing sai com o botão "Parar promoções"' recomendacao>
+          Nós acrescentamos esse botão como último de todo modelo de marketing, e ele não ocupa um dos
+          seus: você monta até 9, o décimo é o nosso. Quem toca entra na sua lista de bloqueio na hora
+          e não recebe mais disparos, inclusive os que já estavam na fila. É o que evita o caminho
+          caro: sem saída fácil, a pessoa bloqueia o número da empresa, e bloqueio derruba a
+          qualidade, que leva semanas para voltar. Quem responder &quot;sair&quot;, &quot;parar&quot;
+          ou &quot;stop&quot; por escrito também entra na lista.
+        </Regra>
         <Regra titulo="Mantenha a lista limpa" recomendacao>
           Remova números que falham sempre e respeite o descadastro na hora. Enviar para quem não
           responde há meses derruba a qualidade.

@@ -19,6 +19,7 @@ import type {
   ProblemaNoModelo,
   TipoModelo,
 } from '@/lib/tipos';
+import { BOTAO_SAIDA, LIMITE_BOTOES_MARKETING, levaBotaoDeSaida } from '@/lib/botao-saida';
 
 /**
  * Editor de modelo.
@@ -444,8 +445,26 @@ export function EditorModelo({
                 <Botoes
                   botoes={dados.botoes ?? []}
                   aoMudar={(b) => mudar('botoes', b)}
-                  ajuda="Até 10 no total: no máximo 2 links, 1 telefone e 1 cupom."
+                  ajuda={
+                    levaBotaoDeSaida(dados.categoria, dados.tipo)
+                      ? `Até ${LIMITE_BOTOES_MARKETING} seus (no máximo 2 links, 1 telefone e 1 cupom). O último botão é sempre "${BOTAO_SAIDA.texto}".`
+                      : 'Até 10 no total: no máximo 2 links, 1 telefone e 1 cupom.'
+                  }
+                  maximo={levaBotaoDeSaida(dados.categoria, dados.tipo) ? LIMITE_BOTOES_MARKETING : 10}
                 />
+
+                {levaBotaoDeSaida(dados.categoria, dados.tipo) ? (
+                  <div className="mt-3 rounded-lg border border-dashed border-borda bg-superficie-2/50 p-3">
+                    <p className="text-sm font-medium text-tinta">
+                      ↩ {BOTAO_SAIDA.texto} <span className="text-xs font-normal text-tinta-suave">· nosso, sempre o último</span>
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-tinta-suave">
+                      Todo modelo de marketing sai com este botão. Quem tocar nele entra na sua lista de bloqueio na
+                      hora e não recebe mais disparos. É o que evita que a pessoa bloqueie o seu número — e bloqueio
+                      derruba a qualidade, que leva semanas para voltar.
+                    </p>
+                  </div>
+                ) : null}
               </Secao>
             </>
           )}
