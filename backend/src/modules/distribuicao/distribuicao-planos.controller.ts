@@ -12,6 +12,7 @@ import { Publico } from '../../common/publico.decorator';
 import { DistribuicaoAuthService } from './distribuicao-auth.service';
 import { DistribuicaoPlanosService } from './distribuicao-planos.service';
 import { DistribuicaoGuard, type RequestDeOperador } from './distribuicao.guard';
+import { ipDoCliente } from '../../common/ip-cliente';
 
 class PlanoDto {
   @IsOptional() @IsString() @MaxLength(40) codigo?: string;
@@ -39,7 +40,7 @@ export class DistribuicaoPlanosController {
       req.operador!.id,
       req.operador!.nome,
       acao,
-      { ip: req.ip, userAgent: typeof ua === 'string' ? ua : undefined },
+      { ip: ipDoCliente(req), userAgent: typeof ua === 'string' ? ua : undefined },
       detalhe,
     );
   }

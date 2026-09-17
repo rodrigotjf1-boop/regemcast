@@ -20,9 +20,10 @@ import { gravarPre, gravarSessao, limparTudo, nomeCookiePre } from './cookie-dis
 import { DistribuicaoAuthService, type MetaRequisicao } from './distribuicao-auth.service';
 import { DistribuicaoGuard, type RequestDeOperador } from './distribuicao.guard';
 import { CodigoDto, CriarOperadorDto, EntrarOperadorDto } from './dto/entrar.dto';
+import { ipDoCliente } from '../../common/ip-cliente';
 
 function meta(req: Request): MetaRequisicao {
-  return { ip: req.ip, userAgent: req.headers['user-agent'] };
+  return { ip: ipDoCliente(req), userAgent: req.headers['user-agent'] };
 }
 
 function preDoRequest(req: Request): string {
