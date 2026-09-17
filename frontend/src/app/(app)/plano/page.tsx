@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
+import { EVENTO_PLANO_ALTERADO } from '@/components/app/casca';
 import { IconeCartao, IconeCheck, IconeRaio } from '@/components/app/icones';
 import { useSessao } from '@/components/app/sessao';
 import { Alerta } from '@/components/ui/alerta';
@@ -100,6 +101,7 @@ export default function PaginaPlano() {
             : `Redução desfeita: você continua no plano ${r.plano}.`,
       );
       await carregar();
+      window.dispatchEvent(new Event(EVENTO_PLANO_ALTERADO));
     } catch (e) {
       setAcaoErro(mensagemDoErro(e));
     } finally {
@@ -119,6 +121,7 @@ export default function PaginaPlano() {
           : 'Contratação cancelada.',
       );
       await carregar();
+      window.dispatchEvent(new Event(EVENTO_PLANO_ALTERADO));
     } catch (e) {
       setAcaoErro(mensagemDoErro(e));
     } finally {
