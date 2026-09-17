@@ -225,7 +225,17 @@ export default function PaginaCampanha() {
         </Alerta>
       )}
 
-      {campanha.status === 'pausada' && (
+      {campanha.status === 'pausada' && campanha.pausaMotivo === 'teto_plano' && (
+        <Alerta tom="atencao">
+          <span className="block">
+            Pausada: os disparos do seu plano acabaram neste ciclo. Ninguém foi marcado como falha —
+            quem faltava continua na fila e a campanha volta a sair sozinha quando o ciclo virar ou
+            quando o plano tiver mais disparos.
+          </span>
+        </Alerta>
+      )}
+
+      {campanha.status === 'pausada' && campanha.pausaMotivo !== 'teto_plano' && (
         <Alerta tom="atencao">
           <span className="block space-y-2">
             <span className="block">

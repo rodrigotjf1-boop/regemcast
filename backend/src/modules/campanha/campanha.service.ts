@@ -69,6 +69,57 @@ export async function marcarDescadastrados(db: Executor, filtro: SQL): Promise<v
   `);
 }
 
+export const MENSAGEM_SEM_SALDO =
+  'Os disparos do seu plano acabaram neste ciclo. A campanha pode sair quando o ciclo virar ou com um plano maior.';
+
+/**
+ * Quantos disparos ainda cabem no plano da conta neste ciclo.
+ *
+ * `null` = sem teto (conta sem plano): não limita. O que conta como gasto:
+ *
+ * - `uso_ciclo.disparos` — o que a Meta já aceitou neste ciclo;
+ * - destinatários em `enviando` — o que está saindo AGORA e ainda não entrou no
+ *   contador. Sem eles, uma rodada leria o saldo antes de a anterior terminar
+ *   de contar, e o plano seria ultrapassado exatamente em quem manda muito.
+ */
+export async function saldoDoPlano(db: Executor, contaId: string): Promise<number | null> {
+  const r = (await db.execute(sql`
+    select p.disparos_mes as teto,
+           coalesce(u.disparos, 0) as usados,
+           (select count(*) from campanha_destinatario d
+             where d.conta_id = c.id and d.status = 'enviando') as em_voo
+      from conta c
+      left join assinatura a on a.conta_id = c.id
+      left join plano p on p.id = coalesce(a.plano_id, c.plano_id)
+      left join uso_ciclo u on u.conta_id = c.id and u.ciclo_inicio = a.ciclo_inicio
+     where c.id = ${contaId}
+  `)) as { rows: { teto: number | null; usados: string | number; em_voo: string | number }[] };
+
+  const linha = r.rows[0];
+  if (!linha || linha.teto === null || linha.teto === undefined) return null;
+  return Number(linha.teto) - Number(linha.usados) - Number(linha.em_voo);
+}
+
+/**
+ * Devolve à fila as campanhas pausadas por falta de disparos.
+ *
+ * Chamado quando o saldo pode ter voltado: ciclo virou, plano mudou. Não confere
+ * o saldo de cada conta — o worker confere na rodada seguinte e, se ainda não
+ * houver, pausa de novo. Uma consulta só em vez de uma conta por vez.
+ */
+export async function retomarPausadasPorTeto(db: Executor, contaIds?: string[]): Promise<number> {
+  const filtro =
+    contaIds && contaIds.length
+      ? sql`and conta_id in (${sql.join(contaIds.map((id) => sql`${id}`), sql`, `)})`
+      : sql``;
+  const r = (await db.execute(sql`
+    update campanha set status = 'agendada', pausa_motivo = null
+     where status = 'pausada' and pausa_motivo = 'teto_plano' ${filtro}
+    returning id
+  `)) as { rows: unknown[] };
+  return r.rows.length;
+}
+
 /** Estados em que a campanha ainda tem trabalho para o worker. */
 const ESTADOS_ATIVOS = ['agendada', 'enviando'] as const;
 
@@ -91,6 +142,8 @@ export interface ResumoCampanha {
   modeloNome: string;
   modeloIdioma: string;
   status: string;
+  /** conexao | teto_plano — só quando pausada. */
+  pausaMotivo: string | null;
   criadoEm: Date;
   iniciadaEm: Date | null;
   concluidaEm: Date | null;
@@ -263,6 +316,12 @@ export class CampanhaService {
     // Falha cedo: sem número registrado a campanha ficaria agendada para sempre.
     await this.numeroDeEnvio(contaId);
 
+    // E sem disparos no plano, ela pausaria na primeira rodada. Melhor dizer já.
+    const saldo = await saldoDoPlano(this.ctx.db, contaId);
+    if (saldo !== null && saldo <= 0) {
+      throw new BadRequestException(MENSAGEM_SEM_SALDO);
+    }
+
     await this.ctx.db
       .update(campanha)
       .set({ status: 'agendada', iniciadaEm: new Date() })
@@ -309,9 +368,14 @@ export class CampanhaService {
     }
     await this.numeroDeEnvio(contaId);
 
+    const saldo = await saldoDoPlano(this.ctx.db, contaId);
+    if (saldo !== null && saldo <= 0) {
+      throw new BadRequestException(MENSAGEM_SEM_SALDO);
+    }
+
     await this.ctx.db
       .update(campanha)
-      .set({ status: 'agendada' })
+      .set({ status: 'agendada', pausaMotivo: null })
       .where(and(eq(campanha.id, campanhaId), eq(campanha.status, 'pausada')));
 
     await this.auditoria.registrar({
@@ -438,6 +502,25 @@ export class CampanhaService {
       // para sair viola a política da Meta e derruba a qualidade do número.
       await marcarDescadastrados(db, sql`d.campanha_id = ${campanhaId}`);
 
+      // Teto do PLANO (disparos por ciclo), somado de todas as campanhas da
+      // conta. A trava por conta serializa as rodadas de campanhas diferentes da
+      // mesma conta: sem ela, duas campanhas leriam o mesmo saldo e as duas
+      // gastariam — e o cliente passaria do que pagou.
+      await db.execute(sql`select pg_advisory_xact_lock(hashtext(${`regemcast.teto.${c.contaId}`}))`);
+      const saldo = await saldoDoPlano(db, c.contaId);
+
+      if (saldo !== null && saldo <= 0) {
+        // Os destinatários ficam na fila, intactos. A campanha volta sozinha
+        // quando o ciclo virar ou o plano mudar.
+        await db.execute(sql`
+          update campanha set status = 'pausada', pausa_motivo = 'teto_plano'
+           where id = ${campanhaId} and status in ('agendada', 'enviando')
+        `);
+        return null;
+      }
+
+      const limite = saldo === null ? decisao.quantas : Math.min(decisao.quantas, saldo);
+
       const r = await db.execute(sql`
         update campanha_destinatario
            set status = 'enviando', atualizado_em = now()
@@ -446,12 +529,17 @@ export class CampanhaService {
             where campanha_id = ${campanhaId} and status = 'pendente'
             order by criado_em
             for update skip locked
-            limit ${decisao.quantas}
+            limit ${limite}
          )
         returning id, telefone_e164, variaveis
       `);
       return r.rows as { id: string; telefone_e164: string; variaveis: unknown }[];
     });
+
+    if (reivindicados === null) {
+      this.log.log(`Campanha ${campanhaId} pausada: a conta ${c.contaId} usou todos os disparos do plano neste ciclo.`);
+      return;
+    }
 
     if (!reivindicados.length) {
       await this.concluirSeTerminou(campanhaId);
@@ -487,7 +575,10 @@ export class CampanhaService {
           .update(campanhaDestinatario)
           .set({ status: 'pendente' })
           .where(inArray(campanhaDestinatario.id, reivindicados.map((d) => d.id)));
-        await db.update(campanha).set({ status: 'pausada' }).where(eq(campanha.id, campanhaId));
+        await db
+          .update(campanha)
+          .set({ status: 'pausada', pausaMotivo: 'conexao' })
+          .where(eq(campanha.id, campanhaId));
       });
 
       this.log.warn(
@@ -755,6 +846,7 @@ export class CampanhaService {
       modeloNome: c.modeloNome,
       modeloIdioma: c.modeloIdioma,
       status: c.status,
+      pausaMotivo: c.status === 'pausada' ? c.pausaMotivo : null,
       criadoEm: c.criadoEm,
       iniciadaEm: c.iniciadaEm,
       concluidaEm: c.concluidaEm,

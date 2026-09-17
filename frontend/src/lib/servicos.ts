@@ -384,6 +384,20 @@ export interface TelemetriaDoConsole {
   }[];
 }
 
+export interface PlanoNoConsole {
+  id: string;
+  codigo: string;
+  nome: string;
+  disparosMes: number;
+  precoCentavos: number;
+  ativo: boolean;
+  publico: boolean;
+  ordem: number;
+  contas: number;
+}
+
+export type DadosPlano = Partial<Omit<PlanoNoConsole, 'id' | 'contas'>>;
+
 export type StatusListaEspera = 'aguardando' | 'convidada' | 'recusada' | 'convertida';
 
 export interface PedidoListaEspera {
@@ -454,6 +468,11 @@ export const distribuicao = {
       { observacao },
       SEM_REDIRECT_DIST,
     ),
+  planos: () => api.get<PlanoNoConsole[]>('/distribuicao/planos', SEM_REDIRECT_DIST),
+  criarPlano: (dados: DadosPlano) =>
+    api.post<{ id: string }>('/distribuicao/planos', dados, SEM_REDIRECT_DIST),
+  atualizarPlano: (id: string, dados: DadosPlano) =>
+    api.patch<{ ok: boolean; campanhasRetomadas: number }>('/distribuicao/planos/' + id, dados, SEM_REDIRECT_DIST),
   telemetria: (dias = 7) =>
     api.get<TelemetriaDoConsole>(`/distribuicao/telemetria?dias=${dias}`, SEM_REDIRECT_DIST),
 };
