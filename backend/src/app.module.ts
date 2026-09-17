@@ -22,6 +22,8 @@ import { MidiaModule } from './modules/midia/midia.module';
 import { TelemetriaModule } from './modules/telemetria/telemetria.module';
 import { ModeloModule } from './modules/modelo/modelo.module';
 import { SaudeModule } from './modules/saude/saude.module';
+import { EmailModule } from './modules/email/email.module';
+import { SegurancaModule } from './modules/seguranca/seguranca.module';
 
 @Module({
   imports: [
@@ -57,6 +59,8 @@ import { SaudeModule } from './modules/saude/saude.module';
     }),
     TelemetriaModule,
     AuditoriaModule,
+    EmailModule,
+    SegurancaModule,
     AuthModule,
     ContaModule,
     ListaEsperaModule,

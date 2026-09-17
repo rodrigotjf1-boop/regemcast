@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { IconeAtualizar, IconeSair } from '@/components/app/icones';
+import { PainelListaEspera } from '@/components/app/painel-lista-espera';
 import { CarregandoMarca } from '@/components/marca/carregando-marca';
 import { Logotipo } from '@/components/marca/logotipo';
 import { Alerta } from '@/components/ui/alerta';
@@ -57,7 +58,7 @@ export default function ConsoleDistribuicao() {
   const [resumo, setResumo] = useState<ResumoDoConsole | null>(null);
   const [contas, setContas] = useState<ContaNoConsole[]>([]);
   const [telemetria, setTelemetria] = useState<TelemetriaDoConsole | null>(null);
-  const [aba, setAba] = useState<'contas' | 'telemetria'>('contas');
+  const [aba, setAba] = useState<'contas' | 'lista' | 'telemetria'>('contas');
   const [filtro, setFiltro] = useState<SituacaoConta | 'todas'>('todas');
   const [dias, setDias] = useState(7);
   const [erro, setErro] = useState('');
@@ -142,7 +143,7 @@ export default function ConsoleDistribuicao() {
         {resumo && <Indicadores resumo={resumo} aoFiltrar={(s) => { setAba('contas'); setFiltro(s); }} />}
 
         <div className="flex flex-wrap items-center gap-2 border-b border-borda" role="tablist">
-          {(['contas', 'telemetria'] as const).map((a) => (
+          {(['contas', 'lista', 'telemetria'] as const).map((a) => (
             <button
               key={a}
               type="button"
@@ -154,7 +155,11 @@ export default function ConsoleDistribuicao() {
                 aba === a ? 'border-acento text-tinta' : 'border-transparent text-tinta-suave hover:text-tinta',
               )}
             >
-              {a === 'contas' ? `Contas (${numero(contas.length)})` : 'Telemetria'}
+              {a === 'contas'
+                ? `Contas (${numero(contas.length)})`
+                : a === 'lista'
+                  ? 'Lista de espera'
+                  : 'Telemetria'}
             </button>
           ))}
           <Button variante="secundario" tamanho="sm" className="ml-auto mb-1" onClick={() => void carregar()}>
@@ -165,6 +170,8 @@ export default function ConsoleDistribuicao() {
 
         {aba === 'contas' ? (
           <TabelaContas contas={visiveis} filtro={filtro} aoFiltrar={setFiltro} total={contas.length} />
+        ) : aba === 'lista' ? (
+          <PainelListaEspera />
         ) : (
           <PainelTelemetria telemetria={telemetria} dias={dias} aoMudarDias={setDias} />
         )}

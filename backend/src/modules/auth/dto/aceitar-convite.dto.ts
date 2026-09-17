@@ -35,4 +35,31 @@ export class AceitarConviteDto {
   @MinLength(2, { message: 'O nome da empresa precisa ter pelo menos 2 caracteres.' })
   @MaxLength(160, { message: 'O nome da empresa pode ter no máximo 160 caracteres.' })
   nomeEmpresa!: string;
+
+  @ApiProperty({ example: '12.345.678/0001-95', description: 'Conferido na Receita: precisa estar ATIVO.' })
+  @IsString({ message: 'Informe o CNPJ da empresa.' })
+  @MinLength(14, { message: 'Informe o CNPJ completo, com 14 caracteres.' })
+  @MaxLength(20, { message: 'Confira o CNPJ.' })
+  cnpj!: string;
+
+  @ApiProperty({ example: '123456', description: 'Código enviado ao e-mail do convite.' })
+  @IsString({ message: 'Informe o código que chegou no seu e-mail.' })
+  @Matches(/^[\d\s-]{6,8}$/, { message: 'O código tem 6 dígitos.' })
+  codigo!: string;
+}
+
+/** Só o token do convite — para pedir o código por e-mail. */
+export class TokenConviteDto {
+  @ApiProperty({ maxLength: 256 })
+  @IsString({ message: 'O convite não veio no link. Abra o link do e-mail de novo.' })
+  @Matches(FORMATO_TOKEN_CONVITE, { message: 'Convite inválido ou expirado.' })
+  token!: string;
+}
+
+/** Consulta do CNPJ durante o convite. */
+export class CnpjConviteDto extends TokenConviteDto {
+  @ApiProperty({ example: '12.345.678/0001-95' })
+  @IsString({ message: 'Informe o CNPJ da empresa.' })
+  @MaxLength(20, { message: 'Confira o CNPJ.' })
+  cnpj!: string;
 }

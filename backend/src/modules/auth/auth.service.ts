@@ -29,6 +29,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -50,6 +51,13 @@ import {
   usuario as tUsuario,
 } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { EmailService, mascararEmail } from '../email/email.service';
+import { emailDeCodigo } from '../email/modelos-email';
+import { CnpjReceitaService } from '../seguranca/cnpj-receita.service';
+import {
+  CodigoVerificacaoService,
+  MENSAGEM_CODIGO,
+} from '../seguranca/codigo-verificacao.service';
 import { gerarHashSenha } from './argon2';
 import { AceitarConviteDto, FORMATO_TOKEN_CONVITE } from './dto/aceitar-convite.dto';
 import { LoginDto } from './dto/login.dto';
@@ -67,6 +75,8 @@ const SESSAO_EXPIRADA = 'Sua sessão expirou. Entre de novo.';
  */
 const EMAIL_JA_CADASTRADO =
   'Já existe uma conta com este e-mail. Entre com a sua senha — se não lembra dela, fale com o suporte do Regemcast.';
+const CNPJ_JA_CADASTRADO =
+  'Já existe uma conta no Regemcast com este CNPJ. Peça ao dono dessa conta um acesso de operador.';
 const PLANO_CORTESIA = 'cortesia';
 /** Duração da cortesia do primeiro ciclo. */
 const DIAS_CORTESIA = 30;
@@ -107,6 +117,34 @@ export interface RespostaSessao {
 export interface SessaoEmitida {
   token: string;
   resposta: RespostaSessao;
+}
+
+/**
+ * O que o login decide depois da senha: sessão direto, ou a segunda etapa para
+ * quem ligou a verificação em duas etapas.
+ */
+export type ResultadoLogin =
+  | { tipo: 'sessao'; sessao: SessaoEmitida }
+  | {
+      tipo: 'segunda_etapa';
+      usuario: {
+        id: string;
+        contaId: string;
+        email: string;
+        metodo: 'email' | 'app';
+        tokenVersao: number;
+      };
+    };
+
+/** O que a tela do convite mostra depois de consultar o CNPJ. */
+export interface CnpjDoConvite {
+  cnpj: string;
+  razaoSocial: string;
+  nomeFantasia: string | null;
+  situacao: string;
+  ativa: boolean;
+  /** Já existe conta com este CNPJ — a tela avisa antes de pedir o código. */
+  jaCadastrado: boolean;
 }
 
 export interface RespostaEu {
@@ -163,11 +201,14 @@ export class AuthService {
     private readonly ctx: ContextoDb,
     private readonly jwt: JwtService,
     private readonly auditoria: AuditoriaService,
+    private readonly cnpjReceita: CnpjReceitaService,
+    private readonly codigos: CodigoVerificacaoService,
+    private readonly email: EmailService,
   ) {}
 
   // ------------------------------------------------------------------ login
 
-  async login(dto: LoginDto, meta: MetaRequisicao): Promise<SessaoEmitida> {
+  async login(dto: LoginDto, meta: MetaRequisicao): Promise<ResultadoLogin> {
     const email = dto.email.trim().toLowerCase();
 
     // Login precisa enxergar antes de saber a conta — é um dos poucos caminhos
@@ -184,6 +225,8 @@ export class AuthService {
           papel: tUsuario.papel,
           status: tUsuario.status,
           tokenVersao: tUsuario.tokenVersao,
+          doisFatores: tUsuario.doisFatores,
+          bloqueadoAte: tUsuario.bloqueadoAte,
         })
         .from(tUsuario)
         .where(eq(tUsuario.email, email))
@@ -228,6 +271,32 @@ export class AuthService {
         return { tipo: 'conta-bloqueada' as const, usuarioId: u.id, contaId: c.id };
       }
 
+      // Travado por códigos errados: a trava vale também para a senha. Sem
+      // isto, quem tem a senha pediria códigos novos sem parar.
+      if (u.bloqueadoAte && u.bloqueadoAte.getTime() > Date.now()) {
+        return {
+          tipo: 'travado' as const,
+          usuarioId: u.id,
+          contaId: c.id,
+          minutos: Math.ceil((u.bloqueadoAte.getTime() - Date.now()) / 60_000),
+        };
+      }
+
+      // Duas etapas: a senha certa NÃO abre sessão. Nada de último login nem
+      // auditoria de entrada aqui — a entrada só acontece depois do código.
+      if (u.doisFatores === 'email' || u.doisFatores === 'app') {
+        return {
+          tipo: 'segunda_etapa' as const,
+          usuario: {
+            id: u.id,
+            contaId: u.contaId,
+            email: u.email,
+            metodo: u.doisFatores as 'email' | 'app',
+            tokenVersao: u.tokenVersao,
+          },
+        };
+      }
+
       await db
         .update(tUsuario)
         .set({ ultimoLoginEm: sql`now()` })
@@ -262,7 +331,8 @@ export class AuthService {
       return { tipo: 'ok' as const, sessao };
     });
 
-    if (resultado.tipo === 'ok') return resultado.sessao;
+    if (resultado.tipo === 'ok') return { tipo: 'sessao', sessao: resultado.sessao };
+    if (resultado.tipo === 'segunda_etapa') return { tipo: 'segunda_etapa', usuario: resultado.usuario };
 
     // Fora da transação de propósito: a negativa precisa sobreviver ao throw.
     await this.auditoria.registrarForaDeContexto({
@@ -278,12 +348,84 @@ export class AuthService {
     });
 
     if (resultado.tipo === 'credencial') throw new UnauthorizedException(CREDENCIAL_INVALIDA);
+    if (resultado.tipo === 'travado') {
+      throw new ForbiddenException(
+        `Muitas tentativas erradas. Este acesso está travado por mais ${resultado.minutos} minuto(s).`,
+      );
+    }
     if (resultado.tipo === 'usuario-suspenso') {
       throw new UnauthorizedException('Este acesso foi suspenso. Fale com o dono da conta.');
     }
     throw new UnauthorizedException(
       'Esta conta está suspensa. Fale com o suporte do Regemcast para reativar.',
     );
+  }
+
+  /**
+   * Abre a sessão de quem passou pela segunda etapa.
+   *
+   * Relê usuário e conta: entre a senha e o código podem ter passado minutos, e
+   * uma suspensão nesse intervalo precisa valer. O registro de entrada acontece
+   * AQUI, e não na senha — entrada é quando a sessão existe.
+   */
+  async sessaoAposSegundaEtapa(
+    usuarioId: string,
+    metodo: 'email' | 'app',
+    meta: MetaRequisicao,
+  ): Promise<SessaoEmitida> {
+    return this.ctx.comEscopoSistema('auth.login.segunda_etapa', async (db) => {
+      const [u] = await db
+        .select({
+          id: tUsuario.id,
+          contaId: tUsuario.contaId,
+          nome: tUsuario.nome,
+          email: tUsuario.email,
+          papel: tUsuario.papel,
+          status: tUsuario.status,
+          tokenVersao: tUsuario.tokenVersao,
+        })
+        .from(tUsuario)
+        .where(eq(tUsuario.id, usuarioId))
+        .limit(1);
+      if (!u || u.status !== 'ativo') {
+        throw new UnauthorizedException('Este acesso foi suspenso. Fale com o dono da conta.');
+      }
+
+      const [c] = await db
+        .select({ id: tConta.id, nome: tConta.nome, timezone: tConta.timezone, status: tConta.status })
+        .from(tConta)
+        .where(eq(tConta.id, u.contaId))
+        .limit(1);
+      if (!c || c.status === 'suspensa' || c.status === 'cancelada') {
+        throw new UnauthorizedException(
+          'Esta conta está suspensa. Fale com o suporte do Regemcast para reativar.',
+        );
+      }
+
+      await db.update(tUsuario).set({ ultimoLoginEm: sql`now()` }).where(eq(tUsuario.id, u.id));
+
+      await this.auditoria.registrar({
+        contaId: u.contaId,
+        atorTipo: 'usuario',
+        atorUsuarioId: u.id,
+        acao: 'usuario.login',
+        entidade: 'usuario',
+        entidadeId: u.id,
+        detalhe: { email: u.email, segundaEtapa: metodo },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+
+      const { token, expiraEm } = await this.assinarToken(u.id, u.contaId, u.tokenVersao);
+      return {
+        token,
+        resposta: {
+          expiraEm,
+          usuario: { id: u.id, nome: u.nome, email: u.email, papel: u.papel as 'dono' | 'operador' },
+          conta: contaSessao(c),
+        },
+      };
+    });
   }
 
   // ------------------------------------------------------------------- sair
@@ -413,10 +555,57 @@ export class AuthService {
     return { email: linha.email, nome: linha.nome, empresa: linha.empresa };
   }
 
+  /**
+   * Manda o código de confirmação para o e-mail do convite.
+   *
+   * O e-mail é o do CONVITE, nunca um digitado na tela: é esse endereço que vira
+   * o login, e é ele que precisa ser provado.
+   */
+  async enviarCodigoConvite(token: string): Promise<{ emailMascarado: string; minutos: number }> {
+    const convite = await this.ctx.comEscopoSistema('auth.convite.codigo', (db) =>
+      this.buscarConvite(db, token),
+    );
+    const { codigo, minutos } = await this.codigos.emitir({
+      finalidade: 'convite',
+      email: convite.email,
+      listaEsperaId: convite.id,
+    });
+    await this.email.enviar(emailDeCodigo(convite.email, 'convite', codigo, minutos));
+    return { emailMascarado: mascararEmail(convite.email), minutos };
+  }
+
+  /**
+   * Consulta o CNPJ para a tela do convite mostrar a razão social antes do
+   * cadastro. Exige um convite válido: sem isso a rota vira consulta de CNPJ
+   * grátis para qualquer um, na nossa cota da BrasilAPI.
+   */
+  async consultarCnpjConvite(token: string, cnpj: string): Promise<CnpjDoConvite> {
+    await this.ctx.comEscopoSistema('auth.convite.cnpj', (db) => this.buscarConvite(db, token));
+    const conferido = await this.cnpjReceita.consultar(cnpj);
+    const jaCadastrado = await this.cnpjJaTemConta(conferido.cnpj);
+    return { ...conferido, jaCadastrado };
+  }
+
   async aceitarConvite(dto: AceitarConviteDto, meta: MetaRequisicao): Promise<SessaoEmitida> {
     // O argon2 leva dezenas de milissegundos e não precisa do banco: calcular
     // antes de abrir a transação evita segurar uma conexão do pool à toa.
     const senhaHash = await gerarHashSenha(dto.senha);
+
+    // Ordem pensada para não queimar o código à toa: primeiro tudo que pode
+    // recusar SEM gastar o código (convite, CNPJ na Receita, CNPJ repetido), e
+    // só então o código — que, aceito, não vale uma segunda vez.
+    const conviteLido = await this.ctx.comEscopoSistema('auth.convite.conferir', (db) =>
+      this.buscarConvite(db, dto.token),
+    );
+    const cnpj = await this.cnpjReceita.exigirAtivo(dto.cnpj);
+    if (await this.cnpjJaTemConta(cnpj.cnpj)) throw new ConflictException(CNPJ_JA_CADASTRADO);
+
+    const resultado = await this.codigos.conferir({
+      finalidade: 'convite',
+      email: conviteLido.email,
+      codigo: dto.codigo,
+    });
+    if (resultado !== 'ok') throw new BadRequestException(MENSAGEM_CODIGO[resultado]);
 
     return this.ctx.comEscopoSistema('auth.convite.aceitar', async (db) => {
       const convite = await this.buscarConvite(db, dto.token);
@@ -442,22 +631,33 @@ export class AuthService {
         );
       }
 
-      const [contaNova] = await db
-        .insert(tConta)
-        .values({
-          nome: dto.nomeEmpresa,
-          // A distribuição já aprovou quando enviou o convite; aceitar é o
-          // momento em que a conta passa a existir e a ser usada.
-          status: 'ativa',
-          planoId: planoCortesia.id,
-          aprovadaEm: sql`now()`,
-        })
-        .returning({
-          id: tConta.id,
-          nome: tConta.nome,
-          timezone: tConta.timezone,
-          status: tConta.status,
-        });
+      let contaNova: { id: string; nome: string; timezone: string; status: string } | undefined;
+      try {
+        [contaNova] = await db
+          .insert(tConta)
+          .values({
+            nome: dto.nomeEmpresa,
+            // A distribuição já aprovou quando enviou o convite; aceitar é o
+            // momento em que a conta passa a existir e a ser usada.
+            status: 'ativa',
+            planoId: planoCortesia.id,
+            aprovadaEm: sql`now()`,
+            cnpj: cnpj.cnpj,
+            cnpjRazaoSocial: cnpj.razaoSocial,
+            cnpjSituacao: cnpj.situacao,
+            cnpjConferidoEm: sql`now()`,
+          })
+          .returning({
+            id: tConta.id,
+            nome: tConta.nome,
+            timezone: tConta.timezone,
+            status: tConta.status,
+          });
+      } catch (erro) {
+        // Dois cadastros do mesmo CNPJ ao mesmo tempo: o índice único decide.
+        if (ehViolacaoDeUnicidade(erro)) throw new ConflictException(CNPJ_JA_CADASTRADO);
+        throw erro;
+      }
       if (!contaNova) {
         throw new InternalServerErrorException(
           'Não conseguimos criar a sua conta agora. Tente de novo em instantes.',
@@ -503,6 +703,8 @@ export class AuthService {
         detalhe: {
           email: convite.email,
           listaEsperaId: convite.id,
+          cnpj: cnpj.cnpj,
+          razaoSocial: cnpj.razaoSocial,
           plano: PLANO_CORTESIA,
           diasDeCortesia: DIAS_CORTESIA,
         },
@@ -533,6 +735,17 @@ export class AuthService {
   }
 
   // ------------------------------------------------------------------ apoio
+
+  private async cnpjJaTemConta(cnpj: string): Promise<boolean> {
+    return this.ctx.comEscopoSistema('auth.convite.cnpj_repetido', async (db) => {
+      const [existe] = await db
+        .select({ id: tConta.id })
+        .from(tConta)
+        .where(eq(tConta.cnpj, cnpj))
+        .limit(1);
+      return Boolean(existe);
+    });
+  }
 
   /**
    * Todas as recusas do convite respondem a MESMA coisa: token fora do
@@ -578,7 +791,8 @@ export class AuthService {
     try {
       const [novo] = await db
         .insert(tUsuario)
-        .values({ contaId, nome, email, senhaHash, papel: 'dono', status: 'ativo' })
+        // O e-mail acabou de ser provado pelo código do convite.
+        .values({ contaId, nome, email, senhaHash, papel: 'dono', status: 'ativo', emailVerificadoEm: sql`now()` })
         .returning({
           id: tUsuario.id,
           nome: tUsuario.nome,

@@ -3,6 +3,8 @@ import { Module } from '@nestjs/common';
 import { DrizzleModule } from '../../db/drizzle.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { SegundaEtapaService } from './segunda-etapa.service';
+import { SegurancaController } from './seguranca.controller';
 
 /**
  * DrizzleModule é @Global, mas está importado aqui de propósito: a dependência
@@ -15,8 +17,8 @@ import { AuthService } from './auth.service';
  */
 @Module({
   imports: [DrizzleModule],
-  controllers: [AuthController],
-  providers: [AuthService],
+  controllers: [AuthController, SegurancaController],
+  providers: [AuthService, SegundaEtapaService],
   exports: [AuthService],
 })
 export class AuthModule {}

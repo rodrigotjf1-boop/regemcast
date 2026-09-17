@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
 
 import { DrizzleModule } from '../../db/drizzle.module';
+import { ListaEsperaModule } from '../lista-espera/lista-espera.module';
 import { DistribuicaoAuthController } from './distribuicao-auth.controller';
 import { DistribuicaoAuthService } from './distribuicao-auth.service';
 import { DistribuicaoLeituraController } from './distribuicao-leitura.controller';
 import { DistribuicaoLeituraService } from './distribuicao-leitura.service';
+import { DistribuicaoListaEsperaController } from './distribuicao-lista-espera.controller';
 import { DistribuicaoGuard } from './distribuicao.guard';
 
 /**
@@ -15,8 +17,8 @@ import { DistribuicaoGuard } from './distribuicao.guard';
  * impede um token de cliente de valer como token de operador.
  */
 @Module({
-  imports: [DrizzleModule],
-  controllers: [DistribuicaoAuthController, DistribuicaoLeituraController],
+  imports: [DrizzleModule, ListaEsperaModule],
+  controllers: [DistribuicaoAuthController, DistribuicaoLeituraController, DistribuicaoListaEsperaController],
   providers: [DistribuicaoAuthService, DistribuicaoGuard, DistribuicaoLeituraService],
   exports: [DistribuicaoAuthService, DistribuicaoGuard],
 })

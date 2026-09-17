@@ -12,6 +12,9 @@
  */
 import { api, enderecoDaApi } from './api';
 import type {
+  CnpjDoConvite,
+  EtapaCodigoLogin,
+  SituacaoSeguranca,
   ConfigSignup,
   ConfirmacaoDaImportacao,
   ConvitePendente,
@@ -63,6 +66,10 @@ export interface DadosAceiteConvite {
   nome: string;
   senha: string;
   nomeEmpresa: string;
+  /** Conferido na Receita: precisa estar ATIVO. */
+  cnpj: string;
+  /** Código enviado ao e-mail do convite. */
+  codigo: string;
 }
 
 /**
@@ -81,8 +88,30 @@ export const auth = {
   /** `GET /auth/eu` — quem está logado. 401 aqui significa "ninguém". */
   eu: (sinal?: AbortSignal) => api.get<Sessao>('/auth/eu', { ...SEM_REDIRECT, sinal }),
 
-  /** `POST /auth/login` — grava o cookie de sessão do lado da API. */
-  entrar: (dados: DadosLogin) => api.post<SessaoCriada>('/auth/login', dados, SEM_REDIRECT),
+  /**
+   * `POST /auth/login` — grava o cookie de sessão do lado da API.
+   *
+   * Com verificação em duas etapas ligada, NÃO há sessão ainda: volta
+   * `{ etapa: 'codigo' }` e o próximo passo é `confirmarCodigo`.
+   */
+  entrar: (dados: DadosLogin) =>
+    api.post<SessaoCriada | EtapaCodigoLogin>('/auth/login', dados, SEM_REDIRECT),
+
+  /** `POST /auth/login/codigo` — segunda etapa: confere o código e abre a sessão. */
+  confirmarCodigo: (codigo: string) =>
+    api.post<SessaoCriada>('/auth/login/codigo', { codigo }, SEM_REDIRECT),
+
+  /** `POST /auth/login/reenviar` — novo código por e-mail. */
+  reenviarCodigo: () =>
+    api.post<{ emailMascarado: string }>('/auth/login/reenviar', {}, SEM_REDIRECT),
+
+  /** `POST /auth/convite/cnpj` — consulta o CNPJ na Receita durante o convite. */
+  consultarCnpjConvite: (token: string, cnpj: string) =>
+    api.post<CnpjDoConvite>('/auth/convite/cnpj', { token, cnpj }, SEM_REDIRECT),
+
+  /** `POST /auth/convite/codigo` — manda o código para o e-mail do convite. */
+  enviarCodigoConvite: (token: string) =>
+    api.post<{ emailMascarado: string; minutos: number }>('/auth/convite/codigo', { token }, SEM_REDIRECT),
 
   /** `POST /auth/sair` — limpa o cookie e registra a saída na trilha. */
   sair: () => api.post<{ mensagem: string }>('/auth/sair', {}, SEM_REDIRECT),
@@ -97,6 +126,17 @@ export const auth = {
   /** `POST /auth/convite/aceitar` — cria a conta e já devolve a sessão. */
   aceitarConvite: (dados: DadosAceiteConvite) =>
     api.post<SessaoCriada>('/auth/convite/aceitar', dados, SEM_REDIRECT),
+};
+
+/** Verificação em duas etapas de quem está logado. */
+export const seguranca = {
+  situacao: () => api.get<SituacaoSeguranca>('/auth/seguranca'),
+  enviarCodigoEmail: () =>
+    api.post<{ emailMascarado: string; minutos: number }>('/auth/seguranca/email/codigo', {}),
+  ativarEmail: (codigo: string) => api.post<SituacaoSeguranca>('/auth/seguranca/email/ativar', { codigo }),
+  iniciarApp: () => api.post<{ endereco: string; segredo: string }>('/auth/seguranca/app/iniciar', {}),
+  ativarApp: (codigo: string) => api.post<SituacaoSeguranca>('/auth/seguranca/app/ativar', { codigo }),
+  desativar: (senha: string) => api.post<SituacaoSeguranca>('/auth/seguranca/desativar', { senha }),
 };
 
 export const listaEspera = {
@@ -344,6 +384,43 @@ export interface TelemetriaDoConsole {
   }[];
 }
 
+export type StatusListaEspera = 'aguardando' | 'convidada' | 'recusada' | 'convertida';
+
+export interface PedidoListaEspera {
+  id: string;
+  nome: string;
+  email: string;
+  empresa: string | null;
+  telefoneE164: string | null;
+  origem: string | null;
+  status: StatusListaEspera;
+  observacao: string | null;
+  conviteExpiraEm: string | null;
+  conviteExpirado: boolean;
+  convidadaEm: string | null;
+  convertidaEm: string | null;
+  contaId: string | null;
+  criadoEm: string;
+}
+
+export interface PaginaListaEspera {
+  itens: PedidoListaEspera[];
+  total: number;
+  pagina: number;
+  limite: number;
+  /** Convites da janela de 7 dias da Meta. */
+  capacidade: { enviados7d: number; teto: number; restantes: number; proximaVagaEm: string | null };
+}
+
+export interface RespostaConviteConsole {
+  id: string;
+  status: StatusListaEspera;
+  expiraEm: string;
+  link: string;
+  emailEnviado: boolean;
+  aviso: string;
+}
+
 /** Sem redirecionar para o login DO CLIENTE no 401: aqui o login é outro. */
 const SEM_REDIRECT_DIST = { redirecionarNo401: false } as const;
 
@@ -360,6 +437,23 @@ export const distribuicao = {
   sair: () => api.post<{ ok: boolean }>('/distribuicao/sair', {}, SEM_REDIRECT_DIST),
   resumo: () => api.get<ResumoDoConsole>('/distribuicao/resumo', SEM_REDIRECT_DIST),
   contas: () => api.get<ContaNoConsole[]>('/distribuicao/contas', SEM_REDIRECT_DIST),
+  listaEspera: (status?: StatusListaEspera) =>
+    api.get<PaginaListaEspera>(
+      '/distribuicao/lista-espera?limite=100' + (status ? '&status=' + status : ''),
+      SEM_REDIRECT_DIST,
+    ),
+  convidar: (id: string, forcar = false) =>
+    api.post<RespostaConviteConsole>(
+      '/distribuicao/lista-espera/' + id + '/convidar',
+      { forcar },
+      SEM_REDIRECT_DIST,
+    ),
+  recusar: (id: string, observacao: string) =>
+    api.post<{ id: string; status: StatusListaEspera }>(
+      '/distribuicao/lista-espera/' + id + '/recusar',
+      { observacao },
+      SEM_REDIRECT_DIST,
+    ),
   telemetria: (dias = 7) =>
     api.get<TelemetriaDoConsole>(`/distribuicao/telemetria?dias=${dias}`, SEM_REDIRECT_DIST),
 };

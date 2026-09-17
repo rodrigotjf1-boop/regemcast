@@ -408,3 +408,34 @@ export interface ModeloSalvo {
   variaveis: number;
   criadoEm: string;
 }
+
+// --------------------------------------------------------------- segurança
+
+/** Login de quem tem verificação em duas etapas: ainda sem sessão. */
+export interface EtapaCodigoLogin {
+  etapa: 'codigo';
+  metodo: 'email' | 'app';
+  emailMascarado: string;
+}
+
+/** `POST /auth/convite/cnpj` — o que a Receita disse sobre o CNPJ. */
+export interface CnpjDoConvite {
+  cnpj: string;
+  razaoSocial: string;
+  nomeFantasia: string | null;
+  /** Como a Receita escreve: ATIVA, BAIXADA, SUSPENSA, INAPTA, NULA. */
+  situacao: string;
+  ativa: boolean;
+  /** Já existe conta com este CNPJ. */
+  jaCadastrado: boolean;
+}
+
+export type DoisFatores = 'nenhum' | 'email' | 'app';
+
+/** `GET /auth/seguranca` */
+export interface SituacaoSeguranca {
+  doisFatores: DoisFatores;
+  emailVerificado: boolean;
+  /** O servidor tem a chave do app autenticador configurada. */
+  appDisponivel: boolean;
+}

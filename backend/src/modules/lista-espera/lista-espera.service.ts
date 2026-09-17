@@ -12,7 +12,7 @@
  * `comEscopoSistema` — inclusive o cadastro público, que acontece antes de
  * existir conta alguma.
  */
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
 import { and, asc, eq, ne, sql } from 'drizzle-orm';
 
@@ -20,6 +20,8 @@ import { env } from '../../config/env';
 import { ContextoDb, type Db } from '../../db/contexto';
 import { listaEspera } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { EmailService } from '../email/email.service';
+import { emailDeConvite } from '../email/modelos-email';
 import type { ConvidarListaEsperaDto } from './dto/convidar-lista-espera.dto';
 import type { CriarListaEsperaDto } from './dto/criar-lista-espera.dto';
 import type { ListarListaEsperaDto } from './dto/listar-lista-espera.dto';
@@ -27,7 +29,7 @@ import type { RecusarListaEsperaDto } from './dto/recusar-lista-espera.dto';
 import { mascararTelefone, normalizarTelefoneE164 } from './dto/telefone';
 import {
   JANELA_CONVITE_DIAS,
-  TETO_CONVITES_JANELA,
+  tetoConvitesJanela,
   type StatusListaEspera,
 } from './lista-espera.status';
 
@@ -78,6 +80,8 @@ export interface RespostaConvite {
   status: StatusListaEspera;
   expiraEm: Date;
   link: string;
+  /** O convite saiu por e-mail. Falso = mande o link à mão. */
+  emailEnviado: boolean;
   aviso: string;
 }
 
@@ -98,9 +102,14 @@ const JANELA = sql.raw(`interval '${JANELA_CONVITE_DIAS} days'`);
 
 @Injectable()
 export class ListaEsperaService {
+  private readonly log = new Logger('ListaEspera');
+
   constructor(
     private readonly ctx: ContextoDb,
     private readonly auditoria: AuditoriaService,
+    // Opcional para o serviço continuar montável sozinho em teste; na
+    // aplicação o EmailModule é global e sempre injeta.
+    @Optional() private readonly email?: EmailService,
   ) {}
 
   // ------------------------------------------------------------- público
@@ -223,7 +232,7 @@ export class ListaEsperaService {
     dto: ConvidarListaEsperaDto,
     origem: OrigemRequest,
   ): Promise<RespostaConvite> {
-    return this.ctx.comEscopoSistema('lista-espera.convite', async (db) => {
+    const emitido = await this.ctx.comEscopoSistema('lista-espera.convite', async (db) => {
       // Serializa a emissão de convites. Sem a trava, dois operadores clicando
       // ao mesmo tempo leem o mesmo "restantes: 1" e emitem os dois — e o teto
       // da Meta só apareceria depois, no onboarding de um cliente real. A
@@ -236,6 +245,7 @@ export class ListaEsperaService {
         .select({
           id: listaEspera.id,
           email: listaEspera.email,
+          nome: listaEspera.nome,
           status: listaEspera.status,
         })
         .from(listaEspera)
@@ -258,7 +268,7 @@ export class ListaEsperaService {
 
       if (janela.restantes <= 0 && !dto.forcar) {
         throw new ConflictException(
-          `A janela de ${JANELA_CONVITE_DIAS} dias já tem ${TETO_CONVITES_JANELA} convites, ` +
+          `A janela de ${JANELA_CONVITE_DIAS} dias já tem ${tetoConvitesJanela()} convites, ` +
             'que é o teto da Meta antes da Access Verification sair. ' +
             (janela.proximaVagaEm
               ? `A próxima vaga abre em ${janela.proximaVagaEm.toISOString()}. `
@@ -317,11 +327,38 @@ export class ListaEsperaService {
         status: atualizada.status as StatusListaEspera,
         expiraEm: atualizada.conviteExpiraEm,
         link: `${env.rede.appUrl.replace(/\/+$/, '')}/convite/${token}`,
-        aviso:
-          'Este link aparece uma única vez — guardamos apenas o hash dele. ' +
-          'Se perder, emita outro convite.',
+        email: linha.email,
+        nome: linha.nome,
       };
     });
+
+    // O e-mail sai DEPOIS do commit: se o envio falhar, o convite continua
+    // valendo e o link volta na resposta para ser mandado à mão. Enviar dentro
+    // da transação faria uma falha do provedor desfazer o convite inteiro.
+    let emailEnviado = false;
+    if (this.email) {
+      try {
+        await this.email.enviar(
+          emailDeConvite(emitido.email, emitido.nome, emitido.link, emitido.expiraEm),
+        );
+        emailEnviado = true;
+      } catch (erro) {
+        this.log.warn(
+          `Convite ${emitido.id} emitido, mas o e-mail não saiu: ${(erro as Error)?.message ?? erro}`,
+        );
+      }
+    }
+
+    return {
+      id: emitido.id,
+      status: emitido.status,
+      expiraEm: emitido.expiraEm,
+      link: emitido.link,
+      emailEnviado,
+      aviso: emailEnviado
+        ? 'Convite enviado por e-mail. O link também aparece aqui uma única vez — guardamos apenas o hash dele.'
+        : 'O e-mail NÃO saiu. Mande este link à pessoa: ele aparece uma única vez — guardamos apenas o hash dele.',
+    };
   }
 
   /** Recusa o pedido e mata qualquer convite em aberto da mesma linha. */
@@ -421,10 +458,10 @@ export class ListaEsperaService {
     const enviados7d = Number(linha?.enviados ?? 0);
     return {
       enviados7d,
-      teto: TETO_CONVITES_JANELA,
+      teto: tetoConvitesJanela(),
       // Nunca negativo: uma janela estourada por convite forçado mostra 0
       // vagas, não "-2 vagas".
-      restantes: Math.max(0, TETO_CONVITES_JANELA - enviados7d),
+      restantes: Math.max(0, tetoConvitesJanela() - enviados7d),
       proximaVagaEm: linha?.proximaVagaIso ? new Date(linha.proximaVagaIso) : null,
     };
   }

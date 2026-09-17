@@ -22,15 +22,26 @@ import { UsuarioAtual } from '../../common/usuario-atual.decorator';
 import { env } from '../../config/env';
 import {
   AuthService,
+  type CnpjDoConvite,
   type MetaRequisicao,
   type PreviaConvite,
   type RespostaEu,
   type RespostaSessao,
 } from './auth.service';
 import { gravarCookieSessao, limparCookieSessao } from './cookie';
-import { AceitarConviteDto } from './dto/aceitar-convite.dto';
+import { gravarCookiePreLogin, lerCookiePreLogin, limparCookiePreLogin } from './cookie-pre-login';
+import { AceitarConviteDto, CnpjConviteDto, TokenConviteDto } from './dto/aceitar-convite.dto';
 import { LoginDto } from './dto/login.dto';
+import { CodigoSegundaEtapaDto } from './dto/segunda-etapa.dto';
 import { TrocarSenhaDto } from './dto/trocar-senha.dto';
+import { SegundaEtapaService } from './segunda-etapa.service';
+
+/** Resposta do login para quem tem duas etapas: nada de sessão ainda. */
+export interface RespostaSegundaEtapa {
+  etapa: 'codigo';
+  metodo: 'email' | 'app';
+  emailMascarado: string;
+}
 
 function ipDoRequest(req: Request): string | undefined {
   // Só confiamos no header do Cloudflare quando a configuração diz que ele
@@ -46,7 +57,7 @@ function ipDoRequest(req: Request): string | undefined {
   return ip && isIP(ip) ? ip : undefined;
 }
 
-function metaDoRequest(req: Request): MetaRequisicao {
+export function metaDoRequest(req: Request): MetaRequisicao {
   const ua = req.headers['user-agent'];
   return {
     ip: ipDoRequest(req),
@@ -57,7 +68,10 @@ function metaDoRequest(req: Request): MetaRequisicao {
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly segundaEtapa: SegundaEtapaService,
+  ) {}
 
   @Publico()
   // Aperta de verdade em relação ao teto global de 120/min: 8 tentativas por
@@ -66,15 +80,55 @@ export class AuthController {
   @Throttle({ default: { ttl: 60_000, limit: 8 } })
   @HttpCode(HttpStatus.OK)
   @Post('login')
-  @ApiOperation({ summary: 'Entrar com e-mail e senha' })
+  @ApiOperation({
+    summary: 'Entrar com e-mail e senha',
+    description: 'Com duas etapas ligadas, não abre sessão: devolve { etapa: "codigo" } e a pré-sessão em cookie.',
+  })
   async login(
     @Body() dto: LoginDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
+  ): Promise<RespostaSessao | RespostaSegundaEtapa> {
+    const resultado = await this.auth.login(dto, metaDoRequest(req));
+
+    if (resultado.tipo === 'sessao') {
+      gravarCookieSessao(res, resultado.sessao.token);
+      return resultado.sessao.resposta;
+    }
+
+    const { preToken, emailMascarado } = await this.segundaEtapa.iniciar(resultado.usuario);
+    gravarCookiePreLogin(res, preToken);
+    return { etapa: 'codigo', metodo: resultado.usuario.metodo, emailMascarado };
+  }
+
+  @Publico()
+  // Mais apertado que o da senha: aqui só há um milhão de combinações. A trava
+  // por usuário (5 erros) é a proteção principal; este teto segura o IP.
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('login/codigo')
+  @ApiOperation({ summary: 'Segunda etapa do login: confere o código e abre a sessão' })
+  async confirmarCodigo(
+    @Body() dto: CodigoSegundaEtapaDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<RespostaSessao> {
-    const { token, resposta } = await this.auth.login(dto, metaDoRequest(req));
+    const meta = metaDoRequest(req);
+    const { usuarioId, metodo } = await this.segundaEtapa.confirmar(lerCookiePreLogin(req), dto.codigo, meta);
+    const { token, resposta } = await this.auth.sessaoAposSegundaEtapa(usuarioId, metodo, meta);
+    // A pré-sessão já cumpriu o papel: não fica um segundo caminho aberto.
+    limparCookiePreLogin(res);
     gravarCookieSessao(res, token);
     return resposta;
+  }
+
+  @Publico()
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('login/reenviar')
+  @ApiOperation({ summary: 'Reenvia o código de login por e-mail' })
+  async reenviarCodigo(@Req() req: Request): Promise<{ emailMascarado: string }> {
+    return this.segundaEtapa.reenviar(lerCookiePreLogin(req));
   }
 
   @HttpCode(HttpStatus.OK)
@@ -124,6 +178,24 @@ export class AuthController {
   @ApiOperation({ summary: 'Dados do convite, para preencher a tela de cadastro' })
   async previaConvite(@Param('token') token: string): Promise<PreviaConvite> {
     return this.auth.previaConvite(token);
+  }
+
+  @Publico()
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('convite/cnpj')
+  @ApiOperation({ summary: 'Consulta o CNPJ na Receita durante o convite' })
+  async cnpjConvite(@Body() dto: CnpjConviteDto): Promise<CnpjDoConvite> {
+    return this.auth.consultarCnpjConvite(dto.token, dto.cnpj);
+  }
+
+  @Publico()
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('convite/codigo')
+  @ApiOperation({ summary: 'Envia o código de confirmação para o e-mail do convite' })
+  async codigoConvite(@Body() dto: TokenConviteDto): Promise<{ emailMascarado: string; minutos: number }> {
+    return this.auth.enviarCodigoConvite(dto.token);
   }
 
   @Publico()

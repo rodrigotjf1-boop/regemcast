@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { DadosConta } from '@/components/app/dados-conta';
 import { IconeConta } from '@/components/app/icones';
+import { SegurancaConta } from '@/components/app/seguranca-conta';
 import { useSessao } from '@/components/app/sessao';
 import { UsuariosConta } from '@/components/app/usuarios-conta';
 import { Badge } from '@/components/ui/badge';
@@ -72,7 +73,7 @@ export default function ContaPage() {
         icone={<IconeConta />}
         sobretitulo="Configuração"
         titulo="Conta e usuários"
-        descricao="Dados da empresa, fuso de envio e quem tem acesso ao painel."
+        descricao="Dados da empresa, segurança do seu acesso e quem entra no painel."
         acao={
           <>
             <Badge tom={TOM_STATUS[status]} ponto>
@@ -106,6 +107,8 @@ export default function ContaPage() {
       ) : (
         <DadosConta conta={resumo.conta} podeEditar={ehDono} aoSalvar={aoSalvar} />
       )}
+
+      <SegurancaConta />
 
       <UsuariosConta podeGerenciar={ehDono} meuId={sessao.usuario.id} />
     </div>

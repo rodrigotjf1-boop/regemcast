@@ -21,7 +21,7 @@ jest.mock('../../config/env', () => ({ env: ENV }));
 import { gerarHashSenha } from '../auth/argon2';
 import { cifrarToken } from '../meta/cripto';
 import { DistribuicaoAuthService, segredoDaDistribuicao } from './distribuicao-auth.service';
-import { codigoDoPasso, deBase32, novoSegredo, passoDe } from './totp';
+import { codigoDoPasso, deBase32, novoSegredo, passoDe } from '../../common/totp';
 
 const OPERADOR_ID = '40000000-0000-4000-8000-000000000004';
 const META = { ip: '127.0.0.1', userAgent: 'jest' };
