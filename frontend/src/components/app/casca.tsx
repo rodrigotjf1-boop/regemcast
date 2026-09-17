@@ -122,7 +122,7 @@ export function Casca({ children }: { children: ReactNode }) {
       <aside
         id="navegacao-lateral"
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-72 flex-col overflow-hidden bg-lateral text-lateral-tinta',
+          'fixed inset-y-0 left-0 z-50 flex w-72 flex-col overflow-y-auto overflow-x-hidden bg-lateral text-lateral-tinta',
           'transition-[transform,visibility] duration-300 ease-out lg:visible lg:translate-x-0',
           // Fechada no celular, sai também do Tab: fora da tela não é o mesmo
           // que fora do foco.
@@ -167,7 +167,7 @@ function Lateral({ aoFechar, caminho }: { aoFechar: () => void; caminho: string 
       />
       <div aria-hidden="true" className="fundo-pontos-claro pointer-events-none absolute inset-0 opacity-60" />
 
-      <div className="relative flex items-center justify-between px-5 pb-4 pt-5">
+      <div className="relative flex items-center justify-between px-5 pb-3 pt-4">
         <Link href="/painel" aria-label="RegemCast — ir para o painel" className="rounded-lg">
           <Logotipo sobreEscuro animado />
         </Link>
@@ -189,9 +189,9 @@ function Lateral({ aoFechar, caminho }: { aoFechar: () => void; caminho: string 
         </p>
       </div>
 
-      <nav aria-label="Seções" className="relative flex-1 overflow-y-auto px-3 py-2">
+      <nav aria-label="Seções" className="relative flex-1 px-3 py-1">
         {SECOES.map((secao) => (
-          <div key={secao.titulo} className="mb-4">
+          <div key={secao.titulo} className="mb-2">
             <p className="px-3 pb-1.5 pt-2 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-lateral-suave/80">
               {secao.titulo}
             </p>
@@ -204,7 +204,7 @@ function Lateral({ aoFechar, caminho }: { aoFechar: () => void; caminho: string 
                       href={href}
                       aria-current={estaAtivo ? 'page' : undefined}
                       className={cn(
-                        'group relative flex h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-all duration-200',
+                        'group relative flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-all duration-200',
                         estaAtivo
                           ? 'bg-acento text-acento-contraste shadow-brilho'
                           : 'text-lateral-suave hover:translate-x-0.5 hover:bg-white/[0.07] hover:text-lateral-tinta',
