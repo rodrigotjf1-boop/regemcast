@@ -70,6 +70,9 @@ export class WebhookMercadoPagoController {
   constructor(private readonly cobranca: CobrancaService) {}
 
   @Publico()
+  // O Mercado Pago manda poucos avisos por conta; 300/min por IP folga para
+  // reenvios em massa e segura quem martela o endereço público.
+  @Throttle({ default: { ttl: 60_000, limit: 300 } })
   @Post()
   @ApiOperation({ summary: 'Aviso do Mercado Pago (assinaturas e faturas)' })
   async receber(
