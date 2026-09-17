@@ -100,6 +100,8 @@ export const usuario = pgTable('usuario', {
   doisFatores: text('dois_fatores').notNull().default('nenhum'),
   /** Cifrado com CONTA_TOTP_CHAVE. Preenchido sem 'app' = cadastro não confirmado. */
   totpSegredoCifrado: text('totp_segredo_cifrado'),
+  /** Último passo (30s) aceito do app: código do mesmo passo ou anterior é recusado (migration 017). */
+  totpUltimoPasso: bigint('totp_ultimo_passo', { mode: 'number' }),
   tentativasFalhas: integer('tentativas_falhas').notNull().default(0),
   bloqueadoAte: timestamp('bloqueado_ate', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
@@ -650,6 +652,8 @@ export const operadorDistribuicao = pgTable('operador_distribuicao', {
   totpSegredoCifrado: text('totp_segredo_cifrado'),
   /** Só vira verdade depois que o operador confirma um código válido. */
   totpAtivo: boolean('totp_ativo').notNull().default(false),
+  /** Último passo (30s) aceito do app: código do mesmo passo ou anterior é recusado (migration 017). */
+  totpUltimoPasso: bigint('totp_ultimo_passo', { mode: 'number' }),
   status: text('status').notNull().default('ativo'),
   tokenVersao: integer('token_versao').notNull().default(1),
   tentativasFalhas: integer('tentativas_falhas').notNull().default(0),

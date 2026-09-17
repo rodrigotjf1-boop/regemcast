@@ -105,27 +105,38 @@ export function passoDe(instante: Date): number {
  * bate exatamente com o do servidor.
  */
 export function codigoConfere(segredoBase32: string, digitado: string, agora = new Date()): boolean {
+  return passoDoCodigo(segredoBase32, digitado, agora) !== null;
+}
+
+/**
+ * Em qual passo de tempo o código digitado está — ou `null` se não confere.
+ *
+ * É o passo que torna o código de USO ÚNICO: quem confere grava o último passo
+ * aceito e recusa qualquer código do mesmo passo ou de antes. Sem isso, o mesmo
+ * código vale por até 90 segundos, e quem o viu por cima do ombro entra junto.
+ */
+export function passoDoCodigo(segredoBase32: string, digitado: string, agora = new Date()): number | null {
   const limpo = String(digitado ?? '').replace(/\D/g, '');
-  if (limpo.length !== 6) return false;
+  if (limpo.length !== 6) return null;
 
   let segredo: Buffer;
   try {
     segredo = deBase32(segredoBase32);
   } catch {
-    return false;
+    return null;
   }
 
   const passo = passoDe(agora);
-  let confere = false;
+  let achado: number | null = null;
 
   // Percorre os TRÊS passos sempre, mesmo depois de achar: parar no primeiro
   // acerto devolveria, pelo tempo, em qual passo o código estava.
   for (const delta of [-1, 0, 1]) {
     const esperado = Buffer.from(codigoDoPasso(segredo, passo + delta));
-    if (timingSafeEqual(esperado, Buffer.from(limpo))) confere = true;
+    if (timingSafeEqual(esperado, Buffer.from(limpo))) achado = passo + delta;
   }
 
-  return confere;
+  return achado;
 }
 
 /**
