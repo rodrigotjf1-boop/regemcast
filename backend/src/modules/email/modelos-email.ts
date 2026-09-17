@@ -57,6 +57,11 @@ const FINALIDADE: Record<string, { assunto: string; titulo: string; frase: strin
     titulo: 'Código de acesso',
     frase: 'Alguém entrou com a sua senha no RegemCast. Se foi você, use este código para concluir.',
   },
+  recuperar_senha: {
+    assunto: 'Seu código para criar uma senha nova no RegemCast',
+    titulo: 'Criar uma senha nova',
+    frase: 'Alguém pediu para criar uma senha nova para este e-mail no RegemCast. Se foi você, use este código.',
+  },
   ativar_email: {
     assunto: 'Confirme a verificação em duas etapas no RegemCast',
     titulo: 'Ative a verificação por e-mail',
@@ -66,7 +71,7 @@ const FINALIDADE: Record<string, { assunto: string; titulo: string; frase: strin
 
 export function emailDeCodigo(
   para: string,
-  finalidade: 'convite' | 'login' | 'ativar_email',
+  finalidade: 'convite' | 'login' | 'ativar_email' | 'recuperar_senha',
   codigo: string,
   minutos: number,
 ): EmailParaEnviar {
@@ -75,6 +80,8 @@ export function emailDeCodigo(
   const aviso =
     finalidade === 'login'
       ? 'Se não foi você, troque a sua senha agora: alguém sabe qual é.'
+      : finalidade === 'recuperar_senha'
+        ? 'Se não foi você, ignore este e-mail: a sua senha continua a mesma. Nunca passe este código a ninguém.'
       : 'Não compartilhe este código com ninguém. A equipe do RegemCast nunca pede o código.';
 
   return {

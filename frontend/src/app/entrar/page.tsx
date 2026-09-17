@@ -44,6 +44,9 @@ export default function Entrar() {
     // Suspense só para ler um parâmetro opcional.
     const busca = new URLSearchParams(window.location.search);
     setDestino(destinoSeguro(busca.get('de')));
+    if (busca.get('senha') === 'trocada') {
+      setAviso('Senha trocada. Entre com a senha nova — as outras sessões foram encerradas.');
+    }
     campoEmail.current?.focus();
   }, []);
 
@@ -203,7 +206,15 @@ export default function Entrar() {
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="senha">Senha</Label>
+          <div className="flex items-baseline justify-between gap-3">
+            <Label htmlFor="senha">Senha</Label>
+            <Link
+              href="/recuperar-senha"
+              className="text-xs font-medium text-tinta-suave underline-offset-4 hover:text-tinta hover:underline"
+            >
+              Esqueci minha senha
+            </Link>
+          </div>
           <Input
             id="senha"
             name="senha"
@@ -217,6 +228,7 @@ export default function Entrar() {
           />
         </div>
 
+        {aviso && !erro ? <Alerta tom="sucesso">{aviso}</Alerta> : null}
         {erro ? <Alerta>{erro}</Alerta> : null}
 
         <Button type="submit" larguraTotal carregando={enviando} className="group h-11 text-[0.95rem]">

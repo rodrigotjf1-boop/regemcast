@@ -31,6 +31,7 @@ import { gravarCookieSessao, limparCookieSessao } from './cookie';
 import { gravarCookiePreLogin, lerCookiePreLogin, limparCookiePreLogin } from './cookie-pre-login';
 import { AceitarConviteDto, CnpjConviteDto, TokenConviteDto } from './dto/aceitar-convite.dto';
 import { LoginDto } from './dto/login.dto';
+import { EsqueciSenhaDto, RedefinirSenhaDto } from './dto/recuperar-senha.dto';
 import { CodigoSegundaEtapaDto } from './dto/segunda-etapa.dto';
 import { TrocarSenhaDto } from './dto/trocar-senha.dto';
 import { SegundaEtapaService } from './segunda-etapa.service';
@@ -155,6 +156,26 @@ export class AuthController {
     // já não vale mais: limpar evita um 401 confuso no próximo clique.
     limparCookieSessao(res);
     return resposta;
+  }
+
+  @Publico()
+  // Por IP. O espaçamento por e-mail (60 s, 5 por hora) fica no serviço de
+  // códigos — somados, ninguém usa a rota para encher a caixa de alguém.
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('senha/esqueci')
+  @ApiOperation({ summary: 'Pede o código para criar uma senha nova (resposta sempre igual)' })
+  esqueciSenha(@Body() dto: EsqueciSenhaDto, @Req() req: Request): { mensagem: string } {
+    return this.auth.esqueciSenha(dto.email, metaDoRequest(req));
+  }
+
+  @Publico()
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('senha/redefinir')
+  @ApiOperation({ summary: 'Cria a senha nova com o código do e-mail (derruba as sessões)' })
+  redefinirSenha(@Body() dto: RedefinirSenhaDto, @Req() req: Request): Promise<{ mensagem: string }> {
+    return this.auth.redefinirSenha(dto, metaDoRequest(req));
   }
 
   @Publico()
