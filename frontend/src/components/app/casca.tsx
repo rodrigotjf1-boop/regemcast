@@ -6,6 +6,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 
 import {
   IconeCampanha,
+  IconeCartao,
   IconeContatos,
   IconeConta,
   IconeConversa,
@@ -53,6 +54,7 @@ const SECOES = [
     titulo: 'Configuração',
     itens: [
       { href: '/whatsapp', rotulo: 'WhatsApp', Icone: IconeConversa },
+      { href: '/plano', rotulo: 'Plano e pagamento', Icone: IconeCartao },
       { href: '/conta', rotulo: 'Conta e usuários', Icone: IconeConta },
     ],
   },

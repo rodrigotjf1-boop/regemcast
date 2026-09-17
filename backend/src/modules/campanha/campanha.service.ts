@@ -30,6 +30,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { and, count, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 
 import { paraCloudApi } from '../../common/telefone';
+import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
 import { assinatura, campanha, campanhaDestinatario, conta, waNumero } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
@@ -100,6 +101,39 @@ export async function saldoDoPlano(db: Executor, contaId: string): Promise<numbe
   return Number(linha.teto) - Number(linha.usados) - Number(linha.em_voo);
 }
 
+export const MENSAGEM_INADIMPLENTE =
+  'Os disparos estão parados por falta de pagamento do plano. Regularize em Conta e usuários → Plano e pagamento.';
+
+/**
+ * A conta pode enviar? `inadimplencia` quando não pode; `null` quando pode.
+ *
+ * Só os DISPAROS param — painel, contatos e modelos continuam, para o cliente
+ * conseguir pagar e voltar. A carência (CARENCIA_DIAS) conta:
+ *
+ * - do fim do grátis, para quem nunca pagou (mesmo que o job ainda não tenha
+ *   marcado a conta como inadimplente — a regra não depende do job ter rodado);
+ * - de `inadimplente_desde`, para quem teve a cobrança recusada.
+ *
+ * Assinatura cancelada não envia. Conta sem assinatura nenhuma não é bloqueada
+ * aqui (é conta interna ou legado; o teto do plano continua valendo).
+ */
+export async function motivoDeBloqueio(db: Executor, contaId: string): Promise<'inadimplencia' | null> {
+  const r = (await db.execute(sql`
+    select a.status,
+           (a.status = 'cortesia' and a.gratis_ate is not null
+              and a.gratis_ate + make_interval(days => ${env.mercadoPago.carenciaDias}) <= now()) as gratis_vencido,
+           (a.status = 'inadimplente'
+              and coalesce(a.inadimplente_desde, now()) + make_interval(days => ${env.mercadoPago.carenciaDias}) <= now()) as carencia_vencida
+      from assinatura a
+     where a.conta_id = ${contaId}
+  `)) as { rows: { status: string; gratis_vencido: boolean; carencia_vencida: boolean }[] };
+
+  const a = r.rows[0];
+  if (!a) return null;
+  if (a.status === 'cancelada' || a.gratis_vencido || a.carencia_vencida) return 'inadimplencia';
+  return null;
+}
+
 /**
  * Devolve à fila as campanhas pausadas por falta de disparos.
  *
@@ -107,14 +141,20 @@ export async function saldoDoPlano(db: Executor, contaId: string): Promise<numbe
  * o saldo de cada conta — o worker confere na rodada seguinte e, se ainda não
  * houver, pausa de novo. Uma consulta só em vez de uma conta por vez.
  */
-export async function retomarPausadasPorTeto(db: Executor, contaIds?: string[]): Promise<number> {
+export async function retomarPausadasPorTeto(
+  db: Executor,
+  contaIds?: string[],
+  motivos: ('teto_plano' | 'inadimplencia')[] = ['teto_plano'],
+): Promise<number> {
   const filtro =
     contaIds && contaIds.length
       ? sql`and conta_id in (${sql.join(contaIds.map((id) => sql`${id}`), sql`, `)})`
       : sql``;
   const r = (await db.execute(sql`
     update campanha set status = 'agendada', pausa_motivo = null
-     where status = 'pausada' and pausa_motivo = 'teto_plano' ${filtro}
+     where status = 'pausada'
+       and pausa_motivo in (${sql.join(motivos.map((m) => sql`${m}`), sql`, `)})
+       ${filtro}
     returning id
   `)) as { rows: unknown[] };
   return r.rows.length;
@@ -317,6 +357,9 @@ export class CampanhaService {
     await this.numeroDeEnvio(contaId);
 
     // E sem disparos no plano, ela pausaria na primeira rodada. Melhor dizer já.
+    if (await motivoDeBloqueio(this.ctx.db, contaId)) {
+      throw new BadRequestException(MENSAGEM_INADIMPLENTE);
+    }
     const saldo = await saldoDoPlano(this.ctx.db, contaId);
     if (saldo !== null && saldo <= 0) {
       throw new BadRequestException(MENSAGEM_SEM_SALDO);
@@ -368,6 +411,9 @@ export class CampanhaService {
     }
     await this.numeroDeEnvio(contaId);
 
+    if (await motivoDeBloqueio(this.ctx.db, contaId)) {
+      throw new BadRequestException(MENSAGEM_INADIMPLENTE);
+    }
     const saldo = await saldoDoPlano(this.ctx.db, contaId);
     if (saldo !== null && saldo <= 0) {
       throw new BadRequestException(MENSAGEM_SEM_SALDO);
@@ -507,6 +553,16 @@ export class CampanhaService {
       // mesma conta: sem ela, duas campanhas leriam o mesmo saldo e as duas
       // gastariam — e o cliente passaria do que pagou.
       await db.execute(sql`select pg_advisory_xact_lock(hashtext(${`regemcast.teto.${c.contaId}`}))`);
+      // Conta inadimplente depois da carência: nada sai, a campanha pausa e
+      // volta sozinha quando o pagamento for confirmado.
+      if (await motivoDeBloqueio(db, c.contaId)) {
+        await db.execute(sql`
+          update campanha set status = 'pausada', pausa_motivo = 'inadimplencia'
+           where id = ${campanhaId} and status in ('agendada', 'enviando')
+        `);
+        return null;
+      }
+
       const saldo = await saldoDoPlano(db, c.contaId);
 
       if (saldo !== null && saldo <= 0) {
@@ -537,7 +593,7 @@ export class CampanhaService {
     });
 
     if (reivindicados === null) {
-      this.log.log(`Campanha ${campanhaId} pausada: a conta ${c.contaId} usou todos os disparos do plano neste ciclo.`);
+      this.log.log(`Campanha ${campanhaId} pausada: a conta ${c.contaId} está sem disparos no plano ou com o pagamento atrasado.`);
       return;
     }
 

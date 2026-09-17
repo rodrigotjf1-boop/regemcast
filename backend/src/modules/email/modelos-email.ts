@@ -111,3 +111,37 @@ export function emailDeConvite(para: string, nome: string, link: string, expiraE
     ),
   };
 }
+
+/**
+ * Aviso de fim do grátis (7 dias, 3 dias e no dia).
+ *
+ * Diz a data exata em que os DISPAROS param e o que continua funcionando — quem
+ * lê "sua conta será bloqueada" acha que perde os contatos e os modelos.
+ */
+export function emailFimDoGratis(
+  para: string,
+  nomeConta: string,
+  gratisAte: Date,
+  disparosParamEm: Date,
+  link: string,
+): EmailParaEnviar {
+  const fmt = (d: Date) => d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const hoje = gratisAte.getTime() <= Date.now();
+  const titulo = hoje ? 'Seu mês grátis terminou' : `Seu mês grátis termina em ${fmt(gratisAte)}`;
+  const frase = hoje
+    ? `O mês grátis de ${nomeConta} no RegemCast terminou. Escolha um plano para continuar disparando.`
+    : `O mês grátis de ${nomeConta} no RegemCast termina em ${fmt(gratisAte)}. Escolha um plano para os disparos não pararem.`;
+  const corte = `Sem plano pago, os disparos param em ${fmt(disparosParamEm)}. Contatos, modelos e histórico continuam na sua conta.`;
+
+  return {
+    para,
+    assunto: titulo,
+    texto: `${frase}\n\n${corte}\n\nEscolher plano: ${link}`,
+    html: moldura(
+      titulo,
+      `<p style="margin:0 0 16px;font-size:15px;line-height:1.5;color:${SUAVE}">${escapar(frase)}</p>
+<p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:${SUAVE}">${escapar(corte)}</p>
+<p style="margin:0;text-align:center"><a href="${escapar(link)}" style="display:inline-block;background:${LIMA};color:${AMEIXA};font-weight:bold;text-decoration:none;border-radius:12px;padding:14px 28px;font-size:16px">Escolher plano</a></p>`,
+    ),
+  };
+}

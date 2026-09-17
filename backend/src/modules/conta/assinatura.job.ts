@@ -61,7 +61,15 @@ export class AssinaturaJob {
           const r = await db.execute(sql`
             update assinatura
                set ciclo_inicio = ciclo_fim,
-                   ciclo_fim    = ciclo_fim + interval '1 month'
+                   ciclo_fim    = ciclo_fim + interval '1 month',
+                   -- Redução de plano agendada entra agora, na virada.
+                   plano_id               = coalesce(plano_proximo_ciclo_id, plano_id),
+                   plano_proximo_ciclo_id = null,
+                   -- Renovação cancelada: o mês pago acabou, a assinatura acaba junto.
+                   status = case
+                              when status = 'ativa' and mp_status in ('cancelled', 'paused') then 'cancelada'
+                              else status
+                            end
              where ciclo_fim <= now()
             returning conta_id
           `);

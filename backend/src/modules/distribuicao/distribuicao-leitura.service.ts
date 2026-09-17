@@ -27,10 +27,11 @@
  * mostra todas as contas, "quem abriu estes dados?" é a pergunta que vem depois
  * de qualquer incidente.
  */
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 
 import { ContextoDb } from '../../db/contexto';
+import { retomarPausadasPorTeto } from '../campanha/campanha.service';
 
 export type Situacao = 'ativa' | 'em_risco' | 'inativa' | 'nunca_usou';
 
@@ -65,6 +66,8 @@ export interface ResumoDoConsole {
   campanhasEmAndamento: number;
   /** Contas acima de 80% do teto: quem vai precisar de plano maior. */
   perto_do_teto: number;
+  /** Receita recorrente: assinaturas pagas e em dia no Mercado Pago. */
+  receita: { mrrCentavos: number; pagantes: number; inadimplentes: number; emGratis: number };
 }
 
 const iso = (v: unknown): string | null => (v ? new Date(String(v)).toISOString() : null);
@@ -205,6 +208,15 @@ export class DistribuicaoLeituraService {
         select count(*) as total from campanha where status in ('agendada', 'enviando')
       `);
 
+      const receita = await db.execute(sql`
+        select coalesce(sum(p.preco_centavos) filter (where a.status = 'ativa' and a.mp_status = 'authorized'), 0) as mrr,
+               count(*) filter (where a.status = 'ativa' and a.mp_status = 'authorized') as pagantes,
+               count(*) filter (where a.status = 'inadimplente') as inadimplentes,
+               count(*) filter (where a.status = 'cortesia') as em_gratis
+          from assinatura a join plano p on p.id = a.plano_id
+      `);
+      const rc = receita.rows[0] as Record<string, unknown>;
+
       const b = r.rows[0] as Record<string, unknown>;
       const at = atividade.rows[0] as Record<string, unknown>;
       const er = erros.rows[0] as Record<string, unknown>;
@@ -228,7 +240,44 @@ export class DistribuicaoLeituraService {
         erros: { ultimas24h: num(er.total), contasAfetadas24h: num(er.contas) },
         campanhasEmAndamento: num((campanhas.rows[0] as Record<string, unknown>).total),
         perto_do_teto: num(b.perto_do_teto),
+        receita: {
+          mrrCentavos: num(rc.mrr),
+          pagantes: num(rc.pagantes),
+          inadimplentes: num(rc.inadimplentes),
+          emGratis: num(rc.em_gratis),
+        },
       };
+    });
+  }
+
+  /**
+   * Estende o grátis de uma conta.
+   *
+   * Para negociação e para contas internas (como a de revisão da Meta). Conta de
+   * volta ao grátis sai da inadimplência, recebe os avisos de fim do grátis de
+   * novo e tem as campanhas paradas por falta de pagamento devolvidas à fila.
+   * Não mexe em quem já paga pelo Mercado Pago.
+   */
+  async estenderGratis(contaId: string, dias: number): Promise<{ gratisAte: string }> {
+    if (!Number.isInteger(dias) || dias < 1 || dias > 365) {
+      throw new BadRequestException('Informe de 1 a 365 dias.');
+    }
+    return this.ctx.comEscopoSistema('distribuicao.estender_gratis', async (db) => {
+      const r = await db.execute(sql`
+        update assinatura
+           set gratis_ate = greatest(coalesce(gratis_ate, now()), now()) + make_interval(days => ${dias}),
+               status = case when status in ('cortesia', 'inadimplente', 'cancelada') then 'cortesia' else status end,
+               inadimplente_desde = case when status in ('cortesia', 'inadimplente', 'cancelada') then null else inadimplente_desde end,
+               avisos_enviados = '{}'
+         where conta_id = ${contaId}
+           and mp_status is distinct from 'authorized'
+        returning gratis_ate
+      `);
+      if (!r.rows.length) {
+        throw new NotFoundException('Conta sem assinatura, ou já paga pelo Mercado Pago — o grátis não se aplica.');
+      }
+      await retomarPausadasPorTeto(db, [contaId], ['inadimplencia']);
+      return { gratisAte: new Date(String((r.rows[0] as { gratis_ate: string }).gratis_ate)).toISOString() };
     });
   }
 

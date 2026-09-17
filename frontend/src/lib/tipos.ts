@@ -186,7 +186,7 @@ export interface ResumoCampanha {
   modeloIdioma: string;
   status: string;
   /** Por que pausou: conexão com a Meta caiu, ou acabaram os disparos do plano. */
-  pausaMotivo: 'conexao' | 'teto_plano' | null;
+  pausaMotivo: 'conexao' | 'teto_plano' | 'inadimplencia' | null;
   criadoEm: string;
   iniciadaEm: string | null;
   concluidaEm: string | null;
@@ -441,3 +441,53 @@ export interface SituacaoSeguranca {
   /** O servidor tem a chave do app autenticador configurada. */
   appDisponivel: boolean;
 }
+
+// ----------------------------------------------------------------- cobrança
+
+export interface PlanoOferta {
+  id: string;
+  codigo: string;
+  nome: string;
+  disparosMes: number;
+  precoCentavos: number;
+}
+
+export interface CobrancaDoCliente {
+  id: string;
+  valorCentavos: number;
+  /** pendente | aprovada | recusada | cancelada | estornada */
+  status: string;
+  meio: string | null;
+  vencimento: string | null;
+  pagoEm: string | null;
+  motivo: string | null;
+  plano: string | null;
+  criadoEm: string;
+}
+
+/** `GET /plano` */
+export interface SituacaoCobranca {
+  /** cortesia | ativa | inadimplente | cancelada */
+  status: string;
+  gratisAte: string | null;
+  cicloInicio: string;
+  cicloFim: string;
+  inadimplenteDesde: string | null;
+  disparosParamEm: string | null;
+  bloqueado: boolean;
+  carenciaDias: number;
+  planoAtual: PlanoOferta | null;
+  planoProximoCiclo: PlanoOferta | null;
+  mpStatus: string | null;
+  checkoutPendente: { url: string; plano: PlanoOferta | null } | null;
+  cobrancaDisponivel: boolean;
+  uso: { disparos: number; teto: number | null };
+  planos: PlanoOferta[];
+  cobrancas: CobrancaDoCliente[];
+}
+
+export type ResultadoContratacao =
+  | { modo: 'checkout'; checkoutUrl: string }
+  | { modo: 'trocado'; plano: string }
+  | { modo: 'agendado'; plano: string; vigenteEm: string }
+  | { modo: 'mantido'; plano: string };

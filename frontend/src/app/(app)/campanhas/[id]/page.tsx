@@ -235,7 +235,21 @@ export default function PaginaCampanha() {
         </Alerta>
       )}
 
-      {campanha.status === 'pausada' && campanha.pausaMotivo !== 'teto_plano' && (
+      {campanha.status === 'pausada' && campanha.pausaMotivo === 'inadimplencia' && (
+        <Alerta tom="erro">
+          <span className="block space-y-2">
+            <span className="block">
+              Pausada: os disparos da conta estão parados por falta de pagamento do plano. Quem faltava
+              continua na fila e a campanha volta sozinha assim que o pagamento for confirmado.
+            </span>
+            <Link href="/plano">
+              <Button tamanho="sm">Ver plano e pagamento</Button>
+            </Link>
+          </span>
+        </Alerta>
+      )}
+
+      {campanha.status === 'pausada' && campanha.pausaMotivo === 'conexao' && (
         <Alerta tom="atencao">
           <span className="block space-y-2">
             <span className="block">
