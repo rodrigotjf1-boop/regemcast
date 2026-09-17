@@ -342,6 +342,19 @@ export type EtapaLogin = 'codigo' | 'cadastrar_codigo';
 
 export type SituacaoConta = 'ativa' | 'em_risco' | 'inativa' | 'nunca_usou';
 
+/** Uma pessoa com acesso a uma conta, vista pelo suporte. */
+export interface AcessoNoConsole {
+  id: string;
+  nome: string;
+  email: string;
+  papel: string;
+  status: string;
+  /** nenhum | email | app */
+  doisFatores: string;
+  travado: boolean;
+  ultimoLoginEm: string | null;
+}
+
 export interface ContaNoConsole {
   id: string;
   nome: string;
@@ -486,6 +499,10 @@ export const distribuicao = {
     ),
   estenderGratis: (contaId: string, dias: number) =>
     api.post<{ gratisAte: string }>('/distribuicao/contas/' + contaId + '/estender-gratis', { dias }, SEM_REDIRECT_DIST),
+  acessos: (contaId: string) =>
+    api.get<AcessoNoConsole[]>('/distribuicao/contas/' + contaId + '/acessos', SEM_REDIRECT_DIST),
+  zerarDuasEtapas: (usuarioId: string) =>
+    api.post<{ ok: boolean }>('/distribuicao/usuarios/' + usuarioId + '/zerar-duas-etapas', {}, SEM_REDIRECT_DIST),
   planos: () => api.get<PlanoNoConsole[]>('/distribuicao/planos', SEM_REDIRECT_DIST),
   criarPlano: (dados: DadosPlano) =>
     api.post<{ id: string }>('/distribuicao/planos', dados, SEM_REDIRECT_DIST),

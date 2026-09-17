@@ -31,6 +31,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { sql } from 'drizzle-orm';
 
 import { ContextoDb } from '../../db/contexto';
+import { AuditoriaService } from '../auditoria/auditoria.service';
 import { retomarPausadasPorTeto } from '../campanha/campanha.service';
 
 export type Situacao = 'ativa' | 'em_risco' | 'inativa' | 'nunca_usou';
@@ -131,9 +132,80 @@ const BASE = sql`
     left join numero n on n.conta_id = c.id
 `;
 
+export interface AcessoNoConsole {
+  id: string;
+  nome: string;
+  email: string;
+  papel: string;
+  status: string;
+  doisFatores: string;
+  travado: boolean;
+  ultimoLoginEm: string | null;
+}
+
 @Injectable()
 export class DistribuicaoLeituraService {
-  constructor(private readonly ctx: ContextoDb) {}
+  constructor(
+    private readonly ctx: ContextoDb,
+    private readonly auditoria: AuditoriaService,
+  ) {}
+
+  /** Quem tem acesso a uma conta, com o método das duas etapas. Nunca segredo nem hash. */
+  async acessosDaConta(contaId: string): Promise<AcessoNoConsole[]> {
+    return this.ctx.comEscopoSistema('distribuicao.acessos', async (db) => {
+      const r = await db.execute(sql`
+        select id, nome, email, papel, status, dois_fatores, ultimo_login_em,
+               (bloqueado_ate is not null and bloqueado_ate > now()) as travado
+          from usuario
+         where conta_id = ${contaId}
+         order by (papel = 'dono') desc, nome
+      `);
+      return r.rows.map((l: Record<string, unknown>) => ({
+        id: String(l.id),
+        nome: String(l.nome),
+        email: String(l.email),
+        papel: String(l.papel),
+        status: String(l.status),
+        doisFatores: String(l.dois_fatores),
+        travado: l.travado === true,
+        ultimoLoginEm: l.ultimo_login_em ? new Date(String(l.ultimo_login_em)).toISOString() : null,
+      }));
+    });
+  }
+
+  /**
+   * Suporte: a pessoa perdeu o celular do aplicativo autenticador (ou está
+   * travada). Desliga as duas etapas, destrava e derruba as sessões abertas.
+   *
+   * Só depois de conferir a identidade por fora (e-mail do dono, CNPJ). Fica
+   * na auditoria da CONTA, visível ao cliente, e no registro do operador.
+   */
+  async zerarDuasEtapas(usuarioId: string, operadorNome: string): Promise<{ contaId: string; email: string }> {
+    const alvo = await this.ctx.comEscopoSistema('distribuicao.zerar_duas_etapas', async (db) => {
+      const r = await db.execute(sql`
+        update usuario
+           set dois_fatores = 'nenhum',
+               totp_segredo_cifrado = null,
+               tentativas_falhas = 0,
+               bloqueado_ate = null,
+               token_versao = token_versao + 1
+         where id = ${usuarioId}
+        returning conta_id, email
+      `);
+      return r.rows[0] as { conta_id: string; email: string } | undefined;
+    });
+    if (!alvo) throw new NotFoundException('Usuário não encontrado.');
+
+    await this.auditoria.registrarForaDeContexto({
+      contaId: alvo.conta_id,
+      atorTipo: 'distribuicao',
+      acao: 'usuario.duas_etapas_zeradas_pelo_suporte',
+      entidade: 'usuario',
+      entidadeId: usuarioId,
+      detalhe: { operador: operadorNome },
+    });
+    return { contaId: alvo.conta_id, email: alvo.email };
+  }
 
   async contas(): Promise<ContaNoConsole[]> {
     return this.ctx.comEscopoSistema('distribuicao.contas', async (db) => {
