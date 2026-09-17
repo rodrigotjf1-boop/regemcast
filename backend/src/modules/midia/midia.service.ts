@@ -16,6 +16,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, desc, eq } from 'drizzle-orm';
 
+import { baixarPublico, DownloadFalhou, EnderecoRecusado, type ArquivoBaixado } from '../../common/baixar-publico';
 import { ContextoDb } from '../../db/contexto';
 import { midia } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
@@ -35,6 +36,9 @@ export const TIPOS_ACEITOS: Record<string, { formato: 'IMAGE' | 'VIDEO' | 'DOCUM
   'video/3gpp': { formato: 'VIDEO', maxBytes: 16 * 1024 * 1024 },
   'application/pdf': { formato: 'DOCUMENT', maxBytes: 16 * 1024 * 1024 },
 };
+
+/** Maior teto entre os tipos: o download por endereço é cortado aqui. */
+const TETO_ENDERECO = Math.max(...Object.values(TIPOS_ACEITOS).map((t) => t.maxBytes));
 
 export const PREFIXO_MIDIA = 'midia:';
 
@@ -195,35 +199,35 @@ export class MidiaService {
 
   /** Baixa um endereço público e sobe para a Meta. */
   private async handleDeEndereco(url: string): Promise<string> {
-    let resposta: Response;
+    let baixado: ArquivoBaixado;
     try {
-      resposta = await fetch(url, { signal: AbortSignal.timeout(20_000) });
-    } catch {
-      throw new BadRequestException(
-        'Não conseguimos baixar a mídia desse endereço. Confira se ele abre sem login, ou envie o arquivo.',
-      );
+      baixado = await baixarPublico(url, { limiteBytes: TETO_ENDERECO });
+    } catch (erro) {
+      if (erro instanceof EnderecoRecusado) throw new BadRequestException(`${erro.message} Ou envie o arquivo.`);
+      if (erro instanceof DownloadFalhou) {
+        // O motivo detalhado fica no log: devolver o status de um endereço
+        // qualquer ao cliente é o que transformaria isto numa sonda de rede.
+        this.log.warn(`Mídia por endereço recusada (${erro.motivo}): ${erro.message}`);
+        throw new BadRequestException(
+          erro.motivo === 'grande'
+            ? 'A mídia desse endereço passa do limite de tamanho da Meta.'
+            : erro.motivo === 'privado'
+              ? 'Esse endereço não é público. Informe um link https aberto na internet, ou envie o arquivo.'
+              : 'Não conseguimos baixar a mídia desse endereço. Confira se ele abre sem login, ou envie o arquivo.',
+        );
+      }
+      throw erro;
     }
 
-    if (!resposta.ok) {
-      throw new BadRequestException(
-        `O endereço da mídia respondeu ${resposta.status}. Confira se ele abre sem login, ou envie o arquivo.`,
-      );
+    const regra = TIPOS_ACEITOS[baixado.tipoMime];
+    if (!regra || !this.bytesBatemComTipo(baixado.conteudo, baixado.tipoMime)) {
+      throw new BadRequestException('O endereço não aponta para uma imagem JPG/PNG, vídeo MP4 ou PDF.');
     }
-
-    const tipoMime = (resposta.headers.get('content-type') ?? '').split(';')[0].trim();
-    const regra = TIPOS_ACEITOS[tipoMime];
-    if (!regra) {
-      throw new BadRequestException(
-        'O endereço não aponta para uma imagem JPG/PNG, vídeo MP4 ou PDF.',
-      );
-    }
-
-    const conteudo = Buffer.from(await resposta.arrayBuffer());
-    if (conteudo.length > regra.maxBytes) {
+    if (baixado.conteudo.length > regra.maxBytes) {
       throw new BadRequestException('A mídia desse endereço passa do limite de tamanho da Meta.');
     }
 
-    return this.graph.enviarMidiaParaModelo(conteudo, tipoMime);
+    return this.graph.enviarMidiaParaModelo(baixado.conteudo, baixado.tipoMime);
   }
 
   /**
