@@ -481,6 +481,8 @@ export interface SituacaoCobranca {
   mpStatus: string | null;
   checkoutPendente: { url: string; plano: PlanoOferta | null } | null;
   cobrancaDisponivel: boolean;
+  /** Renovação cancelada com o mês pago: contratar de novo só a partir desta data. */
+  recontratarEm: string | null;
   uso: { disparos: number; teto: number | null };
   planos: PlanoOferta[];
   cobrancas: CobrancaDoCliente[];
