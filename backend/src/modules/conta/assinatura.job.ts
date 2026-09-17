@@ -9,8 +9,11 @@
  *
  * ## O que este job NÃO faz, de propósito
  *
- * Não cobra, não bloqueia e não mexe no status. Ele só move a janela do ciclo
- * para o mês seguinte. O que acontece com quem não pagou é decisão de cobrança,
+ * Não cobra, não bloqueia e não mexe no status da assinatura. A única outra coisa
+ * que faz é devolver à fila as campanhas pausadas por falta de disparos — o
+ * ciclo novo é justamente o que traz os disparos de volta.
+ *
+ * O que acontece com quem não pagou é decisão de cobrança,
  * e cobrança é outra frente — misturar as duas aqui faria uma correção de
  * contagem virar, sem ninguém decidir, um corte de serviço.
  *
@@ -31,6 +34,7 @@ import { Interval } from '@nestjs/schedule';
 import { sql } from 'drizzle-orm';
 
 import { ContextoDb } from '../../db/contexto';
+import { retomarPausadasPorTeto } from '../campanha/campanha.service';
 
 /** Uma vez por hora: o ciclo é mensal, precisão de segundos não compra nada. */
 const INTERVALO_MS = 60 * 60_000;
@@ -59,9 +63,13 @@ export class AssinaturaJob {
                set ciclo_inicio = ciclo_fim,
                    ciclo_fim    = ciclo_fim + interval '1 month'
              where ciclo_fim <= now()
-            returning id
+            returning conta_id
           `);
-          return r.rows.length;
+          const contas = (r.rows as { conta_id: string }[]).map((l) => l.conta_id);
+          // Ciclo novo, disparos novos: quem pausou por falta de saldo volta à
+          // fila na mesma transação. O worker confere o saldo na rodada seguinte.
+          if (contas.length) await retomarPausadasPorTeto(db, contas);
+          return contas.length;
         });
 
         total += avancadas;

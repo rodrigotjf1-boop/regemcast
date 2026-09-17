@@ -233,6 +233,7 @@ describe('rodada do worker', () => {
     m: ReturnType<typeof montar>,
     reivindicados: unknown[],
     campanha: Record<string, unknown> = ATIVA,
+    saldo?: number,
   ) {
     m.db.select
       .mockReturnValueOnce(m.consulta([campanha])) // ler a campanha
@@ -241,6 +242,8 @@ describe('rodada do worker', () => {
     m.db.execute
       .mockResolvedValueOnce({ rows: [{ dia: 0, semana: 0, mes: 0, ultimo: null }] }) // contagem
       .mockResolvedValueOnce({ rows: [] }) // tira da fila quem pediu para sair
+      .mockResolvedValueOnce({ rows: [] }) // trava do teto da conta
+      .mockResolvedValueOnce({ rows: saldo === undefined ? [] : [{ teto: 100, usados: 100 - saldo, em_voo: 0 }] }) // saldo do plano
       .mockResolvedValueOnce({ rows: reivindicados }); // reivindicação
   }
 
@@ -313,6 +316,54 @@ describe('rodada do worker', () => {
     expect(chamadas[descadastro]).toContain(CAMPANHA);
   });
 
+  it('sem disparos no plano, PAUSA a campanha e não reivindica ninguém', async () => {
+    // O plano é o que o cliente pagou. Passar do teto é mandar de graça — e a
+    // campanha não pode morrer: os destinatários ficam na fila, intactos.
+    const m = montar();
+    m.db.select.mockReturnValueOnce(m.consulta([ATIVA]));
+    m.db.execute
+      .mockResolvedValueOnce({ rows: [{ dia: 0, semana: 0, mes: 0, ultimo: null }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ teto: 5000, usados: 5000, em_voo: 0 }] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(m.graph.enviarModelo).not.toHaveBeenCalled();
+    const chamadas = m.db.execute.mock.calls.map((c) => JSON.stringify(c[0]));
+    expect(chamadas.some((t) => t.includes('skip locked'))).toBe(false);
+    expect(chamadas.some((t) => t.includes("pausa_motivo = 'teto_plano'"))).toBe(true);
+  });
+
+  it('com pouco saldo, reivindica só o que cabe no plano', async () => {
+    const m = montar();
+    prepararRodada(m, [{ id: 'd1', telefone_e164: '5521999998888', variaveis: [] }], ATIVA, 3);
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    const reivindicacao = m.db.execute.mock.calls
+      .map((c) => c[0] as { queryChunks?: unknown[] })
+      .find((q) => JSON.stringify(q).includes('skip locked'));
+    // O lote padrão é 20; com 3 disparos sobrando, o limite da consulta é 3.
+    // O limite entra como parâmetro da consulta: ',3,' entre os pedaços do SQL.
+    expect(JSON.stringify(reivindicacao)).toContain(',3,');
+    expect(JSON.stringify(reivindicacao)).not.toContain(',20,');
+  });
+
+  it('a trava do teto é por CONTA, e vem antes da reivindicação', async () => {
+    const m = montar();
+    prepararRodada(m, [{ id: 'd1', telefone_e164: '5521999998888', variaveis: [] }]);
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    const chamadas = m.db.execute.mock.calls.map((c) => JSON.stringify(c[0]));
+    const trava = chamadas.findIndex((t) => t.includes('regemcast.teto.' + CONTA));
+    const reivindicacao = chamadas.findIndex((t) => t.includes('skip locked'));
+    expect(trava).toBeGreaterThan(-1);
+    expect(trava).toBeLessThan(reivindicacao);
+  });
+
   it('fora da janela, não reivindica nem envia ninguém', async () => {
     const m = montar();
     // Janela das 18h às 20h; 15:00 UTC é meio-dia em São Paulo.
@@ -338,6 +389,8 @@ describe('rodada do worker', () => {
       .mockReturnValueOnce(m.consulta([{ phoneNumberId: 'PN1' }]));
     m.db.execute
       .mockResolvedValueOnce({ rows: [{ dia: 0, semana: 0, mes: 0, ultimo: null }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ id: 'd1', telefone_e164: '5521999998888', variaveis: [] }] });
 
@@ -368,7 +421,7 @@ describe('rodada do worker', () => {
     await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
 
     const chamadas = m.db.execute.mock.calls.map((c) => JSON.stringify(c[0]));
-    const contagem = chamadas.find((t) => t.includes('uso_ciclo'));
+    const contagem = chamadas.find((t) => t.includes('insert into uso_ciclo'));
     expect(contagem).toBeDefined();
     // Upsert atômico: somar no banco, e nunca ler-somar-gravar em código.
     expect(contagem).toContain('disparos + 1');
@@ -384,7 +437,7 @@ describe('rodada do worker', () => {
     await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
 
     const chamadas = m.db.execute.mock.calls.map((c) => JSON.stringify(c[0]));
-    expect(chamadas.find((t) => t.includes('uso_ciclo'))).toBeUndefined();
+    expect(chamadas.find((t) => t.includes('insert into uso_ciclo'))).toBeUndefined();
   });
 
   it('manda a recusa da Meta para a telemetria — SEM o telefone', async () => {

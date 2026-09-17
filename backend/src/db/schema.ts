@@ -39,6 +39,8 @@ export const plano = pgTable('plano', {
   precoCentavos: integer('preco_centavos').notNull().default(0),
   ativo: boolean('ativo').notNull().default(true),
   ordem: integer('ordem').notNull().default(0),
+  /** Contratável pelo cliente. Cortesia e planos internos: false (migration 015). */
+  publico: boolean('publico').notNull().default(true),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
@@ -343,6 +345,8 @@ export const campanha = pgTable('campanha', {
   maxPorDia: integer('max_por_dia'),
   maxPorSemana: integer('max_por_semana'),
   maxPorMes: integer('max_por_mes'),
+  /** Por que está pausada: conexao | teto_plano. Nulo quando não está (migration 015). */
+  pausaMotivo: text('pausa_motivo'),
   iniciadaEm: timestamp('iniciada_em', { withTimezone: true }),
   concluidaEm: timestamp('concluida_em', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),

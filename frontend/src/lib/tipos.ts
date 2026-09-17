@@ -185,6 +185,8 @@ export interface ResumoCampanha {
   modeloNome: string;
   modeloIdioma: string;
   status: string;
+  /** Por que pausou: conexão com a Meta caiu, ou acabaram os disparos do plano. */
+  pausaMotivo: 'conexao' | 'teto_plano' | null;
   criadoEm: string;
   iniciadaEm: string | null;
   concluidaEm: string | null;
