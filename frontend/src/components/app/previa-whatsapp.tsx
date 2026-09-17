@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 
 import { midia } from '@/lib/servicos';
 import type { DadosModelo } from '@/lib/tipos';
+import { BOTAO_SAIDA, levaBotaoDeSaida } from '@/lib/botao-saida';
 
 /**
  * A prévia: um celular recebendo a mensagem no WhatsApp.
@@ -122,7 +123,13 @@ export function PreviaWhatsapp({
   );
 
   const ehCarrossel = dados.tipo === 'carrossel';
-  const botoes = ehCarrossel ? [] : (dados.botoes ?? []);
+  // O botão de saída aparece na prévia porque ele VAI junto: a pessoa precisa
+  // ver a mensagem como ela chega, não como foi digitada.
+  const botoes = ehCarrossel
+    ? []
+    : levaBotaoDeSaida(dados.categoria, dados.tipo)
+      ? [...(dados.botoes ?? []), BOTAO_SAIDA]
+      : (dados.botoes ?? []);
 
   return (
     <div className="space-y-3 p-4 sm:p-5">

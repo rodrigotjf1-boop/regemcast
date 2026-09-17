@@ -5,7 +5,15 @@
  * arquivo sob teste é que ela pare de acontecer lá, onde a mensagem é genérica
  * e chega horas depois, e passe a acontecer aqui, em português, na hora.
  */
-import { conferirModelo, quantasVariaveis, variaveisDe, type ModeloParaValidar } from './regras-modelo';
+import {
+  BOTAO_SAIDA,
+  botoesComSaida,
+  conferirModelo,
+  ehBotaoDeSaida,
+  quantasVariaveis,
+  variaveisDe,
+  type ModeloParaValidar,
+} from './regras-modelo';
 
 /** Um modelo que passa em tudo — a base dos casos negativos. */
 function modeloValido(): ModeloParaValidar {
@@ -324,5 +332,55 @@ describe('carrossel', () => {
   it('continua cobrando as regras de variável do corpo principal', () => {
     const m = { ...carrosselValido(), corpo: 'Veja o que separamos {{1}}' };
     expect(problemasDe(m, 'corpo').join(' ')).toContain('terminar');
+  });
+});
+
+describe('botão de saída do marketing', () => {
+  it('entra por último, com as respostas rápidas agrupadas no fim', () => {
+    const botoes = botoesComSaida({
+      categoria: 'MARKETING',
+      tipo: 'simples',
+      botoes: [
+        { tipo: 'QUICK_REPLY', texto: 'Quero' },
+        { tipo: 'URL', texto: 'Ver ofertas', url: 'https://loja.com' },
+        { tipo: 'PHONE_NUMBER', texto: 'Ligar', telefone: '5521999998888' },
+      ],
+    });
+
+    expect(botoes.map((b) => b.tipo)).toEqual(['URL', 'PHONE_NUMBER', 'QUICK_REPLY', 'QUICK_REPLY']);
+    expect(botoes[botoes.length - 1]).toEqual(BOTAO_SAIDA);
+  });
+
+  it('não duplica quando o modelo já traz o botão de saída', () => {
+    const uma = botoesComSaida({ categoria: 'MARKETING', tipo: 'simples', botoes: [BOTAO_SAIDA] });
+    const duas = botoesComSaida({ categoria: 'MARKETING', tipo: 'simples', botoes: uma });
+    expect(duas.filter(ehBotaoDeSaida)).toHaveLength(1);
+  });
+
+  it('não entra em utilidade, autenticação nem carrossel', () => {
+    const nenhum = [
+      botoesComSaida({ categoria: 'UTILITY', tipo: 'simples', botoes: [] }),
+      botoesComSaida({ categoria: 'AUTHENTICATION', tipo: 'simples', botoes: [] }),
+      botoesComSaida({ categoria: 'MARKETING', tipo: 'carrossel', botoes: [] }),
+    ];
+    expect(nenhum.flat()).toHaveLength(0);
+  });
+
+  it('recusa mais de 9 botões do cliente no marketing, explicando o décimo', () => {
+    const m: ModeloParaValidar = {
+      ...modeloValido(),
+      categoria: 'MARKETING',
+      botoes: Array.from({ length: 10 }, (_, i) => ({ tipo: 'QUICK_REPLY' as const, texto: `Opção ${i + 1}` })),
+    };
+    expect(problemasDe(m, 'botoes').join(' ')).toContain(BOTAO_SAIDA.texto);
+  });
+
+  it('aceita 9 do cliente mais o nosso', () => {
+    const m: ModeloParaValidar = {
+      ...modeloValido(),
+      categoria: 'MARKETING',
+      botoes: Array.from({ length: 9 }, (_, i) => ({ tipo: 'QUICK_REPLY' as const, texto: `Opção ${i + 1}` })),
+    };
+    expect(problemasDe(m, 'botoes')).toEqual([]);
   });
 });

@@ -22,6 +22,7 @@ import { MetaService } from '../meta/meta.service';
 import { MidiaService } from '../midia/midia.service';
 import type { SalvarModeloDto } from './dto/salvar-modelo.dto';
 import {
+  botoesComSaida,
   conferirModelo,
   quantasVariaveis,
   type BotaoDoModelo,
@@ -477,7 +478,15 @@ export class ModeloService {
 
     if (dto.rodape && !ehLto) componentes.push({ type: 'FOOTER', text: dto.rodape });
 
-    const botoes = this.montarBotoes((dto.botoes ?? []) as BotaoDoModelo[]);
+    // O botão de saída entra aqui, e não no que o cliente digitou: assim ele
+    // vale também para modelos salvos antes desta regra existir.
+    const botoes = this.montarBotoes(
+      botoesComSaida({
+        categoria: (dto.categoria ?? 'MARKETING') as 'MARKETING' | 'UTILITY' | 'AUTHENTICATION',
+        tipo: dto.tipo ?? 'simples',
+        botoes: (dto.botoes ?? []) as BotaoDoModelo[],
+      }),
+    );
     if (botoes.length) componentes.push({ type: 'BUTTONS', buttons: botoes });
 
     return {

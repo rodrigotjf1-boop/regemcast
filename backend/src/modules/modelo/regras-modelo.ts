@@ -77,6 +77,54 @@ export const LIMITE_CORPO = 1024;
 export const LIMITE_CABECALHO = 60;
 export const LIMITE_RODAPE = 60;
 export const LIMITE_BOTOES = 10;
+
+/**
+ * O botão de saída que TODO modelo de marketing leva, por nossa conta.
+ *
+ * Marketing sem saída fácil é o caminho mais curto para o bloqueio: quem não
+ * acha como sair marca a empresa como spam, e o bloqueio derruba a qualidade do
+ * número — que é da empresa, não nossa, e demora semanas para voltar. A própria
+ * Meta recomenda uma resposta rápida de saída em todo modelo de marketing.
+ *
+ * É resposta rápida (QUICK_REPLY) porque o toque volta para nós como mensagem:
+ * é assim que a pessoa entra na lista de bloqueio sozinha, sem ninguém do outro
+ * lado precisar fazer nada.
+ */
+export const BOTAO_SAIDA: BotaoDoModelo = { tipo: 'QUICK_REPLY', texto: 'Parar promoções' };
+
+/** Quantos botões o cliente pode criar num modelo de marketing: o 10º é o nosso. */
+export const LIMITE_BOTOES_MARKETING = LIMITE_BOTOES - 1;
+
+/** É o nosso botão de saída? Compara sem caixa e sem espaço sobrando. */
+export function ehBotaoDeSaida(b: BotaoDoModelo): boolean {
+  return b.tipo === 'QUICK_REPLY' && (b.texto ?? '').trim().toLowerCase() === BOTAO_SAIDA.texto.toLowerCase();
+}
+
+/**
+ * Os botões como vão para a Meta: os do cliente e, por último, o de saída.
+ *
+ * A ordem não é gosto. A Meta exige que as respostas rápidas fiquem AGRUPADAS,
+ * separadas dos outros tipos — misturar devolve "invalid combination" e o
+ * modelo nem entra em análise. Então os botões de link, telefone e copiar código
+ * vêm primeiro, depois as respostas rápidas do cliente, e a saída fecha a lista.
+ *
+ * Só para marketing simples: no carrossel os botões moram nos cartões (máximo
+ * dois por cartão, iguais em todos), e não há onde acrescentar o nosso.
+ */
+export function botoesComSaida(m: {
+  categoria?: ModeloParaValidar['categoria'];
+  tipo?: ModeloParaValidar['tipo'];
+  botoes?: BotaoDoModelo[];
+}): BotaoDoModelo[] {
+  const botoes = (m.botoes ?? []).filter((b) => !ehBotaoDeSaida(b));
+  if (m.categoria !== 'MARKETING' || (m.tipo ?? 'simples') !== 'simples') return m.botoes ?? [];
+
+  return [
+    ...botoes.filter((b) => b.tipo !== 'QUICK_REPLY'),
+    ...botoes.filter((b) => b.tipo === 'QUICK_REPLY'),
+    BOTAO_SAIDA,
+  ];
+}
 export const LIMITE_BOTAO_TEXTO = 25;
 export const LIMITE_LTO_TEXTO = 16;
 
@@ -214,7 +262,22 @@ export function conferirModelo(m: ModeloParaValidar): ProblemaNoModelo[] {
   }
 
   // ----------------------------------------------------------------- botões
-  problemas.push(...conferirBotoes(m.botoes ?? []));
+  //
+  // No marketing simples, o botão de saída entra por nossa conta: o cliente
+  // valida com ele junto, senão passaria dos 10 só na hora de enviar à Meta.
+  problemas.push(...conferirBotoes(botoesComSaida(m)));
+
+  if (m.categoria === 'MARKETING' && (m.tipo ?? 'simples') === 'simples') {
+    const doCliente = (m.botoes ?? []).filter((b) => !ehBotaoDeSaida(b));
+    if (doCliente.length > LIMITE_BOTOES_MARKETING) {
+      problemas.push({
+        campo: 'botoes',
+        mensagem:
+          `Em marketing você monta até ${LIMITE_BOTOES_MARKETING} botões: o último é sempre "${BOTAO_SAIDA.texto}", ` +
+          'que acrescentamos para a pessoa poder sair sem bloquear o seu número.',
+      });
+    }
+  }
 
   return problemas;
 }
