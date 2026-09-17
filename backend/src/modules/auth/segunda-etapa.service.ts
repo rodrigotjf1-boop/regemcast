@@ -280,12 +280,24 @@ export class SegundaEtapaService {
     return { endereco: enderecoParaAplicativo(segredo, atual.email, 'RegemCast'), segredo };
   }
 
-  async ativarApp(atual: UsuarioAutenticado, codigo: string, meta: MetaRequisicao): Promise<SituacaoSeguranca> {
+  async ativarApp(
+    atual: UsuarioAutenticado,
+    codigo: string,
+    senha: string,
+    meta: MetaRequisicao,
+  ): Promise<SituacaoSeguranca> {
     const [u] = await this.ctx.db
-      .select({ totpSegredoCifrado: tUsuario.totpSegredoCifrado })
+      .select({ totpSegredoCifrado: tUsuario.totpSegredoCifrado, senhaHash: tUsuario.senhaHash })
       .from(tUsuario)
       .where(and(eq(tUsuario.id, atual.id), eq(tUsuario.contaId, atual.contaId)))
       .limit(1);
+    if (!u) throw new UnauthorizedException('Sua sessão expirou. Entre de novo.');
+
+    // Senha ANTES do código: sem ela, uma sessão esquecida aberta bastaria para
+    // cadastrar outro celular e trancar o dono da conta para fora.
+    if (!(await this.senhaConfere(u.senhaHash, senha, atual.id))) {
+      throw new BadRequestException('A senha está incorreta.');
+    }
 
     const segredo = this.decifrar(u?.totpSegredoCifrado ?? null);
     if (!segredo) throw new BadRequestException('Comece o cadastro do aplicativo de novo.');
@@ -310,13 +322,9 @@ export class SegundaEtapaService {
       .limit(1);
     if (!u) throw new UnauthorizedException('Sua sessão expirou. Entre de novo.');
 
-    let senhaOk = false;
-    try {
-      senhaOk = await argon2.verify(u.senhaHash, senha ?? '');
-    } catch (erro) {
-      this.log.error(`Não consegui conferir a senha do usuário ${atual.id}: ${(erro as Error).message}`);
+    if (!(await this.senhaConfere(u.senhaHash, senha, atual.id))) {
+      throw new BadRequestException('A senha está incorreta.');
     }
-    if (!senhaOk) throw new BadRequestException('A senha está incorreta.');
 
     await this.ctx.db
       .update(tUsuario)
@@ -328,6 +336,15 @@ export class SegundaEtapaService {
   }
 
   // ------------------------------------------------------------------ apoio
+
+  private async senhaConfere(senhaHash: string, senha: string, usuarioId: string): Promise<boolean> {
+    try {
+      return await argon2.verify(senhaHash, senha ?? '');
+    } catch (erro) {
+      this.log.error(`Não consegui conferir a senha do usuário ${usuarioId}: ${(erro as Error).message}`);
+      return false;
+    }
+  }
 
   private async enviarCodigoDeLogin(u: UsuarioParaSegundaEtapa, primeiroEnvio: boolean): Promise<void> {
     try {

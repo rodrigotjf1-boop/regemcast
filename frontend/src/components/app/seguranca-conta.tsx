@@ -85,7 +85,7 @@ export function SegurancaConta() {
   const confirmar = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     void executar(async () => {
-      const r = fluxo === 'app' ? await seguranca.ativarApp(codigo) : await seguranca.ativarEmail(codigo);
+      const r = fluxo === 'app' ? await seguranca.ativarApp(codigo, senha) : await seguranca.ativarEmail(codigo);
       setSituacao(r);
       fechar();
       setAviso(
@@ -235,6 +235,23 @@ export function SegurancaConta() {
                     required
                   />
                 </div>
+
+                {fluxo === 'app' ? (
+                  <div className="max-w-xs space-y-1.5">
+                    <Label htmlFor="senha-ativar-app">Sua senha</Label>
+                    <Input
+                      id="senha-ativar-app"
+                      type="password"
+                      autoComplete="current-password"
+                      value={senha}
+                      onChange={(e) => setSenha(e.target.value)}
+                      required
+                    />
+                    <p className="text-xs text-tinta-suave">
+                      Pedimos a senha para ninguém cadastrar outro celular numa sessão esquecida aberta.
+                    </p>
+                  </div>
+                ) : null}
 
                 {erro ? <Alerta>{erro}</Alerta> : null}
 
