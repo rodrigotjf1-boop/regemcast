@@ -240,6 +240,7 @@ describe('rodada do worker', () => {
       .mockReturnValueOnce(m.consulta([{ restam: 0 }])); // concluir
     m.db.execute
       .mockResolvedValueOnce({ rows: [{ dia: 0, semana: 0, mes: 0, ultimo: null }] }) // contagem
+      .mockResolvedValueOnce({ rows: [] }) // tira da fila quem pediu para sair
       .mockResolvedValueOnce({ rows: reivindicados }); // reivindicação
   }
 
@@ -293,6 +294,25 @@ describe('rodada do worker', () => {
     expect(String(falha?.valores.erroDetalhe ?? '')).not.toHaveLength(0);
   });
 
+  it('antes de reivindicar, tira da fila quem pediu para sair — na mesma campanha', async () => {
+    // Entre montar e a janela abrir podem passar dias. Quem se descadastrou
+    // nesse meio-tempo não pode receber: é regra da Meta e derruba a qualidade.
+    const m = montar();
+    prepararRodada(m, [{ id: 'd1', telefone_e164: '5521999998888', variaveis: [] }]);
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    const chamadas = m.db.execute.mock.calls.map((c) => JSON.stringify(c[0]));
+    const descadastro = chamadas.findIndex((t) => t.includes('opt_out = true'));
+    const reivindicacao = chamadas.findIndex((t) => t.includes('skip locked'));
+    expect(descadastro).toBeGreaterThan(-1);
+    expect(descadastro).toBeLessThan(reivindicacao);
+    // Só marca quem ainda não saiu, e com o motivo à vista.
+    expect(chamadas[descadastro]).toContain("d.status = 'pendente'");
+    expect(chamadas[descadastro]).toContain('Pediu para sair');
+    expect(chamadas[descadastro]).toContain(CAMPANHA);
+  });
+
   it('fora da janela, não reivindica nem envia ninguém', async () => {
     const m = montar();
     // Janela das 18h às 20h; 15:00 UTC é meio-dia em São Paulo.
@@ -318,6 +338,7 @@ describe('rodada do worker', () => {
       .mockReturnValueOnce(m.consulta([{ phoneNumberId: 'PN1' }]));
     m.db.execute
       .mockResolvedValueOnce({ rows: [{ dia: 0, semana: 0, mes: 0, ultimo: null }] })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ id: 'd1', telefone_e164: '5521999998888', variaveis: [] }] });
 
     await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));

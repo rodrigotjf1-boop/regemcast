@@ -27,7 +27,7 @@
  * recusa explícita em vez de timeout no meio.
  */
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 
 import { paraCloudApi } from '../../common/telefone';
 import { ContextoDb } from '../../db/contexto';
@@ -38,6 +38,36 @@ import { MetaService } from '../meta/meta.service';
 import { TelemetriaService } from '../telemetria/telemetria.service';
 import type { CriarCampanhaDto } from './dto/criar-campanha.dto';
 import { decidir, momentoNoFuso, type RegraDeEnvio } from './janela';
+
+type Executor = { execute: (q: SQL) => Promise<unknown> };
+
+export const TITULO_DESCADASTRADO = 'Pediu para sair';
+
+/**
+ * Tira da fila quem pediu para não receber mais mensagens.
+ *
+ * Vira `falhou` com o motivo, e não some da campanha: sumir faria o total não
+ * bater com o que a pessoa montou, e ela não saberia por que alguém ficou de
+ * fora. Nada é enviado, nada conta no consumo do plano.
+ *
+ * Uma única consulta para a campanha inteira — conferir contato a contato seria
+ * uma ida ao banco por destinatário.
+ */
+export async function marcarDescadastrados(db: Executor, filtro: SQL): Promise<void> {
+  await db.execute(sql`
+    update campanha_destinatario d
+       set status = 'falhou',
+           erro_titulo = ${TITULO_DESCADASTRADO},
+           erro_detalhe = 'Esta pessoa pediu para não receber mais mensagens da sua empresa. Nada foi enviado.',
+           falhou_em = now()
+      from contato c
+     where ${filtro}
+       and d.status = 'pendente'
+       and c.conta_id = d.conta_id
+       and c.telefone_e164 = d.telefone_e164
+       and c.opt_out = true
+  `);
+}
 
 /** Estados em que a campanha ainda tem trabalho para o worker. */
 const ESTADOS_ATIVOS = ['agendada', 'enviando'] as const;
@@ -170,6 +200,10 @@ export class CampanhaService {
         variaveis: d.variaveis,
       })),
     );
+
+    // Já na montagem: a pessoa vê, antes de disparar, quem não vai receber e
+    // por quê — em vez de descobrir no relatório depois.
+    await marcarDescadastrados(this.ctx.db, sql`d.campanha_id = ${criada!.id}`);
 
     await this.auditoria.registrar({
       contaId,
@@ -398,6 +432,12 @@ export class CampanhaService {
 
     // Reivindicação atômica. `SKIP LOCKED` é o que impede envio duplicado.
     const reivindicados = await this.ctx.comEscopoSistema('campanha.worker.reivindicar', async (db) => {
+      // Quem pediu para sair DEPOIS de a campanha ser montada não recebe. A
+      // conferência é feita aqui, na hora do envio, e não só na montagem: entre
+      // montar e a janela abrir podem passar dias. Mandar para quem já pediu
+      // para sair viola a política da Meta e derruba a qualidade do número.
+      await marcarDescadastrados(db, sql`d.campanha_id = ${campanhaId}`);
+
       const r = await db.execute(sql`
         update campanha_destinatario
            set status = 'enviando', atualizado_em = now()
