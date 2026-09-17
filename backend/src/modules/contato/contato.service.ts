@@ -415,7 +415,16 @@ export class ContatoService {
     let linhas: Linha[];
     if (formato === 'xlsx') {
       const buffer = typeof conteudo === 'string' ? Buffer.from(conteudo) : conteudo;
-      linhas = await lerXlsx(buffer);
+      try {
+        linhas = await lerXlsx(buffer);
+      } catch (erro) {
+        // Excel corrompido ou recusado pelo teto: é problema do arquivo, 400 com
+        // a orientação — não 500.
+        this.log.warn(`Planilha recusada: ${(erro as Error)?.message ?? erro}`);
+        throw new BadRequestException(
+          'Não conseguimos abrir esta planilha. Salve de novo como .xlsx (ou exporte como .csv) e tente outra vez.',
+        );
+      }
     } else if (formato === 'csv') {
       linhas = lerCsv(typeof conteudo === 'string' ? conteudo : conteudo.toString('utf8'));
     } else if (formato === 'texto') {
