@@ -68,6 +68,11 @@ export interface SituacaoCobranca {
   checkoutPendente: { url: string; plano: PlanoOferta | null } | null;
   /** O servidor tem o Mercado Pago configurado. */
   cobrancaDisponivel: boolean;
+  /**
+   * Renovação cancelada com o mês ainda pago: só dá para contratar de novo a
+   * partir desta data, para o cliente não pagar o mesmo mês duas vezes.
+   */
+  recontratarEm: string | null;
   uso: { disparos: number; teto: number | null };
   planos: PlanoOferta[];
   cobrancas: {
@@ -88,6 +93,15 @@ export type ResultadoContratacao =
   | { modo: 'trocado'; plano: string }
   | { modo: 'agendado'; plano: string; vigenteEm: string }
   | { modo: 'mantido'; plano: string };
+
+/** Renovação cancelada (ou pausada) com o ciclo pago ainda valendo. */
+function mesPagoAposCancelar(a: { status: string; mpStatus: string | null; cicloFim: Date }): boolean {
+  return (
+    a.status === 'ativa' &&
+    (a.mpStatus === 'cancelled' || a.mpStatus === 'paused') &&
+    a.cicloFim.getTime() > Date.now()
+  );
+}
 
 const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : null);
 
@@ -137,6 +151,7 @@ export class CobrancaService {
     if (a.status === 'ativa' && (a.mpStatus === 'cancelled' || a.mpStatus === 'paused')) disparosParamEm = a.cicloFim;
 
     const bloqueado = (await motivoDeBloqueio(db, contaId)) !== null;
+    const recontratarEm = mesPagoAposCancelar(a) ? a.cicloFim : null;
 
     return {
       status: a.status,
@@ -153,6 +168,7 @@ export class CobrancaService {
       checkoutPendente:
         a.mpStatus === 'pending' && a.mpCheckoutUrl ? { url: a.mpCheckoutUrl, plano: oferta(a.planoContratadoId) } : null,
       cobrancaDisponivel: this.mp.configurado(),
+      recontratarEm: iso(recontratarEm),
       uso: { disparos: Number(uso?.disparos ?? 0), teto: oferta(a.planoId)?.disparosMes ?? null },
       planos: planosTodos
         .filter((p) => p.publico && p.ativo && p.precoCentavos > 0)
@@ -227,6 +243,15 @@ export class CobrancaService {
     }
 
     // ------ contratação nova (ou refeita)
+    // Cancelou a renovação e o mês segue pago: uma assinatura nova no Mercado
+    // Pago cobraria hoje o mesmo mês outra vez. Recontrata na virada do ciclo.
+    if (mesPagoAposCancelar(a)) {
+      const data = a.cicloFim.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      throw new BadRequestException(
+        `Seu plano já está pago até ${data}. Você pode contratar de novo a partir dessa data, sem pagar o mesmo mês duas vezes.`,
+      );
+    }
+
     if (a.mpAssinaturaId && a.mpStatus === 'pending') {
       // Contratação anterior não concluída: cancela para não existirem duas
       // assinaturas pendentes que poderiam ser pagas as duas.

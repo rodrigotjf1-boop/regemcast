@@ -115,11 +115,9 @@ export default function PaginaPlano() {
     try {
       const r = await planoConta.cancelar();
       setConfirmarCancelar(false);
-      setAviso(
-        r.vigenteAte
-          ? `Renovação cancelada. Seu plano continua valendo até ${formatarData(r.vigenteAte)}.`
-          : 'Contratação cancelada.',
-      );
+      // Renovação cancelada já aparece no quadro de situação; repetir aqui
+      // mostrava a mesma frase duas vezes.
+      setAviso(r.vigenteAte ? '' : 'Contratação cancelada.');
       await carregar();
       window.dispatchEvent(new Event(EVENTO_PLANO_ALTERADO));
     } catch (e) {
@@ -236,7 +234,12 @@ export default function PaginaPlano() {
                         : 'Reduzir no próximo ciclo'
                       : 'Contratar';
                 const desabilitado =
-                  !ehDono || !s.cobrancaDisponivel || ocupado !== null || (atual && !s.planoProximoCiclo) || agendado;
+                  !ehDono ||
+                  !s.cobrancaDisponivel ||
+                  ocupado !== null ||
+                  (atual && !s.planoProximoCiclo) ||
+                  agendado ||
+                  Boolean(s.recontratarEm);
 
                 return (
                   <li
@@ -424,6 +427,9 @@ function SituacaoAtual({ s }: { s: SituacaoCobranca }) {
     return (
       <Alerta tom="atencao">
         Renovação cancelada. Seu plano vale até <strong>{formatarData(s.cicloFim)}</strong>.
+        {s.recontratarEm
+          ? ` A partir dessa data você pode contratar de novo — antes disso seria pagar o mesmo mês duas vezes. Sem contratar, os disparos param nesse dia.`
+          : null}
       </Alerta>
     );
   }
