@@ -194,7 +194,9 @@ export default function PaginaCampanha() {
         descricao={
           <>
             Modelo <span className="numerico text-tinta">{campanha.modeloNome}</span> ·{' '}
-            {campanha.modeloIdioma} · criada em {formatarDataHora(campanha.criadoEm)}
+            {campanha.modeloIdioma}
+            {campanha.listaNome ? <> · lista {campanha.listaNome}</> : null} · criada em{' '}
+            {formatarDataHora(campanha.criadoEm)}
           </>
         }
         acao={
@@ -338,6 +340,12 @@ export default function PaginaCampanha() {
             </span>
           ) : null}
         </div>
+        {campanha.total > destinatarios.length ? (
+          <p className="border-b border-borda bg-superficie-2/40 px-5 py-2 text-xs text-tinta-suave">
+            Mostrando {formatarNumero(destinatarios.length)} de {formatarNumero(campanha.total)}, com as falhas
+            primeiro. Os totais acima contam todos.
+          </p>
+        ) : null}
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[36rem] text-left text-sm">

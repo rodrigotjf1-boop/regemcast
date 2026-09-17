@@ -392,6 +392,8 @@ export const campanha = pgTable('campanha', {
   maxPorMes: integer('max_por_mes'),
   /** Por que está pausada: conexao | teto_plano. Nulo quando não está (migration 015). */
   pausaMotivo: text('pausa_motivo'),
+  /** Lista de contatos de onde saiu o público (migration 017). Nulo = números digitados. */
+  listaId: uuid('lista_id'),
   iniciadaEm: timestamp('iniciada_em', { withTimezone: true }),
   concluidaEm: timestamp('concluida_em', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),

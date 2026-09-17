@@ -192,6 +192,8 @@ export interface ResumoCampanha {
   concluidaEm: string | null;
   porStatus: Record<string, number>;
   total: number;
+  /** Lista de contatos de onde saiu o público; nulo quando os números foram digitados. */
+  listaNome: string | null;
 }
 
 /**
@@ -214,13 +216,25 @@ export interface DestinatarioCampanha {
 }
 
 /** Corpo de `POST /campanhas`. */
+/** De onde sai o valor de uma variável numa campanha por lista. */
+export interface VariavelDeLista {
+  origem: 'fixo' | 'nome' | 'primeiro_nome';
+  /** O texto (fixo) ou o que usar quando o contato não tem nome. */
+  valor: string;
+}
+
 export interface NovaCampanha {
   nome: string;
   modeloNome: string;
   modeloIdioma: string;
   modeloId?: string;
   modeloCategoria?: string;
-  destinatarios: Array<{ telefone: string; variaveis?: string[] }>;
+  /** Números digitados (até 500). Use OU isto OU `listaId`. */
+  destinatarios?: Array<{ telefone: string; variaveis?: string[] }>;
+  /** Lista de contatos que recebe a campanha. */
+  listaId?: string;
+  /** Variáveis, em ordem, quando o público é uma lista. */
+  variaveisLista?: VariavelDeLista[];
   /** 0 = domingo … 6 = sábado. Vazio = qualquer dia. */
   janelaDias?: number[];
   /** HH:MM, no fuso da conta. */
