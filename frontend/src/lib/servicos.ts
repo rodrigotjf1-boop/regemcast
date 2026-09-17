@@ -173,6 +173,10 @@ export const conta = {
   /** `PATCH /conta/usuarios/:id` — suspende ou reativa um acesso. */
   mudarStatus: (id: string, status: StatusUsuario) =>
     api.patch<UsuarioDaConta>(`/conta/usuarios/${encodeURIComponent(id)}`, { status }),
+
+  /** `DELETE /conta/usuarios/:id` — remove um operador (o dono não pode ser removido). */
+  removerUsuario: (id: string) =>
+    api.delete<{ mensagem: string }>(`/conta/usuarios/${encodeURIComponent(id)}`),
 };
 
 // --------------------------------------------------------------- WhatsApp
