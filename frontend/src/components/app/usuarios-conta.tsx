@@ -41,6 +41,8 @@ export function UsuariosConta({ podeGerenciar, meuId }: { podeGerenciar: boolean
   const [aviso, setAviso] = useState<string | null>(null);
   const [criando, setCriando] = useState(false);
   const [mudandoId, setMudandoId] = useState<string | null>(null);
+  /** Remoção é em dois cliques: o primeiro só pergunta. */
+  const [confirmarRemocaoId, setConfirmarRemocaoId] = useState<string | null>(null);
 
   const carregar = useCallback(async (sinal?: AbortSignal) => {
     setCarregando(true);
@@ -115,6 +117,22 @@ export function UsuariosConta({ podeGerenciar, meuId }: { podeGerenciar: boolean
       setErroAcao(mensagemDoErro(falha));
     } finally {
       setMudandoId(null);
+    }
+  }
+
+  async function remover(usuario: UsuarioDaConta) {
+    setMudandoId(usuario.id);
+    setErroAcao(null);
+    setAviso(null);
+    try {
+      await servicoConta.removerUsuario(usuario.id);
+      setUsuarios((atual) => atual.filter((u) => u.id !== usuario.id));
+      setAviso('Acesso de ' + usuario.nome + ' removido. A sessão dessa pessoa cai agora.');
+    } catch (falha) {
+      setErroAcao(mensagemDoErro(falha));
+    } finally {
+      setMudandoId(null);
+      setConfirmarRemocaoId(null);
     }
   }
 
@@ -265,17 +283,41 @@ export function UsuariosConta({ podeGerenciar, meuId }: { podeGerenciar: boolean
                       </td>
                       {podeGerenciar ? (
                         <td className="py-3 text-right">
-                          {souEu ? (
+                          {souEu || usuario.papel === 'dono' ? (
                             <span className="text-xs text-tinta-suave">—</span>
+                          ) : confirmarRemocaoId === usuario.id ? (
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <Button
+                                variante="perigo"
+                                tamanho="sm"
+                                carregando={mudandoId === usuario.id}
+                                onClick={() => void remover(usuario)}
+                              >
+                                Confirmar remoção
+                              </Button>
+                              <Button variante="discreto" tamanho="sm" onClick={() => setConfirmarRemocaoId(null)}>
+                                Cancelar
+                              </Button>
+                            </div>
                           ) : (
-                            <Button
-                              variante={usuario.status === 'ativo' ? 'perigo' : 'secundario'}
-                              tamanho="sm"
-                              carregando={mudandoId === usuario.id}
-                              onClick={() => void alternarStatus(usuario)}
-                            >
-                              {usuario.status === 'ativo' ? 'Suspender' : 'Reativar'}
-                            </Button>
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <Button
+                                variante="secundario"
+                                tamanho="sm"
+                                carregando={mudandoId === usuario.id}
+                                onClick={() => void alternarStatus(usuario)}
+                              >
+                                {usuario.status === 'ativo' ? 'Suspender' : 'Reativar'}
+                              </Button>
+                              <Button
+                                variante="perigo"
+                                tamanho="sm"
+                                disabled={mudandoId !== null}
+                                onClick={() => setConfirmarRemocaoId(usuario.id)}
+                              >
+                                Remover
+                              </Button>
+                            </div>
                           )}
                         </td>
                       ) : null}
@@ -289,7 +331,7 @@ export function UsuariosConta({ podeGerenciar, meuId }: { podeGerenciar: boolean
 
         {!podeGerenciar && !carregando && !erroCarga && usuarios.length > 0 ? (
           <p className="text-sm text-tinta-suave">
-            Criar e suspender acessos é do dono da conta.
+            Criar, suspender e remover acessos é do dono da conta.
           </p>
         ) : null}
       </CardCorpo>
