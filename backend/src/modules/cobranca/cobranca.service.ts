@@ -241,7 +241,10 @@ export class CobrancaService {
       referencia: a.id,
       emailPagador: email,
       valorCentavos: novo.precoCentavos,
-      urlRetorno: `${env.rede.appUrl.replace(/\/+$/, '')}/plano?retorno=mercadopago`,
+      // Sem query própria: o Mercado Pago acrescenta "?preapproval_id=…" com um
+      // segundo "?", e um parâmetro nosso ficaria grudado no dele. A tela
+      // reconhece a volta pelo preapproval_id.
+      urlRetorno: `${env.rede.appUrl.replace(/\/+$/, '')}/plano`,
     });
 
     if (!criada.init_point) {

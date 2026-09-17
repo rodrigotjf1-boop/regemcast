@@ -63,7 +63,10 @@ export default function PaginaPlano() {
 
   useEffect(() => {
     void carregar();
-    if (new URLSearchParams(window.location.search).get('retorno') === 'mercadopago') setVoltouDoCheckout(true);
+    // O Mercado Pago volta com "?preapproval_id=…" (em links antigos, grudado num
+    // "?retorno=mercadopago"). Qualquer um dos dois indica a volta do checkout.
+    const busca = window.location.search;
+    if (busca.includes('preapproval_id') || busca.includes('retorno=mercadopago')) setVoltouDoCheckout(true);
   }, [carregar]);
 
   // Voltou do Mercado Pago: a confirmação chega por aviso, segundos depois.
