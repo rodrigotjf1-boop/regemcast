@@ -20,6 +20,8 @@ import 'package:regemcast/api/cliente_api.dart';
 import 'package:regemcast/api/dados.dart';
 import 'package:regemcast/sessao/cofre.dart';
 import 'package:regemcast/sessao/sessao.dart';
+import 'package:regemcast/telas/campanha_detalhe.dart';
+import 'package:regemcast/telas/campanhas.dart';
 import 'package:regemcast/telas/casca.dart';
 import 'package:regemcast/telas/entrar.dart';
 import 'package:regemcast/tema/tema.dart';
@@ -34,7 +36,9 @@ Future<void> _carregarFontes() async {
   Future<void> carregar(String familia, List<String> arquivos) async {
     final loader = FontLoader(familia);
     for (final a in arquivos) {
-      loader.addFont(Future.value(ByteData.view(File(a).readAsBytesSync().buffer)));
+      loader.addFont(
+        Future.value(ByteData.view(File(a).readAsBytesSync().buffer)),
+      );
     }
     await loader.load();
   }
@@ -45,8 +49,12 @@ Future<void> _carregarFontes() async {
     'assets/fonts/Poppins-SemiBold.ttf',
     'assets/fonts/Poppins-Bold.ttf',
   ]);
-  final raizFlutter = File(Platform.resolvedExecutable).parent.parent.parent.parent.parent.parent.path;
-  await carregar('MaterialIcons', ['$raizFlutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf']);
+  final raizFlutter = File(
+    Platform.resolvedExecutable,
+  ).parent.parent.parent.parent.parent.parent.path;
+  await carregar('MaterialIcons', [
+    '$raizFlutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
+  ]);
 }
 
 class _CofreMemoria extends Cofre {
@@ -78,40 +86,109 @@ final _api = ClienteApi(
     switch (req.url.path) {
       case '/auth/eu':
         return _json({
-          'usuario': {'id': 'u', 'nome': 'Rodrigo Tavares', 'email': 'rodrigo@misterburgers.com.br', 'papel': 'dono'},
+          'usuario': {
+            'id': 'u',
+            'nome': 'Rodrigo Tavares',
+            'email': 'rodrigo@misterburgers.com.br',
+            'papel': 'dono',
+          },
           'conta': {'id': 'c', 'nome': 'MISTER BURGERS', 'status': 'ativa'},
         });
       case '/conta':
         return _json({
           'conta': {'nome': 'MISTER BURGERS'},
-          'plano': {'codigo': 'profissional', 'nome': 'Profissional', 'disparosMes': 20000},
-          'assinatura': {'status': 'ativa', 'cicloInicio': '2026-09-17T00:00:00Z', 'cicloFim': '2026-10-17T00:00:00Z', 'gratisAte': null},
+          'plano': {
+            'codigo': 'profissional',
+            'nome': 'Profissional',
+            'disparosMes': 20000,
+          },
+          'assinatura': {
+            'status': 'ativa',
+            'cicloInicio': '2026-09-17T00:00:00Z',
+            'cicloFim': '2026-10-17T00:00:00Z',
+            'gratisAte': null,
+          },
           'uso': {'disparos': 12480, 'teto': 20000, 'restantes': 7520},
         });
       case '/whatsapp/situacao':
         return _json({
           'conectado': true,
           'numeros': [
-            {'telefone': '+55 21 99999-8888', 'nome': 'Mister Burgers', 'qualidade': 'verde', 'tierLimite': 10000, 'status': 'registrado'},
+            {
+              'telefone': '+55 21 99999-8888',
+              'nome': 'Mister Burgers',
+              'qualidade': 'verde',
+              'tierLimite': 10000,
+              'status': 'registrado',
+            },
           ],
         });
+      case '/campanhas/1':
+        return _json({
+          'id': '1', 'nome': 'Sexta do Smash', 'modeloNome': 'promo_sexta_smash', 'modeloIdioma': 'pt_BR', 'status': 'enviando',
+          'listaNome': 'Clientes 2026', 'criadoEm': DateTime.now().toUtc().subtract(const Duration(minutes: 40)).toIso8601String(),
+          'iniciadaEm': DateTime.now().toUtc().subtract(const Duration(minutes: 35)).toIso8601String(),
+          'porStatus': {'lida': 1320, 'entregue': 1540, 'enviada': 410, 'falhou': 38, 'pendente': 1692}, 'total': 5000,
+          'janelaDias': [1, 2, 3, 4, 5], 'janelaInicio': '09:00:00', 'janelaFim': '20:00:00', 'pausaSegundos': 2, 'maxPorDia': 3000,
+        });
+      case '/campanhas/1/destinatarios':
+        final agora = DateTime.now().toUtc();
+        return _json([
+          {'id': 'a', 'telefone': '5521987654321', 'status': 'falhou', 'erroTitulo': 'Número sem WhatsApp', 'erroDetalhe': 'A Meta não encontrou uma conta de WhatsApp neste número.', 'falhouEm': agora.subtract(const Duration(minutes: 20)).toIso8601String()},
+          {'id': 'b', 'telefone': '5521991112222', 'status': 'lida', 'lidaEm': agora.subtract(const Duration(minutes: 8)).toIso8601String()},
+          {'id': 'c', 'telefone': '5511983334444', 'status': 'entregue', 'entregueEm': agora.subtract(const Duration(minutes: 12)).toIso8601String()},
+          {'id': 'd', 'telefone': '5521975556666', 'status': 'enviada', 'enviadaEm': agora.subtract(const Duration(minutes: 2)).toIso8601String()},
+          {'id': 'e', 'telefone': '5521967778888', 'status': 'pendente'},
+        ]);
       case '/campanhas':
         final agora = DateTime.now().toUtc();
         return _json([
           {
-            'id': '1', 'nome': 'Sexta do Smash', 'modeloNome': 'promo_sexta_smash', 'status': 'enviando', 'listaNome': 'Clientes 2026',
-            'criadoEm': agora.subtract(const Duration(minutes: 40)).toIso8601String(),
-            'porStatus': {'lida': 1320, 'entregue': 1540, 'enviada': 410, 'falhou': 38, 'pendente': 1692}, 'total': 5000,
+            'id': '1',
+            'nome': 'Sexta do Smash',
+            'modeloNome': 'promo_sexta_smash',
+            'status': 'enviando',
+            'listaNome': 'Clientes 2026',
+            'criadoEm': agora
+                .subtract(const Duration(minutes: 40))
+                .toIso8601String(),
+            'porStatus': {
+              'lida': 1320,
+              'entregue': 1540,
+              'enviada': 410,
+              'falhou': 38,
+              'pendente': 1692,
+            },
+            'total': 5000,
           },
           {
-            'id': '2', 'nome': 'Combo família', 'modeloNome': 'combo_familia', 'status': 'pausada', 'pausaMotivo': 'manual',
-            'criadoEm': agora.subtract(const Duration(days: 1)).toIso8601String(),
-            'porStatus': {'lida': 600, 'entregue': 900, 'enviada': 100, 'falhou': 12, 'pendente': 388}, 'total': 2000,
+            'id': '2',
+            'nome': 'Combo família',
+            'modeloNome': 'combo_familia',
+            'status': 'pausada',
+            'pausaMotivo': 'manual',
+            'criadoEm': agora
+                .subtract(const Duration(days: 1))
+                .toIso8601String(),
+            'porStatus': {
+              'lida': 600,
+              'entregue': 900,
+              'enviada': 100,
+              'falhou': 12,
+              'pendente': 388,
+            },
+            'total': 2000,
           },
           {
-            'id': '3', 'nome': 'Aniversariantes de setembro', 'modeloNome': 'aniversario', 'status': 'concluida',
-            'criadoEm': agora.subtract(const Duration(days: 3)).toIso8601String(),
-            'porStatus': {'lida': 210, 'entregue': 160, 'falhou': 4}, 'total': 374,
+            'id': '3',
+            'nome': 'Aniversariantes de setembro',
+            'modeloNome': 'aniversario',
+            'status': 'concluida',
+            'criadoEm': agora
+                .subtract(const Duration(days: 3))
+                .toIso8601String(),
+            'porStatus': {'lida': 210, 'entregue': 160, 'falhou': 4},
+            'total': 374,
           },
         ]);
     }
@@ -119,7 +196,12 @@ final _api = ClienteApi(
   }),
 );
 
-Future<void> _capturar(WidgetTester tester, Widget tela, String nome, {Brightness brilho = Brightness.light}) async {
+Future<void> _capturar(
+  WidgetTester tester,
+  Widget tela,
+  String nome, {
+  Brightness brilho = Brightness.light,
+}) async {
   tester.view.physicalSize = const Size(1080, 2400);
   tester.view.devicePixelRatio = 2.625;
   addTearDown(tester.view.reset);
@@ -134,7 +216,10 @@ Future<void> _capturar(WidgetTester tester, Widget tela, String nome, {Brightnes
         debugShowCheckedModeBanner: false,
         theme: temaDoApp(brilho),
         home: MediaQuery(
-          data: const MediaQueryData(padding: EdgeInsets.only(top: 24), disableAnimations: true),
+          data: const MediaQueryData(
+            padding: EdgeInsets.only(top: 24),
+            disableAnimations: true,
+          ),
           child: tela,
         ),
       ),
@@ -143,7 +228,10 @@ Future<void> _capturar(WidgetTester tester, Widget tela, String nome, {Brightnes
   for (var i = 0; i < 20; i++) {
     await tester.pump(const Duration(milliseconds: 100));
   }
-  await expectLater(find.byType(MaterialApp), matchesGoldenFile('_capturas/$nome.png'));
+  await expectLater(
+    find.byType(MaterialApp),
+    matchesGoldenFile('_capturas/$nome.png'),
+  );
 }
 
 void main() {
@@ -155,16 +243,46 @@ void main() {
     await _carregarFontes();
   });
 
-  testWidgets('entrar', (t) => _capturar(t, const TelaEntrar(), '01-entrar'), skip: !ativo);
+  testWidgets(
+    'entrar',
+    (t) => _capturar(t, const TelaEntrar(), '01-entrar'),
+    skip: !ativo,
+  );
 
-  testWidgets('entrar — escuro', (t) => _capturar(t, const TelaEntrar(), '02-entrar-escuro', brilho: Brightness.dark), skip: !ativo);
+  testWidgets(
+    'entrar — escuro',
+    (t) => _capturar(
+      t,
+      const TelaEntrar(),
+      '02-entrar-escuro',
+      brilho: Brightness.dark,
+    ),
+    skip: !ativo,
+  );
 
   testWidgets('painel', (t) async {
     await _capturar(t, const _ComSessao(child: Casca()), '03-painel');
   }, skip: !ativo);
 
   testWidgets('painel — escuro', (t) async {
-    await _capturar(t, const _ComSessao(child: Casca()), '04-painel-escuro', brilho: Brightness.dark);
+    await _capturar(
+      t,
+      const _ComSessao(child: Casca()),
+      '04-painel-escuro',
+      brilho: Brightness.dark,
+    );
+  }, skip: !ativo);
+
+  testWidgets('campanhas', (t) async {
+    await _capturar(t, const Scaffold(body: TelaCampanhas()), '05-campanhas');
+  }, skip: !ativo);
+
+  testWidgets('campanha', (t) async {
+    await _capturar(t, const TelaCampanhaDetalhe(id: '1', nomeInicial: 'Sexta do Smash'), '06-campanha');
+  }, skip: !ativo);
+
+  testWidgets('campanha — escuro', (t) async {
+    await _capturar(t, const TelaCampanhaDetalhe(id: '1', nomeInicial: 'Sexta do Smash'), '07-campanha-escuro', brilho: Brightness.dark);
   }, skip: !ativo);
 }
 
@@ -180,7 +298,12 @@ class _ComSessao extends ConsumerWidget {
       Future.microtask(() {
         ref.read(sessaoProvider.notifier).state = SessaoAtiva(
           Sessao.deJson({
-            'usuario': {'id': 'u', 'nome': 'Rodrigo Tavares', 'email': 'rodrigo@misterburgers.com.br', 'papel': 'dono'},
+            'usuario': {
+              'id': 'u',
+              'nome': 'Rodrigo Tavares',
+              'email': 'rodrigo@misterburgers.com.br',
+              'papel': 'dono',
+            },
             'conta': {'id': 'c', 'nome': 'MISTER BURGERS', 'status': 'ativa'},
           }),
         );

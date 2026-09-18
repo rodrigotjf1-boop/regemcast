@@ -101,12 +101,12 @@ export class EditarCampanhaDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @Matches(HORA, { message: 'Horário de início inválido. Use HH:MM.' })
-  janelaInicio?: string;
+  janelaInicio?: string | null;
 
   @ApiProperty({ required: false })
   @IsOptional()
   @Matches(HORA, { message: 'Horário de fim inválido. Use HH:MM.' })
-  janelaFim?: string;
+  janelaFim?: string | null;
 
   @ApiProperty({ required: false })
   @IsOptional()
@@ -119,17 +119,17 @@ export class EditarCampanhaDto {
   @IsOptional()
   @IsInt()
   @Min(1)
-  maxPorDia?: number;
+  maxPorDia?: number | null;
 
   @ApiProperty({ required: false })
   @IsOptional()
   @IsInt()
   @Min(1)
-  maxPorSemana?: number;
+  maxPorSemana?: number | null;
 
   @ApiProperty({ required: false })
   @IsOptional()
   @IsInt()
   @Min(1)
-  maxPorMes?: number;
+  maxPorMes?: number | null;
 }

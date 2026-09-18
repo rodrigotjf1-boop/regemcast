@@ -30,3 +30,37 @@ String quando(DateTime? d, {DateTime? agora}) {
 /// "1 campanha", "3 campanhas".
 String plural(int n, String um, String varios) =>
     '${numero(n)} ${n == 1 ? um : varios}';
+
+/// 5521999998888 → +55 21 99999-8888. O que não for número brasileiro sai
+/// só com o "+" na frente — melhor mostrar cru do que formatar errado.
+String telefone(String e164) {
+  final d = e164.replaceAll(RegExp(r'\D'), '');
+  if (d.startsWith('55') && (d.length == 12 || d.length == 13)) {
+    final ddd = d.substring(2, 4);
+    final num = d.substring(4);
+    final corte = num.length - 4;
+    return '+55 $ddd ${num.substring(0, corte)}-${num.substring(corte)}';
+  }
+  return d.isEmpty ? '—' : '+$d';
+}
+
+/// Porcentagem arredondada de uma parte sobre o todo: "57%". Todo zero → "—".
+String porcento(int parte, int todo) =>
+    todo <= 0 ? '—' : '${(parte * 100 / todo).round()}%';
+
+/// "Seg, Qua e Sex" a partir de [1, 3, 5]. Vazio = todos os dias.
+String diasDaSemana(List<int> dias) {
+  const nomes = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+  if (dias.isEmpty || dias.length == 7) return 'Todos os dias';
+  final ordenados = [...dias]..sort();
+  final rotulos = ordenados
+      .where((d) => d >= 0 && d <= 6)
+      .map((d) => nomes[d])
+      .toList();
+  if (rotulos.length == 1) return rotulos.first;
+  return '${rotulos.sublist(0, rotulos.length - 1).join(', ')} e ${rotulos.last}';
+}
+
+/// '09:00:00' → '09:00'.
+String hora(String? hhmmss) =>
+    hhmmss == null || hhmmss.length < 5 ? '' : hhmmss.substring(0, 5);
