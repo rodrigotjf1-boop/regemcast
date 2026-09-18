@@ -300,7 +300,7 @@ class _CartaoModelo extends StatelessWidget {
             [
               rotuloCategoria(categoria),
               idioma,
-              if (foraDoRegemCast) 'criado fora do RegemCast',
+              if (foraDoRegemCast) 'criado fora do Regemcast',
             ].join(' · '),
             style: TextStyle(fontSize: 12, color: c.tintaSuave),
           ),

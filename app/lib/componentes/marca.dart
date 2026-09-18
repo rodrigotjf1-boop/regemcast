@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../tema/cores.dart';
 
-/// O símbolo do RegemCast: o balão lima com o pulso de disparo.
+/// O símbolo do Regemcast: o balão lima com o pulso de disparo.
 ///
 /// Desenhado aqui, e não carregado de imagem, porque são dois traços — e assim
 /// ele fica nítido em qualquer tamanho e pode pulsar enquanto algo carrega.

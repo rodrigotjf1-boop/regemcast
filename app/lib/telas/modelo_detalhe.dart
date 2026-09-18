@@ -232,7 +232,7 @@ class _TelaModeloDetalheState extends ConsumerState<TelaModeloDetalhe> {
             const Aviso(
               icone: Icons.info_outline_rounded,
               texto:
-                  'Este modelo foi criado fora do RegemCast, direto na Meta. Dá para usar em campanha, mas editar e excluir só pelo painel da Meta.',
+                  'Este modelo foi criado fora do Regemcast, direto na Meta. Dá para usar em campanha, mas editar e excluir só pelo painel da Meta.',
             ),
             const SizedBox(height: 14),
           ] else if (m.tipo == 'carrossel') ...[
