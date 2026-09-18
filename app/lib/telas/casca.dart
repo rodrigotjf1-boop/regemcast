@@ -7,6 +7,7 @@ import '../componentes/marca.dart';
 import '../config.dart';
 import '../sessao/sessao.dart';
 import '../tema/cores.dart';
+import 'campanhas.dart';
 import 'painel.dart';
 
 /// A casca do app: quatro abas na barra de baixo, onde o polegar alcança.
@@ -38,14 +39,7 @@ class _CascaState extends ConsumerState<Casca> {
         index: _aba,
         children: const [
           TelaPainel(),
-          _EmBreve(
-            titulo: 'Campanhas',
-            icone: Icons.send_rounded,
-            texto:
-                'A lista completa, com métricas, disparo, pausa e edição, chega na próxima versão do app. '
-                'O Painel já mostra as campanhas que estão saindo agora.',
-            caminho: '/campanhas',
-          ),
+          TelaCampanhas(),
           _EmBreve(
             titulo: 'Modelos',
             icone: Icons.description_outlined,

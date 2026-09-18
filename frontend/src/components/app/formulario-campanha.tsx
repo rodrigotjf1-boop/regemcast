@@ -43,6 +43,35 @@ const ROTULO_ORIGEM: Record<VariavelDeLista['origem'], string> = {
  * formulário: eles são o registro do que foi enviado, e deixar trocá-los faria
  * a tela mentir sobre a campanha que já está na rua.
  */
+/**
+ * A janela como a EDIÇÃO manda. Diferente da criação: desligar a janela
+ * precisa ir explícito (vazio/nulo), senão o servidor entende "não mexer" e a
+ * campanha continua presa ao horário antigo.
+ */
+function janelaDaEdicao(j: Janela) {
+  if (!j.ativa) {
+    return {
+      janelaDias: [],
+      janelaInicio: null,
+      janelaFim: null,
+      pausaSegundos: 0,
+      maxPorDia: null,
+      maxPorSemana: null,
+      maxPorMes: null,
+    };
+  }
+  const n = (v: string) => (v.trim() ? Number(v) : null);
+  return {
+    janelaDias: j.dias,
+    janelaInicio: j.inicio && j.fim ? j.inicio : null,
+    janelaFim: j.inicio && j.fim ? j.fim : null,
+    pausaSegundos: n(j.pausa) ?? 0,
+    maxPorDia: n(j.maxDia),
+    maxPorSemana: n(j.maxSemana),
+    maxPorMes: n(j.maxMes),
+  };
+}
+
 export function FormularioCampanha({
   campanha,
   aoConcluir,
@@ -170,7 +199,7 @@ export function FormularioCampanha({
       }
       setSalvando(true);
       try {
-        await campanhas.editar(campanha!.id, { nome: nome.trim(), ...janelaParaEnvio(janela) });
+        await campanhas.editar(campanha!.id, { nome: nome.trim(), ...janelaDaEdicao(janela) });
         aoConcluir();
       } catch (e) {
         setErro(mensagemDoErro(e));
@@ -244,7 +273,7 @@ export function FormularioCampanha({
       };
 
       if (editando) {
-        await campanhas.editar(campanha!.id, corpo);
+        await campanhas.editar(campanha!.id, { ...corpo, ...janelaDaEdicao(janela) });
         aoConcluir();
         return;
       }

@@ -518,8 +518,11 @@ export class CampanhaService {
     // formulário pela metade — e deixaria a campanha parada sem ninguém ter
     // decidido isso.
     if (dto.janelaInicio !== undefined || dto.janelaFim !== undefined) {
-      const inicio = dto.janelaInicio ?? alvo.janelaInicio;
-      const fim = dto.janelaFim ?? alvo.janelaFim;
+      // `null` vindo da tela quer dizer "tirar o horário" — por isso a
+      // comparação é com `undefined` (campo não enviado), e não um `??`,
+      // que trataria o null como "manter o antigo" e a janela nunca sairia.
+      const inicio = dto.janelaInicio !== undefined ? dto.janelaInicio : alvo.janelaInicio;
+      const fim = dto.janelaFim !== undefined ? dto.janelaFim : alvo.janelaFim;
       mudancas.janelaInicio = inicio && fim ? inicio : null;
       mudancas.janelaFim = inicio && fim ? fim : null;
     }

@@ -208,7 +208,16 @@ export interface ResumoCampanha {
 }
 
 /** O que dá para mudar numa campanha já montada. A tela manda só o que mexeu. */
-export type EditarCampanha = Partial<NovaCampanha>;
+export type EditarCampanha = Partial<
+  Omit<NovaCampanha, 'janelaInicio' | 'janelaFim' | 'maxPorDia' | 'maxPorSemana' | 'maxPorMes'>
+> & {
+  /** `null` tira o horário/limite; ausente deixa como está. */
+  janelaInicio?: string | null;
+  janelaFim?: string | null;
+  maxPorDia?: number | null;
+  maxPorSemana?: number | null;
+  maxPorMes?: number | null;
+};
 
 /** O que `DELETE /campanhas/:id` fez de fato. */
 export interface ResultadoExclusaoCampanha {

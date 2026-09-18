@@ -214,6 +214,16 @@ class ResumoCampanha {
     required this.porStatus,
     required this.total,
     required this.listaNome,
+    this.modeloIdioma,
+    this.iniciadaEm,
+    this.concluidaEm,
+    this.janelaDias = const [],
+    this.janelaInicio,
+    this.janelaFim,
+    this.pausaSegundos = 0,
+    this.maxPorDia,
+    this.maxPorSemana,
+    this.maxPorMes,
   });
 
   final String id;
@@ -229,15 +239,56 @@ class ResumoCampanha {
   final Map<String, int> porStatus;
   final int total;
   final String? listaNome;
+  final String? modeloIdioma;
+  final DateTime? iniciadaEm;
+  final DateTime? concluidaEm;
+
+  // ---- janela e ritmo (o que a edição reabre)
+
+  /// 0 = domingo … 6 = sábado. Vazio = qualquer dia.
+  final List<int> janelaDias;
+
+  /// 'HH:MM:SS' no fuso da conta.
+  final String? janelaInicio;
+  final String? janelaFim;
+  final int pausaSegundos;
+  final int? maxPorDia;
+  final int? maxPorSemana;
+  final int? maxPorMes;
 
   int get entregues => (porStatus['entregue'] ?? 0) + (porStatus['lida'] ?? 0);
   int get lidas => porStatus['lida'] ?? 0;
   int get falhas => porStatus['falhou'] ?? 0;
+  int get enviadas => porStatus['enviada'] ?? 0;
+  int get cancelados => porStatus['cancelado'] ?? 0;
+
+  /// Ainda não saíram: na fila ou saindo agora.
+  int get naFila => (porStatus['pendente'] ?? 0) + (porStatus['enviando'] ?? 0);
 
   /// Quantas já saíram (a Meta aceitou), de qualquer jeito que tenham terminado.
-  int get sairam => (porStatus['enviada'] ?? 0) + entregues + falhas;
+  int get sairam => enviadas + entregues + falhas;
 
   bool get emAndamento => status == 'enviando' || status == 'agendada';
+
+  // ---- o que dá para fazer, pela situação (as mesmas regras do servidor)
+
+  bool get podeDisparar => status == 'rascunho';
+  bool get podePausar => status == 'agendada' || status == 'enviando';
+  bool get podeRetomar => status == 'pausada';
+  bool get podeEditar =>
+      status == 'rascunho' || status == 'agendada' || status == 'pausada';
+
+  /// Enviando não se exclui: pausar primeiro garante que ninguém receba uma
+  /// campanha "cancelada".
+  bool get podeExcluir => status != 'enviando';
+
+  bool get temJanela =>
+      janelaDias.isNotEmpty ||
+      janelaInicio != null ||
+      pausaSegundos > 0 ||
+      maxPorDia != null ||
+      maxPorSemana != null ||
+      maxPorMes != null;
 
   factory ResumoCampanha.deJson(Map<String, dynamic> j) => ResumoCampanha(
     id: _txt(j['id']),
@@ -249,5 +300,62 @@ class ResumoCampanha {
     porStatus: _mapa(j['porStatus']).map((k, v) => MapEntry(k, _int(v))),
     total: _int(j['total']),
     listaNome: _txtOuNulo(j['listaNome']),
+    modeloIdioma: _txtOuNulo(j['modeloIdioma']),
+    iniciadaEm: _data(j['iniciadaEm']),
+    concluidaEm: _data(j['concluidaEm']),
+    janelaDias: (j['janelaDias'] is List ? j['janelaDias'] as List : const [])
+        .map(_int)
+        .toList(),
+    janelaInicio: _txtOuNulo(j['janelaInicio']),
+    janelaFim: _txtOuNulo(j['janelaFim']),
+    pausaSegundos: _int(j['pausaSegundos']),
+    maxPorDia: _intOuNulo(j['maxPorDia']),
+    maxPorSemana: _intOuNulo(j['maxPorSemana']),
+    maxPorMes: _intOuNulo(j['maxPorMes']),
   );
+}
+
+/// `GET /campanhas/:id/destinatarios` — no máximo 500, com as falhas primeiro.
+class DestinatarioCampanha {
+  const DestinatarioCampanha({
+    required this.id,
+    required this.telefone,
+    required this.status,
+    this.erroTitulo,
+    this.erroDetalhe,
+    this.enviadaEm,
+    this.entregueEm,
+    this.lidaEm,
+    this.falhouEm,
+  });
+
+  final String id;
+
+  /// E.164 sem o '+': 5521999998888.
+  final String telefone;
+
+  /// `pendente`, `enviando`, `enviada`, `entregue`, `lida`, `falhou` ou `cancelado`.
+  final String status;
+  final String? erroTitulo;
+  final String? erroDetalhe;
+  final DateTime? enviadaEm;
+  final DateTime? entregueEm;
+  final DateTime? lidaEm;
+  final DateTime? falhouEm;
+
+  /// O último acontecimento, para mostrar "quando".
+  DateTime? get ultimoEm => lidaEm ?? entregueEm ?? falhouEm ?? enviadaEm;
+
+  factory DestinatarioCampanha.deJson(Map<String, dynamic> j) =>
+      DestinatarioCampanha(
+        id: _txt(j['id']),
+        telefone: _txt(j['telefone']),
+        status: _txt(j['status']),
+        erroTitulo: _txtOuNulo(j['erroTitulo']),
+        erroDetalhe: _txtOuNulo(j['erroDetalhe']),
+        enviadaEm: _data(j['enviadaEm']),
+        entregueEm: _data(j['entregueEm']),
+        lidaEm: _data(j['lidaEm']),
+        falhouEm: _data(j['falhouEm']),
+      );
 }
