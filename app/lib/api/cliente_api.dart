@@ -53,7 +53,26 @@ class ClienteApi {
   /// Esquece a pré-sessão: login concluído, cancelado ou recomeçado.
   void limparPreSessao() => _cookiePre = null;
 
-  Future<dynamic> _pedir(String metodo, String caminho, [Object? corpo]) async {
+  /// Envia um arquivo (multipart), como o formulário da web faz. Usado na
+  /// importação de contatos: o servidor lê o arquivo e devolve a prévia.
+  Future<dynamic> enviarArquivo(
+    String caminho, {
+    required String campo,
+    required List<int> bytes,
+    required String nomeArquivo,
+  }) {
+    final pedido = http.MultipartRequest('POST', Uri.parse('$_base$caminho'))
+      ..headers.addAll({
+        'Accept': 'application/json',
+        if (_token != null) 'Authorization': 'Bearer $_token',
+      })
+      ..files.add(
+        http.MultipartFile.fromBytes(campo, bytes, filename: nomeArquivo),
+      );
+    return _responder(caminho, pedido);
+  }
+
+  Future<dynamic> _pedir(String metodo, String caminho, [Object? corpo]) {
     final ehLogin = caminho.startsWith('/auth/login');
     final cabecalhos = <String, String>{
       'Accept': 'application/json',
@@ -65,7 +84,13 @@ class ClienteApi {
     final pedido = http.Request(metodo, Uri.parse('$_base$caminho'))
       ..headers.addAll(cabecalhos);
     if (corpo != null) pedido.body = jsonEncode(corpo);
+    return _responder(caminho, pedido);
+  }
 
+  /// Manda o pedido e transforma a resposta: dado no sucesso, `ErroApi` com a
+  /// frase da API em qualquer falha. Um lugar só para JSON e multipart.
+  Future<dynamic> _responder(String caminho, http.BaseRequest pedido) async {
+    final ehLogin = caminho.startsWith('/auth/login');
     http.Response resposta;
     try {
       final enviado = await _http.send(pedido).timeout(tempoLimiteApi);

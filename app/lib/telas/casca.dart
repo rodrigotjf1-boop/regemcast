@@ -8,9 +8,12 @@ import '../config.dart';
 import '../sessao/sessao.dart';
 import '../tema/cores.dart';
 import 'campanhas.dart';
+import 'contatos.dart';
+import 'modelos.dart';
 import 'painel.dart';
 
-/// A casca do app: quatro abas na barra de baixo, onde o polegar alcança.
+/// A casca do app: cinco abas na barra de baixo, na ordem do menu do site,
+/// onde o polegar alcança.
 ///
 /// `IndexedStack` e não trocar de tela: voltar para uma aba mantém a rolagem
 /// e o que já foi carregado. Quem conferiu uma campanha e foi ao Painel volta
@@ -39,14 +42,9 @@ class _CascaState extends ConsumerState<Casca> {
         index: _aba,
         children: const [
           TelaPainel(),
+          TelaModelos(),
+          TelaContatos(),
           TelaCampanhas(),
-          _EmBreve(
-            titulo: 'Modelos',
-            icone: Icons.description_outlined,
-            texto:
-                'Os modelos, com a prévia de como a mensagem chega, entram na próxima versão do app.',
-            caminho: '/modelos',
-          ),
           _TelaMais(),
         ],
       ),
@@ -60,14 +58,19 @@ class _CascaState extends ConsumerState<Casca> {
             label: 'Painel',
           ),
           NavigationDestination(
-            icon: Icon(Icons.send_outlined),
-            selectedIcon: Icon(Icons.send_rounded),
-            label: 'Campanhas',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.description_outlined),
             selectedIcon: Icon(Icons.description_rounded),
             label: 'Modelos',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.people_outline_rounded),
+            selectedIcon: Icon(Icons.people_rounded),
+            label: 'Contatos',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.send_outlined),
+            selectedIcon: Icon(Icons.send_rounded),
+            label: 'Campanhas',
           ),
           NavigationDestination(
             icon: Icon(Icons.menu_rounded),
@@ -127,71 +130,6 @@ class _CascaState extends ConsumerState<Casca> {
     } else {
       await controle.dispensarOfertaDeBiometria();
     }
-  }
-}
-
-/// Aba que ainda não chegou ao app: diz o que vem e leva ao site enquanto isso.
-class _EmBreve extends StatelessWidget {
-  const _EmBreve({
-    required this.titulo,
-    required this.icone,
-    required this.texto,
-    required this.caminho,
-  });
-
-  final String titulo;
-  final IconData icone;
-  final String texto;
-  final String caminho;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = Cores.de(context);
-    return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-        children: [
-          Text(titulo, style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 18),
-          Cartao(
-            padding: const EdgeInsets.all(22),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: c.acentoSuave,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Icon(icone, color: c.tinta),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Na próxima versão',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  texto,
-                  style: TextStyle(color: c.tintaSuave, height: 1.45),
-                ),
-                const SizedBox(height: 18),
-                OutlinedButton.icon(
-                  onPressed: () => launchUrl(
-                    Uri.parse('$urlWeb$caminho'),
-                    mode: LaunchMode.externalApplication,
-                  ),
-                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                  label: const Text('Abrir no site'),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 
