@@ -24,6 +24,8 @@ import type {
   PaginaDeContatos,
   PreviaDaImportacao,
   DestinatarioCampanha,
+  EditarCampanha,
+  ResultadoExclusaoCampanha,
   DadosModelo,
   ModeloDeMensagem,
   ModeloSalvo,
@@ -227,6 +229,15 @@ export const campanhas = {
 
   /** `POST /campanhas` — monta a campanha, sem enviar nada. */
   criar: (dados: NovaCampanha) => api.post<{ id: string }>('/campanhas', dados),
+
+  /** `PATCH /campanhas/:id` — muda o que a situação da campanha permite. */
+  editar: (id: string, dados: EditarCampanha) => api.patch<ResumoCampanha>(`/campanhas/${id}`, dados),
+
+  /** `POST /campanhas/:id/pausar` — pausa por decisão do cliente; só volta no Retomar. */
+  pausar: (id: string) => api.post<ResumoCampanha>(`/campanhas/${id}/pausar`, {}),
+
+  /** `DELETE /campanhas/:id` — apaga o rascunho, cancela a que não terminou, arquiva a encerrada. */
+  excluir: (id: string) => api.delete<ResultadoExclusaoCampanha>(`/campanhas/${id}`),
 
   /** `POST /campanhas/:id/disparar` — só funciona uma vez. */
   disparar: (id: string) => api.post<ResumoCampanha>(`/campanhas/${id}/disparar`, {}),

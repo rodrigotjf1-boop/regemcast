@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
 import type { UsuarioAutenticado } from '../../common/auth.guard';
 import { UsuarioAtual } from '../../common/usuario-atual.decorator';
 import { CampanhaService } from './campanha.service';
 import { CriarCampanhaDto } from './dto/criar-campanha.dto';
+import { EditarCampanhaDto } from './dto/editar-campanha.dto';
 
 /**
  * Criar e disparar são rotas separadas de propósito.
@@ -60,5 +61,30 @@ export class CampanhaController {
   @Post(':id/retomar')
   retomar(@UsuarioAtual() usuario: UsuarioAutenticado, @Param('id', ParseUUIDPipe) id: string) {
     return this.servico.retomar(usuario.contaId, usuario.id, id);
+  }
+  /** Pausa por decisão do cliente: só volta quando ele mandar. */
+  @Post(':id/pausar')
+  @HttpCode(HttpStatus.OK)
+  pausar(@UsuarioAtual() usuario: UsuarioAutenticado, @Param('id', ParseUUIDPipe) id: string) {
+    return this.servico.pausar(usuario.contaId, usuario.id, id);
+  }
+
+  /** Edita. Em rascunho muda tudo; depois de disparada, só janela, ritmo e limites. */
+  @Patch(':id')
+  editar(
+    @UsuarioAtual() usuario: UsuarioAutenticado,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: EditarCampanhaDto,
+  ) {
+    return this.servico.editar(usuario.contaId, usuario.id, id, dto);
+  }
+
+  /**
+   * Apaga o rascunho, cancela a que ainda não terminou, arquiva a encerrada.
+   * A resposta diz qual das três aconteceu.
+   */
+  @Delete(':id')
+  excluir(@UsuarioAtual() usuario: UsuarioAutenticado, @Param('id', ParseUUIDPipe) id: string) {
+    return this.servico.excluir(usuario.contaId, usuario.id, id);
   }
 }

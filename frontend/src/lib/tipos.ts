@@ -186,7 +186,7 @@ export interface ResumoCampanha {
   modeloIdioma: string;
   status: string;
   /** Por que pausou: conexão com a Meta caiu, ou acabaram os disparos do plano. */
-  pausaMotivo: 'conexao' | 'teto_plano' | 'inadimplencia' | null;
+  pausaMotivo: 'conexao' | 'teto_plano' | 'inadimplencia' | 'manual' | null;
   criadoEm: string;
   iniciadaEm: string | null;
   concluidaEm: string | null;
@@ -194,6 +194,25 @@ export interface ResumoCampanha {
   total: number;
   /** Lista de contatos de onde saiu o público; nulo quando os números foram digitados. */
   listaNome: string | null;
+  /** O que a tela de edição usa para reabrir a campanha como ela está. */
+  modeloId: string | null;
+  listaId: string | null;
+  janelaDias: number[];
+  /** 'HH:MM:SS' no fuso da conta. */
+  janelaInicio: string | null;
+  janelaFim: string | null;
+  pausaSegundos: number;
+  maxPorDia: number | null;
+  maxPorSemana: number | null;
+  maxPorMes: number | null;
+}
+
+/** O que dá para mudar numa campanha já montada. A tela manda só o que mexeu. */
+export type EditarCampanha = Partial<NovaCampanha>;
+
+/** O que `DELETE /campanhas/:id` fez de fato. */
+export interface ResultadoExclusaoCampanha {
+  resultado: 'apagada' | 'cancelada' | 'arquivada';
 }
 
 /**
