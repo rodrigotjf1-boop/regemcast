@@ -1,4 +1,4 @@
-/// Endereços do RegemCast, definidos na hora do build.
+/// Endereços do Regemcast, definidos na hora do build.
 ///
 /// Nada aqui é segredo: é o mesmo endereço público que o site usa. O que é
 /// segredo (a sessão) fica no cofre do Android, nunca no código.

@@ -17,7 +17,7 @@ import { Logotipo } from '@/components/marca/logotipo';
  * com `new Date()` faria a página anunciar revisão que não houve.
  */
 
-const ATUALIZADO_EM = '15 de setembro de 2026';
+const ATUALIZADO_EM = '18 de setembro de 2026';
 const CONTROLADOR = 'DMS Tecnologias';
 const EMAIL = 'suporte@dmsregem.com';
 
@@ -189,6 +189,20 @@ export default function PoliticaDePrivacidade() {
               pelo WhatsApp. É o destino final do envio.
             </li>
             <li>
+              <strong className="text-tinta">Mercado Pago</strong> — para cobrar a assinatura do
+              plano. O pagamento é feito na página do Mercado Pago; nós não recebemos nem guardamos
+              dados de cartão.
+            </li>
+            <li>
+              <strong className="text-tinta">Google (Firebase Cloud Messaging)</strong> — para
+              entregar os avisos no aplicativo Android. Recebe apenas o identificador do aparelho
+              e o texto do aviso.
+            </li>
+            <li>
+              <strong className="text-tinta">Resend</strong> — para enviar e-mails do sistema, como
+              códigos de verificação e convites.
+            </li>
+            <li>
               <strong className="text-tinta">Provedores de infraestrutura</strong> — banco de
               dados e servidores onde o sistema roda, sob contrato e sem acesso ao conteúdo para
               finalidade própria.
@@ -263,7 +277,51 @@ export default function PoliticaDePrivacidade() {
           </p>
         </Secao>
 
-        <Secao titulo="10. Crianças e adolescentes">
+        <Secao titulo="10. Aplicativo para Android">
+          <p>
+            O aplicativo do Regemcast usa a mesma conta do painel e trata os mesmos dados. Além
+            deles, trata apenas:
+          </p>
+          <ul className="list-disc space-y-2 pl-5">
+            <li>
+              <strong className="text-tinta">Identificador de avisos do aparelho</strong> (token
+              do Firebase Cloud Messaging), o modelo do aparelho e a versão do aplicativo — para
+              enviar avisos de campanha, de modelo e de cobrança. Ao sair da conta no aplicativo,
+              o identificador é apagado. Quais avisos chegam é escolha sua, no próprio aplicativo.
+            </li>
+            <li>
+              <strong className="text-tinta">Sessão</strong> — guardada no cofre do próprio Android
+              e válida por 30 dias.
+            </li>
+            <li>
+              <strong className="text-tinta">Biometria</strong> — quando você liga a abertura por
+              digital ou rosto, a conferência é feita pelo próprio Android. Nenhum dado biométrico
+              sai do aparelho ou chega até nós.
+            </li>
+            <li>
+              <strong className="text-tinta">Arquivos de contatos</strong> — o arquivo que você
+              escolhe para importar é enviado ao servidor só para ler os números. Ele não é
+              guardado; ficam apenas os contatos que você confirmar.
+            </li>
+          </ul>
+          <p>
+            O aplicativo não usa localização, câmera, microfone nem a agenda do celular, e não tem
+            anúncios nem rastreamento de terceiros.
+          </p>
+        </Secao>
+
+        <Secao titulo="11. Exclusão da conta">
+          <p>
+            O dono da conta pode pedir a exclusão da conta e dos dados a qualquer momento. O passo
+            a passo e o que é mantido por obrigação legal estão em{' '}
+            <Link href="/excluir-conta" className="font-medium text-acento-forte underline">
+              cast.dmsregem.com/excluir-conta
+            </Link>
+            .
+          </p>
+        </Secao>
+
+        <Secao titulo="12. Crianças e adolescentes">
           <p>
             O Regemcast é uma ferramenta de trabalho, destinada a empresas. Não é dirigido a
             menores de 18 anos e não coletamos dados de crianças e adolescentes de forma
@@ -271,7 +329,7 @@ export default function PoliticaDePrivacidade() {
           </p>
         </Secao>
 
-        <Secao titulo="11. Mudanças nesta política">
+        <Secao titulo="13. Mudanças nesta política">
           <p>
             Se mudarmos este texto de forma relevante, avisamos os clientes por e-mail ou pelo
             painel antes de a mudança valer. A data no topo indica desde quando esta versão está

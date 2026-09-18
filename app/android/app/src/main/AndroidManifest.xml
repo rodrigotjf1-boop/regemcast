@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- A API do RegemCast. O `flutter create` só declara isto no manifesto de
+    <!-- A API do Regemcast. O `flutter create` só declara isto no manifesto de
          depuração: sem esta linha o APK de produção abre e não conecta. -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Biometria para reabrir o app sem digitar a senha. -->
@@ -12,7 +12,7 @@
          backup automático o copiaria para outro aparelho restaurado — onde a
          chave do cofre não existe e a sessão viraria lixo, ou pior, vazaria. -->
     <application
-        android:label="RegemCast"
+        android:label="Regemcast"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"

@@ -21,7 +21,7 @@ class MainActivity : FlutterFragmentActivity() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val canal = NotificationChannel(
             "avisos",
-            "Avisos do RegemCast",
+            "Avisos do Regemcast",
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
             description = "Campanha concluída ou pausada, modelo aprovado ou recusado, pagamento recusado."

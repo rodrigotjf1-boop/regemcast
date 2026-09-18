@@ -502,13 +502,18 @@ final _modelosMeta = [
   },
 ];
 
+final _paraLoja = Platform.environment['LOJA'] == '1';
+
 Future<void> _capturar(
   WidgetTester tester,
   Widget tela,
   String nome, {
   Brightness brilho = Brightness.light,
 }) async {
-  tester.view.physicalSize = const Size(1080, 2400);
+  // LOJA=1: 1080×1920, a proporção que a Play aceita (lado maior ≤ 2× o menor).
+  tester.view.physicalSize = _paraLoja
+      ? const Size(1080, 1920)
+      : const Size(1080, 2400);
   tester.view.devicePixelRatio = 2.625;
   addTearDown(tester.view.reset);
 
@@ -544,7 +549,7 @@ Future<void> _capturar(
   }
   await expectLater(
     find.byType(MaterialApp),
-    matchesGoldenFile('_capturas/$nome.png'),
+    matchesGoldenFile('${_paraLoja ? '_loja' : '_capturas'}/$nome.png'),
   );
 }
 

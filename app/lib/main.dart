@@ -26,7 +26,7 @@ class AppRegemCast extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'RegemCast',
+      title: 'Regemcast',
       debugShowCheckedModeBanner: false,
       theme: temaDoApp(Brightness.light),
       darkTheme: temaDoApp(Brightness.dark),

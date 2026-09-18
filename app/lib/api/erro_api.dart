@@ -1,6 +1,6 @@
 /// Um erro vindo da API, já com a frase que a pessoa vai ler.
 ///
-/// A API do RegemCast responde erro como `{ "mensagem": "..." }`, em
+/// A API do Regemcast responde erro como `{ "mensagem": "..." }`, em
 /// português e escrito para o cliente. O app mostra essa frase como veio —
 /// reescrever aqui criaria duas versões da mesma explicação, e elas divergem.
 class ErroApi implements Exception {

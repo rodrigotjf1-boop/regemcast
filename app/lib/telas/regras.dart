@@ -67,7 +67,7 @@ const _secoes = [
     icone: Icons.verified_user_outlined,
     titulo: 'Empresa verificada na Meta',
     descricao:
-        'A verificação é feita pela sua empresa, na conta dela na Meta — o RegemCast não faz nem acelera.',
+        'A verificação é feita pela sua empresa, na conta dela na Meta — o Regemcast não faz nem acelera.',
     regras: [
       _Regra(
         'Verifique a empresa no Meta Business Suite',
@@ -87,7 +87,7 @@ const _secoes = [
     icone: Icons.trending_up_rounded,
     titulo: 'Limite de envio',
     descricao:
-        'É da Meta e é diferente do teto de disparos do seu plano no RegemCast. Os dois valem ao mesmo tempo.',
+        'É da Meta e é diferente do teto de disparos do seu plano no Regemcast. Os dois valem ao mesmo tempo.',
     regras: [
       _Regra(
         'Começa em 250 pessoas a cada 24 horas',
@@ -133,7 +133,7 @@ const _secoes = [
       ),
       _Regra(
         'Pediu para sair, sai',
-        'Todo pedido para parar de receber precisa ser respeitado. No RegemCast, quem se descadastra fica marcado e não recebe as próximas campanhas.',
+        'Todo pedido para parar de receber precisa ser respeitado. No Regemcast, quem se descadastra fica marcado e não recebe as próximas campanhas.',
       ),
       _Regra(
         'Mensagem esperada, sem enganar',
@@ -163,7 +163,7 @@ const _secoes = [
       ),
       _Regra(
         'A Meta cobra por mensagem de modelo entregue',
-        'Desde julho de 2025, a cobrança é por mensagem entregue e depende da categoria e do país do número. Marketing é sempre cobrado; utilidade enviada dentro da janela de atendimento não é. Essa cobrança é da Meta, na conta da sua empresa, e é separada do plano do RegemCast.',
+        'Desde julho de 2025, a cobrança é por mensagem entregue e depende da categoria e do país do número. Marketing é sempre cobrado; utilidade enviada dentro da janela de atendimento não é. Essa cobrança é da Meta, na conta da sua empresa, e é separada do plano do Regemcast.',
       ),
       _Regra(
         'Limite de marketing por pessoa',
@@ -243,7 +243,7 @@ class TelaRegras extends StatelessWidget {
             tom: TomPilula.acento,
             icone: Icons.warning_amber_rounded,
             texto:
-                'Estas regras são da Meta, não do RegemCast. Ela decide quem conecta, quanto cada número pode enviar e quando um número é limitado ou suspenso. Descumprir pode limitar ou bloquear o seu número.',
+                'Estas regras são da Meta, não do Regemcast. Ela decide quem conecta, quanto cada número pode enviar e quando um número é limitado ou suspenso. Descumprir pode limitar ou bloquear o seu número.',
           ),
           const SizedBox(height: 6),
           Text(

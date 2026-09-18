@@ -404,7 +404,7 @@ class _TelaMaisState extends ConsumerState<_TelaMais> {
               children: [
                 _Linha(
                   icone: Icons.language_rounded,
-                  texto: 'Abrir o RegemCast no site',
+                  texto: 'Abrir o Regemcast no site',
                   aoTocar: () => launchUrl(
                     Uri.parse(urlWeb),
                     mode: LaunchMode.externalApplication,

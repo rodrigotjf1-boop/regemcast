@@ -180,7 +180,7 @@ class _TelaPlanoState extends ConsumerState<TelaPlano> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: Text(
-                    'A contratação e a troca de plano são feitas na sua conta do RegemCast, fora do app.',
+                    'A contratação e a troca de plano são feitas na sua conta do Regemcast, fora do app.',
                     style: TextStyle(
                       color: c.tintaSuave,
                       fontSize: 13,
@@ -193,7 +193,7 @@ class _TelaPlanoState extends ConsumerState<TelaPlano> {
                   padding: EdgeInsets.only(bottom: 10),
                   child: Aviso(
                     texto:
-                        'A contratação pelo Mercado Pago ainda não está disponível. Fale com o suporte do RegemCast.',
+                        'A contratação pelo Mercado Pago ainda não está disponível. Fale com o suporte do Regemcast.',
                   ),
                 )
               else if (!ehDono)

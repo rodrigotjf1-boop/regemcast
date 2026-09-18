@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// As cores do RegemCast — as MESMAS da web (`frontend/src/app/globals.css`).
+/// As cores do Regemcast — as MESMAS da web (`frontend/src/app/globals.css`).
 ///
 /// Duas regras da marca que valem aqui também:
 ///

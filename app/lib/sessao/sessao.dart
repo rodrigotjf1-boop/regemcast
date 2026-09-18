@@ -149,7 +149,7 @@ class ControleSessao extends Notifier<EstadoSessao> {
     if (atual is! SessaoTravada) return false;
     try {
       final ok = await _bio.authenticate(
-        localizedReason: 'Confirme que é você para abrir o RegemCast',
+        localizedReason: 'Confirme que é você para abrir o Regemcast',
       );
       if (ok) state = SessaoAtiva(atual.sessao);
       return ok;
@@ -174,7 +174,7 @@ class ControleSessao extends Notifier<EstadoSessao> {
       // Ligar exige provar agora: sem isso, quem pegou o celular desbloqueado
       // ligaria a biometria DELE e passaria a abrir o app.
       final ok = await _bio.authenticate(
-        localizedReason: 'Confirme para usar a biometria no RegemCast',
+        localizedReason: 'Confirme para usar a biometria no Regemcast',
       );
       if (!ok) return;
     }

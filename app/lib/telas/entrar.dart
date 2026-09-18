@@ -75,7 +75,7 @@ class _TelaEntrarState extends ConsumerState<TelaEntrar> {
             ? null
             : etapa.porEmail
             ? 'Enviamos um código de 6 dígitos para ${etapa.emailMascarado}. Ele vale por 10 minutos.'
-            : 'Abra o aplicativo autenticador e digite o código do RegemCast.';
+            : 'Abra o aplicativo autenticador e digite o código do Regemcast.';
       });
     } catch (e) {
       if (mounted) setState(() => _erro = mensagemDoErro(e));
