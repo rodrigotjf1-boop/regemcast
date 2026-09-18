@@ -59,6 +59,9 @@ export default function PaginaModelos() {
   // Rascunho aberto para edicao. Rascunho que nao da para reabrir nao e rascunho.
   const [editando, setEditando] = useState<ModeloSalvo | null>(null);
   const [desconectado, setDesconectado] = useState(false);
+  const [aviso, setAviso] = useState('');
+  /** Excluir modelo que está na Meta tem consequência de 30 dias: pergunta antes. */
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState<ModeloSalvo | null>(null);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -103,11 +106,27 @@ export default function PaginaModelos() {
 
   async function excluir(id: string) {
     try {
-      await modelosSalvos.excluir(id);
+      const r = await modelosSalvos.excluir(id);
+      setConfirmandoExclusao(null);
+      setAviso(
+        r.naMeta
+          ? 'Modelo excluído aqui e na Meta. O nome só volta a ficar livre em 30 dias, e as mensagens que já saíram continuam sendo entregues.'
+          : 'Rascunho excluído.',
+      );
       await carregar();
     } catch (e) {
       setErro(mensagemDoErro(e));
+      setConfirmandoExclusao(null);
     }
+  }
+
+  /** O nosso registro do modelo que a Meta está mostrando — se existir. */
+  function localDoAprovado(m: ModeloDeMensagem): ModeloSalvo | undefined {
+    return meus.find(
+      (n) =>
+        (n.metaTemplateId && n.metaTemplateId === m.id) ||
+        (n.nome === m.nome && n.idioma === m.idioma),
+    );
   }
 
   const rascunhos = meus.filter((m) => m.status === 'rascunho' || m.status === 'rejeitado');
@@ -148,6 +167,28 @@ export default function PaginaModelos() {
           </Button>
         }
       />
+
+      {aviso && <Alerta tom="sucesso">{aviso}</Alerta>}
+
+      {confirmandoExclusao && (
+        <Alerta tom="atencao">
+          <span className="block space-y-2">
+            <span className="block">
+              Excluir <strong className="numerico">{confirmandoExclusao.nome}</strong> apaga o modelo aqui e na Meta.
+              Duas coisas que não dá para desfazer: o <strong>nome fica bloqueado por 30 dias</strong>, e as mensagens
+              que já saíram continuam sendo entregues — excluir não cancela envio.
+            </span>
+            <span className="flex flex-wrap gap-2">
+              <Button tamanho="sm" variante="perigo" onClick={() => void excluir(confirmandoExclusao.id)}>
+                Excluir na Meta
+              </Button>
+              <Button tamanho="sm" variante="discreto" onClick={() => setConfirmandoExclusao(null)}>
+                Voltar
+              </Button>
+            </span>
+          </span>
+        </Alerta>
+      )}
 
       {editorAberto && (
         <div className="anima-entrada">
@@ -289,11 +330,22 @@ export default function PaginaModelos() {
         <section aria-label="Modelos na Meta" className="space-y-3">
           <h2 className="text-base font-semibold text-tinta">Na Meta</h2>
           <ul className="escalonado grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {modelos.map((m) => (
-              <li key={m.id}>
-                <CartaoModelo modelo={m} />
-              </li>
-            ))}
+            {modelos.map((m) => {
+              const local = localDoAprovado(m);
+              return (
+                <li key={m.id}>
+                  <CartaoModelo
+                    modelo={m}
+                    local={local}
+                    aoEditar={() => {
+                      setCriando(false);
+                      setEditando(local ?? null);
+                    }}
+                    aoExcluir={() => local && setConfirmandoExclusao(local)}
+                  />
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}
@@ -301,7 +353,18 @@ export default function PaginaModelos() {
   );
 }
 
-function CartaoModelo({ modelo }: { modelo: ModeloDeMensagem }) {
+function CartaoModelo({
+  modelo,
+  local,
+  aoEditar,
+  aoExcluir,
+}: {
+  modelo: ModeloDeMensagem;
+  /** O nosso registro dele. Sem ele o modelo nasceu fora do RegemCast: só leitura. */
+  local?: ModeloSalvo;
+  aoEditar: () => void;
+  aoExcluir: () => void;
+}) {
   return (
     <article className="cartao-interativo flex h-full flex-col overflow-hidden rounded-card border border-borda bg-superficie shadow-card">
       <div className="flex items-start justify-between gap-2 p-4">
@@ -346,6 +409,26 @@ function CartaoModelo({ modelo }: { modelo: ModeloDeMensagem }) {
               ? '1 variável a preencher'
               : `${modelo.variaveis} variáveis a preencher`}
         </span>
+
+        {/*
+          Só o que nasceu aqui pode ser editado ou excluído por aqui: de um
+          modelo criado direto no painel da Meta não temos o texto original, e
+          "editar" mandaria para lá uma versão montada pela metade.
+        */}
+        {local ? (
+          <span className="flex gap-1.5">
+            <Button tamanho="sm" variante="discreto" onClick={aoEditar}>
+              <IconeEditar />
+              Editar
+            </Button>
+            <Button tamanho="sm" variante="discreto" onClick={aoExcluir} className="hover:text-erro">
+              <IconeLixeira />
+              Excluir
+            </Button>
+          </span>
+        ) : (
+          <span className="text-[0.7rem]">Criado fora do RegemCast</span>
+        )}
       </div>
 
       {modelo.motivo && (

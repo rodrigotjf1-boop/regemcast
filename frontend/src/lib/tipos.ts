@@ -420,6 +420,10 @@ export interface ProblemaNoModelo {
 /** `GET /modelos` — o que está gravado aqui, incluindo rascunho. */
 export interface ModeloSalvo {
   id: string;
+  /** Id na Meta. Preenchido = editar e excluir chegam até ela. */
+  metaTemplateId?: string | null;
+  /** Quando a Meta aceitou a última edição (ela aceita 1 por dia em aprovado). */
+  editadoMetaEm?: string | null;
   tipo: TipoModelo;
   nome: string;
   idioma: string;

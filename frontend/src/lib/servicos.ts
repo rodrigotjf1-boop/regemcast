@@ -327,7 +327,8 @@ export const modelos = {
     api.post<{ status: string; motivo: string | null }>(`/modelos/${id}/enviar`, {}),
 
   /** `DELETE /modelos/:id` — só rascunho e recusado. */
-  excluir: (id: string) => api.delete<{ ok: boolean }>(`/modelos/${id}`),
+  /** `DELETE /modelos/:id` — apaga aqui e, quando o modelo está lá, também na Meta. */
+  excluir: (id: string) => api.delete<{ ok: boolean; naMeta: boolean }>(`/modelos/${id}`),
 };
 
 export const midia = {

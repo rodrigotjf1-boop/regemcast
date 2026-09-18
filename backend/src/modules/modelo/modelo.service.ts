@@ -58,6 +58,10 @@ export interface ResumoModelo {
   cartoes: unknown[];
   ltoAtivo: boolean;
   ltoTexto: string | null;
+  /** Id na Meta. Preenchido = o modelo existe lá, e editar/excluir chega até ela. */
+  metaTemplateId: string | null;
+  /** Quando a última edição foi aceita pela Meta. Aprovado aceita 1 a cada 24h. */
+  editadoMetaEm: Date | null;
   /** Quantas variáveis distintas o corpo usa. */
   variaveis: number;
   criadoEm: Date;
@@ -109,6 +113,8 @@ export class ModeloService {
         cartoes: (l.cartoes as unknown[]) ?? [],
         ltoAtivo: l.ltoAtivo,
         ltoTexto: l.ltoTexto,
+        metaTemplateId: l.metaTemplateId,
+        editadoMetaEm: l.editadoMetaEm,
         variaveis: quantasVariaveis(l.corpo),
         criadoEm: l.criadoEm,
       }));
@@ -153,11 +159,18 @@ export class ModeloService {
 
       if (id) {
         const atual = await this.buscar(db, contaId, id);
-        if (atual.status !== 'rascunho' && atual.status !== 'rejeitado') {
-          // Modelo já submetido não se edita: a Meta guarda a versão dela, e
-          // mudar a nossa faria a tela mentir sobre o que foi aprovado.
+        if (atual.status === 'enviado') {
+          // Em análise a Meta ainda não decidiu; editar agora é editar uma
+          // versão que não existe de nenhum dos dois lados.
           throw new BadRequestException(
-            'Este modelo já foi enviado para a Meta e não pode mais ser editado. Crie outro com um nome novo.',
+            'Este modelo está em análise na Meta. Espere a resposta para editar.',
+          );
+        }
+        if (atual.metaTemplateId) {
+          // Rede de segurança: modelo que existe na Meta é editado por
+          // `editarNaMeta`, e quem escolhe o caminho é `salvar`.
+          throw new BadRequestException(
+            'Este modelo está na Meta. Use a edição que envia a alteração para ela.',
           );
         }
 
@@ -186,6 +199,28 @@ export class ModeloService {
 
       return { id: criado!.id };
     });
+  }
+
+  /**
+   * O que a tela chama ao salvar.
+   *
+   * Um caminho só, porque a pessoa só vê "salvar": se o modelo ainda não existe
+   * na Meta, grava aqui; se já existe, a alteração vai até lá. Deixar essa
+   * escolha para a tela significaria que um dia ela escolheria errado.
+   */
+  async salvar(
+    contaId: string,
+    usuarioId: string,
+    dto: SalvarModeloDto,
+    id?: string,
+  ): Promise<{ id: string; status?: string }> {
+    if (!id) return this.salvarRascunho(contaId, usuarioId, dto);
+
+    const atual = await this.ctx.comConta(contaId, (db) => this.buscar(db, contaId, id));
+    if (!atual.metaTemplateId) return this.salvarRascunho(contaId, usuarioId, dto, id);
+
+    const r = await this.editarNaMeta(contaId, usuarioId, id, dto);
+    return { id, status: r.status };
   }
 
   /**
@@ -295,17 +330,51 @@ export class ModeloService {
     return { status, motivo: null };
   }
 
-  /** Apaga o rascunho. Modelo já enviado sai pela Meta, não por aqui. */
-  async excluir(contaId: string, usuarioId: string, id: string): Promise<{ ok: true }> {
-    return this.ctx.comConta(contaId, async (db) => {
-      const atual = await this.buscar(db, contaId, id);
+  /**
+   * Exclui o modelo — aqui e, quando ele existe lá, na Meta.
+   *
+   * Duas consequências que o cliente precisa saber ANTES, e que a tela avisa:
+   *
+   * - mensagens já enviadas e ainda não entregues continuam sendo tentadas por
+   *   30 dias; excluir não cancela o que já saiu;
+   * - o NOME só volta a ficar livre depois de 30 dias.
+   *
+   * A ordem é: apaga na Meta primeiro, depois aqui. Se a Meta recusar, nada
+   * some do nosso lado — o contrário deixaria um modelo órfão lá, ocupando o
+   * nome, sem nenhuma tela onde ele apareça.
+   */
+  async excluir(contaId: string, usuarioId: string, id: string): Promise<{ ok: true; naMeta: boolean }> {
+    const atual = await this.ctx.comConta(contaId, (db) => this.buscar(db, contaId, id));
 
-      if (atual.status !== 'rascunho' && atual.status !== 'rejeitado') {
+    if (atual.status === 'enviado') {
+      throw new BadRequestException(
+        'Este modelo está em análise na Meta. Espere a resposta — depois dela dá para excluir.',
+      );
+    }
+
+    const naMeta = Boolean(atual.metaTemplateId);
+    if (naMeta) {
+      const credencial = await this.meta.tokenDaConta(contaId);
+      if (!credencial) {
         throw new BadRequestException(
-          'Este modelo está na Meta. Para removê-lo, use a opção de excluir na lista de modelos aprovados.',
+          'Reconecte o WhatsApp antes de excluir: este modelo está na Meta e precisa ser apagado lá também.',
         );
       }
+      try {
+        await this.graph.excluirModelo(
+          credencial.wabaId,
+          credencial.token,
+          atual.nome,
+          atual.metaTemplateId,
+        );
+      } catch (erro) {
+        const g = erro instanceof ErroGraph ? erro : null;
+        this.log.warn(`Não consegui excluir o modelo ${atual.nome} na Meta: ${g?.detalheParaLog ?? String(erro)}`);
+        throw new BadRequestException(g?.mensagemParaUsuario ?? 'A Meta não conseguiu excluir este modelo agora.');
+      }
+    }
 
+    return this.ctx.comConta(contaId, async (db) => {
       await db.delete(modelo).where(and(eq(modelo.contaId, contaId), eq(modelo.id, id)));
 
       await this.auditoria.registrar({
@@ -315,11 +384,130 @@ export class ModeloService {
         acao: 'modelo.excluido',
         entidade: 'modelo',
         entidadeId: id,
-        detalhe: { nome: atual.nome },
+        detalhe: { nome: atual.nome, naMeta },
       });
 
-      return { ok: true as const };
+      return { ok: true as const, naMeta };
     });
+  }
+
+  /**
+   * Edita um modelo que JÁ está na Meta (aprovado ou recusado).
+   *
+   * Três coisas que só existem aqui:
+   *
+   * 1. **O limite da Meta.** Modelo aprovado aceita uma edição a cada 24 horas
+   *    (e dez a cada 30 dias). Conferimos a janela de 24h ANTES de o cliente
+   *    reescrever tudo — a Meta só diria isso depois, com erro genérico.
+   * 2. **A categoria não vai junto.** Ela não muda em modelo aprovado; mandá-la
+   *    faz a Meta recusar a edição inteira.
+   * 3. **O status verdadeiro vem dela.** Depois da edição relemos o modelo na
+   *    Meta em vez de adivinhar: dependendo do que mudou, ele volta para
+   *    análise ou continua aprovado, e a tela precisa dizer o que é fato.
+   */
+  async editarNaMeta(
+    contaId: string,
+    usuarioId: string,
+    id: string,
+    dto: SalvarModeloDto,
+  ): Promise<{ status: string; motivo: string | null }> {
+    const atual = await this.ctx.comConta(contaId, (db) => this.buscar(db, contaId, id));
+
+    if (!atual.metaTemplateId) {
+      throw new BadRequestException('Este modelo ainda não está na Meta. Envie para aprovação primeiro.');
+    }
+    if (atual.status === 'enviado') {
+      throw new BadRequestException('Este modelo está em análise na Meta. Espere a resposta para editar.');
+    }
+
+    if (atual.status === 'aprovado' && atual.editadoMetaEm) {
+      const passou = Date.now() - atual.editadoMetaEm.getTime();
+      const faltam = Math.ceil((24 * 3_600_000 - passou) / 3_600_000);
+      if (faltam > 0) {
+        throw new BadRequestException(
+          `A Meta aceita uma edição por dia em modelo aprovado. Dá para editar este de novo em ${faltam} hora(s).`,
+        );
+      }
+    }
+
+    // A categoria é a que já está lá: muda-la é modelo novo, não edição.
+    const paraValidar = { ...dto, categoria: atual.categoria as SalvarModeloDto['categoria'] };
+    const problemas = conferirModelo(this.paraValidacao(paraValidar));
+    if (problemas.length) {
+      throw new BadRequestException({
+        mensagem: 'O modelo tem pontos a corrigir antes de ir para a Meta.',
+        problemas,
+      });
+    }
+
+    const credencial = await this.meta.tokenDaConta(contaId);
+    if (!credencial) {
+      throw new BadRequestException('Conecte sua conta do WhatsApp antes de editar o modelo.');
+    }
+
+    const comHandles = await this.resolverMidias(contaId, paraValidar);
+    const corpo = this.montarComponentes(comHandles);
+    const componentes = (corpo.components ?? []) as Record<string, unknown>[];
+
+    try {
+      await this.graph.editarModelo(atual.metaTemplateId, credencial.token, componentes);
+    } catch (erro) {
+      const g = erro instanceof ErroGraph ? erro : null;
+      this.log.warn(`Edição do modelo ${atual.nome} recusada: ${g?.detalheParaLog ?? String(erro)}`);
+      throw new BadRequestException(g?.mensagemParaUsuario ?? 'A Meta recusou a edição do modelo.');
+    }
+
+    // O status real, dito por ela. Se a leitura falhar, ficamos com "enviado":
+    // é o mais conservador — a tela mostra "em análise" até a próxima leitura,
+    // e nunca promete aprovado o que talvez não esteja.
+    let status = 'enviado';
+    let categoriaMeta: string | null = atual.categoriaMeta;
+    try {
+      const lido = await this.graph.lerModelo(atual.metaTemplateId, credencial.token);
+      const bruto = (lido.status ?? '').toUpperCase();
+      if (bruto === 'APPROVED') status = 'aprovado';
+      else if (bruto === 'REJECTED') status = 'rejeitado';
+      categoriaMeta = lido.category ?? categoriaMeta;
+    } catch (erro) {
+      this.log.warn(`Não consegui reler o modelo ${atual.nome} depois da edição: ${String(erro)}`);
+    }
+
+    await this.ctx.comConta(contaId, async (db) => {
+      await db
+        .update(modelo)
+        .set({
+          tipo: dto.tipo ?? 'simples',
+          cartoes: dto.cartoes ?? [],
+          cabecalhoFormato: dto.cabecalhoFormato ?? null,
+          cabecalhoTexto: dto.cabecalhoTexto ?? null,
+          cabecalhoExemplo: dto.cabecalhoExemplo ?? null,
+          cabecalhoMidia: dto.cabecalhoMidia ?? null,
+          corpo: dto.corpo ?? '',
+          corpoExemplos: dto.corpoExemplos ?? [],
+          rodape: dto.rodape ?? null,
+          botoes: dto.botoes ?? [],
+          ltoAtivo: dto.ltoAtivo ?? false,
+          ltoTexto: dto.ltoTexto ?? null,
+          status,
+          categoriaMeta,
+          motivo: null,
+          editadoMetaEm: new Date(),
+          respondidoEm: status === 'enviado' ? null : new Date(),
+        })
+        .where(and(eq(modelo.contaId, contaId), eq(modelo.id, id)));
+
+      await this.auditoria.registrar({
+        contaId,
+        atorTipo: 'usuario',
+        atorUsuarioId: usuarioId,
+        acao: 'modelo.editado_na_meta',
+        entidade: 'modelo',
+        entidadeId: id,
+        detalhe: { nome: atual.nome, status },
+      });
+    });
+
+    return { status, motivo: null };
   }
 
   // ------------------------------------------------------------------ apoio

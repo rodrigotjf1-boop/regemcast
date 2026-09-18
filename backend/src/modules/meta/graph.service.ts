@@ -452,12 +452,55 @@ export class GraphService {
     });
   }
 
+  /**
+   * Edita um modelo que já está na Meta.
+   *
+   * Só componentes: a CATEGORIA de um modelo aprovado não pode mudar (a Meta
+   * recusa), e mandar o campo de qualquer jeito transforma uma edição simples
+   * numa recusa sem explicação. Categoria diferente é modelo novo.
+   *
+   * Sem retentativa automática: editar não é idempotente do ponto de vista do
+   * limite (a Meta conta 1 edição por 24 horas em modelo aprovado), e repetir
+   * às cegas queimaria a cota do cliente.
+   */
+  async editarModelo(
+    templateId: string,
+    tokenDoCliente: string,
+    componentes: Record<string, unknown>[],
+  ): Promise<{ success?: boolean }> {
+    return this.chamar(templateId, {
+      metodo: 'POST',
+      token: tokenDoCliente,
+      corpo: { components: componentes },
+      tentativas: 0,
+    });
+  }
+
+  /** O modelo como a Meta o vê agora. Usado depois de editar, para saber o status real. */
+  async lerModelo(
+    templateId: string,
+    tokenDoCliente: string,
+  ): Promise<{ id: string; status?: string; category?: string }> {
+    return this.chamar(templateId, {
+      token: tokenDoCliente,
+      query: { fields: 'id,status,category' },
+    });
+  }
+
   /** Apaga o modelo na Meta. O nome só volta a ficar livre depois disto. */
-  async excluirModelo(wabaId: string, tokenDoCliente: string, nome: string): Promise<void> {
+  async excluirModelo(
+    wabaId: string,
+    tokenDoCliente: string,
+    nome: string,
+    templateId?: string | null,
+  ): Promise<void> {
     await this.chamar(`${wabaId}/message_templates`, {
       metodo: 'DELETE',
       token: tokenDoCliente,
-      query: { name: nome },
+      // Com `hsm_id` a Meta apaga só ESTE idioma; só com `name` ela apaga todos
+      // os idiomas daquele modelo. Mandamos o id quando temos — apagar o
+      // espanhol junto com o português seria uma surpresa cara.
+      query: templateId ? { name: nome, hsm_id: templateId } : { name: nome },
       tentativas: 0,
     });
   }

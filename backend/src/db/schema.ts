@@ -572,6 +572,8 @@ export const modelo = pgTable('modelo', {
   status: text('status').notNull().default('rascunho'),
   motivo: text('motivo'),
   metaTemplateId: text('meta_template_id'),
+  /** Quando a última edição foi aceita pela Meta (migration 018). Ela aceita 1 a cada 24h. */
+  editadoMetaEm: timestamp('editado_meta_em', { withTimezone: true }),
   criadoPor: uuid('criado_por'),
   enviadoEm: timestamp('enviado_em', { withTimezone: true }),
   respondidoEm: timestamp('respondido_em', { withTimezone: true }),

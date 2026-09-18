@@ -102,6 +102,9 @@ export function EditorModelo({
   aoSalvar: () => void;
   aoCancelar: () => void;
 }) {
+  // Modelo que já existe na Meta: a alteração vai até lá, e as regras dela valem.
+  const naMeta = Boolean(inicial?.metaTemplateId);
+
   const [dados, setDados] = useState<DadosModelo>(
     inicial ? daListaParaEdicao(inicial) : VAZIO,
   );
@@ -167,7 +170,10 @@ export function EditorModelo({
       const { id } = inicial
         ? await modelos.atualizar(inicial.id, dados)
         : await modelos.criar(dados);
-      if (enviar) await modelos.enviar(id);
+      // Modelo que já existe na Meta não passa por "enviar": o próprio salvar
+      // mandou a alteração para lá, e chamar o envio criaria outro com o mesmo
+      // nome — que ela recusa.
+      if (enviar && !naMeta) await modelos.enviar(id);
       aoSalvar();
     } catch (e) {
       setErro(mensagemDoErro(e));
@@ -182,6 +188,21 @@ export function EditorModelo({
         {/* ------------------------------------------------------ formulário */}
         <div className="min-w-0 divide-y divide-borda">
           <Cabecalho tipo={dados.tipo ?? 'simples'} aoTrocar={trocarTipo} />
+
+          {naMeta && (
+            <div className="p-4 sm:p-5">
+              <Alerta tom="atencao">
+                <span className="block space-y-1">
+                  <strong className="block">Este modelo já está na Meta</strong>
+                  <span className="block text-xs leading-relaxed">
+                    Salvar manda a alteração direto para ela, e ela analisa de novo. Modelo aprovado aceita{' '}
+                    <strong>uma edição por dia</strong> (e dez por mês). A categoria não muda — para trocar, é modelo
+                    novo. Quem já recebeu a mensagem antiga continua com ela.
+                  </span>
+                </span>
+              </Alerta>
+            </div>
+          )}
 
           {(erro || aviso || problemas.length > 0) && (
             <div className="space-y-3 p-4 sm:p-5">
@@ -221,13 +242,18 @@ export function EditorModelo({
                 <Select
                   id="m-categoria"
                   value={dados.categoria}
+                  disabled={naMeta}
                   onChange={(e) => mudar('categoria', e.target.value as CategoriaModelo)}
                 >
                   <option value="MARKETING">Marketing</option>
                   <option value="UTILITY">Utilidade</option>
                   <option value="AUTHENTICATION">Autenticação</option>
                 </Select>
-                <p className="text-xs text-tinta-suave">Define o preço na Meta</p>
+                <p className="text-xs text-tinta-suave">
+                  {naMeta
+                    ? 'A Meta não troca a categoria de um modelo que já existe. Outra categoria é outro modelo.'
+                    : 'Define o preço na Meta'}
+                </p>
               </div>
 
               <div className="space-y-1.5">
@@ -472,12 +498,20 @@ export function EditorModelo({
           {/* Barra de ação fixa: em formulário longo, rolar até o fim para salvar
               é o atrito que faz a pessoa perder o trabalho. */}
           <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-2 border-t border-borda bg-superficie/95 p-4 shadow-flutuante backdrop-blur sm:p-5">
-            <Button onClick={() => void salvar(true)} carregando={ocupado}>
-              Enviar para aprovação
-            </Button>
-            <Button variante="secundario" onClick={() => void salvar(false)} carregando={ocupado}>
-              Salvar rascunho
-            </Button>
+            {naMeta ? (
+              <Button onClick={() => void salvar(false)} carregando={ocupado}>
+                Salvar alteração na Meta
+              </Button>
+            ) : (
+              <>
+                <Button onClick={() => void salvar(true)} carregando={ocupado}>
+                  Enviar para aprovação
+                </Button>
+                <Button variante="secundario" onClick={() => void salvar(false)} carregando={ocupado}>
+                  Salvar rascunho
+                </Button>
+              </>
+            )}
             <Button variante="secundario" onClick={() => void conferir()} carregando={ocupado}>
               Conferir regras
             </Button>

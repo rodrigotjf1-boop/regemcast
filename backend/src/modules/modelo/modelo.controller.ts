@@ -36,13 +36,14 @@ export class ModeloController {
     return this.servico.salvarRascunho(usuario.contaId, usuario.id, dto);
   }
 
+  /** Salva. Rascunho fica aqui; modelo que já está na Meta vai editado até ela. */
   @Put(':id')
   atualizar(
     @UsuarioAtual() usuario: UsuarioAutenticado,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SalvarModeloDto,
   ) {
-    return this.servico.salvarRascunho(usuario.contaId, usuario.id, dto, id);
+    return this.servico.salvar(usuario.contaId, usuario.id, dto, id);
   }
 
   /** Submete à Meta. Confere antes; se algo estiver errado, nada sai daqui. */
