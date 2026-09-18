@@ -107,3 +107,47 @@ jobs:
           push: false
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
+
+  app:
+    name: app Android (análise · testes)
+    runs-on: ubuntu-latest
+    # O filtro de caminhos lista os arquivos da PR pela API do GitHub.
+    permissions:
+      contents: read
+      pull-requests: read
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      # Só roda o Flutter quando o app mudou: a instalação custa minutos, e
+      # a maioria das PRs é de backend ou web.
+      - uses: dorny/paths-filter@v3
+        id: mudou
+        with:
+          filters: |
+            app:
+              - 'app/**'
+              - '.github/workflows/ci.yml'
+
+      # A mesma versão da máquina de build: análise e testes que passam aqui
+      # passam lá, e vice-versa.
+      - uses: subosito/flutter-action@v2
+        if: steps.mudou.outputs.app == 'true'
+        with:
+          flutter-version: '3.44.8'
+          channel: stable
+          cache: true
+
+      - name: Dependências
+        if: steps.mudou.outputs.app == 'true'
+        run: flutter pub get
+
+      - name: Análise
+        if: steps.mudou.outputs.app == 'true'
+        run: flutter analyze
+
+      - name: Testes
+        if: steps.mudou.outputs.app == 'true'
+        run: flutter test
