@@ -34,6 +34,7 @@ import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
 import { assinatura, campanha, campanhaDestinatario, conta, contatoLista, waNumero } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { AvisoService } from '../aviso/aviso.service';
 import { ErroGraph, GraphService } from '../meta/graph.service';
 import { MetaService } from '../meta/meta.service';
 import { TelemetriaService } from '../telemetria/telemetria.service';
@@ -218,6 +219,7 @@ export class CampanhaService {
     private readonly graph: GraphService,
     private readonly auditoria: AuditoriaService,
     private readonly telemetria: TelemetriaService,
+    private readonly avisos: AvisoService,
   ) {}
 
   /** Cria a campanha com os destinatários em `pendente`. Nada é enviado aqui. */
@@ -820,6 +822,7 @@ export class CampanhaService {
         .select({
           id: campanha.id,
           contaId: campanha.contaId,
+          nome: campanha.nome,
           status: campanha.status,
           modeloNome: campanha.modeloNome,
           modeloIdioma: campanha.modeloIdioma,
@@ -890,6 +893,7 @@ export class CampanhaService {
     if (!decisao.pode) return;
 
     // Reivindicação atômica. `SKIP LOCKED` é o que impede envio duplicado.
+    let pausadaPor: 'inadimplencia' | 'teto_plano' | null = null;
     const reivindicados = await this.ctx.comEscopoSistema('campanha.worker.reivindicar', async (db) => {
       // Quem pediu para sair DEPOIS de a campanha ser montada não recebe. A
       // conferência é feita aqui, na hora do envio, e não só na montagem: entre
@@ -905,10 +909,12 @@ export class CampanhaService {
       // Conta inadimplente depois da carência: nada sai, a campanha pausa e
       // volta sozinha quando o pagamento for confirmado.
       if (await motivoDeBloqueio(db, c.contaId)) {
-        await db.execute(sql`
+        const r = await db.execute(sql`
           update campanha set status = 'pausada', pausa_motivo = 'inadimplencia'
            where id = ${campanhaId} and status in ('agendada', 'enviando')
+          returning id
         `);
+        if (r.rows?.length) pausadaPor = 'inadimplencia';
         return null;
       }
 
@@ -917,10 +923,12 @@ export class CampanhaService {
       if (saldo !== null && saldo <= 0) {
         // Os destinatários ficam na fila, intactos. A campanha volta sozinha
         // quando o ciclo virar ou o plano mudar.
-        await db.execute(sql`
+        const r = await db.execute(sql`
           update campanha set status = 'pausada', pausa_motivo = 'teto_plano'
            where id = ${campanhaId} and status in ('agendada', 'enviando')
+          returning id
         `);
+        if (r.rows?.length) pausadaPor = 'teto_plano';
         return null;
       }
 
@@ -943,6 +951,19 @@ export class CampanhaService {
 
     if (reivindicados === null) {
       this.log.log(`Campanha ${campanhaId} pausada: a conta ${c.contaId} está sem disparos no plano ou com o pagamento atrasado.`);
+      if (pausadaPor === 'teto_plano') {
+        void this.avisos.avisar(c.contaId, 'campanhas', {
+          titulo: `Campanha pausada: ${c.nome}`,
+          corpo: 'Os disparos do seu plano acabaram neste ciclo. Quem faltava continua na fila e sai quando o ciclo virar ou com um plano maior.',
+          dados: { campanhaId },
+        });
+      } else if (pausadaPor === 'inadimplencia') {
+        void this.avisos.avisar(c.contaId, 'campanhas', {
+          titulo: `Campanha pausada: ${c.nome}`,
+          corpo: 'O pagamento do plano está pendente. A campanha volta sozinha quando o pagamento for confirmado.',
+          dados: { campanhaId },
+        });
+      }
       return;
     }
 
@@ -975,20 +996,29 @@ export class CampanhaService {
       // fila — não é culpa deles, e queimá-los como "falhou" seria perder a
       // campanha por um token vencido. A campanha pausa, para não girar em
       // falso a cada rodada.
-      await this.ctx.comEscopoSistema('campanha.worker.pausar', async (db) => {
+      const pausou = await this.ctx.comEscopoSistema('campanha.worker.pausar', async (db) => {
         await db
           .update(campanhaDestinatario)
           .set({ status: 'pendente' })
           .where(inArray(campanhaDestinatario.id, reivindicados.map((d) => d.id)));
-        await db
+        const r = await db
           .update(campanha)
           .set({ status: 'pausada', pausaMotivo: 'conexao' })
-          .where(eq(campanha.id, campanhaId));
+          .where(and(eq(campanha.id, campanhaId), inArray(campanha.status, [...ESTADOS_ATIVOS])))
+          .returning({ id: campanha.id });
+        return r.length > 0;
       });
 
       this.log.warn(
         `Campanha ${campanhaId} pausada: a conta ${c.contaId} perdeu a conexão com a Meta antes do envio.`,
       );
+      if (pausou) {
+        void this.avisos.avisar(c.contaId, 'campanhas', {
+          titulo: `Campanha pausada: ${c.nome}`,
+          corpo: 'A conexão com o WhatsApp caiu antes de terminar. Reconecte pelo site e retome a campanha.',
+          dados: { campanhaId },
+        });
+      }
       return;
     }
 
@@ -1036,9 +1066,9 @@ export class CampanhaService {
     });
   }
 
-  /** Conclui a campanha quando não sobra ninguém para enviar. */
+  /** Conclui a campanha quando não sobra ninguém para enviar — e avisa, uma vez só. */
   private async concluirSeTerminou(campanhaId: string): Promise<void> {
-    await this.ctx.comEscopoSistema('campanha.worker.concluir', async (db) => {
+    const concluida = await this.ctx.comEscopoSistema('campanha.worker.concluir', async (db) => {
       const [{ restam }] = await db
         .select({ restam: count(campanhaDestinatario.id) })
         .from(campanhaDestinatario)
@@ -1049,13 +1079,33 @@ export class CampanhaService {
           ),
         );
 
-      if (Number(restam) === 0) {
-        await db
-          .update(campanha)
-          .set({ status: 'concluida', concluidaEm: new Date() })
-          .where(and(eq(campanha.id, campanhaId), inArray(campanha.status, [...ESTADOS_ATIVOS])));
-      }
+      if (Number(restam) !== 0) return null;
+      // `returning` só devolve linha na rodada que de fato concluiu: duas
+      // rodadas terminando juntas não mandam o aviso duas vezes.
+      const [linha] = await db
+        .update(campanha)
+        .set({ status: 'concluida', concluidaEm: new Date() })
+        .where(and(eq(campanha.id, campanhaId), inArray(campanha.status, [...ESTADOS_ATIVOS])))
+        .returning({ contaId: campanha.contaId, nome: campanha.nome });
+      if (!linha) return null;
+
+      const r = await db.execute(sql`
+        select count(*) filter (where status in ('enviada', 'entregue', 'lida')) as saiu,
+               count(*) filter (where status = 'falhou') as falhou
+          from campanha_destinatario where campanha_id = ${campanhaId}
+      `);
+      const t = (r.rows?.[0] ?? {}) as { saiu?: unknown; falhou?: unknown };
+      return { ...linha, saiu: Number(t.saiu ?? 0), falhou: Number(t.falhou ?? 0) };
     });
+
+    if (concluida) {
+      const falhas = concluida.falhou > 0 ? ` ${concluida.falhou} não ${concluida.falhou === 1 ? 'chegou' : 'chegaram'}.` : '';
+      void this.avisos.avisar(concluida.contaId, 'campanhas', {
+        titulo: `Campanha concluída: ${concluida.nome}`,
+        corpo: `${concluida.saiu.toLocaleString('pt-BR')} ${concluida.saiu === 1 ? 'mensagem saiu' : 'mensagens saíram'}.${falhas} Toque para ver o resultado.`,
+        dados: { campanhaId },
+      });
+    }
   }
 
   /**

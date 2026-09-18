@@ -36,6 +36,7 @@ import { env } from '../../config/env';
 import { ContextoDb, type Db } from '../../db/contexto';
 import { assinatura, cobranca, eventoMercadopago, plano, usoCiclo } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { AvisoService } from '../aviso/aviso.service';
 import { motivoDeBloqueio, retomarPausadasPorTeto } from '../campanha/campanha.service';
 import { avisoAutentico, motivoDaRecusa, paraCentavos, statusDaFatura } from './mercadopago';
 import { MercadoPagoService } from './mercadopago.service';
@@ -115,6 +116,7 @@ export class CobrancaService {
     private readonly ctx: ContextoDb,
     private readonly mp: MercadoPagoService,
     private readonly auditoria: AuditoriaService,
+    private readonly avisos: AvisoService,
   ) {}
 
   // ----------------------------------------------------------- tela do cliente
@@ -430,14 +432,19 @@ export class CobrancaService {
     const f = await this.mp.lerFatura(faturaId);
     const status = statusDaFatura(f);
 
-    await this.ctx.comEscopoSistema('cobranca.sincronizar_fatura', async (db) => {
+    const recusaNova = await this.ctx.comEscopoSistema('cobranca.sincronizar_fatura', async (db) => {
       const a = await this.buscarPorMp(db, f.preapproval_id ?? '', f.external_reference);
       if (!a) {
         this.log.warn(`Fatura ${faturaId} de assinatura desconhecida (${f.preapproval_id}) — ignorada.`);
-        return;
+        return null;
       }
 
       const motivo = status === 'recusada' ? motivoDaRecusa(f.payment?.status_detail) : null;
+
+      // O Mercado Pago repete o aviso da mesma fatura: o dono é avisado quando
+      // a recusa é NOVA, e não a cada releitura.
+      const anterior = await db.execute(sql`select status from cobranca where mp_fatura_id = ${String(f.id)}`);
+      const jaEraRecusada = (anterior.rows?.[0] as { status?: string } | undefined)?.status === 'recusada';
 
       await db.execute(sql`
         insert into cobranca (conta_id, assinatura_id, plano_id, mp_fatura_id, mp_pagamento_id,
@@ -456,7 +463,7 @@ export class CobrancaService {
 
       if (status === 'aprovada') {
         await this.ativar(db, a, f.preapproval_id ?? a.mpAssinaturaId ?? '');
-        return;
+        return null;
       }
 
       if (status === 'recusada' && a.status === 'ativa') {
@@ -473,7 +480,21 @@ export class CobrancaService {
           detalhe: { fatura: String(f.id), motivo },
         });
       }
+      return status === 'recusada' && !jaEraRecusada ? { contaId: a.contaId, motivo } : null;
     });
+
+    if (recusaNova) {
+      void this.avisos.avisar(
+        recusaNova.contaId,
+        'cobranca',
+        {
+          titulo: 'Pagamento do plano recusado',
+          corpo: `${recusaNova.motivo ?? 'O Mercado Pago não aprovou a cobrança.'} Confira o meio de pagamento para os disparos não pararem.`,
+          dados: { tela: 'plano' },
+        },
+        { soDono: true },
+      );
+    }
   }
 
   // ------------------------------------------------------------------ apoio

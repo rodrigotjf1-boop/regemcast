@@ -19,6 +19,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:regemcast/api/cliente_api.dart';
 import 'package:regemcast/api/dados.dart';
 import 'package:regemcast/api/modelos.dart';
+import 'package:regemcast/push/push.dart';
 import 'package:regemcast/sessao/cofre.dart';
 import 'package:regemcast/sessao/sessao.dart';
 import 'package:regemcast/telas/campanha_detalhe.dart';
@@ -516,6 +517,14 @@ Future<void> _capturar(
       overrides: [
         clienteApiProvider.overrideWithValue(_api),
         cofreProvider.overrideWithValue(_CofreMemoria()),
+        // Sem Firebase no teste: as preferências vêm prontas.
+        preferenciasAvisoProvider.overrideWith(
+          (ref) async => const PreferenciasAviso(
+            campanhas: true,
+            modelos: true,
+            cobranca: false,
+          ),
+        ),
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,

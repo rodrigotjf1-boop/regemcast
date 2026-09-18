@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Lima da marca: pinta o ícone na notificação aberta. -->
+    <color name="cor_notificacao">#A3E635</color>
+</resources>

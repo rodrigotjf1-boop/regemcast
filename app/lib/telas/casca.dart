@@ -1,12 +1,19 @@
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../api/conta.dart';
+import '../api/leituras.dart';
+import '../api/modelos.dart';
+import '../componentes/avisos_celular.dart';
 import '../componentes/basicos.dart';
 import '../componentes/marca.dart';
 import '../config.dart';
+import '../push/push.dart';
 import '../sessao/sessao.dart';
 import '../tema/cores.dart';
+import 'campanha_detalhe.dart';
 import 'campanhas.dart';
 import 'conta.dart';
 import 'contatos.dart';
@@ -36,6 +43,66 @@ class Casca extends ConsumerStatefulWidget {
 class _CascaState extends ConsumerState<Casca> {
   late int _aba = widget.abaInicial;
   bool _ofertaMostrada = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _ativarAvisos());
+  }
+
+  Future<void> _ativarAvisos() => ref
+      .read(servicoPushProvider)
+      .ativar(aoChegar: _chegou, aoTocar: _abrirPeloAviso);
+
+  /// Aviso com o app aberto: o Android não mostra sozinho. Relê o que o aviso
+  /// mudou e mostra uma faixa com atalho.
+  void _chegou(RemoteMessage r) {
+    if (!mounted) return;
+    ref
+      ..invalidate(campanhasProvider)
+      ..invalidate(resumoContaProvider)
+      ..invalidate(modelosSalvosProvider)
+      ..invalidate(modelosNaMetaProvider)
+      ..invalidate(situacaoPlanoProvider);
+    final titulo = r.notification?.title ?? 'Novo aviso';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(titulo),
+        action: SnackBarAction(
+          label: 'Ver',
+          onPressed: () => _abrirPeloAviso(r.data),
+        ),
+      ),
+    );
+  }
+
+  /// Toque no aviso: vai para onde ele fala.
+  void _abrirPeloAviso(Map<String, dynamic> dados) {
+    if (!mounted) return;
+    final campanhaId = dados['campanhaId'];
+    if (campanhaId is String && campanhaId.isNotEmpty) {
+      setState(() => _aba = 3);
+      ref.invalidate(campanhasProvider);
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => TelaCampanhaDetalhe(id: campanhaId),
+        ),
+      );
+      return;
+    }
+    if (dados['modeloId'] is String) {
+      ref
+        ..invalidate(modelosSalvosProvider)
+        ..invalidate(modelosNaMetaProvider);
+      setState(() => _aba = 1);
+      return;
+    }
+    if (dados['tipo'] == 'cobranca' || dados['tela'] == 'plano') {
+      Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => const TelaPlano()));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -195,7 +262,11 @@ class _TelaMaisState extends ConsumerState<_TelaMais> {
         ],
       ),
     );
-    if (confirmar == true) await ref.read(sessaoProvider.notifier).sair();
+    if (confirmar != true) return;
+    // Antes de encerrar a sessão: depois dela, o servidor não aceita mais o
+    // pedido para desligar os avisos deste aparelho.
+    await ref.read(servicoPushProvider).desativar();
+    await ref.read(sessaoProvider.notifier).sair();
   }
 
   @override
@@ -256,6 +327,17 @@ class _TelaMaisState extends ConsumerState<_TelaMais> {
                 ],
               ),
             ),
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(
+              'Avisos neste celular',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          AvisosCelular(
+            aoPermitir: () => ref.read(servicoPushProvider).ativar(),
+          ),
           const SizedBox(height: 14),
           if (_disponivel)
             Cartao(

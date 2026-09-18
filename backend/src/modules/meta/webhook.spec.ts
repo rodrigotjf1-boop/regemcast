@@ -5,6 +5,9 @@
  * ignorar um pedido de saída derruba a qualidade do número da empresa; bloquear
  * quem não pediu tira da base um cliente que queria continuar recebendo.
  */
+// O serviço de avisos lê o ambiente no import; aqui só interessa a função pura.
+jest.mock('../../config/env', () => ({ env: { push: { contaServico: '' } } }));
+
 import { ehPedidoDeSaida } from './webhook.service';
 
 describe('ehPedidoDeSaida', () => {

@@ -12,6 +12,7 @@ import { env } from './config/env';
 import { ContextoInterceptor } from './db/contexto.interceptor';
 import { DrizzleModule } from './db/drizzle.module';
 import { AuditoriaModule } from './modules/auditoria/auditoria.module';
+import { AvisoModule } from './modules/aviso/aviso.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ContaModule } from './modules/conta/conta.module';
 import { ContatoModule } from './modules/contato/contato.module';
@@ -61,6 +62,7 @@ import { CobrancaModule } from './modules/cobranca/cobranca.module';
     }),
     TelemetriaModule,
     AuditoriaModule,
+    AvisoModule,
     EmailModule,
     SegurancaModule,
     AuthModule,

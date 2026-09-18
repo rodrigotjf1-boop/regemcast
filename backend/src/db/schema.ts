@@ -622,6 +622,25 @@ export const midia = pgTable('midia', {
 }));
 
 /**
+ * Celular com o app Android logado (migration 019). `tokenFcm` é o endereço do
+ * push e é único na base inteira: o aparelho pode trocar de conta.
+ */
+export const dispositivo = pgTable('dispositivo', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contaId: uuid('conta_id').notNull(),
+  usuarioId: uuid('usuario_id').notNull(),
+  tokenFcm: text('token_fcm').notNull(),
+  plataforma: text('plataforma').notNull().default('android'),
+  appVersao: text('app_versao'),
+  modelo: text('modelo'),
+  /** O que este aparelho recebe: `{ campanhas, modelos, cobranca }`. Ausente = ligado. */
+  avisos: jsonb('avisos').notNull().default(sql`'{"campanhas": true, "modelos": true, "cobranca": true}'::jsonb`),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+  vistoEm: timestamp('visto_em', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
  * Telemetria de erro. Escopo de DISTRIBUIÇÃO: o cliente nunca lê esta tabela
  * (a policy é `rc_sistema`). O `contaId` serve para agrupar, não dá acesso.
  */

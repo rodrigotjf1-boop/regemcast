@@ -32,3 +32,7 @@ const Duration tempoLimiteApi = Duration(seconds: 20);
 /// contrata pelo Mercado Pago como o site; o da Play mostra o plano, o consumo
 /// e os pagamentos, mas não oferece contratar nem trocar.
 const bool compraNoApp = !bool.fromEnvironment('LOJA_PLAY');
+
+/// Vai junto do registro do aparelho, para saber quem ainda roda versão velha.
+/// Acompanha o `version` do pubspec.yaml.
+const String versaoDoApp = '0.5.0';
