@@ -24,3 +24,11 @@ const Duration renovarSessaoAntesDe = Duration(days: 7);
 
 /// Quanto esperar uma resposta da API antes de desistir.
 const Duration tempoLimiteApi = Duration(seconds: 20);
+
+/// Build da Play Store: `--dart-define=LOJA_PLAY=true`.
+///
+/// A Google exige o faturamento dela para vender serviço digital dentro do
+/// app, e proíbe levar a pessoa a pagar por fora. O APK distribuído direto
+/// contrata pelo Mercado Pago como o site; o da Play mostra o plano, o consumo
+/// e os pagamentos, mas não oferece contratar nem trocar.
+const bool compraNoApp = !bool.fromEnvironment('LOJA_PLAY');

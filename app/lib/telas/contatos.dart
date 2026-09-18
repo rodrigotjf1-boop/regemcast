@@ -171,8 +171,15 @@ class _TelaContatosState extends ConsumerState<TelaContatos> {
                           ),
                           if (_pagina > 0)
                             Text(
-                              f.plural(_total, 'contato na base', 'contatos na base'),
-                              style: TextStyle(color: c.tintaSuave, fontSize: 13),
+                              f.plural(
+                                _total,
+                                'contato na base',
+                                'contatos na base',
+                              ),
+                              style: TextStyle(
+                                color: c.tintaSuave,
+                                fontSize: 13,
+                              ),
                             ),
                         ],
                       ),
@@ -193,9 +200,8 @@ class _TelaContatosState extends ConsumerState<TelaContatos> {
           ),
           SliverToBoxAdapter(
             child: listas.maybeWhen(
-              data: (ls) => ls.isEmpty
-                  ? const SizedBox.shrink()
-                  : _Listas(listas: ls),
+              data: (ls) =>
+                  ls.isEmpty ? const SizedBox.shrink() : _Listas(listas: ls),
               orElse: () => const SizedBox.shrink(),
             ),
           ),
@@ -261,7 +267,9 @@ class _TelaContatosState extends ConsumerState<TelaContatos> {
                     child: Center(
                       child: TextButton(
                         onPressed: _carregarMais,
-                        child: const Text('Não carregou o resto. Tentar de novo'),
+                        child: const Text(
+                          'Não carregou o resto. Tentar de novo',
+                        ),
                       ),
                     ),
                   ),

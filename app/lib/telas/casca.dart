@@ -8,9 +8,14 @@ import '../config.dart';
 import '../sessao/sessao.dart';
 import '../tema/cores.dart';
 import 'campanhas.dart';
+import 'conta.dart';
 import 'contatos.dart';
 import 'modelos.dart';
 import 'painel.dart';
+import 'plano.dart';
+import 'regras.dart';
+import 'usuarios.dart';
+import 'whatsapp.dart';
 
 /// A casca do app: cinco abas na barra de baixo, na ordem do menu do site,
 /// onde o polegar alcança.
@@ -19,14 +24,17 @@ import 'painel.dart';
 /// e o que já foi carregado. Quem conferiu uma campanha e foi ao Painel volta
 /// para a mesma posição da lista.
 class Casca extends ConsumerStatefulWidget {
-  const Casca({super.key});
+  const Casca({super.key, this.abaInicial = 0});
+
+  /// Aba aberta ao montar: 0 Painel, 1 Modelos, 2 Contatos, 3 Campanhas, 4 Mais.
+  final int abaInicial;
 
   @override
   ConsumerState<Casca> createState() => _CascaState();
 }
 
 class _CascaState extends ConsumerState<Casca> {
-  int _aba = 0;
+  late int _aba = widget.abaInicial;
   bool _ofertaMostrada = false;
 
   @override
@@ -133,7 +141,8 @@ class _CascaState extends ConsumerState<Casca> {
   }
 }
 
-/// Mais: quem está logado, a biometria e sair.
+/// Mais: quem está logado, plano, conta, usuários, WhatsApp, regras,
+/// a biometria e sair.
 class _TelaMais extends ConsumerStatefulWidget {
   const _TelaMais();
 
@@ -274,6 +283,43 @@ class _TelaMaisState extends ConsumerState<_TelaMais> {
             padding: EdgeInsets.zero,
             child: Column(
               children: [
+                _LinhaTela(
+                  icone: Icons.credit_card_rounded,
+                  texto: 'Plano e pagamento',
+                  tela: const TelaPlano(),
+                ),
+                const Divider(height: 1),
+                _LinhaTela(
+                  icone: Icons.chat_bubble_outline_rounded,
+                  texto: 'WhatsApp',
+                  tela: const TelaWhatsapp(),
+                ),
+                const Divider(height: 1),
+                _LinhaTela(
+                  icone: Icons.business_rounded,
+                  texto: 'Conta',
+                  tela: const TelaConta(),
+                ),
+                const Divider(height: 1),
+                _LinhaTela(
+                  icone: Icons.group_outlined,
+                  texto: 'Usuários',
+                  tela: const TelaUsuarios(),
+                ),
+                const Divider(height: 1),
+                _LinhaTela(
+                  icone: Icons.shield_outlined,
+                  texto: 'Regras da Meta',
+                  tela: const TelaRegras(),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Cartao(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
                 _Linha(
                   icone: Icons.language_rounded,
                   texto: 'Abrir o RegemCast no site',
@@ -312,6 +358,29 @@ class _TelaMaisState extends ConsumerState<_TelaMais> {
       ),
     );
   }
+}
+
+/// Linha que abre uma tela do próprio app.
+class _LinhaTela extends StatelessWidget {
+  const _LinhaTela({
+    required this.icone,
+    required this.texto,
+    required this.tela,
+  });
+
+  final IconData icone;
+  final String texto;
+  final Widget tela;
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+    leading: Icon(icone),
+    title: Text(texto, style: const TextStyle(fontWeight: FontWeight.w500)),
+    trailing: const Icon(Icons.chevron_right_rounded),
+    onTap: () => Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => tela)),
+  );
 }
 
 class _Linha extends StatelessWidget {

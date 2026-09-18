@@ -24,12 +24,17 @@ import 'package:regemcast/sessao/sessao.dart';
 import 'package:regemcast/telas/campanha_detalhe.dart';
 import 'package:regemcast/telas/campanhas.dart';
 import 'package:regemcast/telas/casca.dart';
+import 'package:regemcast/telas/conta.dart';
 import 'package:regemcast/telas/contatos.dart';
 import 'package:regemcast/telas/entrar.dart';
 import 'package:regemcast/telas/importar_contatos.dart';
 import 'package:regemcast/telas/modelo_detalhe.dart';
 import 'package:regemcast/telas/modelo_editar.dart';
 import 'package:regemcast/telas/modelos.dart';
+import 'package:regemcast/telas/plano.dart';
+import 'package:regemcast/telas/regras.dart';
+import 'package:regemcast/telas/usuarios.dart';
+import 'package:regemcast/telas/whatsapp.dart';
 import 'package:regemcast/tema/tema.dart';
 
 http.Response _json(Object corpo, [int status = 200]) => http.Response.bytes(
@@ -102,7 +107,11 @@ final _api = ClienteApi(
         });
       case '/conta':
         return _json({
-          'conta': {'nome': 'MISTER BURGERS'},
+          'conta': {
+            'nome': 'MISTER BURGERS',
+            'cnpj': '12345678000195',
+            'timezone': 'America/Sao_Paulo',
+          },
           'plano': {
             'codigo': 'profissional',
             'nome': 'Profissional',
@@ -119,6 +128,7 @@ final _api = ClienteApi(
       case '/whatsapp/situacao':
         return _json({
           'conectado': true,
+          'conta': {'nome': 'Mister Burgers Ltda'},
           'numeros': [
             {
               'telefone': '+55 21 99999-8888',
@@ -126,9 +136,96 @@ final _api = ClienteApi(
               'qualidade': 'verde',
               'tierLimite': 10000,
               'status': 'registrado',
+              'coexistencia': true,
+              'vazaoMaxima': 20,
+              'sincronizacao': 'concluida',
             },
           ],
         });
+      case '/plano':
+        return _json({
+          'status': 'ativa',
+          'cicloInicio': '2026-09-17T03:00:00Z',
+          'cicloFim': '2026-10-17T03:00:00Z',
+          'bloqueado': false,
+          'mpStatus': 'authorized',
+          'cobrancaDisponivel': true,
+          'planoAtual': {
+            'id': 'p2',
+            'nome': 'Profissional',
+            'disparosMes': 20000,
+            'precoCentavos': 29900,
+          },
+          'uso': {'disparos': 12480, 'teto': 20000},
+          'planos': [
+            {
+              'id': 'p1',
+              'nome': 'Essencial',
+              'disparosMes': 5000,
+              'precoCentavos': 9900,
+            },
+            {
+              'id': 'p2',
+              'nome': 'Profissional',
+              'disparosMes': 20000,
+              'precoCentavos': 29900,
+            },
+            {
+              'id': 'p3',
+              'nome': 'Escala',
+              'disparosMes': 60000,
+              'precoCentavos': 69900,
+            },
+          ],
+          'cobrancas': [
+            {
+              'id': 'c2',
+              'valorCentavos': 29900,
+              'status': 'aprovada',
+              'pagoEm': '2026-09-17T12:00:00Z',
+              'plano': 'Profissional',
+              'criadoEm': '2026-09-17T12:00:00Z',
+            },
+            {
+              'id': 'c1',
+              'valorCentavos': 29900,
+              'status': 'recusada',
+              'motivo': 'Cartão sem limite.',
+              'vencimento': '2026-08-17T12:00:00Z',
+              'plano': 'Profissional',
+              'criadoEm': '2026-08-17T12:00:00Z',
+            },
+          ],
+        });
+      case '/conta/usuarios':
+        return _json([
+          {
+            'id': 'u',
+            'nome': 'Rodrigo Tavares',
+            'email': 'rodrigo@misterburgers.com.br',
+            'papel': 'dono',
+            'status': 'ativo',
+            'ultimoLoginEm': DateTime.now().toUtc().toIso8601String(),
+          },
+          {
+            'id': 'u2',
+            'nome': 'Ana Ribeiro',
+            'email': 'ana@misterburgers.com.br',
+            'papel': 'operador',
+            'status': 'ativo',
+            'ultimoLoginEm': DateTime.now()
+                .toUtc()
+                .subtract(const Duration(days: 2))
+                .toIso8601String(),
+          },
+          {
+            'id': 'u3',
+            'nome': 'Bruno Lima',
+            'email': 'bruno@misterburgers.com.br',
+            'papel': 'operador',
+            'status': 'suspenso',
+          },
+        ]);
       case '/whatsapp/modelos':
         return _json(_modelosMeta);
       case '/modelos':
@@ -145,30 +242,118 @@ final _api = ClienteApi(
           'pagina': 1,
           'porPagina': 50,
           'itens': [
-            {'id': 'k1', 'nome': 'Ana Beatriz Souza', 'telefone': '5521991112222', 'optOut': false},
-            {'id': 'k2', 'nome': 'Carlos Menezes', 'telefone': '5521983334444', 'optOut': false},
-            {'id': 'k3', 'nome': null, 'telefone': '5511975556666', 'optOut': false},
-            {'id': 'k4', 'nome': 'Fernanda Lima', 'telefone': '5521967778888', 'optOut': true},
-            {'id': 'k5', 'nome': 'João Pedro Alves', 'telefone': '5521959990000', 'optOut': false},
-            {'id': 'k6', 'nome': 'Marina Costa', 'telefone': '5521941213141', 'optOut': false},
-            {'id': 'k7', 'nome': 'Rafael Nunes', 'telefone': '5524988776655', 'optOut': false},
+            {
+              'id': 'k1',
+              'nome': 'Ana Beatriz Souza',
+              'telefone': '5521991112222',
+              'optOut': false,
+            },
+            {
+              'id': 'k2',
+              'nome': 'Carlos Menezes',
+              'telefone': '5521983334444',
+              'optOut': false,
+            },
+            {
+              'id': 'k3',
+              'nome': null,
+              'telefone': '5511975556666',
+              'optOut': false,
+            },
+            {
+              'id': 'k4',
+              'nome': 'Fernanda Lima',
+              'telefone': '5521967778888',
+              'optOut': true,
+            },
+            {
+              'id': 'k5',
+              'nome': 'João Pedro Alves',
+              'telefone': '5521959990000',
+              'optOut': false,
+            },
+            {
+              'id': 'k6',
+              'nome': 'Marina Costa',
+              'telefone': '5521941213141',
+              'optOut': false,
+            },
+            {
+              'id': 'k7',
+              'nome': 'Rafael Nunes',
+              'telefone': '5524988776655',
+              'optOut': false,
+            },
           ],
         });
       case '/campanhas/1':
         return _json({
-          'id': '1', 'nome': 'Sexta do Smash', 'modeloNome': 'promo_sexta_smash', 'modeloIdioma': 'pt_BR', 'status': 'enviando',
-          'listaNome': 'Clientes 2026', 'criadoEm': DateTime.now().toUtc().subtract(const Duration(minutes: 40)).toIso8601String(),
-          'iniciadaEm': DateTime.now().toUtc().subtract(const Duration(minutes: 35)).toIso8601String(),
-          'porStatus': {'lida': 1320, 'entregue': 1540, 'enviada': 410, 'falhou': 38, 'pendente': 1692}, 'total': 5000,
-          'janelaDias': [1, 2, 3, 4, 5], 'janelaInicio': '09:00:00', 'janelaFim': '20:00:00', 'pausaSegundos': 2, 'maxPorDia': 3000,
+          'id': '1',
+          'nome': 'Sexta do Smash',
+          'modeloNome': 'promo_sexta_smash',
+          'modeloIdioma': 'pt_BR',
+          'status': 'enviando',
+          'listaNome': 'Clientes 2026',
+          'criadoEm': DateTime.now()
+              .toUtc()
+              .subtract(const Duration(minutes: 40))
+              .toIso8601String(),
+          'iniciadaEm': DateTime.now()
+              .toUtc()
+              .subtract(const Duration(minutes: 35))
+              .toIso8601String(),
+          'porStatus': {
+            'lida': 1320,
+            'entregue': 1540,
+            'enviada': 410,
+            'falhou': 38,
+            'pendente': 1692,
+          },
+          'total': 5000,
+          'janelaDias': [1, 2, 3, 4, 5],
+          'janelaInicio': '09:00:00',
+          'janelaFim': '20:00:00',
+          'pausaSegundos': 2,
+          'maxPorDia': 3000,
         });
       case '/campanhas/1/destinatarios':
         final agora = DateTime.now().toUtc();
         return _json([
-          {'id': 'a', 'telefone': '5521987654321', 'status': 'falhou', 'erroTitulo': 'Número sem WhatsApp', 'erroDetalhe': 'A Meta não encontrou uma conta de WhatsApp neste número.', 'falhouEm': agora.subtract(const Duration(minutes: 20)).toIso8601String()},
-          {'id': 'b', 'telefone': '5521991112222', 'status': 'lida', 'lidaEm': agora.subtract(const Duration(minutes: 8)).toIso8601String()},
-          {'id': 'c', 'telefone': '5511983334444', 'status': 'entregue', 'entregueEm': agora.subtract(const Duration(minutes: 12)).toIso8601String()},
-          {'id': 'd', 'telefone': '5521975556666', 'status': 'enviada', 'enviadaEm': agora.subtract(const Duration(minutes: 2)).toIso8601String()},
+          {
+            'id': 'a',
+            'telefone': '5521987654321',
+            'status': 'falhou',
+            'erroTitulo': 'Número sem WhatsApp',
+            'erroDetalhe':
+                'A Meta não encontrou uma conta de WhatsApp neste número.',
+            'falhouEm': agora
+                .subtract(const Duration(minutes: 20))
+                .toIso8601String(),
+          },
+          {
+            'id': 'b',
+            'telefone': '5521991112222',
+            'status': 'lida',
+            'lidaEm': agora
+                .subtract(const Duration(minutes: 8))
+                .toIso8601String(),
+          },
+          {
+            'id': 'c',
+            'telefone': '5511983334444',
+            'status': 'entregue',
+            'entregueEm': agora
+                .subtract(const Duration(minutes: 12))
+                .toIso8601String(),
+          },
+          {
+            'id': 'd',
+            'telefone': '5521975556666',
+            'status': 'enviada',
+            'enviadaEm': agora
+                .subtract(const Duration(minutes: 2))
+                .toIso8601String(),
+          },
           {'id': 'e', 'telefone': '5521967778888', 'status': 'pendente'},
         ]);
       case '/campanhas':
@@ -229,43 +414,90 @@ final _api = ClienteApi(
 
 final _modelosSalvos = [
   {
-    'id': 'm1', 'tipo': 'simples', 'nome': 'promo_sexta_smash', 'idioma': 'pt_BR', 'categoria': 'MARKETING',
-    'status': 'aprovado', 'cabecalhoFormato': 'TEXT', 'cabecalhoTexto': 'Sexta do Smash 🍔',
-    'corpo': 'Oi, {{1}}! Hoje o Smash duplo sai por R\$ {{2}} até as 23h. Peça pelo app ou venha buscar.',
-    'corpoExemplos': ['Ana', '29,90'], 'rodape': 'Mister Burgers',
+    'id': 'm1',
+    'tipo': 'simples',
+    'nome': 'promo_sexta_smash',
+    'idioma': 'pt_BR',
+    'categoria': 'MARKETING',
+    'status': 'aprovado',
+    'cabecalhoFormato': 'TEXT',
+    'cabecalhoTexto': 'Sexta do Smash 🍔',
+    'corpo':
+        'Oi, {{1}}! Hoje o Smash duplo sai por R\$ {{2}} até as 23h. Peça pelo app ou venha buscar.',
+    'corpoExemplos': ['Ana', '29,90'],
+    'rodape': 'Mister Burgers',
     'botoes': [
-      {'tipo': 'URL', 'texto': 'Pedir agora', 'url': 'https://misterburgers.com.br/pedir'},
+      {
+        'tipo': 'URL',
+        'texto': 'Pedir agora',
+        'url': 'https://misterburgers.com.br/pedir',
+      },
       {'tipo': 'QUICK_REPLY', 'texto': 'Quero o combo'},
     ],
-    'metaTemplateId': 't1', 'variaveis': 2,
+    'metaTemplateId': 't1',
+    'variaveis': 2,
   },
   {
-    'id': 'm2', 'tipo': 'simples', 'nome': 'combo_familia_v2', 'idioma': 'pt_BR', 'categoria': 'MARKETING',
-    'status': 'rascunho', 'corpo': 'Domingo em família: 4 burgers + 2 fritas grandes por R\$ {{1}}.',
-    'corpoExemplos': ['119,90'], 'botoes': [], 'variaveis': 1,
+    'id': 'm2',
+    'tipo': 'simples',
+    'nome': 'combo_familia_v2',
+    'idioma': 'pt_BR',
+    'categoria': 'MARKETING',
+    'status': 'rascunho',
+    'corpo': 'Domingo em família: 4 burgers + 2 fritas grandes por R\$ {{1}}.',
+    'corpoExemplos': ['119,90'],
+    'botoes': [],
+    'variaveis': 1,
   },
   {
-    'id': 'm3', 'tipo': 'simples', 'nome': 'aviso_pedido', 'idioma': 'pt_BR', 'categoria': 'UTILITY',
-    'status': 'enviado', 'corpo': 'Seu pedido {{1}} saiu para entrega.', 'corpoExemplos': ['#1042'],
-    'botoes': [], 'metaTemplateId': 't3', 'variaveis': 1,
+    'id': 'm3',
+    'tipo': 'simples',
+    'nome': 'aviso_pedido',
+    'idioma': 'pt_BR',
+    'categoria': 'UTILITY',
+    'status': 'enviado',
+    'corpo': 'Seu pedido {{1}} saiu para entrega.',
+    'corpoExemplos': ['#1042'],
+    'botoes': [],
+    'metaTemplateId': 't3',
+    'variaveis': 1,
   },
 ];
 
 final _modelosMeta = [
   {
-    'id': 't1', 'nome': 'promo_sexta_smash', 'idioma': 'pt_BR', 'categoria': 'MARKETING', 'status': 'aprovado',
+    'id': 't1',
+    'nome': 'promo_sexta_smash',
+    'idioma': 'pt_BR',
+    'categoria': 'MARKETING',
+    'status': 'aprovado',
     'cabecalho': 'Sexta do Smash 🍔',
-    'corpo': 'Oi, {{1}}! Hoje o Smash duplo sai por R\$ {{2}} até as 23h. Peça pelo app ou venha buscar.',
-    'rodape': 'Mister Burgers', 'variaveis': 2, 'botoes': ['Pedir agora', 'Quero o combo', 'Parar promoções'],
+    'corpo':
+        'Oi, {{1}}! Hoje o Smash duplo sai por R\$ {{2}} até as 23h. Peça pelo app ou venha buscar.',
+    'rodape': 'Mister Burgers',
+    'variaveis': 2,
+    'botoes': ['Pedir agora', 'Quero o combo', 'Parar promoções'],
   },
   {
-    'id': 't3', 'nome': 'aviso_pedido', 'idioma': 'pt_BR', 'categoria': 'UTILITY', 'status': 'em análise',
-    'corpo': 'Seu pedido {{1}} saiu para entrega.', 'variaveis': 1, 'botoes': [],
+    'id': 't3',
+    'nome': 'aviso_pedido',
+    'idioma': 'pt_BR',
+    'categoria': 'UTILITY',
+    'status': 'em análise',
+    'corpo': 'Seu pedido {{1}} saiu para entrega.',
+    'variaveis': 1,
+    'botoes': [],
   },
   {
-    'id': 't9', 'nome': 'boas_vindas_antigo', 'idioma': 'pt_BR', 'categoria': 'MARKETING', 'status': 'recusado',
+    'id': 't9',
+    'nome': 'boas_vindas_antigo',
+    'idioma': 'pt_BR',
+    'categoria': 'MARKETING',
+    'status': 'recusado',
     'motivo': 'Conteúdo promocional em categoria errada.',
-    'corpo': 'Bem-vindo ao clube Mister Burgers! Use o cupom BEMVINDO.', 'variaveis': 0, 'botoes': [],
+    'corpo': 'Bem-vindo ao clube Mister Burgers! Use o cupom BEMVINDO.',
+    'variaveis': 0,
+    'botoes': [],
   },
 ];
 
@@ -351,7 +583,11 @@ void main() {
   }, skip: !ativo);
 
   testWidgets('campanha', (t) async {
-    await _capturar(t, const TelaCampanhaDetalhe(id: '1', nomeInicial: 'Sexta do Smash'), '06-campanha');
+    await _capturar(
+      t,
+      const TelaCampanhaDetalhe(id: '1', nomeInicial: 'Sexta do Smash'),
+      '06-campanha',
+    );
   }, skip: !ativo);
 
   testWidgets('modelos', (t) async {
@@ -394,16 +630,67 @@ void main() {
   }, skip: !ativo);
 
   testWidgets('contatos — escuro', (t) async {
-    await _capturar(t, const Scaffold(body: TelaContatos()), '13-contatos-escuro', brilho: Brightness.dark);
+    await _capturar(
+      t,
+      const Scaffold(body: TelaContatos()),
+      '13-contatos-escuro',
+      brilho: Brightness.dark,
+    );
   }, skip: !ativo);
 
   testWidgets('importar', (t) async {
     await _capturar(t, const TelaImportarContatos(), '14-importar');
   }, skip: !ativo);
 
-  testWidgets('campanha — escuro', (t) async {
-    await _capturar(t, const TelaCampanhaDetalhe(id: '1', nomeInicial: 'Sexta do Smash'), '07-campanha-escuro', brilho: Brightness.dark);
+  testWidgets('mais', (t) async {
+    await _capturar(t, const _ComSessao(child: _AbaMais()), '15-mais');
   }, skip: !ativo);
+
+  testWidgets('plano', (t) async {
+    await _capturar(t, const _ComSessao(child: TelaPlano()), '16-plano');
+  }, skip: !ativo);
+
+  testWidgets('plano — escuro', (t) async {
+    await _capturar(
+      t,
+      const _ComSessao(child: TelaPlano()),
+      '17-plano-escuro',
+      brilho: Brightness.dark,
+    );
+  }, skip: !ativo);
+
+  testWidgets('conta', (t) async {
+    await _capturar(t, const _ComSessao(child: TelaConta()), '18-conta');
+  }, skip: !ativo);
+
+  testWidgets('usuarios', (t) async {
+    await _capturar(t, const _ComSessao(child: TelaUsuarios()), '19-usuarios');
+  }, skip: !ativo);
+
+  testWidgets('whatsapp', (t) async {
+    await _capturar(t, const TelaWhatsapp(), '20-whatsapp');
+  }, skip: !ativo);
+
+  testWidgets('regras', (t) async {
+    await _capturar(t, const TelaRegras(), '21-regras');
+  }, skip: !ativo);
+
+  testWidgets('campanha — escuro', (t) async {
+    await _capturar(
+      t,
+      const TelaCampanhaDetalhe(id: '1', nomeInicial: 'Sexta do Smash'),
+      '07-campanha-escuro',
+      brilho: Brightness.dark,
+    );
+  }, skip: !ativo);
+}
+
+/// A casca com a aba Mais aberta.
+class _AbaMais extends StatelessWidget {
+  const _AbaMais();
+
+  @override
+  Widget build(BuildContext context) => const Casca(abaInicial: 4);
 }
 
 /// A casca lê a sessão ativa; aqui ela é posta direto, sem passar pelo login.

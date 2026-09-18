@@ -59,26 +59,41 @@ class PreviaMensagem extends StatelessWidget {
     final padrao = RegExp(r'\{\{\s*\d+\s*\}\}');
     var inicio = 0;
     for (final m in padrao.allMatches(texto)) {
-      if (m.start > inicio) partes.add(TextSpan(text: texto.substring(inicio, m.start)));
-      partes.add(TextSpan(
-        text: m.group(0),
-        style: TextStyle(color: cor, fontWeight: FontWeight.w600, backgroundColor: cor.withValues(alpha: 0.12)),
-      ));
+      if (m.start > inicio) {
+        partes.add(TextSpan(text: texto.substring(inicio, m.start)));
+      }
+      partes.add(
+        TextSpan(
+          text: m.group(0),
+          style: TextStyle(
+            color: cor,
+            fontWeight: FontWeight.w600,
+            backgroundColor: cor.withValues(alpha: 0.12),
+          ),
+        ),
+      );
       inicio = m.end;
     }
-    if (inicio < texto.length) partes.add(TextSpan(text: texto.substring(inicio)));
+    if (inicio < texto.length) {
+      partes.add(TextSpan(text: texto.substring(inicio)));
+    }
     return partes;
   }
 
   @override
   Widget build(BuildContext context) {
-    final t = Theme.of(context).brightness == Brightness.dark ? _escuro : _claro;
+    final t = Theme.of(context).brightness == Brightness.dark
+        ? _escuro
+        : _claro;
     final temBotoes = botoes.isNotEmpty;
     const raio = Radius.circular(10);
 
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 16, 40, 16),
-      decoration: BoxDecoration(color: t.fundo, borderRadius: BorderRadius.circular(18)),
+      decoration: BoxDecoration(
+        color: t.fundo,
+        borderRadius: BorderRadius.circular(18),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -87,8 +102,16 @@ class PreviaMensagem extends StatelessWidget {
             decoration: BoxDecoration(
               color: t.balao,
               borderRadius: temBotoes
-                  ? const BorderRadius.only(topRight: raio, bottomRight: Radius.circular(2), bottomLeft: Radius.circular(2))
-                  : const BorderRadius.only(topRight: raio, bottomRight: raio, bottomLeft: raio),
+                  ? const BorderRadius.only(
+                      topRight: raio,
+                      bottomRight: Radius.circular(2),
+                      bottomLeft: Radius.circular(2),
+                    )
+                  : const BorderRadius.only(
+                      topRight: raio,
+                      bottomRight: raio,
+                      bottomLeft: raio,
+                    ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -97,7 +120,10 @@ class PreviaMensagem extends StatelessWidget {
                   Container(
                     height: 120,
                     margin: const EdgeInsets.only(bottom: 8),
-                    decoration: BoxDecoration(color: t.midia, borderRadius: BorderRadius.circular(8)),
+                    decoration: BoxDecoration(
+                      color: t.midia,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                     alignment: Alignment.center,
                     child: Icon(
                       switch (cabecalhoMidia) {
@@ -114,7 +140,11 @@ class PreviaMensagem extends StatelessWidget {
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Text.rich(
                       TextSpan(children: _comVariaveis(cabecalho!, t.botao)),
-                      style: TextStyle(color: t.texto, fontWeight: FontWeight.w700, fontSize: 15),
+                      style: TextStyle(
+                        color: t.texto,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
                     ),
                   ),
                 Text.rich(
@@ -124,11 +154,17 @@ class PreviaMensagem extends StatelessWidget {
                 if (rodape != null && rodape!.trim().isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
-                    child: Text(rodape!, style: TextStyle(color: t.secundario, fontSize: 12.5)),
+                    child: Text(
+                      rodape!,
+                      style: TextStyle(color: t.secundario, fontSize: 12.5),
+                    ),
                   ),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: Text('12:30', style: TextStyle(color: t.secundario, fontSize: 11)),
+                  child: Text(
+                    '12:30',
+                    style: TextStyle(color: t.secundario, fontSize: 11),
+                  ),
                 ),
               ],
             ),
@@ -136,7 +172,10 @@ class PreviaMensagem extends StatelessWidget {
           if (temBotoes)
             Container(
               decoration: const BoxDecoration(
-                borderRadius: BorderRadius.only(bottomLeft: raio, bottomRight: raio),
+                borderRadius: BorderRadius.only(
+                  bottomLeft: raio,
+                  bottomRight: raio,
+                ),
               ),
               clipBehavior: Clip.antiAlias,
               child: Column(
@@ -158,7 +197,11 @@ class PreviaMensagem extends StatelessWidget {
                             child: Text(
                               texto.isEmpty ? 'Botão' : texto,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: t.botao, fontWeight: FontWeight.w500, fontSize: 14),
+                              style: TextStyle(
+                                color: t.botao,
+                                fontWeight: FontWeight.w500,
+                                fontSize: 14,
+                              ),
                             ),
                           ),
                         ],

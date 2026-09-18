@@ -241,12 +241,19 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
                   children: [
                     const Text(
                       'Escolher arquivo',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       'Contatos do celular (.vcf), planilha (.csv, .xlsx) ou .txt — até 5 MB.',
-                      style: TextStyle(color: c.tintaSuave, fontSize: 13, height: 1.4),
+                      style: TextStyle(
+                        color: c.tintaSuave,
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
                     ),
                   ],
                 ),
@@ -256,7 +263,10 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
           ),
         ),
         const SizedBox(height: 20),
-        Text('Ou cole os números', style: Theme.of(context).textTheme.titleSmall),
+        Text(
+          'Ou cole os números',
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
         const SizedBox(height: 8),
         TextField(
           controller: _texto,
@@ -264,7 +274,8 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
           maxLines: 10,
           keyboardType: TextInputType.multiline,
           decoration: const InputDecoration(
-            hintText: 'Um por linha. Pode ter o nome antes:\nMaria, 11 99999-8888\n5521988887777',
+            hintText:
+                'Um por linha. Pode ter o nome antes:\nMaria, 11 99999-8888\n5521988887777',
           ),
         ),
         const SizedBox(height: 10),
@@ -281,7 +292,11 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
         ],
         if (_erro != null) ...[
           const SizedBox(height: 16),
-          Aviso(tom: TomPilula.erro, icone: Icons.error_outline_rounded, texto: _erro!),
+          Aviso(
+            tom: TomPilula.erro,
+            icone: Icons.error_outline_rounded,
+            texto: _erro!,
+          ),
         ],
       ],
     );
@@ -289,7 +304,8 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
 
   Widget _passoPrevia(BuildContext context, PreviaImportacao p) {
     final c = Cores.de(context);
-    final listas = ref.watch(listasContatosProvider).value ?? const <ListaContatos>[];
+    final listas =
+        ref.watch(listasContatosProvider).value ?? const <ListaContatos>[];
     // A lista escolhida pode ter sumido (outra pessoa excluiu no site).
     if (_destino != _semLista &&
         _destino != _novaLista &&
@@ -313,11 +329,19 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
           spacing: 10,
           runSpacing: 10,
           children: [
-            _Numero(rotulo: 'válidos', valor: p.validos, tom: TomPilula.sucesso),
+            _Numero(
+              rotulo: 'válidos',
+              valor: p.validos,
+              tom: TomPilula.sucesso,
+            ),
             _Numero(rotulo: 'novos', valor: p.novos),
             _Numero(rotulo: 'já na base', valor: p.jaExistem),
             if (p.invalidos > 0)
-              _Numero(rotulo: 'inválidos', valor: p.invalidos, tom: TomPilula.erro),
+              _Numero(
+                rotulo: 'inválidos',
+                valor: p.invalidos,
+                tom: TomPilula.erro,
+              ),
           ],
         ),
         const SizedBox(height: 14),
@@ -352,7 +376,11 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
               padding: const EdgeInsets.only(bottom: 10),
               child: Text(
                 'Quem já está na base não é duplicado — só entra na lista escolhida.',
-                style: TextStyle(color: c.tintaSuave, fontSize: 12.5, height: 1.4),
+                style: TextStyle(
+                  color: c.tintaSuave,
+                  fontSize: 12.5,
+                  height: 1.4,
+                ),
               ),
             ),
           Cartao(
@@ -362,7 +390,10 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
                 for (var i = 0; i < amostra.length; i++) ...[
                   if (i > 0) Divider(height: 1, indent: 16, color: c.borda),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 9,
+                    ),
                     child: Row(
                       children: [
                         Expanded(
@@ -396,14 +427,20 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
             ),
           ),
           const SizedBox(height: 20),
-          Text('Colocar numa lista', style: Theme.of(context).textTheme.titleSmall),
+          Text(
+            'Colocar numa lista',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
             initialValue: _destino,
             isExpanded: true,
             dropdownColor: c.superficie,
             items: [
-              const DropdownMenuItem(value: _semLista, child: Text('Só na base, sem lista')),
+              const DropdownMenuItem(
+                value: _semLista,
+                child: Text('Só na base, sem lista'),
+              ),
               for (final l in listas)
                 DropdownMenuItem(
                   value: l.id,
@@ -412,16 +449,23 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              const DropdownMenuItem(value: _novaLista, child: Text('＋ Criar lista nova')),
+              const DropdownMenuItem(
+                value: _novaLista,
+                child: Text('＋ Criar lista nova'),
+              ),
             ],
-            onChanged: _ocupado ? null : (v) => setState(() => _destino = v ?? _semLista),
+            onChanged: _ocupado
+                ? null
+                : (v) => setState(() => _destino = v ?? _semLista),
           ),
           if (_destino == _novaLista) ...[
             const SizedBox(height: 10),
             TextField(
               controller: _nomeLista,
               maxLength: 120,
-              decoration: const InputDecoration(labelText: 'Nome da lista nova'),
+              decoration: const InputDecoration(
+                labelText: 'Nome da lista nova',
+              ),
             ),
           ],
           const SizedBox(height: 16),
@@ -447,7 +491,11 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
                   padding: const EdgeInsets.only(left: 10),
                   child: Text(
                     'É a regra da Meta para mensagem iniciada pela empresa. Mandar para quem não autorizou gera bloqueios e derruba a qualidade do seu número.',
-                    style: TextStyle(color: c.tintaSuave, fontSize: 12.5, height: 1.45),
+                    style: TextStyle(
+                      color: c.tintaSuave,
+                      fontSize: 12.5,
+                      height: 1.45,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -468,7 +516,11 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
         ],
         if (_erro != null) ...[
           const SizedBox(height: 14),
-          Aviso(tom: TomPilula.erro, icone: Icons.error_outline_rounded, texto: _erro!),
+          Aviso(
+            tom: TomPilula.erro,
+            icone: Icons.error_outline_rounded,
+            texto: _erro!,
+          ),
         ],
       ],
     );
@@ -526,7 +578,11 @@ class _Resultado extends StatelessWidget {
         Icon(Icons.check_circle_rounded, color: c.sucesso, size: 56),
         const SizedBox(height: 14),
         Text(
-          f.plural(resultado.gravados, 'contato novo na base', 'contatos novos na base'),
+          f.plural(
+            resultado.gravados,
+            'contato novo na base',
+            'contatos novos na base',
+          ),
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.titleLarge,
         ),
