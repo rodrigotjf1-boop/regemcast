@@ -154,6 +154,16 @@ export const env = {
     ttlHoras: numero('JWT_TTL_HORAS', 12),
     cookieNome: opcional('COOKIE_NOME', 'regemcast_sess'),
     cookieDominio: opcional('COOKIE_DOMINIO'),
+    /**
+     * Validade da sessão do APLICATIVO, em dias.
+     *
+     * Bem maior que as 12 horas da web, e de propósito: no navegador a pessoa
+     * volta e digita a senha; no celular, exigir senha a cada meio dia faria o
+     * app ser desinstalado. O que segura o risco é outra coisa — o token fica
+     * no cofre do sistema, a tela pede biometria para reabrir, e trocar a senha
+     * ou suspender o acesso derruba a sessão na hora (token_versao).
+     */
+    ttlAppDias: numero('JWT_TTL_APP_DIAS', 30),
   },
 
   rede: {
