@@ -13,6 +13,7 @@ import {
   IconeRaio,
   IconeVoltar,
 } from '@/components/app/icones';
+import { FormularioCampanha } from '@/components/app/formulario-campanha';
 import { BadgeCampanha, BadgeDestinatario, BarraStatus } from '@/components/app/status-campanha';
 import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
 import { LoaderDisparo } from '@/components/marca/loader-disparo';
@@ -47,6 +48,7 @@ const EXPLICACAO_STATUS: Record<string, string> = {
   entregue: 'Chegou ao aparelho.',
   lida: 'A pessoa abriu.',
   falhou: 'Não foi entregue.',
+  cancelado: 'A campanha foi cancelada antes de sair para esta pessoa.',
 };
 
 export default function PaginaCampanha() {
@@ -59,6 +61,10 @@ export default function PaginaCampanha() {
   const [carregando, setCarregando] = useState(true);
   const [disparando, setDisparando] = useState(false);
   const [retomando, setRetomando] = useState(false);
+  const [pausando, setPausando] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
+  const [editando, setEditando] = useState(false);
+  const [confirmarExclusao, setConfirmarExclusao] = useState(false);
   const [aviso, setAviso] = useState('');
 
   const carregar = useCallback(async () => {
@@ -119,6 +125,43 @@ export default function PaginaCampanha() {
     }
   }
 
+  async function pausar() {
+    setAviso('');
+    setErro('');
+    setPausando(true);
+    try {
+      await campanhas.pausar(id);
+      await carregar();
+      setAviso('Campanha pausada. Quem faltava continua na fila e só sai quando você retomar.');
+    } catch (e) {
+      setErro(mensagemDoErro(e));
+    } finally {
+      setPausando(false);
+    }
+  }
+
+  async function excluir() {
+    setAviso('');
+    setErro('');
+    setExcluindo(true);
+    try {
+      const r = await campanhas.excluir(id);
+      if (r.resultado === 'cancelada') {
+        setConfirmarExclusao(false);
+        await carregar();
+        setAviso('Campanha cancelada. Quem ainda não tinha recebido não recebe mais.');
+        return;
+      }
+      // Apagada ou arquivada: não há mais o que ver nesta tela.
+      window.location.href = '/campanhas';
+    } catch (e) {
+      setErro(mensagemDoErro(e));
+      setConfirmarExclusao(false);
+    } finally {
+      setExcluindo(false);
+    }
+  }
+
   async function disparar() {
     setAviso('');
     setErro('');
@@ -169,6 +212,32 @@ export default function PaginaCampanha() {
   if (!campanha) return null;
 
   const podeDisparar = campanha.status === 'rascunho';
+  const podePausar = campanha.status === 'agendada' || campanha.status === 'enviando';
+  const podeRetomar = campanha.status === 'pausada';
+  const podeEditar = ['rascunho', 'agendada', 'pausada'].includes(campanha.status);
+
+  // A palavra muda com a situação, porque o efeito muda: rascunho some, campanha
+  // em curso é cancelada (e ninguém mais recebe), encerrada sai só da lista.
+  const exclusao =
+    campanha.status === 'rascunho'
+      ? {
+          rotulo: 'Excluir',
+          confirmar: 'Excluir de vez',
+          aviso: 'Este rascunho some junto com a lista de quem ia receber. Não dá para desfazer.',
+        }
+      : campanha.status === 'agendada' || campanha.status === 'pausada'
+        ? {
+            rotulo: 'Cancelar campanha',
+            confirmar: 'Cancelar campanha',
+            aviso:
+              'Quem ainda não recebeu não recebe mais. O que já saiu continua no histórico — e continua cobrado pela Meta.',
+          }
+        : {
+            rotulo: 'Arquivar',
+            confirmar: 'Arquivar',
+            aviso:
+              'A campanha sai da sua lista. O histórico de envio continua no sistema, porque é ele que sustenta o consumo do ciclo.',
+          };
   const p = campanha.porStatus;
   const lidas = p.lida ?? 0;
   const entregues = (p.entregue ?? 0) + lidas;
@@ -205,6 +274,30 @@ export default function PaginaCampanha() {
               {carregando ? null : <IconeAtualizar />}
               Atualizar
             </Button>
+            {podeEditar && (
+              <Button
+                variante="secundario"
+                aria-expanded={editando}
+                onClick={() => setEditando((v) => !v)}
+              >
+                {editando ? 'Fechar edição' : 'Editar'}
+              </Button>
+            )}
+            {podePausar && (
+              <Button variante="secundario" onClick={() => void pausar()} carregando={pausando}>
+                Pausar
+              </Button>
+            )}
+            {podeRetomar && (
+              <Button variante="secundario" onClick={() => void retomar()} carregando={retomando}>
+                Retomar
+              </Button>
+            )}
+            {campanha.status !== 'enviando' && (
+              <Button variante="perigo" onClick={() => setConfirmarExclusao(true)}>
+                {exclusao.rotulo}
+              </Button>
+            )}
             {podeDisparar && (
               <Button onClick={() => void disparar()} carregando={disparando}>
                 {disparando ? null : <IconeRaio />}
@@ -224,6 +317,26 @@ export default function PaginaCampanha() {
       {campanha.status === 'agendada' && (
         <Alerta tom="informacao">
           Agendada. As mensagens começam a sair na próxima abertura da janela de envio.
+        </Alerta>
+      )}
+
+      {campanha.status === 'pausada' && campanha.pausaMotivo === 'manual' && (
+        <Alerta tom="informacao">
+          <span className="block space-y-2">
+            <span className="block">
+              Pausada por você. Quem faltava continua na fila, intacto, e nada sai até você retomar.
+            </span>
+            <Button tamanho="sm" onClick={() => void retomar()} carregando={retomando}>
+              Retomar envio
+            </Button>
+          </span>
+        </Alerta>
+      )}
+
+      {campanha.status === 'cancelada' && (
+        <Alerta tom="atencao">
+          Campanha cancelada. Quem não tinha recebido não recebeu — o que saiu antes continua no
+          histórico abaixo.
         </Alerta>
       )}
 
@@ -263,6 +376,34 @@ export default function PaginaCampanha() {
             </Button>
           </span>
         </Alerta>
+      )}
+
+      {confirmarExclusao && (
+        <Alerta tom="atencao">
+          <span className="block space-y-2">
+            <span className="block">{exclusao.aviso}</span>
+            <span className="flex flex-wrap gap-2">
+              <Button tamanho="sm" variante="perigo" onClick={() => void excluir()} carregando={excluindo}>
+                {exclusao.confirmar}
+              </Button>
+              <Button tamanho="sm" variante="discreto" onClick={() => setConfirmarExclusao(false)}>
+                Voltar
+              </Button>
+            </span>
+          </span>
+        </Alerta>
+      )}
+
+      {editando && (
+        <FormularioCampanha
+          campanha={campanha}
+          aoCancelar={() => setEditando(false)}
+          aoConcluir={() => {
+            setEditando(false);
+            setAviso('Campanha atualizada.');
+            void carregar();
+          }}
+        />
       )}
 
       {erro && <Alerta tom="erro">{erro}</Alerta>}

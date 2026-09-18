@@ -27,7 +27,7 @@
  * recusa explícita em vez de timeout no meio.
  */
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, count, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 
 import { paraCloudApi } from '../../common/telefone';
 import { env } from '../../config/env';
@@ -38,6 +38,7 @@ import { ErroGraph, GraphService } from '../meta/graph.service';
 import { MetaService } from '../meta/meta.service';
 import { TelemetriaService } from '../telemetria/telemetria.service';
 import type { CriarCampanhaDto } from './dto/criar-campanha.dto';
+import type { EditarCampanhaDto } from './dto/editar-campanha.dto';
 import { decidir, momentoNoFuso, type RegraDeEnvio } from './janela';
 
 type Executor = { execute: (q: SQL) => Promise<unknown> };
@@ -195,6 +196,16 @@ export interface ResumoCampanha {
   total: number;
   /** A lista de contatos de onde saiu o público; nulo quando os números foram digitados. */
   listaNome: string | null;
+  /** O que a tela de edição precisa para reabrir a campanha como ela está. */
+  modeloId: string | null;
+  listaId: string | null;
+  janelaDias: number[];
+  janelaInicio: string | null;
+  janelaFim: string | null;
+  pausaSegundos: number;
+  maxPorDia: number | null;
+  maxPorSemana: number | null;
+  maxPorMes: number | null;
 }
 
 @Injectable()
@@ -231,61 +242,14 @@ export class CampanhaService {
     // "5521989751705" são a MESMA pessoa. Comparar o texto cru deixaria os dois
     // passarem aqui para estourar depois no índice único, com uma mensagem do
     // banco que ninguém entende.
-    const porLista = Boolean(dto.listaId);
-    if (porLista === Boolean(dto.destinatarios?.length)) {
-      throw new BadRequestException('Escolha uma lista de contatos OU digite os números — um dos dois.');
-    }
-
-    const normalizados = (dto.destinatarios ?? []).map((d) => {
-      const { e164 } = paraCloudApi(d.telefone);
-      if (!e164) {
-        throw new BadRequestException(
-          `O telefone ${d.telefone} não é válido. Informe DDD + número, por exemplo 21 99999-8888.`,
-        );
-      }
-      return { telefoneE164: e164, variaveis: d.variaveis ?? [] };
-    });
-
-    const repetido = normalizados.find(
-      (d, i) => normalizados.findIndex((o) => o.telefoneE164 === d.telefoneE164) !== i,
-    );
-    if (repetido) {
-      // O banco também barra (índice único), mas a mensagem dele não diz qual
-      // número está repetido — e é isso que a pessoa precisa saber.
-      throw new BadRequestException(
-        `O telefone ${repetido.telefoneE164} aparece mais de uma vez. Cada pessoa recebe uma vez só.`,
-      );
-    }
-
-    // O banco também barra tetos fora de ordem (constraint da migration 011),
-    // mas o erro dele chegaria como 500. Conferir aqui devolve a frase certa.
-    const tetos = [dto.maxPorDia, dto.maxPorSemana, dto.maxPorMes];
-    const [dia, semana, mes] = tetos;
-    if (
-      (dia && semana && dia > semana) ||
-      (semana && mes && semana > mes) ||
-      (dia && mes && dia > mes)
-    ) {
-      throw new BadRequestException(
-        'Os limites precisam ser crescentes: o do dia não pode passar o da semana, nem o da semana o do mês.',
-      );
-    }
-
-    let lista: { id: string; nome: string } | undefined;
-    if (dto.listaId) {
-      [lista] = await this.ctx.db
-        .select({ id: contatoLista.id, nome: contatoLista.nome })
-        .from(contatoLista)
-        .where(and(eq(contatoLista.id, dto.listaId), eq(contatoLista.contaId, contaId)))
-        .limit(1);
-      if (!lista) throw new NotFoundException('Lista de contatos não encontrada.');
-    }
+    // Antes de gravar qualquer coisa: número inválido ou repetido recusa aqui.
+    if (dto.destinatarios?.length) this.conferirNumeros(dto.destinatarios);
+    this.conferirTetos(dto.maxPorDia, dto.maxPorSemana, dto.maxPorMes);
 
     const [criada] = await this.ctx.db
       .insert(campanha)
       .values({
         contaId,
-        listaId: lista?.id ?? null,
         nome: dto.nome.trim(),
         modeloId: dto.modeloId ?? null,
         modeloNome: dto.modeloNome,
@@ -306,52 +270,14 @@ export class CampanhaService {
       })
       .returning({ id: campanha.id });
 
-    let totalDestinatarios = normalizados.length;
-    if (lista) {
-      // Uma query só, dentro do banco: a lista pode ter dezenas de milhares de
-      // contatos, e trazê-los para cá para devolver um por um seria o N+1 que
-      // derruba a request. Quem pediu para sair já fica de fora aqui.
-      const valores = (dto.variaveisLista ?? []).map((v) =>
-        v.origem === 'fixo'
-          ? sql`${v.valor}::text`
-          : v.origem === 'nome'
-            ? sql`coalesce(nullif(btrim(c.nome), ''), ${v.valor}::text)`
-            : sql`coalesce(nullif(split_part(btrim(c.nome), ' ', 1), ''), ${v.valor}::text)`,
-      );
-      // `count(*)` sobre o CTE, e não `returning id`: devolver 50 mil ids ao
-      // Node só para contá-los custa segundos de rede e memória.
-      const r = await this.ctx.db.execute(sql`
-        with inseridos as (
-        insert into campanha_destinatario (conta_id, campanha_id, telefone_e164, variaveis)
-        select ${contaId}, ${criada!.id}, c.telefone_e164,
-               ${valores.length ? sql`jsonb_build_array(${sql.join(valores, sql`, `)})` : sql`'[]'::jsonb`}
-          from contato_lista_item i
-          join contato c on c.id = i.contato_id and c.conta_id = i.conta_id
-         where i.conta_id = ${contaId}
-           and i.lista_id = ${lista.id}
-           and c.opt_out = false
-        on conflict (campanha_id, telefone_e164) do nothing
-        returning 1
-        )
-        select count(*)::int as total from inseridos
-      `);
-      totalDestinatarios = Number((r.rows[0] as { total: number } | undefined)?.total ?? 0);
-      if (totalDestinatarios === 0) {
-        // Desfaz a campanha junto (a request é uma transação): uma campanha
-        // vazia só confundiria a lista.
-        throw new BadRequestException(
-          `A lista "${lista.nome}" não tem ninguém que possa receber: está vazia ou todos pediram para sair.`,
-        );
-      }
-    } else {
-      await this.ctx.db.insert(campanhaDestinatario).values(
-        normalizados.map((d) => ({
-          contaId,
-          campanhaId: criada!.id,
-          telefoneE164: d.telefoneE164,
-          variaveis: d.variaveis,
-        })),
-      );
+    const publico = await this.montarPublico(contaId, criada!.id, dto);
+    const totalDestinatarios = publico.total;
+
+    if (publico.listaId) {
+      await this.ctx.db
+        .update(campanha)
+        .set({ listaId: publico.listaId })
+        .where(eq(campanha.id, criada!.id));
     }
 
     // Já na montagem: a pessoa vê, antes de disparar, quem não vai receber e
@@ -369,11 +295,370 @@ export class CampanhaService {
         nome: dto.nome,
         modelo: dto.modeloNome,
         destinatarios: totalDestinatarios,
-        lista: lista?.nome ?? null,
+        lista: publico.listaId,
       },
     });
 
     return { id: criada!.id };
+  }
+
+  /**
+   * Normaliza os números digitados e recusa repetição.
+   *
+   * Separado da gravação porque a recusa precisa acontecer ANTES de a campanha
+   * existir: mesmo com a transação desfazendo tudo, validar depois de gravar
+   * significa que o erro chega junto com um rollback — e qualquer passo futuro
+   * fora da transação (fila, telemetria) passaria a depender disso.
+   */
+  private conferirNumeros(
+    destinatarios: { telefone: string; variaveis?: string[] }[],
+  ): { telefoneE164: string; variaveis: string[] }[] {
+    const normalizados = destinatarios.map((d) => {
+      const { e164 } = paraCloudApi(d.telefone);
+      if (!e164) {
+        throw new BadRequestException(
+          `O telefone ${d.telefone} não é válido. Informe DDD + número, por exemplo 21 99999-8888.`,
+        );
+      }
+      return { telefoneE164: e164, variaveis: d.variaveis ?? [] };
+    });
+
+    const repetido = normalizados.find(
+      (d, i) => normalizados.findIndex((o) => o.telefoneE164 === d.telefoneE164) !== i,
+    );
+    if (repetido) {
+      // O banco também barra (índice único), mas a mensagem dele não diz qual
+      // número está repetido — e é isso que a pessoa precisa saber.
+      throw new BadRequestException(
+        `O telefone ${repetido.telefoneE164} aparece mais de uma vez. Cada pessoa recebe uma vez só.`,
+      );
+    }
+
+    return normalizados;
+  }
+
+  /**
+   * Grava quem vai receber — da lista de contatos ou dos números digitados.
+   *
+   * Um lugar só, usado pela criação e pela edição: quando as duas montavam o
+   * público por caminhos diferentes, bastava corrigir um para o outro continuar
+   * errado (foi assim que o opt-out ficou de fora de um dos dois no Regem).
+   */
+  private async montarPublico(
+    contaId: string,
+    campanhaId: string,
+    dto: {
+      listaId?: string;
+      destinatarios?: { telefone: string; variaveis?: string[] }[];
+      variaveisLista?: { origem: 'fixo' | 'nome' | 'primeiro_nome'; valor: string }[];
+    },
+  ): Promise<{ total: number; listaId: string | null }> {
+    const porLista = Boolean(dto.listaId);
+    if (porLista === Boolean(dto.destinatarios?.length)) {
+      throw new BadRequestException('Escolha uma lista de contatos OU digite os números — um dos dois.');
+    }
+
+    if (dto.listaId) {
+      const [lista] = await this.ctx.db
+        .select({ id: contatoLista.id, nome: contatoLista.nome })
+        .from(contatoLista)
+        .where(and(eq(contatoLista.id, dto.listaId), eq(contatoLista.contaId, contaId)))
+        .limit(1);
+      if (!lista) throw new NotFoundException('Lista de contatos não encontrada.');
+
+      // Uma query só, dentro do banco: a lista pode ter dezenas de milhares de
+      // contatos, e trazê-los para cá para devolver um por um seria o N+1 que
+      // derruba a request. Quem pediu para sair já fica de fora aqui.
+      const valores = (dto.variaveisLista ?? []).map((v) =>
+        v.origem === 'fixo'
+          ? sql`${v.valor}::text`
+          : v.origem === 'nome'
+            ? sql`coalesce(nullif(btrim(c.nome), ''), ${v.valor}::text)`
+            : sql`coalesce(nullif(split_part(btrim(c.nome), ' ', 1), ''), ${v.valor}::text)`,
+      );
+
+      // `count(*)` sobre o CTE, e não `returning id`: devolver 50 mil ids ao
+      // Node só para contá-los custa segundos de rede e memória.
+      const r = await this.ctx.db.execute(sql`
+        with inseridos as (
+        insert into campanha_destinatario (conta_id, campanha_id, telefone_e164, variaveis)
+        select ${contaId}, ${campanhaId}, c.telefone_e164,
+               ${valores.length ? sql`jsonb_build_array(${sql.join(valores, sql`, `)})` : sql`'[]'::jsonb`}
+          from contato_lista_item i
+          join contato c on c.id = i.contato_id and c.conta_id = i.conta_id
+         where i.conta_id = ${contaId}
+           and i.lista_id = ${lista.id}
+           and c.opt_out = false
+        on conflict (campanha_id, telefone_e164) do nothing
+        returning 1
+        )
+        select count(*)::int as total from inseridos
+      `);
+      const total = Number((r.rows[0] as { total: number } | undefined)?.total ?? 0);
+      if (total === 0) {
+        // Desfaz a campanha junto (a request é uma transação): uma campanha
+        // vazia só confundiria a lista.
+        throw new BadRequestException(
+          `A lista "${lista.nome}" não tem ninguém que possa receber: está vazia ou todos pediram para sair.`,
+        );
+      }
+      return { total, listaId: lista.id };
+    }
+
+    const normalizados = this.conferirNumeros(dto.destinatarios ?? []);
+
+    await this.ctx.db.insert(campanhaDestinatario).values(
+      normalizados.map((d) => ({
+        contaId,
+        campanhaId,
+        telefoneE164: d.telefoneE164,
+        variaveis: d.variaveis,
+      })),
+    );
+
+    return { total: normalizados.length, listaId: null };
+  }
+
+  /**
+   * Pausa por decisão do cliente.
+   *
+   * Diferente das pausas automáticas (conexão, teto do plano, inadimplência):
+   * aquelas voltam sozinhas quando a causa some, esta só volta quando a pessoa
+   * mandar. É por isso que o motivo fica gravado — o worker resume as
+   * automáticas e nunca toca nesta.
+   *
+   * Quem já estava saindo naquele instante (status `enviando`) segue: a Meta já
+   * recebeu, e fingir que não recebeu duplicaria a mensagem na retomada.
+   */
+  async pausar(contaId: string, usuarioId: string, campanhaId: string): Promise<ResumoCampanha> {
+    const alvo = await this.buscar(contaId, campanhaId);
+
+    if (alvo.status !== 'agendada' && alvo.status !== 'enviando') {
+      throw new BadRequestException(
+        `Só dá para pausar campanha que está saindo ou agendada — esta está "${alvo.status}".`,
+      );
+    }
+
+    await this.ctx.db
+      .update(campanha)
+      .set({ status: 'pausada', pausaMotivo: 'manual' })
+      .where(
+        and(
+          eq(campanha.id, campanhaId),
+          eq(campanha.contaId, contaId),
+          inArray(campanha.status, ['agendada', 'enviando']),
+        ),
+      );
+
+    await this.auditoria.registrar({
+      contaId,
+      atorTipo: 'usuario',
+      atorUsuarioId: usuarioId,
+      acao: 'campanha.pausada',
+      entidade: 'campanha',
+      entidadeId: campanhaId,
+      detalhe: { motivo: 'manual' },
+    });
+
+    return this.detalhe(contaId, campanhaId);
+  }
+
+  /**
+   * Edita a campanha.
+   *
+   * O que dá para mudar depende da situação:
+   *
+   * - **rascunho** — tudo, inclusive modelo e público: nada saiu ainda;
+   * - **agendada ou pausada** — nome, janela, ritmo e limites. Modelo e público
+   *   de campanha que já começou são HISTÓRIA: trocá-los faria a tela mentir
+   *   sobre o que foi enviado, e a métrica deixaria de bater com a realidade.
+   */
+  async editar(
+    contaId: string,
+    usuarioId: string,
+    campanhaId: string,
+    dto: EditarCampanhaDto,
+  ): Promise<ResumoCampanha> {
+    const alvo = await this.buscar(contaId, campanhaId);
+
+    if (!['rascunho', 'agendada', 'pausada'].includes(alvo.status)) {
+      throw new BadRequestException(
+        `Campanha "${alvo.status}" não é mais editável. Monte outra para enviar de novo.`,
+      );
+    }
+
+    const mexeNoConteudo = Boolean(
+      dto.modeloNome || dto.modeloId || dto.listaId || dto.destinatarios?.length || dto.variaveisLista,
+    );
+    if (mexeNoConteudo && alvo.status !== 'rascunho') {
+      throw new BadRequestException(
+        'Depois de disparada, dá para ajustar só o nome, a janela, o ritmo e os limites. Modelo e público ficam como foram enviados.',
+      );
+    }
+
+    this.conferirTetos(
+      dto.maxPorDia ?? alvo.maxPorDia ?? undefined,
+      dto.maxPorSemana ?? alvo.maxPorSemana ?? undefined,
+      dto.maxPorMes ?? alvo.maxPorMes ?? undefined,
+    );
+
+    const mudancas: Record<string, unknown> = {};
+    if (dto.nome !== undefined) mudancas.nome = dto.nome.trim();
+    if (dto.modeloNome !== undefined) mudancas.modeloNome = dto.modeloNome;
+    if (dto.modeloIdioma !== undefined) mudancas.modeloIdioma = dto.modeloIdioma;
+    if (dto.modeloId !== undefined) mudancas.modeloId = dto.modeloId;
+    if (dto.modeloCategoria !== undefined) mudancas.modeloCategoria = dto.modeloCategoria;
+    if (dto.pausaSegundos !== undefined) mudancas.pausaSegundos = dto.pausaSegundos;
+    if (dto.maxPorDia !== undefined) mudancas.maxPorDia = dto.maxPorDia;
+    if (dto.maxPorSemana !== undefined) mudancas.maxPorSemana = dto.maxPorSemana;
+    if (dto.maxPorMes !== undefined) mudancas.maxPorMes = dto.maxPorMes;
+    if (dto.janelaDias !== undefined) mudancas.janelaDias = dto.janelaDias;
+
+    // Janela só vale COMPLETA, como na criação: início sem fim não é regra, é
+    // formulário pela metade — e deixaria a campanha parada sem ninguém ter
+    // decidido isso.
+    if (dto.janelaInicio !== undefined || dto.janelaFim !== undefined) {
+      const inicio = dto.janelaInicio ?? alvo.janelaInicio;
+      const fim = dto.janelaFim ?? alvo.janelaFim;
+      mudancas.janelaInicio = inicio && fim ? inicio : null;
+      mudancas.janelaFim = inicio && fim ? fim : null;
+    }
+
+    if (Object.keys(mudancas).length) {
+      await this.ctx.db
+        .update(campanha)
+        .set(mudancas)
+        .where(and(eq(campanha.id, campanhaId), eq(campanha.contaId, contaId)));
+    }
+
+    if (mexeNoConteudo && (dto.listaId || dto.destinatarios?.length)) {
+      // Troca de público em rascunho: os antigos saem inteiros. Nada foi
+      // enviado, então não há histórico a preservar.
+      await this.ctx.db
+        .delete(campanhaDestinatario)
+        .where(
+          and(eq(campanhaDestinatario.campanhaId, campanhaId), eq(campanhaDestinatario.contaId, contaId)),
+        );
+
+      const lista = await this.montarPublico(contaId, campanhaId, {
+        listaId: dto.listaId,
+        destinatarios: dto.destinatarios,
+        variaveisLista: dto.variaveisLista,
+      });
+      await this.ctx.db
+        .update(campanha)
+        .set({ listaId: lista.listaId })
+        .where(and(eq(campanha.id, campanhaId), eq(campanha.contaId, contaId)));
+      await marcarDescadastrados(this.ctx.db, sql`d.campanha_id = ${campanhaId}`);
+    }
+
+    await this.auditoria.registrar({
+      contaId,
+      atorTipo: 'usuario',
+      atorUsuarioId: usuarioId,
+      acao: 'campanha.editada',
+      entidade: 'campanha',
+      entidadeId: campanhaId,
+      detalhe: { campos: Object.keys(mudancas), publicoTrocado: mexeNoConteudo },
+    });
+
+    return this.detalhe(contaId, campanhaId);
+  }
+
+  /**
+   * Excluir, e o que isso significa em cada situação.
+   *
+   * - **rascunho** — some de vez: nada saiu, não há história a guardar.
+   * - **agendada ou pausada** — vira `cancelada`. Quem não recebeu passa a
+   *   `cancelado`, e não a `falhou`: falha é problema de entrega, e misturar as
+   *   duas esconderia justamente o sinal que denuncia número com problema.
+   * - **concluída ou cancelada** — sai da lista (`arquivada_em`), mas continua
+   *   no banco: o consumo do ciclo e a cobrança da Meta se apoiam nela.
+   *
+   * Campanha **enviando** não é cancelada direto: pausar primeiro é o que
+   * garante que ninguém receba mensagem de uma campanha "cancelada".
+   */
+  async excluir(
+    contaId: string,
+    usuarioId: string,
+    campanhaId: string,
+  ): Promise<{ resultado: 'apagada' | 'cancelada' | 'arquivada' }> {
+    const alvo = await this.buscar(contaId, campanhaId);
+
+    if (alvo.status === 'enviando') {
+      throw new BadRequestException(
+        'Esta campanha está enviando agora. Pause primeiro e depois cancele — assim ninguém recebe uma campanha cancelada.',
+      );
+    }
+
+    if (alvo.status === 'rascunho') {
+      await this.ctx.db
+        .delete(campanha)
+        .where(and(eq(campanha.id, campanhaId), eq(campanha.contaId, contaId)));
+      await this.auditar(contaId, usuarioId, campanhaId, 'campanha.excluida', { nome: alvo.nome });
+      return { resultado: 'apagada' };
+    }
+
+    if (alvo.status === 'agendada' || alvo.status === 'pausada') {
+      const cancelados = await this.ctx.db.execute(sql`
+        with parados as (
+          update campanha_destinatario
+             set status = 'cancelado', atualizado_em = now()
+           where campanha_id = ${campanhaId} and conta_id = ${contaId} and status = 'pendente'
+          returning 1
+        )
+        select count(*)::int as total from parados
+      `);
+
+      await this.ctx.db
+        .update(campanha)
+        .set({ status: 'cancelada', pausaMotivo: null, concluidaEm: sql`now()` })
+        .where(and(eq(campanha.id, campanhaId), eq(campanha.contaId, contaId)));
+
+      await this.auditar(contaId, usuarioId, campanhaId, 'campanha.cancelada', {
+        nome: alvo.nome,
+        naoEnviados: Number((cancelados.rows[0] as { total: number } | undefined)?.total ?? 0),
+      });
+      return { resultado: 'cancelada' };
+    }
+
+    await this.ctx.db
+      .update(campanha)
+      .set({ arquivadaEm: sql`now()` })
+      .where(and(eq(campanha.id, campanhaId), eq(campanha.contaId, contaId)));
+    await this.auditar(contaId, usuarioId, campanhaId, 'campanha.arquivada', { nome: alvo.nome });
+    return { resultado: 'arquivada' };
+  }
+
+  private async auditar(
+    contaId: string,
+    usuarioId: string,
+    campanhaId: string,
+    acao: string,
+    detalhe: Record<string, unknown>,
+  ): Promise<void> {
+    await this.auditoria.registrar({
+      contaId,
+      atorTipo: 'usuario',
+      atorUsuarioId: usuarioId,
+      acao,
+      entidade: 'campanha',
+      entidadeId: campanhaId,
+      detalhe,
+    });
+  }
+
+  /** Os limites precisam ser crescentes. O banco também barra, mas com erro de banco. */
+  private conferirTetos(dia?: number | null, semana?: number | null, mes?: number | null): void {
+    if (
+      (dia && semana && dia > semana) ||
+      (semana && mes && semana > mes) ||
+      (dia && mes && dia > mes)
+    ) {
+      throw new BadRequestException(
+        'Os limites precisam ser crescentes: o do dia não pode passar o da semana, nem o da semana o do mês.',
+      );
+    }
   }
 
   /**
@@ -890,7 +1175,7 @@ export class CampanhaService {
     const linhas = await this.ctx.db
       .select()
       .from(campanha)
-      .where(eq(campanha.contaId, contaId))
+      .where(and(eq(campanha.contaId, contaId), isNull(campanha.arquivadaEm)))
       .orderBy(desc(campanha.criadoEm))
       .limit(100);
 
@@ -1002,6 +1287,15 @@ export class CampanhaService {
       porStatus,
       total,
       listaNome,
+      modeloId: c.modeloId,
+      listaId: c.listaId,
+      janelaDias: (c.janelaDias as number[] | null) ?? [],
+      janelaInicio: c.janelaInicio,
+      janelaFim: c.janelaFim,
+      pausaSegundos: c.pausaSegundos,
+      maxPorDia: c.maxPorDia,
+      maxPorSemana: c.maxPorSemana,
+      maxPorMes: c.maxPorMes,
     };
   }
 

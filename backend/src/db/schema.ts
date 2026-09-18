@@ -396,6 +396,8 @@ export const campanha = pgTable('campanha', {
   pausaMotivo: text('pausa_motivo'),
   /** Lista de contatos de onde saiu o público (migration 017). Nulo = números digitados. */
   listaId: uuid('lista_id'),
+  /** Campanha encerrada que o cliente tirou da lista (migration 018). O histórico fica. */
+  arquivadaEm: timestamp('arquivada_em', { withTimezone: true }),
   iniciadaEm: timestamp('iniciada_em', { withTimezone: true }),
   concluidaEm: timestamp('concluida_em', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
