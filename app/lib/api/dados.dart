@@ -151,6 +151,10 @@ class NumeroWhatsapp {
     required this.qualidade,
     required this.tierLimite,
     required this.status,
+    this.coexistencia = false,
+    this.vazaoMaxima,
+    this.sincronizacao,
+    this.horasParaSincronizar,
   });
 
   final String? telefone;
@@ -165,6 +169,19 @@ class NumeroWhatsapp {
   /// `pendente`, `registrado`, `suspenso` ou `removido`.
   final String status;
 
+  /// O mesmo número segue no app WhatsApp Business do celular.
+  final bool coexistencia;
+
+  /// Mensagens por segundo: 20 com o app no celular, 80 dedicado.
+  final int? vazaoMaxima;
+
+  /// Cópia de contatos e conversas (coexistência): `pendente`,
+  /// `sincronizando`, `concluida`, `erro` ou `nao_se_aplica`.
+  final String? sincronizacao;
+
+  /// Prazo da Meta para terminar a cópia. Nulo = não há prazo correndo.
+  final double? horasParaSincronizar;
+
   factory NumeroWhatsapp.deJson(Map<String, dynamic> j) => NumeroWhatsapp(
     telefone: _txtOuNulo(j['telefone']),
     nome: _txtOuNulo(j['nome']),
@@ -173,15 +190,28 @@ class NumeroWhatsapp {
         : _txt(j['qualidade']),
     tierLimite: _intOuNulo(j['tierLimite']),
     status: _txt(j['status']),
+    coexistencia: j['coexistencia'] == true,
+    vazaoMaxima: _intOuNulo(j['vazaoMaxima']),
+    sincronizacao: _txtOuNulo(j['sincronizacao']),
+    horasParaSincronizar: j['horasParaSincronizar'] is num
+        ? (j['horasParaSincronizar'] as num).toDouble()
+        : null,
   );
 }
 
 /// `GET /whatsapp/situacao`.
 class SituacaoWhatsapp {
-  const SituacaoWhatsapp({required this.conectado, required this.numeros});
+  const SituacaoWhatsapp({
+    required this.conectado,
+    required this.numeros,
+    this.contaNome,
+  });
 
   final bool conectado;
   final List<NumeroWhatsapp> numeros;
+
+  /// O nome da conta do WhatsApp Business na Meta.
+  final String? contaNome;
 
   /// O número que envia: o registrado, ou o primeiro que houver.
   NumeroWhatsapp? get principal {
@@ -194,6 +224,7 @@ class SituacaoWhatsapp {
 
   factory SituacaoWhatsapp.deJson(Map<String, dynamic> j) => SituacaoWhatsapp(
     conectado: j['conectado'] == true,
+    contaNome: _txtOuNulo(_mapa(j['conta'])['nome']),
     numeros: (j['numeros'] is List ? j['numeros'] as List : const [])
         .whereType<Map<String, dynamic>>()
         .map(NumeroWhatsapp.deJson)

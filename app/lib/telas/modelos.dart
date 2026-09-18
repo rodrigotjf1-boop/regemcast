@@ -13,9 +13,14 @@ import 'modelo_detalhe.dart';
 /// Rótulo e tom do status — o da Meta já vem em português; o nosso, não.
 (String, TomPilula) situacaoDoModelo(String status) => switch (status) {
   'aprovado' => ('Aprovado', TomPilula.sucesso),
-  'em análise' || 'enviado' || 'em recurso' => ('Em análise', TomPilula.atencao),
+  'em análise' ||
+  'enviado' ||
+  'em recurso' => ('Em análise', TomPilula.atencao),
   'pausado' => ('Pausado', TomPilula.atencao),
-  'recusado' || 'rejeitado' || 'desativado' => (status == 'desativado' ? 'Desativado' : 'Recusado', TomPilula.erro),
+  'recusado' || 'rejeitado' || 'desativado' => (
+    status == 'desativado' ? 'Desativado' : 'Recusado',
+    TomPilula.erro,
+  ),
   'sendo excluído' => ('Sendo excluído', TomPilula.erro),
   'rascunho' => ('Rascunho', TomPilula.neutro),
   _ => (status, TomPilula.neutro),
@@ -52,12 +57,23 @@ class TelaModelos extends ConsumerWidget {
     ref.invalidate(situacaoWhatsappProvider);
     await Future.wait([
       ref.read(modelosSalvosProvider.future).catchError((_) => <ModeloSalvo>[]),
-      ref.read(modelosNaMetaProvider.future).catchError((_) => <ModeloNaMeta>[]),
+      ref
+          .read(modelosNaMetaProvider.future)
+          .catchError((_) => <ModeloNaMeta>[]),
     ]);
   }
 
-  Future<void> _abrir(BuildContext context, WidgetRef ref, {ModeloNaMeta? meta, ModeloSalvo? local}) async {
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => TelaModeloDetalhe(meta: meta, local: local)));
+  Future<void> _abrir(
+    BuildContext context,
+    WidgetRef ref, {
+    ModeloNaMeta? meta,
+    ModeloSalvo? local,
+  }) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TelaModeloDetalhe(meta: meta, local: local),
+      ),
+    );
     ref.invalidate(modelosNaMetaProvider);
     ref.invalidate(modelosSalvosProvider);
   }
@@ -67,14 +83,24 @@ class TelaModelos extends ConsumerWidget {
     final c = Cores.de(context);
     final situacao = ref.watch(situacaoWhatsappProvider).value;
     final conectado = situacao?.conectado ?? true;
-    final meus = ref.watch(modelosSalvosProvider).value ?? const <ModeloSalvo>[];
-    final naMeta = conectado ? ref.watch(modelosNaMetaProvider) : const AsyncValue<List<ModeloNaMeta>>.data([]);
+    final meus =
+        ref.watch(modelosSalvosProvider).value ?? const <ModeloSalvo>[];
+    final naMeta = conectado
+        ? ref.watch(modelosNaMetaProvider)
+        : const AsyncValue<List<ModeloNaMeta>>.data([]);
 
-    final idsNaMeta = (naMeta.value ?? const <ModeloNaMeta>[]).map((m) => m.id).toSet();
+    final idsNaMeta = (naMeta.value ?? const <ModeloNaMeta>[])
+        .map((m) => m.id)
+        .toSet();
     // Rascunhos e recusados que NÃO aparecem na lista da Meta (os que ela já
     // tem aparecem lá, com o status dela — mostrar duas vezes confundiria).
     final soNossos = meus
-        .where((m) => (m.status == 'rascunho' || m.status == 'rejeitado') && (m.metaTemplateId == null || !idsNaMeta.contains(m.metaTemplateId)))
+        .where(
+          (m) =>
+              (m.status == 'rascunho' || m.status == 'rejeitado') &&
+              (m.metaTemplateId == null ||
+                  !idsNaMeta.contains(m.metaTemplateId)),
+        )
         .toList();
     final emAnalise = meus.where((m) => m.emAnalise).length;
 
@@ -92,10 +118,18 @@ class TelaModelos extends ConsumerWidget {
               sliver: SliverToBoxAdapter(
                 child: Row(
                   children: [
-                    Expanded(child: Text('Modelos', style: Theme.of(context).textTheme.headlineSmall)),
+                    Expanded(
+                      child: Text(
+                        'Modelos',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                    ),
                     IconButton(
                       tooltip: 'Criar modelo no site',
-                      onPressed: () => launchUrl(Uri.parse('$urlWeb/modelos'), mode: LaunchMode.externalApplication),
+                      onPressed: () => launchUrl(
+                        Uri.parse('$urlWeb/modelos'),
+                        mode: LaunchMode.externalApplication,
+                      ),
                       icon: const Icon(Icons.add_circle_outline_rounded),
                     ),
                   ],
@@ -112,7 +146,8 @@ class TelaModelos extends ConsumerWidget {
                     padding: EdgeInsets.only(bottom: 14),
                     child: Aviso(
                       icone: Icons.chat_bubble_outline_rounded,
-                      texto: 'Conecte o número pelo site para ver os modelos aprovados. Os rascunhos continuam aqui.',
+                      texto:
+                          'Conecte o número pelo site para ver os modelos aprovados. Os rascunhos continuam aqui.',
                     ),
                   ),
                 if (emAnalise > 0)
@@ -146,11 +181,13 @@ class TelaModelos extends ConsumerWidget {
                 if (conectado) ...[
                   _Titulo('Na Meta'),
                   naMeta.when(
-                    loading: () => const Column(children: [
-                      Cartao(child: Esqueleto(altura: 70)),
-                      SizedBox(height: 10),
-                      Cartao(child: Esqueleto(altura: 70)),
-                    ]),
+                    loading: () => const Column(
+                      children: [
+                        Cartao(child: Esqueleto(altura: 70)),
+                        SizedBox(height: 10),
+                        Cartao(child: Esqueleto(altura: 70)),
+                      ],
+                    ),
                     error: (e, _) => EstadoErro(
                       titulo: 'Não consegui ler os modelos da Meta',
                       mensagem: mensagemDoErro(e),
@@ -160,7 +197,10 @@ class TelaModelos extends ConsumerWidget {
                         ? Cartao(
                             child: Text(
                               'Nenhum modelo na Meta ainda. Crie o primeiro pelo site — a Meta analisa cada um antes de liberar.',
-                              style: TextStyle(color: c.tintaSuave, height: 1.45),
+                              style: TextStyle(
+                                color: c.tintaSuave,
+                                height: 1.45,
+                              ),
                             ),
                           )
                         : Column(
@@ -175,7 +215,12 @@ class TelaModelos extends ConsumerWidget {
                                     status: m.status,
                                     corpo: m.corpo,
                                     foraDoRegemCast: localDe(m, meus) == null,
-                                    aoTocar: () => _abrir(context, ref, meta: m, local: localDe(m, meus)),
+                                    aoTocar: () => _abrir(
+                                      context,
+                                      ref,
+                                      meta: m,
+                                      local: localDe(m, meus),
+                                    ),
                                   ),
                                 ),
                             ],
@@ -236,7 +281,15 @@ class _CartaoModelo extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text(nome, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                child: Text(
+                  nome,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
               const SizedBox(width: 8),
               Pilula(rotulo, tom: tom),
@@ -244,11 +297,20 @@ class _CartaoModelo extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            [rotuloCategoria(categoria), idioma, if (foraDoRegemCast) 'criado fora do RegemCast'].join(' · '),
+            [
+              rotuloCategoria(categoria),
+              idioma,
+              if (foraDoRegemCast) 'criado fora do RegemCast',
+            ].join(' · '),
             style: TextStyle(fontSize: 12, color: c.tintaSuave),
           ),
           const SizedBox(height: 8),
-          Text(corpo, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: c.tintaSuave, height: 1.4, fontSize: 13.5)),
+          Text(
+            corpo,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: c.tintaSuave, height: 1.4, fontSize: 13.5),
+          ),
         ],
       ),
     );

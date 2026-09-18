@@ -202,6 +202,11 @@ class ControleSessao extends Notifier<EstadoSessao> {
     await _expulsar(null);
   }
 
+  /// A troca de senha derruba todas as sessões no servidor, inclusive esta:
+  /// limpa o cofre e volta ao login com o motivo, sem chamar `/auth/sair`.
+  Future<void> encerrarAposTrocaDeSenha() =>
+      _expulsar('Senha trocada. Entre de novo com a senha nova.');
+
   // ------------------------------------------------------------------ apoio
 
   Future<void> _abrir(Map<String, dynamic> resposta) async {

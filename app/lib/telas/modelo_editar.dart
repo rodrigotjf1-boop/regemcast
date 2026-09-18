@@ -303,8 +303,7 @@ class _TelaEditarModeloState extends ConsumerState<TelaEditarModelo> {
           PreviaMensagem(
             corpo: _corpo.text,
             cabecalho: _cabecalhoDeTexto ? _cabecalho.text : null,
-            cabecalhoMidia:
-                _m.cabecalhoFormato != null && !_cabecalhoDeTexto
+            cabecalhoMidia: _m.cabecalhoFormato != null && !_cabecalhoDeTexto
                 ? _m.cabecalhoFormato
                 : null,
             rodape: _rodape.text,
@@ -347,8 +346,7 @@ class _TelaEditarModeloState extends ConsumerState<TelaEditarModelo> {
             decoration: InputDecoration(
               labelText: 'Mensagem',
               alignLabelWithHint: true,
-              helperText:
-                  'Use {{1}}, {{2}}… onde entra o dado de cada pessoa.',
+              helperText: 'Use {{1}}, {{2}}… onde entra o dado de cada pessoa.',
               helperMaxLines: 2,
               errorText: _problemaDe('corpo'),
               errorMaxLines: 6,
@@ -420,7 +418,11 @@ class _TelaEditarModeloState extends ConsumerState<TelaEditarModelo> {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               child: Row(
                 children: [
-                  Icon(Icons.lock_outline_rounded, size: 18, color: c.tintaSuave),
+                  Icon(
+                    Icons.lock_outline_rounded,
+                    size: 18,
+                    color: c.tintaSuave,
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text.rich(
@@ -446,7 +448,10 @@ class _TelaEditarModeloState extends ConsumerState<TelaEditarModelo> {
           if (_problemaDe('botoes') case final erro?)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Text(erro, style: TextStyle(color: c.erro, fontSize: 12.5)),
+              child: Text(
+                erro,
+                style: TextStyle(color: c.erro, fontSize: 12.5),
+              ),
             ),
           if (_botoes.length < _limite)
             Align(
@@ -470,7 +475,9 @@ class _TelaEditarModeloState extends ConsumerState<TelaEditarModelo> {
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : Text(_m.naMeta ? 'Salvar e enviar à Meta' : 'Salvar rascunho'),
+                : Text(
+                    _m.naMeta ? 'Salvar e enviar à Meta' : 'Salvar rascunho',
+                  ),
           ),
         ),
       ),

@@ -63,16 +63,21 @@ void main() {
     });
 
     test('em análise e carrossel não editam pelo app', () {
-      expect(ModeloSalvo.deJson(base({'status': 'enviado'})).editavelNoApp, false);
-      expect(ModeloSalvo.deJson(base({'tipo': 'carrossel'})).editavelNoApp, false);
+      expect(
+        ModeloSalvo.deJson(base({'status': 'enviado'})).editavelNoApp,
+        false,
+      );
+      expect(
+        ModeloSalvo.deJson(base({'tipo': 'carrossel'})).editavelNoApp,
+        false,
+      );
       expect(ModeloSalvo.deJson(base({})).editavelNoApp, true);
     });
 
     test('paraSalvar leva as mudanças e limpa rodapé vazio', () {
-      final d = ModeloSalvo.deJson(base({'rodape': 'Loja'})).paraSalvar(
-        corpo: 'Olá {{1}}',
-        rodape: '  ',
-      );
+      final d = ModeloSalvo.deJson(
+        base({'rodape': 'Loja'}),
+      ).paraSalvar(corpo: 'Olá {{1}}', rodape: '  ');
       expect(d['corpo'], 'Olá {{1}}');
       expect(d['rodape'], isNull);
       expect(d['categoria'], 'MARKETING');

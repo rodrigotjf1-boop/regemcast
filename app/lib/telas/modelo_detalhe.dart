@@ -143,7 +143,9 @@ class _TelaModeloDetalheState extends ConsumerState<TelaModeloDetalhe> {
     try {
       final naMeta = await ref.read(servicoModelosProvider).excluir(m.id);
       if (!mounted) return;
-      _avisar(naMeta ? 'Modelo excluído aqui e na Meta.' : 'Rascunho excluído.');
+      _avisar(
+        naMeta ? 'Modelo excluído aqui e na Meta.' : 'Rascunho excluído.',
+      );
       Navigator.of(context).pop();
     } catch (e) {
       if (mounted) _avisar(mensagemDoErro(e));
@@ -161,7 +163,8 @@ class _TelaModeloDetalheState extends ConsumerState<TelaModeloDetalhe> {
     final categoria = m?.categoria ?? meta!.categoria;
     final idioma = m?.idioma ?? meta!.idioma;
     final motivo = meta?.motivo ?? m?.motivo;
-    final recusado = tom == TomPilula.erro && motivo != null && motivo.isNotEmpty;
+    final recusado =
+        tom == TomPilula.erro && motivo != null && motivo.isNotEmpty;
 
     final podeEditar = m != null && m.editavelNoApp;
     final podeExcluir = m != null && !m.emAnalise;
@@ -194,10 +197,7 @@ class _TelaModeloDetalheState extends ConsumerState<TelaModeloDetalhe> {
                         Icons.delete_outline_rounded,
                         color: c.erro,
                       ),
-                      title: Text(
-                        'Excluir',
-                        style: TextStyle(color: c.erro),
-                      ),
+                      title: Text('Excluir', style: TextStyle(color: c.erro)),
                       contentPadding: EdgeInsets.zero,
                     ),
                   ),
@@ -274,7 +274,11 @@ class _TelaModeloDetalheState extends ConsumerState<TelaModeloDetalhe> {
             const SizedBox(height: 14),
             Text(
               'O botão "${botaoSaida.texto}" vai em todo modelo de marketing. Quem toca nele entra na lista de bloqueio e não recebe mais campanhas desta conta.',
-              style: TextStyle(color: c.tintaSuave, fontSize: 12.5, height: 1.45),
+              style: TextStyle(
+                color: c.tintaSuave,
+                fontSize: 12.5,
+                height: 1.45,
+              ),
             ),
           ],
         ],
@@ -313,8 +317,7 @@ class _Previa extends StatelessWidget {
     // O nosso registro sabe o tipo de cada botão e o formato do cabeçalho;
     // a Meta, na listagem, só devolve os textos.
     if (m != null) {
-      final midia =
-          m.cabecalhoFormato != null && m.cabecalhoFormato != 'TEXT'
+      final midia = m.cabecalhoFormato != null && m.cabecalhoFormato != 'TEXT'
           ? m.cabecalhoFormato
           : null;
       return PreviaMensagem(

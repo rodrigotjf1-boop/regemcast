@@ -64,3 +64,8 @@ String diasDaSemana(List<int> dias) {
 /// '09:00:00' → '09:00'.
 String hora(String? hhmmss) =>
     hhmmss == null || hhmmss.length < 5 ? '' : hhmmss.substring(0, 5);
+
+final _reais = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
+
+/// 9990 → "R$ 99,90".
+String reais(int centavos) => _reais.format(centavos / 100);
