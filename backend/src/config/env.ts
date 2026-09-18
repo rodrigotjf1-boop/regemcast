@@ -247,6 +247,17 @@ export const env = {
    * código.
    */
   /**
+   * Push do app Android, pelo Firebase Cloud Messaging.
+   *
+   * O JSON da conta de serviço do projeto Firebase, em texto ou base64. Sem
+   * ele o push fica desligado: os avisos simplesmente não saem e nada mais
+   * muda — campanha, webhook e cobrança seguem iguais.
+   */
+  push: {
+    contaServico: opcional('FIREBASE_CONTA_SERVICO'),
+  },
+
+  /**
    * Mercado Pago (conta da SISTER TECNOLOGIA): assinaturas dos clientes.
    *
    * Sem o token, contratar um plano responde 503 dizendo o que falta — nunca

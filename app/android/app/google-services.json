@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "381615679097",
+    "project_id": "regemcast",
+    "storage_bucket": "regemcast.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:381615679097:android:eb771fc74708b93d0756a8",
+        "android_client_info": {
+          "package_name": "com.dmsregem.regemcast"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCbZZ4ODubA5kR16qHEE4yOwwOZJOp11po"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

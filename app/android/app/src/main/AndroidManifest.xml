@@ -4,6 +4,9 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Biometria para reabrir o app sem digitar a senha. -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
+    <!-- Android 13+: avisos (push) só aparecem com esta permissão, pedida pelo
+         app depois do login. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <!-- allowBackup=false: o token da sessão fica no cofre do Android, e o
          backup automático o copiaria para outro aparelho restaurado — onde a
@@ -37,6 +40,16 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- Push: ícone monocromático, cor da marca e canal padrão. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notificacao" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/cor_notificacao" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="avisos" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

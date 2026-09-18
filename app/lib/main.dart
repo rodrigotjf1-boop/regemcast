@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
+import 'push/push.dart';
 import 'sessao/sessao.dart';
 import 'telas/casca.dart';
 import 'telas/entrar.dart';
@@ -49,6 +50,11 @@ class _Raiz extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen(sessaoProvider, (antes, agora) {
+      if (antes is SessaoAtiva && agora is SessaoAusente) {
+        ref.read(servicoPushProvider).desativar(avisarServidor: false);
+      }
+    });
     final estado = ref.watch(sessaoProvider);
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 280),

@@ -19,7 +19,8 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { ContextoDb } from '../../db/contexto';
 import { AuditoriaService } from '../auditoria/auditoria.service';
-import { campanhaDestinatario, waEvento, waNumero } from '../../db/schema';
+import { AvisoService } from '../aviso/aviso.service';
+import { campanhaDestinatario, modelo, waEvento, waNumero } from '../../db/schema';
 import { codigoDoErro, mensagemDoErroMeta, traduzirErroMeta } from './erros-meta';
 
 /** Quantos eventos processar por passada. */
@@ -30,6 +31,31 @@ const MAX_TENTATIVAS = 5;
 interface Mudanca {
   field?: string;
   value?: Record<string, unknown>;
+}
+
+/** Evento da Meta → status do nosso registro. O que não está aqui é ignorado. */
+const STATUS_DO_MODELO: Record<string, string> = {
+  APPROVED: 'aprovado',
+  REJECTED: 'rejeitado',
+  PAUSED: 'pausado',
+  DISABLED: 'desativado',
+  PENDING: 'enviado',
+  IN_APPEAL: 'enviado',
+  REINSTATED: 'aprovado',
+};
+
+/** O motivo da Meta vem em código; os mais comuns, em português. */
+function motivoDoModelo(codigo: string): string | null {
+  const c = codigo.toUpperCase();
+  if (!c || c === 'NONE') return null;
+  const conhecidos: Record<string, string> = {
+    ABUSIVE_CONTENT: 'conteúdo considerado abusivo.',
+    INCORRECT_CATEGORY: 'categoria errada para o conteúdo.',
+    INVALID_FORMAT: 'formato inválido (variáveis, botões ou texto).',
+    SCAM: 'conteúdo considerado golpe.',
+    PROMOTIONAL: 'conteúdo promocional fora da categoria Marketing.',
+  };
+  return conhecidos[c] ?? codigo.toLowerCase().replace(/_/g, ' ');
 }
 
 const QUALIDADE: Record<string, string> = {
@@ -100,6 +126,7 @@ export class WebhookService {
   constructor(
     private readonly ctx: ContextoDb,
     private readonly auditoria: AuditoriaService,
+    private readonly avisos: AvisoService,
   ) {}
 
   /** Grava cada mudança do payload como um evento próprio. */
@@ -184,9 +211,60 @@ export class WebhookService {
         return this.sincronizacaoDoApp(tipo, mudanca);
       case 'smb_message_echoes':
         return this.ecoDeMensagem(mudanca);
+      case 'message_template_status_update':
+        return this.statusDoModelo(mudanca);
       default:
         this.log.debug(`Evento "${tipo}" recebido e guardado, sem tratamento próprio.`);
     }
+  }
+
+  /**
+   * A Meta decidiu sobre um modelo: aprovou, recusou, pausou, desativou.
+   *
+   * Sem isto o nosso registro ficava em "enviado" para sempre — a lista da
+   * Meta mostrava aprovado e a nossa contagem de "em análise" nunca baixava.
+   * O modelo é achado pelo id da Meta (índice único `idx_modelo_meta_id`);
+   * modelo criado fora do RegemCast não tem linha aqui e é ignorado.
+   */
+  private async statusDoModelo(m: Mudanca): Promise<void> {
+    const v = m.value ?? {};
+    const idMeta = v.message_template_id != null ? String(v.message_template_id) : '';
+    const evento = String(v.event ?? '').toUpperCase();
+    const status = STATUS_DO_MODELO[evento];
+    if (!idMeta || !status) return;
+
+    const motivo =
+      status === 'rejeitado' || status === 'pausado' || status === 'desativado'
+        ? motivoDoModelo(String(v.reason ?? ''))
+        : null;
+
+    const alterado = await this.ctx.comEscopoSistema('meta.webhook.modelo', async (db) => {
+      const [linha] = await db
+        .update(modelo)
+        .set({
+          status,
+          motivo,
+          respondidoEm: status === 'enviado' ? null : new Date(),
+        })
+        .where(and(eq(modelo.metaTemplateId, idMeta), sql`${modelo.status} <> ${status}`))
+        .returning({ contaId: modelo.contaId, id: modelo.id, nome: modelo.nome });
+      return linha ?? null;
+    });
+    if (!alterado) return;
+
+    const texto: Record<string, [string, string]> = {
+      aprovado: ['Modelo aprovado', 'A Meta aprovou o modelo. Ele já pode ser usado em campanha.'],
+      rejeitado: ['Modelo recusado', motivo ? `A Meta recusou o modelo: ${motivo}` : 'A Meta recusou o modelo. Abra para ver o que ajustar.'],
+      pausado: ['Modelo pausado pela Meta', 'Muita gente bloqueou ou denunciou este modelo. Ele não envia até a Meta liberar.'],
+      desativado: ['Modelo desativado pela Meta', 'O modelo não pode mais ser usado. Crie outro pelo site.'],
+    };
+    const [titulo, corpo] = texto[status] ?? [];
+    if (!titulo) return;
+    void this.avisos.avisar(alterado.contaId, 'modelos', {
+      titulo: `${titulo}: ${alterado.nome}`,
+      corpo,
+      dados: { modeloId: alterado.id },
+    });
   }
 
   /**

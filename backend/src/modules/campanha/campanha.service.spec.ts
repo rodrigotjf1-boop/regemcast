@@ -100,6 +100,9 @@ function montar() {
       typeof CampanhaService
     >[3],
     telemetria as unknown as ConstructorParameters<typeof CampanhaService>[4],
+    { avisar: jest.fn().mockResolvedValue(undefined) } as unknown as ConstructorParameters<
+      typeof CampanhaService
+    >[5],
   );
 
   return { service, db, meta, graph, registrar, telemetria, diario, consulta: (l: unknown[]) => consulta(l, diario) };
