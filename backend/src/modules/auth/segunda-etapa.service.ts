@@ -72,6 +72,8 @@ interface PayloadPre {
   tipo: 'pre_login';
   metodo: MetodoSegundaEtapa;
   ver: number;
+  /** Onde o login começou. Vai daqui até a sessão: o app pediu, o app recebe. */
+  escopo?: 'web' | 'app';
 }
 
 export interface UsuarioParaSegundaEtapa {
@@ -114,7 +116,10 @@ export class SegundaEtapaService {
   // ------------------------------------------------------------------ login
 
   /** Senha aceita de quem tem duas etapas: manda o código (se e-mail) e emite a pré-sessão. */
-  async iniciar(u: UsuarioParaSegundaEtapa): Promise<{ preToken: string; emailMascarado: string }> {
+  async iniciar(
+    u: UsuarioParaSegundaEtapa,
+    escopo: 'web' | 'app' = 'web',
+  ): Promise<{ preToken: string; emailMascarado: string }> {
     if (u.metodo === 'email') {
       await this.enviarCodigoDeLogin(u, true);
     }
@@ -125,6 +130,7 @@ export class SegundaEtapaService {
       tipo: 'pre_login',
       metodo: u.metodo,
       ver: u.tokenVersao,
+      escopo,
     };
     const preToken = await this.jwt.signAsync(payload, {
       secret: segredoPreLogin(),
@@ -156,7 +162,7 @@ export class SegundaEtapaService {
     preToken: string | undefined,
     codigo: string,
     meta: MetaRequisicao,
-  ): Promise<{ usuarioId: string; contaId: string; metodo: MetodoSegundaEtapa }> {
+  ): Promise<{ usuarioId: string; contaId: string; metodo: MetodoSegundaEtapa; escopo: 'web' | 'app' }> {
     const pre = await this.lerPre(preToken);
     const u = await this.buscar(pre.sub);
     this.conferirVersao(u, pre);
@@ -203,7 +209,12 @@ export class SegundaEtapaService {
         .where(eq(tUsuario.id, u.id)),
     );
 
-    return { usuarioId: u.id, contaId: u.contaId, metodo: u.doisFatores };
+    return {
+      usuarioId: u.id,
+      contaId: u.contaId,
+      metodo: u.doisFatores,
+      escopo: pre.escopo === 'app' ? 'app' : 'web',
+    };
   }
 
   // ---------------------------------------------------------- configurações

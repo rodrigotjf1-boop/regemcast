@@ -36,6 +36,12 @@ import { CodigoSegundaEtapaDto } from './dto/segunda-etapa.dto';
 import { TrocarSenhaDto } from './dto/trocar-senha.dto';
 import { SegundaEtapaService } from './segunda-etapa.service';
 
+/**
+ * A sessão como o APLICATIVO a recebe: o token vem junto, porque fora do
+ * navegador não existe cookie. Na web esta forma não é usada.
+ */
+export type RespostaSessaoApp = RespostaSessao & { token: string };
+
 /** Resposta do login para quem tem duas etapas: nada de sessão ainda. */
 export interface RespostaSegundaEtapa {
   etapa: 'codigo';
@@ -74,15 +80,24 @@ export class AuthController {
     @Body() dto: LoginDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
-  ): Promise<RespostaSessao | RespostaSegundaEtapa> {
+  ): Promise<RespostaSessao | RespostaSessaoApp | RespostaSegundaEtapa> {
+    const doApp = dto.dispositivo === 'app';
     const resultado = await this.auth.login(dto, metaDoRequest(req));
 
     if (resultado.tipo === 'sessao') {
       gravarCookieSessao(res, resultado.sessao.token);
-      return resultado.sessao.resposta;
+      // Fora do navegador não existe cookie: o app recebe o token no corpo e o
+      // guarda no cofre do sistema. Na web ele continua SÓ no cookie httpOnly,
+      // que é o que impede um XSS de ler a sessão.
+      return doApp
+        ? { ...resultado.sessao.resposta, token: resultado.sessao.token }
+        : resultado.sessao.resposta;
     }
 
-    const { preToken, emailMascarado } = await this.segundaEtapa.iniciar(resultado.usuario);
+    const { preToken, emailMascarado } = await this.segundaEtapa.iniciar(
+      resultado.usuario,
+      doApp ? 'app' : 'web',
+    );
     gravarCookiePreLogin(res, preToken);
     return { etapa: 'codigo', metodo: resultado.usuario.metodo, emailMascarado };
   }
@@ -98,14 +113,18 @@ export class AuthController {
     @Body() dto: CodigoSegundaEtapaDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
-  ): Promise<RespostaSessao> {
+  ): Promise<RespostaSessao | RespostaSessaoApp> {
     const meta = metaDoRequest(req);
-    const { usuarioId, metodo } = await this.segundaEtapa.confirmar(lerCookiePreLogin(req), dto.codigo, meta);
-    const { token, resposta } = await this.auth.sessaoAposSegundaEtapa(usuarioId, metodo, meta);
+    const { usuarioId, metodo, escopo } = await this.segundaEtapa.confirmar(
+      lerCookiePreLogin(req),
+      dto.codigo,
+      meta,
+    );
+    const { token, resposta } = await this.auth.sessaoAposSegundaEtapa(usuarioId, metodo, meta, escopo);
     // A pré-sessão já cumpriu o papel: não fica um segundo caminho aberto.
     limparCookiePreLogin(res);
     gravarCookieSessao(res, token);
-    return resposta;
+    return escopo === 'app' ? { ...resposta, token } : resposta;
   }
 
   @Publico()
@@ -131,6 +150,15 @@ export class AuthController {
     // copiou o token é derrubado no passo seguinte, pelo token_versao.
     limparCookieSessao(res);
     return this.auth.sair(usuario, metaDoRequest(req));
+  }
+
+  /** Renova a sessão do aplicativo. Sessão de navegador não passa por aqui. */
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('renovar')
+  @ApiOperation({ summary: 'Token novo para o aplicativo, a partir da sessão atual' })
+  renovar(@UsuarioAtual() usuario: UsuarioAutenticado): Promise<{ token: string; expiraEm: string }> {
+    return this.auth.renovarSessaoDoApp(usuario);
   }
 
   @Get('eu')
@@ -212,7 +240,7 @@ export class AuthController {
     @Body() dto: AceitarConviteDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
-  ): Promise<RespostaSessao> {
+  ): Promise<RespostaSessao | RespostaSessaoApp> {
     const { token, resposta } = await this.auth.aceitarConvite(dto, metaDoRequest(req));
     gravarCookieSessao(res, token);
     return resposta;

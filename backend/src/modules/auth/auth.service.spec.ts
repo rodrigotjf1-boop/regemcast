@@ -99,7 +99,7 @@ const usuarioAtivo = (extra: Record<string, unknown> = {}) => ({
   nome: 'Ana Prado',
   email: 'ana@empresa.com.br',
   senhaHash: hashCerto,
-  papel: 'dono',
+  papel: 'dono', escopo: 'web',
   status: 'ativo',
   tokenVersao: 1,
   doisFatores: 'nenhum',
@@ -203,7 +203,7 @@ describe('AuthService.login', () => {
     expect(emitida.resposta.usuario.papel).toBe('dono');
     expect(emitida.resposta.conta.status).toBe('ativa');
     expect(jwt.signAsync).toHaveBeenCalledWith(
-      { sub: 'usuario-1', conta: 'conta-1', ver: 1 },
+      { sub: 'usuario-1', conta: 'conta-1', ver: 1, escopo: 'web' },
       expect.objectContaining({ expiresIn: expect.any(String) }),
     );
     expect(auditoria.registrar).toHaveBeenCalledWith(
@@ -253,6 +253,7 @@ describe('AuthService.sair', () => {
     nome: 'Ana Prado',
     email: 'ana@empresa.com.br',
     papel: 'dono' as const,
+    escopo: 'web' as const,
   };
 
   it('incrementa token_versao — sair derruba até o token que alguém copiou', async () => {
@@ -303,7 +304,7 @@ describe('AuthGuard', () => {
         contaId: 'conta-1',
         nome: 'Ana',
         email: 'ana@empresa.com.br',
-        papel: 'dono',
+        papel: 'dono', escopo: 'web',
         status: 'ativo',
         tokenVersao: 2,
       },
@@ -322,7 +323,7 @@ describe('AuthGuard', () => {
         contaId: 'conta-1',
         nome: 'Ana',
         email: 'ana@empresa.com.br',
-        papel: 'dono',
+        papel: 'dono', escopo: 'web',
         status: 'ativo',
         tokenVersao: 7,
       },
@@ -341,6 +342,7 @@ describe('AuthService.trocarSenha', () => {
     nome: 'Ana Prado',
     email: 'ana@empresa.com.br',
     papel: 'dono' as const,
+    escopo: 'web' as const,
   };
 
   it('incrementa token_versao (encerra todas as sessões) e audita', async () => {

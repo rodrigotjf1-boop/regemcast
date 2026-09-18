@@ -339,7 +339,12 @@ export class AuthService {
         userAgent: meta.userAgent,
       });
 
-      const { token, expiraEm } = await this.assinarToken(u.id, u.contaId, u.tokenVersao);
+      const { token, expiraEm } = await this.assinarToken(
+        u.id,
+        u.contaId,
+        u.tokenVersao,
+        dto.dispositivo === 'app' ? 'app' : 'web',
+      );
       const sessao: SessaoEmitida = {
         token,
         resposta: {
@@ -397,6 +402,8 @@ export class AuthService {
     usuarioId: string,
     metodo: 'email' | 'app',
     meta: MetaRequisicao,
+    /** De onde o login começou: a pré-sessão carrega isso desde a senha. */
+    escopo: 'web' | 'app' = 'web',
   ): Promise<SessaoEmitida> {
     return this.ctx.comEscopoSistema('auth.login.segunda_etapa', async (db) => {
       const [u] = await db
@@ -441,7 +448,7 @@ export class AuthService {
         userAgent: meta.userAgent,
       });
 
-      const { token, expiraEm } = await this.assinarToken(u.id, u.contaId, u.tokenVersao);
+      const { token, expiraEm } = await this.assinarToken(u.id, u.contaId, u.tokenVersao, escopo);
       return {
         token,
         resposta: {
@@ -940,15 +947,47 @@ export class AuthService {
     usuarioId: string,
     contaId: string,
     versao: number,
+    escopo: 'web' | 'app' = 'web',
   ): Promise<{ token: string; expiraEm: string }> {
+    // O app dura dias; a web, horas. No navegador a pessoa volta e digita a
+    // senha; no celular, pedir senha a cada meio dia faz o app ser apagado. O
+    // que segura o risco é o cofre do sistema, a biometria e o token_versao,
+    // que derruba tudo na hora quando a senha muda ou o acesso é suspenso.
+    const horas = escopo === 'app' ? env.sessao.ttlAppDias * 24 : env.sessao.ttlHoras;
     const token = await this.jwt.signAsync(
-      { sub: usuarioId, conta: contaId, ver: versao },
-      { secret: env.sessao.segredo, expiresIn: `${env.sessao.ttlHoras}h` },
+      { sub: usuarioId, conta: contaId, ver: versao, escopo },
+      { secret: env.sessao.segredo, expiresIn: `${horas}h` },
     );
     return {
       token,
-      expiraEm: new Date(Date.now() + env.sessao.ttlHoras * 3_600_000).toISOString(),
+      expiraEm: new Date(Date.now() + horas * 3_600_000).toISOString(),
     };
+  }
+
+  /**
+   * Renova a sessão do aplicativo sem pedir a senha de novo.
+   *
+   * Só para o app: no navegador a sessão é curta de propósito, e renová-la em
+   * silêncio desfaria a escolha. O token novo nasce da sessão atual, que o guard
+   * já revalidou contra o banco — acesso suspenso ou senha trocada nem chega
+   * aqui.
+   */
+  async renovarSessaoDoApp(usuario: UsuarioAutenticado): Promise<{ token: string; expiraEm: string }> {
+    if (usuario.escopo !== 'app') {
+      throw new BadRequestException('Só a sessão do aplicativo é renovada por aqui.');
+    }
+
+    const versao = await this.ctx.comEscopoSistema('auth.renovar', async (db) => {
+      const [u] = await db
+        .select({ tokenVersao: tUsuario.tokenVersao })
+        .from(tUsuario)
+        .where(eq(tUsuario.id, usuario.id))
+        .limit(1);
+      return u?.tokenVersao ?? null;
+    });
+    if (versao === null) throw new UnauthorizedException(SESSAO_EXPIRADA);
+
+    return this.assinarToken(usuario.id, usuario.contaId, versao, 'app');
   }
 
   private async conferirSenha(hash: string, senha: string, usuarioId: string): Promise<boolean> {

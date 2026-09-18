@@ -7,10 +7,11 @@
  * divergiriam — foi assim que um telefone sem o código do país passou na tela e
  * foi recusado pela Meta.
  */
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
 import type { UsuarioAutenticado } from '../../common/auth.guard';
+import { SomenteWebGuard } from '../../common/somente-web.guard';
 import { UsuarioAtual } from '../../common/usuario-atual.decorator';
 import { SalvarModeloDto } from './dto/salvar-modelo.dto';
 import { ModeloService } from './modelo.service';
@@ -31,7 +32,9 @@ export class ModeloController {
     return { problemas: this.servico.conferir(dto) };
   }
 
+  /** Criar modelo é do navegador: formulário longo, prévia e regras da Meta. */
   @Post()
+  @UseGuards(SomenteWebGuard)
   criar(@UsuarioAtual() usuario: UsuarioAutenticado, @Body() dto: SalvarModeloDto) {
     return this.servico.salvarRascunho(usuario.contaId, usuario.id, dto);
   }

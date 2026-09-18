@@ -35,6 +35,14 @@ export interface UsuarioAutenticado {
   nome: string;
   email: string;
   papel: 'dono' | 'operador';
+  /**
+   * Onde esta sessão nasceu. `app` é o aplicativo Android; `web`, o navegador.
+   *
+   * Não é enfeite de telemetria: o app NÃO cria modelo nem campanha, e essa
+   * regra vive no servidor (`@SomenteWeb`). Deixá-la só na tela significaria
+   * que um token extraído do aparelho poderia criar o que o app não mostra.
+   */
+  escopo: 'web' | 'app';
 }
 
 export interface RequestAutenticado extends Request {
@@ -45,6 +53,8 @@ interface Payload {
   sub: string;
   conta: string;
   ver: number;
+  /** Ausente nas sessões antigas: elas são da web. */
+  escopo?: 'web' | 'app';
 }
 
 @Injectable()
@@ -114,6 +124,7 @@ export class AuthGuard implements CanActivate {
       nome: linha.nome,
       email: linha.email,
       papel: linha.papel as 'dono' | 'operador',
+      escopo: payload.escopo === 'app' ? 'app' : 'web',
     };
     return true;
   }

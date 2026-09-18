@@ -70,7 +70,7 @@ const dono: UsuarioAutenticado = {
   contaId: CONTA,
   nome: 'Rodrigo',
   email: 'dono@empresa.com.br',
-  papel: 'dono',
+  papel: 'dono', escopo: 'web',
 };
 
 const auditoriaFalsa = () =>

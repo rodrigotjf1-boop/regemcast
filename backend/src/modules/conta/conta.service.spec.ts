@@ -35,6 +35,7 @@ const dono: UsuarioAutenticado = {
   nome: 'Rodrigo',
   email: 'dono@empresa.com.br',
   papel: 'dono',
+  escopo: 'web',
 };
 
 /**
