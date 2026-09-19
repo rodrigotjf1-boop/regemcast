@@ -61,6 +61,23 @@ describe('ErroFilter', () => {
     erro.mockRestore();
   });
 
+  it('corpo acima do limite vira 413 com instrução, não "erro do nosso lado"', () => {
+    // O express-json lança este erro ANTES do controlador: sem tradução, a
+    // importação grande morria como 500 genérico (era o caso de 1.539 contatos).
+    const grande = Object.assign(new Error('request entity too large'), {
+      name: 'PayloadTooLargeError',
+      type: 'entity.too.large',
+    });
+    const avisar = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+    const { status, corpo } = responder(grande);
+
+    expect(status).toBe(413);
+    expect(corpo.mensagem).toMatch(/Divida o arquivo/);
+    expect(corpo).not.toHaveProperty('referencia');
+    avisar.mockRestore();
+  });
+
   it('traduz o 429 do throttler e não vaza o nome da exceção', () => {
     const { status, corpo } = responder(new ThrottlerException());
 

@@ -149,6 +149,19 @@ export class ErroFilter implements ExceptionFilter {
       return;
     }
 
+    // Corpo maior que o limite do servidor: é do cliente (413), não defeito
+    // nosso, e a pessoa precisa saber o que fazer — dividir o arquivo.
+    const nome = (excecao as { name?: string })?.name;
+    const tipo = (excecao as { type?: string })?.type;
+    if (nome === 'PayloadTooLargeError' || tipo === 'entity.too.large') {
+      this.log.warn(`${req.method} ${req.url} → 413: corpo acima do limite do servidor.`);
+      res.status(HttpStatus.PAYLOAD_TOO_LARGE).json({
+        mensagem:
+          'Esta importação é grande demais para um envio só. Divida o arquivo em partes (até cerca de 5.000 contatos por vez) e importe de novo.',
+      } satisfies CorpoErro);
+      return;
+    }
+
     // Qualquer coisa que não é HttpException é defeito nosso. A referência
     // permite casar o que o usuário viu com a linha do log, sem expor stack.
     const referencia = randomUUID().slice(0, 8);

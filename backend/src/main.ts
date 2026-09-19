@@ -21,6 +21,20 @@ async function bootstrap() {
     rawBody: true,
   });
 
+  /*
+   * Corpo de até 3 MB no JSON.
+   *
+   * O padrão do Express é 100 KB, e isso NÃO cabia a importação que a própria
+   * tela promete: 5.000 contatos com nome, telefone e histórico de compra dão
+   * cerca de 1 MB. Na prática a importação quebrava por volta de 800 contatos,
+   * com "erro do nosso lado" — o corpo nem chegava ao controlador, então o teto
+   * de 5.000 do DTO nunca era alcançado.
+   *
+   * O limite continua existindo (não é ilimitado) e vale para todas as rotas;
+   * o teto real da importação segue sendo TETO_IMPORTACAO, conferido no DTO.
+   */
+  app.useBodyParser('json', { limit: '3mb' });
+
   app.setGlobalPrefix('api/v1');
   app.use(helmet());
   app.use(cookieParser());
