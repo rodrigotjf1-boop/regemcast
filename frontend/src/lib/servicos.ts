@@ -11,7 +11,7 @@
  * campo a mais no corpo não é ignorado — é 400 na cara do usuário.
  */
 import { api, enderecoDaApi } from './api';
-import type {
+import type { SituacaoCardapioWeb,
   ResultadoContratacao,
   SituacaoCobranca,
   CnpjDoConvite,
@@ -262,6 +262,22 @@ export const whatsapp = {
   /** `POST /whatsapp/registrar-numero` */
   registrarNumero: (dados: DadosRegistroNumero) =>
     api.post<{ registrado: boolean; mensagem: string }>('/whatsapp/registrar-numero', dados),
+};
+
+/** Conexão com a loja do Cardápio Web: importar a base de clientes. */
+export const cardapioWeb = {
+  /** `GET /integracoes/cardapioweb` */
+  situacao: () => api.get<SituacaoCardapioWeb>('/integracoes/cardapioweb'),
+
+  /** `POST /integracoes/cardapioweb/chave` — confere a chave na loja e guarda cifrada. */
+  conectarChave: (chave: string) => api.post<{ lojaNome: string }>('/integracoes/cardapioweb/chave', { chave }),
+
+  /** `POST /integracoes/cardapioweb/importar` — começa a importação em segundo plano. */
+  importar: (consentimento: boolean, evidencia?: string) =>
+    api.post<SituacaoCardapioWeb>('/integracoes/cardapioweb/importar', { consentimento, evidencia }),
+
+  /** `DELETE /integracoes/cardapioweb` — apaga a credencial; os contatos ficam. */
+  desconectar: () => api.delete<void>('/integracoes/cardapioweb'),
 };
 
 export const contatos = {

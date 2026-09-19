@@ -247,6 +247,19 @@ export const env = {
    * código.
    */
   /**
+   * Integrações com sistemas do cliente (hoje: Cardápio Web).
+   *
+   * `INTEGRACOES_CHAVE` cifra as credenciais que o cliente conecta (a chave da
+   * loja, os tokens OAuth). Chave própria, 32 bytes em base64, separada da dos
+   * tokens da Meta: vazar uma não abre a outra. Sem ela, conectar responde 503
+   * dizendo o que falta — nunca grava credencial em claro.
+   */
+  integracoes: {
+    chave: opcional('INTEGRACOES_CHAVE'),
+    cardapiowebUrl: opcional('CARDAPIOWEB_API_URL', 'https://integracao.cardapioweb.com'),
+  },
+
+  /**
    * Push do app Android, pelo Firebase Cloud Messaging.
    *
    * O JSON da conta de serviço do projeto Firebase, em texto ou base64. Sem
