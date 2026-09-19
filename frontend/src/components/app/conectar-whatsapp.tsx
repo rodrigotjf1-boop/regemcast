@@ -78,6 +78,18 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
   const [resultado, setResultado] = useState<ResultadoConexao | null>(null);
   const [config, setConfig] = useState<ConfigSignup | null>(null);
   const [modo, setModo] = useState<Modo>('coexistencia');
+  // A janela da Meta é um pop-up. Bloqueado pelo navegador, o FB.login nunca
+  // responde e o botão ficaria em "Conectando…" para sempre — parece defeito.
+  // Depois de alguns segundos, a tela diz o provável motivo e deixa voltar.
+  const [demorou, setDemorou] = useState(false);
+  useEffect(() => {
+    if (etapa !== 'conectando') {
+      setDemorou(false);
+      return;
+    }
+    const t = window.setTimeout(() => setDemorou(true), 8000);
+    return () => window.clearTimeout(t);
+  }, [etapa]);
 
   /** Preenchido pelo postMessage, lido no callback do SDK. Ver comentário acima. */
   const infoRef = useRef<InfoDaSessao>({});
@@ -310,6 +322,23 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
       <Button onClick={abrir} carregando={etapa === 'conectando'}>
         {etapa === 'conectando' ? 'Conectando…' : 'Conectar meu número'}
       </Button>
+
+      {etapa === 'conectando' && demorou && (
+        <Alerta tom="atencao">
+          <p>
+            A janela da Meta não abriu? O navegador pode ter bloqueado o pop-up. Clique no ícone
+            de pop-up bloqueado na barra de endereço, permita para cast.dmsregem.com e tente de
+            novo.
+          </p>
+          <button
+            type="button"
+            onClick={() => setEtapa('pronto')}
+            className="mt-2 text-sm font-medium text-acento-forte underline underline-offset-4"
+          >
+            Voltar e tentar de novo
+          </button>
+        </Alerta>
+      )}
     </div>
   );
 }
