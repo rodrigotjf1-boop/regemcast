@@ -11,7 +11,7 @@
  * campo a mais no corpo não é ignorado — é 400 na cara do usuário.
  */
 import { api, enderecoDaApi } from './api';
-import type { SituacaoCardapioWeb,
+import type { SituacaoCardapioWeb, Segmento, ResumoSegmentos, ParametrosSegmentacao,
   ResultadoContratacao,
   SituacaoCobranca,
   CnpjDoConvite,
@@ -282,8 +282,20 @@ export const cardapioWeb = {
 
 export const contatos = {
   /** `GET /contatos` */
-  listar: (pagina = 1, porPagina = 50) =>
-    api.get<PaginaDeContatos>(`/contatos?pagina=${pagina}&porPagina=${porPagina}`),
+  listar: (pagina = 1, porPagina = 50, segmento?: Segmento | null) =>
+    api.get<PaginaDeContatos>(
+      `/contatos?pagina=${pagina}&porPagina=${porPagina}${segmento ? `&segmento=${segmento}` : ''}`,
+    ),
+
+  /** `GET /contatos/segmentos` — quantos em cada perfil, com a regra. */
+  segmentos: () => api.get<ResumoSegmentos>('/contatos/segmentos'),
+
+  /** `PUT /contatos/segmentos/parametros` — só o dono. */
+  salvarParametros: (p: ParametrosSegmentacao) => api.put<ResumoSegmentos>('/contatos/segmentos/parametros', p),
+
+  /** `POST /contatos/segmentos/:segmento/lista` — foto do perfil numa lista. */
+  criarListaDoPerfil: (segmento: Segmento, nome?: string) =>
+    api.post<{ id: string; nome: string; total: number }>(`/contatos/segmentos/${segmento}/lista`, { nome }),
 
   /**
    * `POST /contatos/importacao/arquivo` — prévia a partir de um arquivo.

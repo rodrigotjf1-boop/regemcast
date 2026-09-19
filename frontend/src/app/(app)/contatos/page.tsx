@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { IconeContatos, IconeEscudo, IconeFechar, IconeImportar } from '@/components/app/icones';
 import { ImportarContatos } from '@/components/app/importar-contatos';
+import { COR_PERFIL, PerfisDaBase } from '@/components/app/perfis-base';
+import { useSessao } from '@/components/app/sessao';
 import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,7 +15,7 @@ import { EstadoErro } from '@/components/ui/estado-erro';
 import { mensagemDoErro } from '@/lib/api';
 import { diasDesde, formatarData, formatarNumero, formatarReais } from '@/lib/formato';
 import { contatos as servico } from '@/lib/servicos';
-import type { ListaDeContatos, PaginaDeContatos } from '@/lib/tipos';
+import type { ListaDeContatos, PaginaDeContatos, ResumoSegmentos, Segmento } from '@/lib/tipos';
 
 /**
  * A base de contatos.
@@ -61,21 +63,31 @@ export default function PaginaContatos() {
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(true);
   const [importando, setImportando] = useState(false);
+  const [fonteInicial, setFonteInicial] = useState<'arquivo' | 'cardapioweb'>('arquivo');
+  const [perfis, setPerfis] = useState<ResumoSegmentos | null>(null);
+  const [segmento, setSegmento] = useState<Segmento | null>(null);
+  const { sessao } = useSessao();
+  const ehDono = sessao.usuario.papel === 'dono';
 
   const carregar = useCallback(async () => {
     setCarregando(true);
     setErro('');
     try {
-      const [p, l] = await Promise.all([servico.listar(numero, POR_PAGINA), servico.listas()]);
+      const [p, l, s] = await Promise.all([
+        servico.listar(numero, POR_PAGINA, segmento),
+        servico.listas(),
+        servico.segmentos().catch(() => null),
+      ]);
       setPagina(p);
       setListas(l);
+      setPerfis(s);
     } catch (e) {
       setErro(mensagemDoErro(e));
       setPagina(null);
     } finally {
       setCarregando(false);
     }
-  }, [numero]);
+  }, [numero, segmento]);
 
   useEffect(() => {
     void carregar();
@@ -83,7 +95,9 @@ export default function PaginaContatos() {
 
   // Chegou pelo atalho "Importar contatos" do painel: já abre a importação.
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('importar') === '1') setImportando(true);
+    const importar = new URLSearchParams(window.location.search).get('importar');
+    if (importar === 'cardapioweb') setFonteInicial('cardapioweb');
+    if (importar === '1' || importar === 'cardapioweb') setImportando(true);
   }, []);
 
   async function descadastrar(id: string) {
@@ -120,12 +134,27 @@ export default function PaginaContatos() {
       {importando && (
         <div className="anima-entrada">
           <ImportarContatos
+            fonteInicial={fonteInicial}
             aoConcluir={() => {
               setNumero(1);
               void carregar();
             }}
           />
         </div>
+      )}
+
+      {perfis && (
+        <PerfisDaBase
+          key={JSON.stringify(perfis.parametros)}
+          resumo={perfis}
+          selecionado={segmento}
+          aoSelecionar={(s) => {
+            setSegmento(s);
+            setNumero(1);
+          }}
+          ehDono={ehDono}
+          aoMudar={() => void carregar()}
+        />
       )}
 
       {listas.length > 0 && (
@@ -193,7 +222,7 @@ export default function PaginaContatos() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[52rem] text-left text-sm">
+            <table className="w-full min-w-[60rem] text-left text-sm">
               <caption className="sr-only">Contatos da sua base, com a origem do consentimento</caption>
               <thead>
                 <tr className="bg-superficie-2/60 text-xs uppercase tracking-wide text-tinta-suave">
@@ -201,6 +230,7 @@ export default function PaginaContatos() {
                   <th scope="col" className="px-3 py-2.5 font-medium">Telefone</th>
                   <th scope="col" className="px-3 py-2.5 font-medium">Compras</th>
                   <th scope="col" className="px-3 py-2.5 font-medium">Última compra</th>
+                  <th scope="col" className="px-3 py-2.5 font-medium">Perfil</th>
                   <th scope="col" className="px-3 py-2.5 font-medium">Autorização</th>
                   <th scope="col" className="px-5 py-2.5 font-medium">
                     <span className="sr-only">Ações</span>
@@ -252,6 +282,15 @@ export default function PaginaContatos() {
                           </>
                         );
                       })()}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-3">
+                      {c.segmento && c.segmento !== 'sem_historico' && !c.optOut ? (
+                        <span className={`inline-block rounded-full border px-2 py-0.5 text-xs text-tinta ${COR_PERFIL[c.segmento]}`}>
+                          {perfis?.segmentos.find((s) => s.id === c.segmento)?.nome ?? c.segmento}
+                        </span>
+                      ) : (
+                        <span className="text-tinta-suave">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-3 text-tinta-suave">
                       {c.optOut ? (

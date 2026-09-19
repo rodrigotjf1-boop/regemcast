@@ -16,16 +16,22 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Query,
   UploadedFile,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiConsumes, ApiTags } from '@nestjs/swagger';
 
 import type { UsuarioAutenticado } from '../../common/auth.guard';
+import { DonoGuard } from '../../common/dono.guard';
 import { UsuarioAtual } from '../../common/usuario-atual.decorator';
 import { ContatoService } from './contato.service';
+import { CriarListaDoPerfilDto, ParametrosSegmentacaoDto } from './dto/segmentacao.dto';
+import type { Segmento } from './segmentacao';
+import { SegmentacaoService } from './segmentacao.service';
 import {
   ConfirmarImportacaoDto,
   CriarListaDto,
@@ -56,19 +62,49 @@ function formatoPeloNome(nome: string): Formato {
 @ApiTags('Contatos')
 @Controller('contatos')
 export class ContatoController {
-  constructor(private readonly servico: ContatoService) {}
+  constructor(
+    private readonly servico: ContatoService,
+    private readonly segmentacao: SegmentacaoService,
+  ) {}
 
   @Get()
   listar(
     @UsuarioAtual() usuario: UsuarioAutenticado,
     @Query('pagina') pagina?: string,
     @Query('porPagina') porPagina?: string,
+    @Query('segmento') segmento?: string,
   ) {
     return this.servico.listar(
       usuario.contaId,
       Number(pagina) || 1,
       Number(porPagina) || 50,
+      segmento || undefined,
     );
+  }
+
+  // ------------------------------------------------------------ perfis da base
+
+  /** Quantos contatos em cada perfil, com a regra de cada um. */
+  @Get('segmentos')
+  segmentos(@UsuarioAtual() usuario: UsuarioAutenticado) {
+    return this.segmentacao.resumo(usuario.contaId);
+  }
+
+  /** Os quatro números da classificação. Do dono: muda a leitura da base inteira. */
+  @Put('segmentos/parametros')
+  @UseGuards(DonoGuard)
+  salvarParametros(@UsuarioAtual() usuario: UsuarioAutenticado, @Body() dto: ParametrosSegmentacaoDto) {
+    return this.segmentacao.salvarParametros(usuario.contaId, usuario.id, dto);
+  }
+
+  /** Foto do perfil de hoje numa lista — é assim que o perfil vira público de campanha. */
+  @Post('segmentos/:segmento/lista')
+  criarListaDoPerfil(
+    @UsuarioAtual() usuario: UsuarioAutenticado,
+    @Param('segmento') segmento: string,
+    @Body() dto: CriarListaDoPerfilDto,
+  ) {
+    return this.segmentacao.criarLista(usuario.contaId, usuario.id, segmento as Segmento, dto.nome);
   }
 
   /** Prévia a partir de um arquivo. Nada é gravado. */

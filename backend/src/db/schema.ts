@@ -630,6 +630,20 @@ export const midia = pgTable('midia', {
 }));
 
 /**
+ * Limites da classificação da base (migration 022). Sem linha = padrão
+ * (30/90/180 dias, 5 pedidos). O perfil é calculado, nunca gravado.
+ */
+export const segmentacaoParametros = pgTable('segmentacao_parametros', {
+  contaId: uuid('conta_id').primaryKey(),
+  recenteDias: integer('recente_dias').notNull().default(30),
+  ativoDias: integer('ativo_dias').notNull().default(90),
+  riscoDias: integer('risco_dias').notNull().default(180),
+  fielPedidos: integer('fiel_pedidos').notNull().default(5),
+  atualizadoPor: uuid('atualizado_por'),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
  * Conexão com a loja do Cardápio Web (migration 020). Uma por conta. A
  * credencial fica cifrada com INTEGRACOES_CHAVE; o andamento da importação da
  * base de clientes fica aqui para continuar de onde parou após um reinício.

@@ -31,8 +31,15 @@ import type { ListaDeContatos, PreviaDaImportacao } from '@/lib/tipos';
 
 type Fonte = 'arquivo' | 'texto' | 'cardapioweb';
 
-export function ImportarContatos({ aoConcluir }: { aoConcluir: () => void }) {
-  const [fonte, setFonte] = useState<Fonte>('arquivo');
+export function ImportarContatos({
+  aoConcluir,
+  fonteInicial = 'arquivo',
+}: {
+  aoConcluir: () => void;
+  /** `cardapioweb` quando chega pela CW App Store (?importar=cardapioweb). */
+  fonteInicial?: Fonte;
+}) {
+  const [fonte, setFonte] = useState<Fonte>(fonteInicial);
   const [texto, setTexto] = useState('');
   const [previa, setPrevia] = useState<PreviaDaImportacao | null>(null);
   const [carregando, setCarregando] = useState(false);

@@ -13,7 +13,7 @@
  * colunas transformaria aquela frase em declaração falsa.
  */
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, count, desc, eq, inArray } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { paraCloudApi } from '../../common/telefone';
 import { ContextoDb } from '../../db/contexto';
@@ -21,6 +21,8 @@ import { contato, contatoLista, contatoListaItem, importacao } from '../../db/sc
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import type { ConfirmarImportacaoDto, PreviaImportacaoDto } from './dto/importacao.dto';
 import { gravarExtras } from './extras';
+import { SEGMENTOS, expressaoSegmento, type Segmento } from './segmentacao';
+import { parametrosDaConta } from './segmentacao.service';
 import { detectarExtras, lerExtras, rotulosExtras, type Extras } from './parsers/metricas';
 import { lerCsv, lerTexto, lerXlsx, detectarColunas, textoDoArquivo, type Linha } from './parsers/tabela';
 import { lerVcard, pareceVcard } from './parsers/vcard';
@@ -366,15 +368,25 @@ export class ContatoService {
   // ---------------------------------------------------------------- contatos
 
   /** Contatos da conta, mais recentes primeiro. */
-  async listar(contaId: string, pagina = 1, porPagina = 50) {
+  async listar(contaId: string, pagina = 1, porPagina = 50, segmento?: string) {
     const limite = Math.min(Math.max(porPagina, 1), 200);
     const salto = (Math.max(pagina, 1) - 1) * limite;
+    if (segmento && !SEGMENTOS.includes(segmento as Segmento)) {
+      throw new BadRequestException('Perfil desconhecido.');
+    }
 
     return this.ctx.comConta(contaId, async (db) => {
+      const perfil = expressaoSegmento(await parametrosDaConta(db, contaId));
+      // Filtrar por perfil mostra só quem pode receber: é a pergunta que a tela
+      // faz ("quem são os Em risco?") antes de virar lista de campanha.
+      const filtro = segmento
+        ? and(eq(contato.contaId, contaId), eq(contato.optOut, false), sql`${perfil} = ${segmento}`)
+        : eq(contato.contaId, contaId);
+
       const [{ total }] = await db
         .select({ total: count(contato.id) })
         .from(contato)
-        .where(eq(contato.contaId, contaId));
+        .where(filtro);
 
       const itens = await db
         .select({
@@ -390,9 +402,10 @@ export class ContatoService {
           pedidos: contato.pedidos,
           totalGastoCentavos: contato.totalGastoCentavos,
           ultimoPedidoEm: contato.ultimoPedidoEm,
+          segmento: perfil,
         })
         .from(contato)
-        .where(eq(contato.contaId, contaId))
+        .where(filtro)
         .orderBy(desc(contato.criadoEm))
         .limit(limite)
         .offset(salto);
