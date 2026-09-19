@@ -34,6 +34,7 @@ import type { Segmento } from './segmentacao';
 import { SegmentacaoService } from './segmentacao.service';
 import {
   ConfirmarImportacaoDto,
+  ReativarContatoDto,
   CriarListaDto,
   PreviaTextoDto,
   type Formato,
@@ -73,12 +74,17 @@ export class ContatoController {
     @Query('pagina') pagina?: string,
     @Query('porPagina') porPagina?: string,
     @Query('segmento') segmento?: string,
+    @Query('situacao') situacao?: string,
   ) {
+    if (situacao && situacao !== 'ativos' && situacao !== 'bloqueados') {
+      throw new BadRequestException('Situação desconhecida.');
+    }
     return this.servico.listar(
       usuario.contaId,
       Number(pagina) || 1,
       Number(porPagina) || 50,
       segmento || undefined,
+      situacao as 'ativos' | 'bloqueados' | undefined,
     );
   }
 
@@ -153,6 +159,30 @@ export class ContatoController {
     return this.servico
       .publicoDaLista(usuario.contaId, id)
       .then((total) => ({ total }));
+  }
+
+  // ------------------------------------------------------------- bloqueios
+
+  /** Volta à base, a pedido da pessoa. A justificativa fica gravada. */
+  @Post(':id/reativar')
+  reativar(
+    @UsuarioAtual() usuario: UsuarioAutenticado,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReativarContatoDto,
+  ) {
+    return this.servico.reativar(usuario.contaId, usuario.id, id, dto.justificativa);
+  }
+
+  /** Apaga os dados pessoais e mantém o número bloqueado (pedido de exclusão). */
+  @Post(':id/anonimizar')
+  anonimizar(@UsuarioAtual() usuario: UsuarioAutenticado, @Param('id', ParseUUIDPipe) id: string) {
+    return this.servico.anonimizar(usuario.contaId, usuario.id, id);
+  }
+
+  /** Apaga tudo, inclusive o número — a pessoa pode voltar numa importação. */
+  @Delete(':id/permanente')
+  apagar(@UsuarioAtual() usuario: UsuarioAutenticado, @Param('id', ParseUUIDPipe) id: string) {
+    return this.servico.apagar(usuario.contaId, usuario.id, id);
   }
 
   /** Descadastro: marca a linha, não apaga. Apagar deixaria o número voltar. */

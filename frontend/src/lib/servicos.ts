@@ -287,6 +287,20 @@ export const contatos = {
       `/contatos?pagina=${pagina}&porPagina=${porPagina}${segmento ? `&segmento=${segmento}` : ''}`,
     ),
 
+  /** `GET /contatos?situacao=bloqueados` — quem pediu para sair. */
+  bloqueados: (pagina = 1, porPagina = 50) =>
+    api.get<PaginaDeContatos>(`/contatos?pagina=${pagina}&porPagina=${porPagina}&situacao=bloqueados`),
+
+  /** `POST /contatos/:id/reativar` — volta à base, a pedido da pessoa. */
+  reativar: (id: string, justificativa: string) =>
+    api.post<{ ok: true }>(`/contatos/${id}/reativar`, { justificativa }),
+
+  /** `POST /contatos/:id/anonimizar` — apaga os dados e mantém o bloqueio. */
+  anonimizar: (id: string) => api.post<{ ok: true }>(`/contatos/${id}/anonimizar`),
+
+  /** `DELETE /contatos/:id/permanente` — apaga tudo, inclusive o número. */
+  apagar: (id: string) => api.delete<{ ok: true }>(`/contatos/${id}/permanente`),
+
   /** `GET /contatos/segmentos` — quantos em cada perfil, com a regra. */
   segmentos: () => api.get<ResumoSegmentos>('/contatos/segmentos'),
 

@@ -15,7 +15,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
 
-import { paraCloudApi } from '../../common/telefone';
+import { mascararTelefone, paraCloudApi } from '../../common/telefone';
 import { ContextoDb } from '../../db/contexto';
 import { contato, contatoLista, contatoListaItem, importacao } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
@@ -408,7 +408,14 @@ export class ContatoService {
   // ---------------------------------------------------------------- contatos
 
   /** Contatos da conta, mais recentes primeiro. */
-  async listar(contaId: string, pagina = 1, porPagina = 50, segmento?: string) {
+  async listar(
+    contaId: string,
+    pagina = 1,
+    porPagina = 50,
+    segmento?: string,
+    /** `bloqueados` = quem pediu para sair; `ativos` = quem pode receber. */
+    situacao?: 'ativos' | 'bloqueados',
+  ) {
     const limite = Math.min(Math.max(porPagina, 1), 200);
     const salto = (Math.max(pagina, 1) - 1) * limite;
     if (segmento && !SEGMENTOS.includes(segmento as Segmento)) {
@@ -421,7 +428,9 @@ export class ContatoService {
       // faz ("quem são os Em risco?") antes de virar lista de campanha.
       const filtro = segmento
         ? and(eq(contato.contaId, contaId), eq(contato.optOut, false), sql`${perfil} = ${segmento}`)
-        : eq(contato.contaId, contaId);
+        : situacao
+          ? and(eq(contato.contaId, contaId), eq(contato.optOut, situacao === 'bloqueados'))
+          : eq(contato.contaId, contaId);
 
       const [{ total }] = await db
         .select({ total: count(contato.id) })
@@ -442,6 +451,8 @@ export class ContatoService {
           pedidos: contato.pedidos,
           totalGastoCentavos: contato.totalGastoCentavos,
           ultimoPedidoEm: contato.ultimoPedidoEm,
+          optOutEm: contato.optOutEm,
+          optOutOrigem: contato.optOutOrigem,
           segmento: perfil,
         })
         .from(contato)
@@ -482,6 +493,122 @@ export class ContatoService {
       });
 
       return { ok: true };
+    });
+  }
+
+  // ------------------------------------------------------------- bloqueios
+
+  /**
+   * Devolve à base quem estava descadastrado.
+   *
+   * Só a pedido da pessoa — e por isso a justificativa é obrigatória e fica
+   * gravada no contato e na auditoria. Sem esse registro, reativar seria
+   * apagar um pedido de saída, que é exatamente o que a política da Meta
+   * proíbe e o que derruba a qualidade do número.
+   */
+  async reativar(contaId: string, usuarioId: string, contatoId: string, justificativa: string) {
+    const motivo = justificativa.trim();
+    return this.ctx.comConta(contaId, async (db) => {
+      const quando = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      const [alterado] = await db
+        .update(contato)
+        .set({
+          optOut: false,
+          optOutEm: null,
+          optOutOrigem: null,
+          consentimentoOrigem: 'declarado',
+          consentimentoEm: new Date(),
+          consentimentoEvidencia: `Voltou à base em ${quando} a pedido da pessoa: ${motivo}`.slice(0, 500),
+        })
+        .where(and(eq(contato.contaId, contaId), eq(contato.id, contatoId), eq(contato.optOut, true)))
+        .returning({ id: contato.id, telefone: contato.telefoneE164 });
+
+      if (!alterado) throw new NotFoundException('Contato bloqueado não encontrado.');
+
+      await this.auditoria.registrar({
+        contaId,
+        atorTipo: 'usuario',
+        atorUsuarioId: usuarioId,
+        acao: 'contato.reativado',
+        entidade: 'contato',
+        entidadeId: contatoId,
+        detalhe: { telefone: mascararTelefone(alterado.telefone), justificativa: motivo },
+      });
+      return { ok: true as const };
+    });
+  }
+
+  /**
+   * Apaga os dados pessoais e MANTÉM o bloqueio (o número, marcado).
+   *
+   * É o pedido de exclusão da LGPD sem quebrar a promessa feita a quem pediu
+   * para sair: o nome, o e-mail, o aniversário e o histórico somem; fica o
+   * número bloqueado, que é o que impede a pessoa de voltar numa importação
+   * futura e receber de novo.
+   */
+  async anonimizar(contaId: string, usuarioId: string, contatoId: string) {
+    return this.ctx.comConta(contaId, async (db) => {
+      const quando = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      const [alterado] = await db
+        .update(contato)
+        .set({
+          nome: null,
+          email: null,
+          dataNascimento: null,
+          pedidos: null,
+          totalGastoCentavos: null,
+          ultimoPedidoEm: null,
+          metricasEm: null,
+          metricasOrigem: null,
+          consentimentoEvidencia: `Dados pessoais apagados a pedido da pessoa em ${quando}. Número mantido bloqueado.`,
+          optOut: true,
+          optOutEm: sql`coalesce(${contato.optOutEm}, now())`,
+          optOutOrigem: sql`coalesce(${contato.optOutOrigem}, 'pedido_exclusao')`,
+        })
+        .where(and(eq(contato.contaId, contaId), eq(contato.id, contatoId)))
+        .returning({ id: contato.id, telefone: contato.telefoneE164 });
+
+      if (!alterado) throw new NotFoundException('Contato não encontrado.');
+
+      await this.auditoria.registrar({
+        contaId,
+        atorTipo: 'usuario',
+        atorUsuarioId: usuarioId,
+        acao: 'contato.anonimizado',
+        entidade: 'contato',
+        entidadeId: contatoId,
+        detalhe: { telefone: mascararTelefone(alterado.telefone) },
+      });
+      return { ok: true as const };
+    });
+  }
+
+  /**
+   * Apaga a linha inteira, inclusive o número.
+   *
+   * ATENÇÃO, e a tela diz isso: sem o número marcado, nada impede que a mesma
+   * pessoa volte numa importação futura e receba campanha de novo. Existe para
+   * o pedido de exclusão total; o caminho recomendado é `anonimizar`.
+   */
+  async apagar(contaId: string, usuarioId: string, contatoId: string) {
+    return this.ctx.comConta(contaId, async (db) => {
+      const [apagado] = await db
+        .delete(contato)
+        .where(and(eq(contato.contaId, contaId), eq(contato.id, contatoId)))
+        .returning({ id: contato.id, telefone: contato.telefoneE164 });
+
+      if (!apagado) throw new NotFoundException('Contato não encontrado.');
+
+      await this.auditoria.registrar({
+        contaId,
+        atorTipo: 'usuario',
+        atorUsuarioId: usuarioId,
+        acao: 'contato.apagado',
+        entidade: 'contato',
+        entidadeId: contatoId,
+        detalhe: { telefone: mascararTelefone(apagado.telefone), aviso: 'pode voltar em importacao futura' },
+      });
+      return { ok: true as const };
     });
   }
 

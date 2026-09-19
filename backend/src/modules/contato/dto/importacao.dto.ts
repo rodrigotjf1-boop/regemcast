@@ -148,3 +148,15 @@ export class CriarListaDto {
   @MaxLength(500)
   descricao?: string;
 }
+
+/** Voltar um contato bloqueado para a base — só a pedido da pessoa. */
+export class ReativarContatoDto {
+  @ApiProperty({
+    example: 'A cliente pediu no balcão para voltar a receber as promoções.',
+    description: 'Quem pediu e como. Fica gravado no contato e na auditoria.',
+  })
+  @IsString({ message: 'Escreva quem pediu para voltar a receber.' })
+  @MinLength(5, { message: 'Explique em poucas palavras quem pediu para voltar a receber.' })
+  @MaxLength(500)
+  justificativa!: string;
+}
