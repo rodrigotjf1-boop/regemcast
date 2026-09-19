@@ -4,6 +4,7 @@ import { DrizzleModule } from '../../db/drizzle.module';
 import { AuditoriaModule } from '../auditoria/auditoria.module';
 import { ContatoController } from './contato.controller';
 import { ContatoService } from './contato.service';
+import { SegmentacaoService } from './segmentacao.service';
 
 /**
  * `AuditoriaModule` entra porque importação é evento que precisa de rastro:
@@ -15,7 +16,7 @@ import { ContatoService } from './contato.service';
 @Module({
   imports: [DrizzleModule, AuditoriaModule],
   controllers: [ContatoController],
-  providers: [ContatoService],
+  providers: [ContatoService, SegmentacaoService],
   exports: [ContatoService],
 })
 export class ContatoModule {}

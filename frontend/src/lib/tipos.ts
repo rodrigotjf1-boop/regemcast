@@ -329,6 +329,32 @@ export interface Contato {
   pedidos?: number | null;
   totalGastoCentavos?: number | null;
   ultimoPedidoEm?: string | null;
+  segmento?: Segmento;
+}
+
+/** Perfis da base, calculados da última compra e dos pedidos. */
+export type Segmento =
+  | 'campeoes'
+  | 'novos'
+  | 'promissores'
+  | 'fieis'
+  | 'atencao'
+  | 'nao_posso_perder'
+  | 'em_risco'
+  | 'perdidos'
+  | 'sem_historico';
+
+export interface ParametrosSegmentacao {
+  recenteDias: number;
+  ativoDias: number;
+  riscoDias: number;
+  fielPedidos: number;
+}
+
+/** `GET /contatos/segmentos` */
+export interface ResumoSegmentos {
+  parametros: ParametrosSegmentacao;
+  segmentos: { id: Segmento; nome: string; regra: string; total: number }[];
 }
 
 /** `GET /contatos` */
