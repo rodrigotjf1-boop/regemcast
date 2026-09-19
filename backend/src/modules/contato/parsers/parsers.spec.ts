@@ -196,6 +196,31 @@ describe('detectarColunas', () => {
     expect(c.nome).toBe(0);
   });
 
+  it('relatório de clientes da Anota Aí: "Contato" é o telefone, "Cliente" é o nome', () => {
+    const c = detectarColunas([
+      ['Cliente', 'Contato', 'Data de nascimento'],
+      ['Walter Ricardo', '(21) 9 7318-7850', '-'],
+      ['Vanessa', '(21) 9 8891-5419', '12/03/1990'],
+    ]);
+    expect(c).toEqual({ telefone: 1, nome: 0, temCabecalho: true });
+  });
+
+  it('data de nascimento não é confundida com telefone', () => {
+    const c = detectarColunas([
+      ['Ana', '01/02/1990', '21989751705'],
+      ['Bia', '15/08/1985', '21988887777'],
+    ]);
+    expect(c.telefone).toBe(2);
+  });
+
+  it('"Contato" continua sendo o nome numa agenda com coluna Telefone', () => {
+    const c = detectarColunas([
+      ['Contato', 'Telefone'],
+      ['Maria', '21989751705'],
+    ]);
+    expect(c).toEqual({ telefone: 1, nome: 0, temCabecalho: true });
+  });
+
   it('não estoura com arquivo vazio', () => {
     expect(detectarColunas([])).toEqual({ telefone: -1, nome: -1, temCabecalho: false });
   });

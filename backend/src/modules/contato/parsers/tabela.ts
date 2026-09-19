@@ -214,30 +214,48 @@ export function detectarColunas(linhas: Linha[]): ColunasDetectadas {
   if (!linhas.length) return { telefone: -1, nome: -1, temCabecalho: false };
 
   const cabecalho = linhas[0].map(chave);
-  const iTel = cabecalho.findIndex((c) => COLUNAS_TELEFONE.some((alvo) => c.includes(alvo)));
-  const iNome = cabecalho.findIndex((c) => COLUNAS_NOME.some((alvo) => c === alvo || c.includes(alvo)));
+  const ehTituloTelefone = (c: string) => COLUNAS_TELEFONE.some((alvo) => c.includes(alvo));
+  const ehTituloNome = (c: string) => COLUNAS_NOME.some((alvo) => c === alvo || c.includes(alvo));
+  // A primeira linha é título quando algum campo é um título conhecido e
+  // nenhum deles é um telefone — "Cliente | Contato | Data de nascimento", o
+  // relatório da Anota Aí, não tem a palavra "telefone" e ainda assim é título.
+  const temCabecalho =
+    cabecalho.some((c) => ehTituloTelefone(c) || ehTituloNome(c)) &&
+    !linhas[0].some((c) => pareceTelefone(c));
+  const dados = temCabecalho ? linhas.slice(1) : linhas;
 
-  if (iTel >= 0) return { telefone: iTel, nome: iNome, temCabecalho: true };
+  let iTel = temCabecalho ? cabecalho.findIndex(ehTituloTelefone) : -1;
+  if (iTel < 0) iTel = colunaComMaisTelefones(dados);
 
-  // Sem cabeçalho: a coluna que mais parece telefone é a que tem mais dígitos.
-  const largura = Math.max(...linhas.map((l) => l.length));
+  // "Contato" pode ser o nome (agenda) ou o telefone (Anota Aí): a coluna do
+  // telefone nunca é a do nome.
+  let iNome = temCabecalho ? cabecalho.findIndex((c, i) => i !== iTel && ehTituloNome(c)) : -1;
+  if (iNome < 0) {
+    const largura = Math.max(...linhas.map((l) => l.length));
+    iNome = largura > 1 ? (iTel === 0 ? 1 : 0) : -1;
+  }
+  return { telefone: iTel, nome: iNome, temCabecalho };
+}
+
+/** Parece telefone: 8 a 15 dígitos e não é data (08/12/1990 tem 8 dígitos). */
+function pareceTelefone(celula: string): boolean {
+  const texto = (celula ?? '').trim();
+  if (/^\d{1,4}[/.-]\d{1,2}[/.-]\d{1,4}$/.test(texto)) return false;
+  const digitos = texto.replace(/\D/g, '').length;
+  return digitos >= 8 && digitos <= 15;
+}
+
+/** A coluna com mais células que parecem telefone, nas primeiras 50 linhas. */
+function colunaComMaisTelefones(linhas: Linha[]): number {
+  const largura = Math.max(0, ...linhas.map((l) => l.length));
   let melhor = 0;
   let melhorPontos = -1;
-
   for (let col = 0; col < largura; col++) {
-    let pontos = 0;
-    for (const linha of linhas.slice(0, 50)) {
-      const celula = linha[col] ?? '';
-      const digitos = celula.replace(/\D/g, '').length;
-      if (digitos >= 8 && digitos <= 15) pontos++;
-    }
+    const pontos = linhas.slice(0, 50).filter((l) => pareceTelefone(l[col] ?? '')).length;
     if (pontos > melhorPontos) {
       melhorPontos = pontos;
       melhor = col;
     }
   }
-
-  // Nome: a primeira coluna que não seja a do telefone, quando existir.
-  const colNome = largura > 1 ? (melhor === 0 ? 1 : 0) : -1;
-  return { telefone: melhor, nome: colNome, temCabecalho: false };
+  return melhor;
 }

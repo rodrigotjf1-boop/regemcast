@@ -622,6 +622,41 @@ export const midia = pgTable('midia', {
 }));
 
 /**
+ * Conexão com a loja do Cardápio Web (migration 020). Uma por conta. A
+ * credencial fica cifrada com INTEGRACOES_CHAVE; o andamento da importação da
+ * base de clientes fica aqui para continuar de onde parou após um reinício.
+ */
+export const integracaoCardapioweb = pgTable('integracao_cardapioweb', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contaId: uuid('conta_id').notNull(),
+  /** chave (X-API-KEY, legado) | oauth (CW App Store) */
+  modo: text('modo').notNull().default('chave'),
+  ambiente: text('ambiente').notNull().default('producao'),
+  credencialCifrada: text('credencial_cifrada'),
+  refreshCifrado: text('refresh_cifrado'),
+  tokenExpiraEm: timestamp('token_expira_em', { withTimezone: true }),
+  lojaId: text('loja_id'),
+  lojaNome: text('loja_nome'),
+  /** parada | rodando | concluida | falhou */
+  sincStatus: text('sinc_status').notNull().default('parada'),
+  sincPagina: integer('sinc_pagina').notNull().default(0),
+  sincTotalPaginas: integer('sinc_total_paginas'),
+  sincLidos: integer('sinc_lidos').notNull().default(0),
+  sincNovos: integer('sinc_novos').notNull().default(0),
+  sincBloqueados: integer('sinc_bloqueados').notNull().default(0),
+  sincInvalidos: integer('sinc_invalidos').notNull().default(0),
+  sincIniciadaEm: timestamp('sinc_iniciada_em', { withTimezone: true }),
+  sincConcluidaEm: timestamp('sinc_concluida_em', { withTimezone: true }),
+  sincErro: text('sinc_erro'),
+  listaId: uuid('lista_id'),
+  importacaoId: uuid('importacao_id'),
+  consentimentoPor: uuid('consentimento_por'),
+  consentimentoEm: timestamp('consentimento_em', { withTimezone: true }),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
  * Celular com o app Android logado (migration 019). `tokenFcm` é o endereço do
  * push e é único na base inteira: o aparelho pode trocar de conta.
  */

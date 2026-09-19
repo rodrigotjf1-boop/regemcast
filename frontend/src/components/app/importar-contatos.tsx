@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card';
 import { Input, Select } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { ImportarCardapioWeb } from '@/components/app/importar-cardapioweb';
 import { mensagemDoErro } from '@/lib/api';
 import { contatos } from '@/lib/servicos';
 import type { ListaDeContatos, PreviaDaImportacao } from '@/lib/tipos';
@@ -28,7 +29,7 @@ import type { ListaDeContatos, PreviaDaImportacao } from '@/lib/tipos';
  * invisível.
  */
 
-type Fonte = 'arquivo' | 'texto';
+type Fonte = 'arquivo' | 'texto' | 'cardapioweb';
 
 export function ImportarContatos({ aoConcluir }: { aoConcluir: () => void }) {
   const [fonte, setFonte] = useState<Fonte>('arquivo');
@@ -175,9 +176,18 @@ export function ImportarContatos({ aoConcluir }: { aoConcluir: () => void }) {
               >
                 Colar números
               </Button>
+              <Button
+                variante={fonte === 'cardapioweb' ? 'primario' : 'secundario'}
+                onClick={() => setFonte('cardapioweb')}
+                aria-pressed={fonte === 'cardapioweb'}
+              >
+                Cardápio Web
+              </Button>
             </div>
 
-            {fonte === 'arquivo' ? (
+            {fonte === 'cardapioweb' ? (
+              <ImportarCardapioWeb aoConcluir={aoConcluir} />
+            ) : fonte === 'arquivo' ? (
               <div className="space-y-2">
                 <Label htmlFor="arquivo-contatos">Arquivo de contatos</Label>
                 <input
@@ -196,6 +206,10 @@ export function ImportarContatos({ aoConcluir }: { aoConcluir: () => void }) {
                   iPhone), <strong>.csv</strong>, <strong>.txt</strong> e <strong>.xlsx</strong>.
                   Numa planilha, dê à coluna dos números o título <strong>telefone</strong> ou{' '}
                   <strong>celular</strong>.
+                </p>
+                <p className="text-xs leading-relaxed text-tinta-suave">
+                  Usa a <strong>Anota Aí</strong>? Em <strong>Relatórios → Clientes</strong>, exporte em
+                  Excel ou CSV e envie o arquivo aqui.
                 </p>
               </div>
             ) : (

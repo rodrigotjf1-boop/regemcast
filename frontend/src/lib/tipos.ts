@@ -539,3 +539,25 @@ export type ResultadoContratacao =
   | { modo: 'trocado'; plano: string }
   | { modo: 'agendado'; plano: string; vigenteEm: string }
   | { modo: 'mantido'; plano: string };
+
+// ------------------------------------------------------------ Cardápio Web
+
+/** `GET /integracoes/cardapioweb` — nunca traz a credencial. */
+export interface SituacaoCardapioWeb {
+  conectado: boolean;
+  modo: 'chave' | 'oauth' | null;
+  lojaNome: string | null;
+  sincronizacao: {
+    status: 'parada' | 'rodando' | 'concluida' | 'falhou';
+    pagina: number;
+    totalPaginas: number | null;
+    lidos: number;
+    novos: number;
+    bloqueados: number;
+    invalidos: number;
+    iniciadaEm: string | null;
+    concluidaEm: string | null;
+    erro: string | null;
+    listaId: string | null;
+  };
+}
