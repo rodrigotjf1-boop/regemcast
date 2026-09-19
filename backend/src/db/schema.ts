@@ -508,6 +508,14 @@ export const contato = pgTable('contato', {
   optOutEm: timestamp('opt_out_em', { withTimezone: true }),
   optOutOrigem: text('opt_out_origem'),
   importacaoId: uuid('importacao_id'),
+  // ---- migration 021: o que veio do sistema da loja
+  email: text('email'),
+  dataNascimento: text('data_nascimento'),
+  pedidos: integer('pedidos'),
+  totalGastoCentavos: bigint('total_gasto_centavos', { mode: 'number' }),
+  ultimoPedidoEm: timestamp('ultimo_pedido_em', { withTimezone: true }),
+  metricasEm: timestamp('metricas_em', { withTimezone: true }),
+  metricasOrigem: text('metricas_origem'),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({

@@ -27,6 +27,7 @@ import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
 import { contato, contatoLista, importacao, integracaoCardapioweb } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { gravarExtras } from '../contato/extras';
 import { cifrarToken, decifrarToken } from '../meta/cripto';
 import { CardapiowebCliente, ErroCardapioWeb, type Credencial } from './cardapioweb.cliente';
 import { separarPagina } from './cardapioweb.regras';
@@ -396,6 +397,14 @@ export class CardapiowebService {
           .onConflictDoNothing({ target: [contato.contaId, contato.telefoneE164] })
           .returning({ id: contato.id });
         novos = inseridos.length;
+
+        // E-mail e aniversário: só preenchem o que está vazio na base.
+        await gravarExtras(
+          db,
+          contaId,
+          contatos.map((c) => ({ telefone: c.telefone, email: c.email, dataNascimento: c.dataNascimento })),
+          'cardapioweb',
+        );
 
         // Na lista entram todos os liberados — inclusive os que já estavam na
         // base —, menos quem está descadastrado aqui.

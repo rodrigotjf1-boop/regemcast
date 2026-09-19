@@ -31,7 +31,15 @@ export interface PaginaClientes {
 }
 
 export type Decisao =
-  | { tipo: 'contato'; telefone: string; nome: string | null; desde: string | null }
+  | {
+      tipo: 'contato';
+      telefone: string;
+      nome: string | null;
+      desde: string | null;
+      email: string | null;
+      /** `AAAA-MM-DD` */
+      dataNascimento: string | null;
+    }
   | { tipo: 'bloqueado'; telefone: string; nome: string | null }
   | { tipo: 'invalido' };
 
@@ -57,7 +65,16 @@ export function decidir(c: ClienteCardapioWeb): Decisao {
   const nome = (c.name ?? '').trim().slice(0, 120) || null;
   // Ausente conta como liberado: é o padrão do Cardápio Web (default true na doc).
   if (c.notifications_enabled === false) return { tipo: 'bloqueado', telefone, nome };
-  return { tipo: 'contato', telefone, nome, desde: c.created_at ?? null };
+  const email = (c.email ?? '').trim().toLowerCase();
+  const nasc = /^\d{4}-\d{2}-\d{2}$/.test(c.birth_date ?? '') ? c.birth_date! : null;
+  return {
+    tipo: 'contato',
+    telefone,
+    nome,
+    desde: c.created_at ?? null,
+    email: /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) && email.length <= 180 ? email : null,
+    dataNascimento: nasc,
+  };
 }
 
 /** Separa uma página em quem entra, quem entra bloqueado e quantos não servem. */
