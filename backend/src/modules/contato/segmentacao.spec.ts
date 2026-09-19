@@ -39,6 +39,8 @@ describe('descreverSegmentos', () => {
     for (const s of SEGMENTOS) expect(d[s].nome.length).toBeGreaterThan(0);
     expect(d.campeoes.regra).toBe('Comprou nos últimos 30 dias e tem 5+ pedidos.');
     expect(d.em_risco.regra).toBe('2 a 4 pedidos, sumiu há 91 a 180 dias.');
+    // Promissores nunca têm mais pedidos que os Campeões: é sempre 2 a (frequente − 1).
+    expect(d.promissores.regra).toBe('2 a 4 pedidos, última compra em até 90 dias.');
   });
 });
 

@@ -50,7 +50,7 @@ export function descreverSegmentos(p: ParametrosSegmentacao): Record<Segmento, {
     novos: { nome: 'Novos', regra: `Fez o primeiro pedido nos últimos ${p.recenteDias} dias.` },
     promissores: {
       nome: 'Promissores',
-      regra: `2 a ${f - 1} pedidos nos últimos ${p.recenteDias} dias, ou 2+ pedidos em até ${p.ativoDias} dias.`,
+      regra: `2 a ${f - 1} pedidos, última compra em até ${p.ativoDias} dias.`,
     },
     fieis: { nome: 'Fiéis', regra: `${f}+ pedidos, última compra entre ${p.recenteDias + 1} e ${p.ativoDias} dias.` },
     atencao: { nome: 'Precisam de atenção', regra: `Um pedido só, entre ${p.recenteDias + 1} e ${p.ativoDias} dias atrás.` },
