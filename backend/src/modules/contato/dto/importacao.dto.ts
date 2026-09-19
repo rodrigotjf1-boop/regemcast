@@ -101,6 +101,14 @@ export class ConfirmarImportacaoDto {
   @IsUUID('4', { message: 'Lista inválida.' })
   listaId?: string;
 
+  @ApiProperty({
+    required: false,
+    description: 'Bloco seguinte de um arquivo grande: soma neste registro de importação em vez de criar outro.',
+  })
+  @IsOptional()
+  @IsUUID('4', { message: 'Importação inválida.' })
+  importacaoId?: string;
+
   /**
    * Não é caixinha de termo de uso: é a condição que a Meta exige para disparo
    * iniciado pela empresa, e a que declaramos no App Review. Sem ela o contato

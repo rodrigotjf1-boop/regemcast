@@ -399,7 +399,10 @@ export interface PreviaDaImportacao {
   jaExistem: number;
   /** Quantos tiveram o código do país acrescentado por nós. */
   assumiramPais: number;
+  /** Teto do arquivo. */
   limite: number;
+  /** Quantos cabem por envio: a tela grava em blocos deste tamanho. */
+  porEnvio?: number;
   truncado: boolean;
   /** Colunas extras encontradas: "e-mail", "aniversário", "pedidos", "total gasto", "última compra". */
   extras?: string[];
@@ -416,6 +419,8 @@ export interface ConfirmacaoDaImportacao {
   /** A empresa declara que estes contatos autorizaram. Sem isso, nada entra. */
   consentimento: boolean;
   evidencia?: string;
+  /** Bloco seguinte de um arquivo grande: soma neste registro em vez de criar outro. */
+  importacaoId?: string;
   contatos: {
     telefone: string;
     nome?: string;
