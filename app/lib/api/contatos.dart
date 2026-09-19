@@ -135,6 +135,7 @@ class PreviaImportacao {
     required this.jaExistem,
     required this.assumiramPais,
     required this.limite,
+    required this.porEnvio,
     required this.truncado,
     required this.contatos,
   });
@@ -149,6 +150,9 @@ class PreviaImportacao {
   final int jaExistem;
   final int assumiramPais;
   final int limite;
+
+  /// Quantos contatos cabem por envio: arquivo grande vai em blocos.
+  final int porEnvio;
   final bool truncado;
   final List<ContatoDaPrevia> contatos;
 
@@ -162,6 +166,7 @@ class PreviaImportacao {
     jaExistem: _int(j['jaExistem']),
     assumiramPais: _int(j['assumiramPais']),
     limite: _int(j['limite']),
+    porEnvio: _int(j['porEnvio']) > 0 ? _int(j['porEnvio']) : 5000,
     truncado: j['truncado'] == true,
     contatos: (j['contatos'] is List ? j['contatos'] as List : const [])
         .whereType<Map<String, dynamic>>()
@@ -236,22 +241,62 @@ class ServicoContatos {
 
   /// Grava. Sem o consentimento declarado o servidor recusa — é a condição da
   /// Meta para mensagem iniciada pela empresa.
+  /// Arquivo grande vai em blocos: o corpo de uma requisição não comporta
+  /// dezenas de milhares de contatos. O primeiro bloco cria o registro da
+  /// importação; os seguintes somam nele, e o histórico tem uma linha só.
   Future<ResultadoImportacao> importar({
     required PreviaImportacao previa,
     required bool consentimento,
     String? evidencia,
     String? listaId,
+    void Function(int feitos, int total)? aoAndar,
+  }) async {
+    final total = previa.contatos.length;
+    final porEnvio = previa.porEnvio.clamp(1, 5000);
+    String? importacaoId;
+    var gravados = 0;
+    var jaExistiam = 0;
+
+    for (var i = 0; i < total; i += porEnvio) {
+      aoAndar?.call(i, total);
+      final bloco = previa.contatos.sublist(
+        i,
+        i + porEnvio > total ? total : i + porEnvio,
+      );
+      final parcial = await _enviarBloco(
+        previa: previa,
+        consentimento: consentimento,
+        evidencia: evidencia,
+        listaId: listaId,
+        importacaoId: importacaoId,
+        bloco: bloco,
+      );
+      importacaoId = parcial.$1;
+      gravados += parcial.$2.gravados;
+      jaExistiam += parcial.$2.jaExistiam;
+    }
+    return ResultadoImportacao(gravados: gravados, jaExistiam: jaExistiam);
+  }
+
+  Future<(String?, ResultadoImportacao)> _enviarBloco({
+    required PreviaImportacao previa,
+    required bool consentimento,
+    required List<ContatoDaPrevia> bloco,
+    String? evidencia,
+    String? listaId,
+    String? importacaoId,
   }) async {
     final r =
         await _api.post('/contatos/importacao', {
               'formato': previa.formato,
               if (previa.arquivoNome != null) 'arquivoNome': previa.arquivoNome,
               'listaId': ?listaId,
+              'importacaoId': ?importacaoId,
               'consentimento': consentimento,
               if (evidencia != null && evidencia.trim().isNotEmpty)
                 'evidencia': evidencia.trim(),
               'contatos': [
-                for (final c in previa.contatos)
+                for (final c in bloco)
                   {
                     'telefone': c.telefone,
                     if (c.nome.trim().isNotEmpty) 'nome': c.nome,
@@ -259,9 +304,12 @@ class ServicoContatos {
               ],
             })
             as Map<String, dynamic>;
-    return ResultadoImportacao(
-      gravados: _int(r['gravados']),
-      jaExistiam: _int(r['jaExistiam']),
+    return (
+      _txtOuNulo(r['importacaoId']),
+      ResultadoImportacao(
+        gravados: _int(r['gravados']),
+        jaExistiam: _int(r['jaExistiam']),
+      ),
     );
   }
 }

@@ -28,14 +28,25 @@ import { lerCsv, lerTexto, lerXlsx, detectarColunas, textoDoArquivo, type Linha 
 import { lerVcard, pareceVcard } from './parsers/vcard';
 
 /**
- * Teto de contatos por importação.
+ * Teto de contatos POR ENVIO.
  *
- * A prévia volta pelo corpo da resposta e a confirmação sobe pelo corpo do
- * request; sem teto, uma base de 300 mil linhas viraria um JSON que derruba o
- * processo. Cinco mil cobre a base de uma PME com folga — acima disso, o
- * arquivo entra em partes, e a tela diz isso em vez de truncar calada.
+ * A confirmação sobe pelo corpo do request; sem teto, uma base gigante viraria
+ * um JSON que derruba o processo. Cinco mil ≈ 1 MB, medido.
+ *
+ * NÃO é o teto do arquivo: um arquivo maior entra em vários envios seguidos
+ * (a tela encadeia), todos no MESMO registro de importação.
  */
 export const TETO_IMPORTACAO = 5000;
+
+/**
+ * Teto do ARQUIVO, na prévia.
+ *
+ * Cortar em 5.000 e gravar só o começo perdia o resto em silêncio — uma base
+ * de 13 mil inativos exportada do cardápio entrava pela metade sem ninguém
+ * perceber. A prévia lê o arquivo inteiro até aqui; acima disso, avisa que
+ * cortou (`truncado`), em vez de fingir que leu tudo.
+ */
+export const TETO_ARQUIVO = 50_000;
 
 /** Um contato como a prévia mostra: já normalizado, ainda não gravado. */
 export interface ContatoDaPrevia {
@@ -66,7 +77,10 @@ export interface ResultadoPrevia {
   jaExistem: number;
   /** Quantas tiveram o código do país acrescentado por nós. */
   assumiramPais: number;
+  /** Teto do arquivo. */
   limite: number;
+  /** Quantos contatos cabem por envio: a tela grava em blocos deste tamanho. */
+  porEnvio: number;
   /** `true` quando o arquivo passou do teto e a prévia foi cortada. */
   truncado: boolean;
   /** Colunas extras que a planilha trouxe ("e-mail", "pedidos"…), para a prévia contar. */
@@ -166,10 +180,11 @@ export class ContatoService {
       novos,
       jaExistem: unicos.length - novos,
       assumiramPais,
-      limite: TETO_IMPORTACAO,
-      truncado: unicos.length > TETO_IMPORTACAO,
+      limite: TETO_ARQUIVO,
+      porEnvio: TETO_IMPORTACAO,
+      truncado: unicos.length > TETO_ARQUIVO,
       extras: rotulos,
-      contatos: marcados.slice(0, TETO_IMPORTACAO),
+      contatos: marcados.slice(0, TETO_ARQUIVO),
     };
   }
 
@@ -187,6 +202,10 @@ export class ContatoService {
     usuarioId: string,
     dto: ConfirmarImportacaoDto,
   ): Promise<{ importacaoId: string; gravados: number; jaExistiam: number }> {
+    // Arquivo grande chega em blocos: o primeiro cria o registro da importação,
+    // os seguintes mandam o `importacaoId` e somam nele. Sem isso, um arquivo
+    // de 13 mil viraria sete "importações" diferentes no histórico.
+
     if (!dto.consentimento) {
       throw new BadRequestException(
         'Confirme que estes contatos autorizaram receber mensagens desta empresa. Sem esse aceite não podemos importar.',
@@ -228,21 +247,42 @@ export class ContatoService {
       const existentes = await this.telefonesJaNaBase(contaId, telefones, db);
       const novos = telefones.filter((t) => !existentes.has(t));
 
-      const [registro] = await db
-        .insert(importacao)
-        .values({
-          contaId,
-          formato: dto.formato,
-          arquivoNome: dto.arquivoNome ?? null,
-          totalLidos: dto.contatos.length,
-          validos: telefones.length,
-          invalidos: dto.contatos.length - telefones.length,
-          novos: novos.length,
-          jaExistiam: telefones.length - novos.length,
-          listaId: dto.listaId ?? null,
-          criadoPor: usuarioId,
-        })
-        .returning({ id: importacao.id });
+      const contagens = {
+        totalLidos: dto.contatos.length,
+        validos: telefones.length,
+        invalidos: dto.contatos.length - telefones.length,
+        novos: novos.length,
+        jaExistiam: telefones.length - novos.length,
+      };
+
+      let registro: { id: string } | undefined;
+      if (dto.importacaoId) {
+        const [somado] = await db
+          .update(importacao)
+          .set({
+            totalLidos: sql`${importacao.totalLidos} + ${contagens.totalLidos}`,
+            validos: sql`${importacao.validos} + ${contagens.validos}`,
+            invalidos: sql`${importacao.invalidos} + ${contagens.invalidos}`,
+            novos: sql`${importacao.novos} + ${contagens.novos}`,
+            jaExistiam: sql`${importacao.jaExistiam} + ${contagens.jaExistiam}`,
+          })
+          .where(and(eq(importacao.contaId, contaId), eq(importacao.id, dto.importacaoId)))
+          .returning({ id: importacao.id });
+        if (!somado) throw new NotFoundException('Importação não encontrada. Comece de novo.');
+        registro = somado;
+      } else {
+        [registro] = await db
+          .insert(importacao)
+          .values({
+            contaId,
+            formato: dto.formato,
+            arquivoNome: dto.arquivoNome ?? null,
+            ...contagens,
+            listaId: dto.listaId ?? null,
+            criadoPor: usuarioId,
+          })
+          .returning({ id: importacao.id });
+      }
 
       const agora = new Date();
       const evidencia =

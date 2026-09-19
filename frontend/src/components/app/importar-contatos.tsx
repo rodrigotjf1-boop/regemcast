@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { ImportarCardapioWeb } from '@/components/app/importar-cardapioweb';
 import { mensagemDoErro } from '@/lib/api';
+import { formatarNumero } from '@/lib/formato';
 import { contatos } from '@/lib/servicos';
 import type { ListaDeContatos, PreviaDaImportacao } from '@/lib/tipos';
 
@@ -52,6 +53,8 @@ export function ImportarContatos({
   const [listas, setListas] = useState<ListaDeContatos[]>([]);
   const [novaLista, setNovaLista] = useState('');
   const [salvando, setSalvando] = useState(false);
+  /** Arquivo grande: quantos já foram gravados, para a tela não ficar muda. */
+  const [progresso, setProgresso] = useState<{ feitos: number; total: number } | null>(null);
   const [pronto, setPronto] = useState<{ gravados: number; jaExistiam: number } | null>(null);
 
   const campoArquivo = useRef<HTMLInputElement>(null);
@@ -119,30 +122,48 @@ export function ImportarContatos({
         alvo = id;
       }
 
-      const resultado = await contatos.importar({
-        formato: previa.formato,
-        arquivoNome: previa.arquivoNome,
-        listaId: alvo || undefined,
-        consentimento,
-        evidencia: evidencia.trim() || undefined,
-        contatos: previa.contatos.map((c) => ({
-          telefone: c.telefone,
-          nome: c.nome || undefined,
-          email: c.email,
-          dataNascimento: c.dataNascimento,
-          pedidos: c.pedidos,
-          totalGastoCentavos: c.totalGastoCentavos,
-          ultimoPedidoEm: c.ultimoPedidoEm,
-        })),
-      });
+      // Arquivo grande vai em blocos: o corpo de uma requisição não comporta
+      // dezenas de milhares de contatos. O primeiro bloco cria o registro da
+      // importação; os seguintes somam nele, então o histórico tem uma linha só.
+      const porEnvio = Math.max(1, Math.min(previa.porEnvio ?? 5000, 5000));
+      const total = previa.contatos.length;
+      let importacaoId: string | undefined;
+      let gravados = 0;
+      let jaExistiam = 0;
 
-      setPronto(resultado);
+      for (let i = 0; i < total; i += porEnvio) {
+        if (total > porEnvio) setProgresso({ feitos: i, total });
+        const parcial = await contatos.importar({
+          formato: previa.formato,
+          arquivoNome: previa.arquivoNome,
+          listaId: alvo || undefined,
+          consentimento,
+          evidencia: evidencia.trim() || undefined,
+          importacaoId,
+          contatos: previa.contatos.slice(i, i + porEnvio).map((c) => ({
+            telefone: c.telefone,
+            nome: c.nome || undefined,
+            email: c.email,
+            dataNascimento: c.dataNascimento,
+            pedidos: c.pedidos,
+            totalGastoCentavos: c.totalGastoCentavos,
+            ultimoPedidoEm: c.ultimoPedidoEm,
+          })),
+        });
+        importacaoId = parcial.importacaoId;
+        gravados += parcial.gravados;
+        jaExistiam += parcial.jaExistiam;
+      }
+
+      setProgresso(null);
+      setPronto({ gravados, jaExistiam });
       setPrevia(null);
       aoConcluir();
     } catch (e) {
       setErro(mensagemDoErro(e));
     } finally {
       setSalvando(false);
+      setProgresso(null);
     }
   }
 
@@ -270,6 +291,7 @@ export function ImportarContatos({
             evidencia={evidencia}
             aoTrocarEvidencia={setEvidencia}
             salvando={salvando}
+            progresso={progresso}
             aoConfirmar={() => void confirmar()}
             aoCancelar={limpar}
           />
@@ -292,6 +314,7 @@ function ConferirPrevia({
   evidencia,
   aoTrocarEvidencia,
   salvando,
+  progresso,
   aoConfirmar,
   aoCancelar,
 }: {
@@ -306,6 +329,7 @@ function ConferirPrevia({
   evidencia: string;
   aoTrocarEvidencia: (v: string) => void;
   salvando: boolean;
+  progresso: { feitos: number; total: number } | null;
   aoConfirmar: () => void;
   aoCancelar: () => void;
 }) {
@@ -348,8 +372,16 @@ function ConferirPrevia({
 
         {previa.truncado && (
           <Alerta tom="atencao">
-            O arquivo tem mais de {previa.limite} contatos. Vamos importar os primeiros{' '}
-            {previa.limite}; para o resto, divida o arquivo e importe de novo.
+            O arquivo tem mais de {formatarNumero(previa.limite)} contatos. Vamos importar os primeiros{' '}
+            {formatarNumero(previa.limite)}; para o resto, divida o arquivo e importe de novo.
+          </Alerta>
+        )}
+
+        {previa.contatos.length > (previa.porEnvio ?? 5000) && (
+          <Alerta tom="informacao">
+            São {formatarNumero(previa.contatos.length)} contatos: vamos gravar em blocos de{' '}
+            {formatarNumero(previa.porEnvio ?? 5000)}, num registro só de importação.{' '}
+            <strong>Mantenha esta página aberta até terminar.</strong>
           </Alerta>
         )}
       </div>
@@ -454,9 +486,11 @@ function ConferirPrevia({
 
       <div className="flex flex-wrap gap-2">
         <Button onClick={aoConfirmar} carregando={salvando} disabled={!consentimento}>
-          {previa.novos === 0 && previa.extras?.length
-            ? 'Atualizar os dados dos contatos'
-            : `Importar ${previa.novos} ${previa.novos === 1 ? 'contato' : 'contatos'}`}
+          {progresso
+            ? `Gravando ${formatarNumero(progresso.feitos)} de ${formatarNumero(progresso.total)}…`
+            : previa.novos === 0 && previa.extras?.length
+              ? 'Atualizar os dados dos contatos'
+              : `Importar ${formatarNumero(previa.novos)} ${previa.novos === 1 ? 'contato' : 'contatos'}`}
         </Button>
         <Button variante="secundario" onClick={aoCancelar}>
           Cancelar
