@@ -38,6 +38,17 @@ describe('decidir', () => {
       telefone: '5511999998888',
       nome: 'Ana',
       desde: null,
+      email: null,
+      dataNascimento: null,
+    });
+  });
+
+  it('traz e-mail e aniversário quando são válidos', () => {
+    const d = decidir({ id: 5, ddi: '55', phone_number: '11999998888', email: ' Ana@Loja.com ', birth_date: '1990-03-12' });
+    expect(d).toMatchObject({ email: 'ana@loja.com', dataNascimento: '1990-03-12' });
+    expect(decidir({ id: 6, ddi: '55', phone_number: '11999998888', email: 'sem-arroba', birth_date: '12/03' })).toMatchObject({
+      email: null,
+      dataNascimento: null,
     });
   });
 

@@ -323,6 +323,12 @@ export interface Contato {
   consentimentoOrigem: string | null;
   consentimentoEm: string | null;
   criadoEm: string;
+  /** Do sistema da loja (planilha ou Cardápio Web), quando veio. */
+  email?: string | null;
+  dataNascimento?: string | null;
+  pedidos?: number | null;
+  totalGastoCentavos?: number | null;
+  ultimoPedidoEm?: string | null;
 }
 
 /** `GET /contatos` */
@@ -350,6 +356,12 @@ export interface ContatoDaPrevia {
   novo: boolean;
   /** `true` quando faltava o código do país e nós acrescentamos. */
   assumiuPais: boolean;
+  /** O que a planilha trouxe além de nome e telefone, quando trouxe. */
+  email?: string;
+  dataNascimento?: string;
+  pedidos?: number;
+  totalGastoCentavos?: number;
+  ultimoPedidoEm?: string;
 }
 
 /** `POST /contatos/importacao/arquivo` e `/texto` — nada foi gravado ainda. */
@@ -363,6 +375,8 @@ export interface PreviaDaImportacao {
   assumiramPais: number;
   limite: number;
   truncado: boolean;
+  /** Colunas extras encontradas: "e-mail", "aniversário", "pedidos", "total gasto", "última compra". */
+  extras?: string[];
   contatos: ContatoDaPrevia[];
   formato: 'vcard' | 'csv' | 'xlsx' | 'texto';
   arquivoNome?: string;
@@ -376,7 +390,15 @@ export interface ConfirmacaoDaImportacao {
   /** A empresa declara que estes contatos autorizaram. Sem isso, nada entra. */
   consentimento: boolean;
   evidencia?: string;
-  contatos: { telefone: string; nome?: string }[];
+  contatos: {
+    telefone: string;
+    nome?: string;
+    email?: string;
+    dataNascimento?: string;
+    pedidos?: number;
+    totalGastoCentavos?: number;
+    ultimoPedidoEm?: string;
+  }[];
 }
 
 // ------------------------------------------------------------------ modelos

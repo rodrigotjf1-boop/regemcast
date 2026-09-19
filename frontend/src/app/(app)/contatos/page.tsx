@@ -11,7 +11,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { EsqueletoLista } from '@/components/ui/esqueleto';
 import { EstadoErro } from '@/components/ui/estado-erro';
 import { mensagemDoErro } from '@/lib/api';
-import { formatarData, formatarNumero } from '@/lib/formato';
+import { diasDesde, formatarData, formatarNumero, formatarReais } from '@/lib/formato';
 import { contatos as servico } from '@/lib/servicos';
 import type { ListaDeContatos, PaginaDeContatos } from '@/lib/tipos';
 
@@ -193,12 +193,14 @@ export default function PaginaContatos() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[40rem] text-left text-sm">
+            <table className="w-full min-w-[52rem] text-left text-sm">
               <caption className="sr-only">Contatos da sua base, com a origem do consentimento</caption>
               <thead>
                 <tr className="bg-superficie-2/60 text-xs uppercase tracking-wide text-tinta-suave">
                   <th scope="col" className="px-5 py-2.5 font-medium">Nome</th>
                   <th scope="col" className="px-3 py-2.5 font-medium">Telefone</th>
+                  <th scope="col" className="px-3 py-2.5 font-medium">Compras</th>
+                  <th scope="col" className="px-3 py-2.5 font-medium">Última compra</th>
                   <th scope="col" className="px-3 py-2.5 font-medium">Autorização</th>
                   <th scope="col" className="px-5 py-2.5 font-medium">
                     <span className="sr-only">Ações</span>
@@ -216,12 +218,41 @@ export default function PaginaContatos() {
                         >
                           {iniciais(c.nome)}
                         </span>
-                        <span className={c.nome ? 'font-medium text-tinta' : 'text-tinta-suave'}>
-                          {c.nome || 'Sem nome'}
+                        <span className="min-w-0">
+                          <span className={`block ${c.nome ? 'font-medium text-tinta' : 'text-tinta-suave'}`}>
+                            {c.nome || 'Sem nome'}
+                          </span>
+                          {c.email && <span className="block truncate text-xs text-tinta-suave">{c.email}</span>}
                         </span>
                       </span>
                     </td>
                     <td className="numerico whitespace-nowrap px-3 py-3 text-tinta">{c.telefone}</td>
+                    <td className="numerico whitespace-nowrap px-3 py-3 text-tinta">
+                      {c.pedidos != null ? (
+                        <>
+                          {formatarNumero(c.pedidos)} {c.pedidos === 1 ? 'pedido' : 'pedidos'}
+                          {c.totalGastoCentavos != null && (
+                            <span className="block text-xs text-tinta-suave">{formatarReais(c.totalGastoCentavos)}</span>
+                          )}
+                        </>
+                      ) : c.totalGastoCentavos != null ? (
+                        formatarReais(c.totalGastoCentavos)
+                      ) : (
+                        <span className="text-tinta-suave">—</span>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-3 text-tinta">
+                      {(() => {
+                        const dias = diasDesde(c.ultimoPedidoEm);
+                        if (dias === null) return <span className="text-tinta-suave">—</span>;
+                        return (
+                          <>
+                            {dias === 0 ? 'hoje' : dias === 1 ? 'ontem' : `há ${formatarNumero(dias)} dias`}
+                            <span className="block text-xs text-tinta-suave">{formatarData(c.ultimoPedidoEm)}</span>
+                          </>
+                        );
+                      })()}
+                    </td>
                     <td className="px-3 py-3 text-tinta-suave">
                       {c.optOut ? (
                         <Badge tom="erro" ponto>

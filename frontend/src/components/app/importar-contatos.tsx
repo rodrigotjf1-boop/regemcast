@@ -118,7 +118,15 @@ export function ImportarContatos({ aoConcluir }: { aoConcluir: () => void }) {
         listaId: alvo || undefined,
         consentimento,
         evidencia: evidencia.trim() || undefined,
-        contatos: previa.contatos.map((c) => ({ telefone: c.telefone, nome: c.nome || undefined })),
+        contatos: previa.contatos.map((c) => ({
+          telefone: c.telefone,
+          nome: c.nome || undefined,
+          email: c.email,
+          dataNascimento: c.dataNascimento,
+          pedidos: c.pedidos,
+          totalGastoCentavos: c.totalGastoCentavos,
+          ultimoPedidoEm: c.ultimoPedidoEm,
+        })),
       });
 
       setPronto(resultado);
@@ -205,7 +213,9 @@ export function ImportarContatos({ aoConcluir }: { aoConcluir: () => void }) {
                   Aceita <strong>.vcf</strong> (os contatos exportados do seu celular, Android ou
                   iPhone), <strong>.csv</strong>, <strong>.txt</strong> e <strong>.xlsx</strong>.
                   Numa planilha, dê à coluna dos números o título <strong>telefone</strong> ou{' '}
-                  <strong>celular</strong>.
+                  <strong>celular</strong>. Se a planilha tiver, também trazemos <strong>e-mail</strong>,{' '}
+                  <strong>aniversário</strong>, <strong>pedidos</strong>, <strong>total gasto</strong> e{' '}
+                  <strong>última compra</strong> (ou dias sem comprar).
                 </p>
                 <p className="text-xs leading-relaxed text-tinta-suave">
                   Usa a <strong>Anota Aí</strong>? Em <strong>Relatórios → Clientes</strong>, exporte em
@@ -304,6 +314,13 @@ function ConferirPrevia({
           {previa.jaExistem > 0 && <Badge tom="neutro">{previa.jaExistem} já estão na base</Badge>}
           {previa.invalidos > 0 && <Badge tom="erro">{previa.invalidos} sem telefone válido</Badge>}
         </div>
+
+        {previa.extras && previa.extras.length > 0 && (
+          <p className="text-sm text-tinta-suave">
+            Também vêm da planilha: <strong className="text-tinta">{previa.extras.join(', ')}</strong>. Quem já
+            está na base ganha o histórico de compra novo; e-mail e aniversário só preenchem o que estiver vazio.
+          </p>
+        )}
 
         {/*
           O aviso que não pode faltar: corrigir o número em silêncio é o que
@@ -430,7 +447,9 @@ function ConferirPrevia({
 
       <div className="flex flex-wrap gap-2">
         <Button onClick={aoConfirmar} carregando={salvando} disabled={!consentimento}>
-          Importar {previa.novos} {previa.novos === 1 ? 'contato' : 'contatos'}
+          {previa.novos === 0 && previa.extras?.length
+            ? 'Atualizar os dados dos contatos'
+            : `Importar ${previa.novos} ${previa.novos === 1 ? 'contato' : 'contatos'}`}
         </Button>
         <Button variante="secundario" onClick={aoCancelar}>
           Cancelar

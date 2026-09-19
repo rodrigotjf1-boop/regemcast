@@ -2,6 +2,18 @@
 
 const numero = new Intl.NumberFormat('pt-BR');
 
+/** 102050 → "R$ 1.020,50". */
+export function formatarReais(centavos: number): string {
+  return (centavos / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+/** Dias inteiros desde a data (0 = hoje). */
+export function diasDesde(iso?: string | null): number | null {
+  if (!iso) return null;
+  const ms = Date.now() - new Date(iso).getTime();
+  return Number.isFinite(ms) ? Math.max(0, Math.floor(ms / 86_400_000)) : null;
+}
+
 export function formatarNumero(valor: number): string {
   return numero.format(valor);
 }

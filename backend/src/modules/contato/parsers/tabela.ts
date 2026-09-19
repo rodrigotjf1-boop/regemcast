@@ -172,6 +172,8 @@ export async function lerXlsx(conteudo: Buffer): Promise<Linha[]> {
     linha.eachCell({ includeEmpty: true }, (celula) => {
       const v = celula.value;
       if (v === null || v === undefined) celulas.push('');
+      // Célula de data: o exceljs entrega Date, e String(Date) sairia em inglês.
+      else if (v instanceof Date) celulas.push(v.toISOString().slice(0, 10));
       else if (typeof v === 'object' && 'text' in v) celulas.push(String(v.text ?? ''));
       else if (typeof v === 'object' && 'result' in v) celulas.push(String(v.result ?? ''));
       else celulas.push(String(v));
@@ -214,7 +216,9 @@ export function detectarColunas(linhas: Linha[]): ColunasDetectadas {
   if (!linhas.length) return { telefone: -1, nome: -1, temCabecalho: false };
 
   const cabecalho = linhas[0].map(chave);
-  const ehTituloTelefone = (c: string) => COLUNAS_TELEFONE.some((alvo) => c.includes(alvo));
+  // "Número de pedidos", "Nº do documento": têm "número" e não são telefone.
+  const ehTituloTelefone = (c: string) =>
+    COLUNAS_TELEFONE.some((alvo) => c.includes(alvo)) && !/pedido|compra|documento|cpf|cnpj|dias/.test(c);
   const ehTituloNome = (c: string) => COLUNAS_NOME.some((alvo) => c === alvo || c.includes(alvo));
   // A primeira linha é título quando algum campo é um título conhecido e
   // nenhum deles é um telefone — "Cliente | Contato | Data de nascimento", o
@@ -258,4 +262,18 @@ function colunaComMaisTelefones(linhas: Linha[]): number {
     }
   }
   return melhor;
+}
+
+/**
+ * Bytes de CSV/TXT → texto. O Excel brasileiro salva "CSV separado por
+ * vírgulas" em Windows-1252, não em UTF-8: lido como UTF-8, "João" perde o
+ * acento. Tenta UTF-8 estrito e, se não for, lê como Windows-1252.
+ */
+export function textoDoArquivo(conteudo: Buffer | string): string {
+  if (typeof conteudo === 'string') return conteudo;
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(conteudo);
+  } catch {
+    return new TextDecoder('windows-1252').decode(conteudo);
+  }
 }

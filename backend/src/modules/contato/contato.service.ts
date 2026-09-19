@@ -20,7 +20,9 @@ import { ContextoDb } from '../../db/contexto';
 import { contato, contatoLista, contatoListaItem, importacao } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import type { ConfirmarImportacaoDto, PreviaImportacaoDto } from './dto/importacao.dto';
-import { lerCsv, lerTexto, lerXlsx, detectarColunas, type Linha } from './parsers/tabela';
+import { gravarExtras } from './extras';
+import { detectarExtras, lerExtras, rotulosExtras, type Extras } from './parsers/metricas';
+import { lerCsv, lerTexto, lerXlsx, detectarColunas, textoDoArquivo, type Linha } from './parsers/tabela';
 import { lerVcard, pareceVcard } from './parsers/vcard';
 
 /**
@@ -41,6 +43,12 @@ export interface ContatoDaPrevia {
   novo: boolean;
   /** `true` quando o número veio sem DDI e assumimos o Brasil. */
   assumiuPais: boolean;
+  /** O que a planilha trouxe além de nome e telefone, quando trouxe. */
+  email?: string;
+  dataNascimento?: string;
+  pedidos?: number;
+  totalGastoCentavos?: number;
+  ultimoPedidoEm?: string;
 }
 
 export interface ResultadoPrevia {
@@ -59,6 +67,8 @@ export interface ResultadoPrevia {
   limite: number;
   /** `true` quando o arquivo passou do teto e a prévia foi cortada. */
   truncado: boolean;
+  /** Colunas extras que a planilha trouxe ("e-mail", "pedidos"…), para a prévia contar. */
+  extras: string[];
   contatos: ContatoDaPrevia[];
 }
 
@@ -79,11 +89,11 @@ export class ContatoService {
    * Nada é gravado aqui. O cliente confere e confirma no passo seguinte.
    */
   async previa(contaId: string, entrada: PreviaImportacaoDto, conteudo: Buffer | string): Promise<ResultadoPrevia> {
-    const brutos = await this.extrair(entrada.formato, conteudo);
+    const { brutos, extras: rotulos } = await this.extrair(entrada.formato, conteudo);
 
     // Dedup por telefone JÁ NORMALIZADO. Dedup pelo texto original deixaria
     // passar "(21) 98975-1705" e "5521989751705" como duas pessoas.
-    const porTelefone = new Map<string, { nome: string; telefone: string; assumiuPais: boolean }>();
+    const porTelefone = new Map<string, { nome: string; telefone: string; assumiuPais: boolean; extras: Extras }>();
     let invalidos = 0;
     let assumiramPais = 0;
 
@@ -113,10 +123,13 @@ export class ContatoService {
           nome: bruto.nome,
           telefone: escolhido.e164,
           assumiuPais: escolhido.assumiuPaisPadrao,
+          extras: bruto.extras ?? {},
         });
-      } else if (!jaVisto.nome && bruto.nome) {
-        // Mesmo número em duas linhas: fica o nome de quem tem nome.
-        jaVisto.nome = bruto.nome;
+      } else {
+        // Mesmo número em duas linhas: fica o nome de quem tem nome, e os
+        // extras que a primeira linha não tinha.
+        if (!jaVisto.nome && bruto.nome) jaVisto.nome = bruto.nome;
+        jaVisto.extras = { ...(bruto.extras ?? {}), ...jaVisto.extras };
       }
     }
 
@@ -139,6 +152,7 @@ export class ContatoService {
       telefone: c.telefone,
       novo: !existentes.has(c.telefone),
       assumiuPais: c.assumiuPais,
+      ...c.extras,
     }));
 
     const novos = marcados.filter((c) => c.novo).length;
@@ -152,6 +166,7 @@ export class ContatoService {
       assumiramPais,
       limite: TETO_IMPORTACAO,
       truncado: unicos.length > TETO_IMPORTACAO,
+      extras: rotulos,
       contatos: marcados.slice(0, TETO_IMPORTACAO),
     };
   }
@@ -188,10 +203,18 @@ export class ContatoService {
       // Normaliza de novo, do lado do servidor. A prévia é uma cortesia para a
       // tela; confiar no que volta dela seria confiar no cliente.
       const normalizados = new Map<string, string>();
+      const extras = new Map<string, Omit<Parameters<typeof gravarExtras>[2][number], 'telefone'>>();
       for (const c of dto.contatos) {
         const n = paraCloudApi(c.telefone);
         if (n.e164 && !normalizados.has(n.e164)) {
           normalizados.set(n.e164, (c.nome ?? '').trim().slice(0, 120));
+          extras.set(n.e164, {
+            email: c.email?.trim().toLowerCase() || null,
+            dataNascimento: c.dataNascimento ?? null,
+            pedidos: c.pedidos ?? null,
+            totalGastoCentavos: c.totalGastoCentavos ?? null,
+            ultimoPedidoEm: c.ultimoPedidoEm ?? null,
+          });
         }
       }
 
@@ -248,6 +271,15 @@ export class ContatoService {
       if (dto.listaId) {
         await this.vincularALista(db, contaId, dto.listaId, telefones);
       }
+
+      // E-mail, aniversário e histórico de compra — dos novos e dos que já
+      // estavam na base (a foto de compra mais nova substitui a antiga).
+      await gravarExtras(
+        db,
+        contaId,
+        telefones.map((telefone) => ({ telefone, ...extras.get(telefone) })),
+        'planilha',
+      );
 
       await this.auditoria.registrar({
         contaId,
@@ -353,6 +385,11 @@ export class ContatoService {
           consentimentoOrigem: contato.consentimentoOrigem,
           consentimentoEm: contato.consentimentoEm,
           criadoEm: contato.criadoEm,
+          email: contato.email,
+          dataNascimento: contato.dataNascimento,
+          pedidos: contato.pedidos,
+          totalGastoCentavos: contato.totalGastoCentavos,
+          ultimoPedidoEm: contato.ultimoPedidoEm,
         })
         .from(contato)
         .where(eq(contato.contaId, contaId))
@@ -401,15 +438,15 @@ export class ContatoService {
   private async extrair(
     formato: string,
     conteudo: Buffer | string,
-  ): Promise<{ nome: string; telefones: string[] }[]> {
+  ): Promise<{ brutos: { nome: string; telefones: string[]; extras?: Extras }[]; extras: string[] }> {
     if (formato === 'vcard') {
-      const texto = typeof conteudo === 'string' ? conteudo : conteudo.toString('utf8');
+      const texto = textoDoArquivo(conteudo);
       if (!pareceVcard(texto)) {
         throw new BadRequestException(
           'Este arquivo não parece um .vcf de contatos. Exporte os contatos pelo aplicativo do celular e tente de novo.',
         );
       }
-      return lerVcard(texto);
+      return { brutos: lerVcard(texto), extras: [] };
     }
 
     let linhas: Linha[];
@@ -426,9 +463,9 @@ export class ContatoService {
         );
       }
     } else if (formato === 'csv') {
-      linhas = lerCsv(typeof conteudo === 'string' ? conteudo : conteudo.toString('utf8'));
+      linhas = lerCsv(textoDoArquivo(conteudo));
     } else if (formato === 'texto') {
-      linhas = lerTexto(typeof conteudo === 'string' ? conteudo : conteudo.toString('utf8'));
+      linhas = lerTexto(textoDoArquivo(conteudo));
     } else {
       throw new BadRequestException(`Formato não reconhecido: ${formato}.`);
     }
@@ -443,10 +480,18 @@ export class ContatoService {
     }
 
     const corpo = colunas.temCabecalho ? linhas.slice(1) : linhas;
-    return corpo.map((linha) => ({
-      nome: colunas.nome >= 0 ? (linha[colunas.nome] ?? '').slice(0, 120) : '',
-      telefones: [linha[colunas.telefone] ?? ''],
-    }));
+    // Colunas extras só existem com cabeçalho: sem título não dá para saber se
+    // um número é pedido, total ou dias.
+    const extras = detectarExtras(colunas.temCabecalho ? linhas[0] : null, [colunas.telefone, colunas.nome]);
+    const hoje = new Date();
+    return {
+      extras: rotulosExtras(extras),
+      brutos: corpo.map((linha) => ({
+        nome: colunas.nome >= 0 ? (linha[colunas.nome] ?? '').slice(0, 120) : '',
+        telefones: [linha[colunas.telefone] ?? ''],
+        extras: lerExtras(linha, extras, hoje),
+      })),
+    };
   }
 
   /**

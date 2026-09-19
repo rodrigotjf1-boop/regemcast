@@ -2,6 +2,11 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  IsDateString,
+  IsEmail,
+  IsInt,
+  Max,
+  Min,
   ArrayMinSize,
   IsArray,
   IsBoolean,
@@ -46,6 +51,38 @@ export class ContatoParaImportarDto {
   @IsString()
   @MaxLength(120)
   nome?: string;
+
+  // ---- o que a planilha pode trazer além de nome e telefone (migration 021)
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsEmail({}, { message: 'Um dos e-mails da planilha não é válido.' })
+  @MaxLength(180)
+  email?: string;
+
+  @ApiProperty({ required: false, example: '1990-03-12' })
+  @IsOptional()
+  @IsDateString({}, { message: 'Uma das datas de aniversário não é válida.' })
+  dataNascimento?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(999_999)
+  pedidos?: number;
+
+  @ApiProperty({ required: false, description: 'Total gasto, em centavos.' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10_000_000_000)
+  totalGastoCentavos?: number;
+
+  @ApiProperty({ required: false, description: 'Última compra, ISO 8601.' })
+  @IsOptional()
+  @IsDateString({}, { message: 'Uma das datas de última compra não é válida.' })
+  ultimoPedidoEm?: string;
 }
 
 export class ConfirmarImportacaoDto {
