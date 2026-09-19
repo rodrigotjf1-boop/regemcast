@@ -330,6 +330,9 @@ export interface Contato {
   totalGastoCentavos?: number | null;
   ultimoPedidoEm?: string | null;
   segmento?: Segmento;
+  /** Quando e como a pessoa saiu (quando saiu). */
+  optOutEm?: string | null;
+  optOutOrigem?: string | null;
 }
 
 /** Perfis da base, calculados da última compra e dos pedidos. */

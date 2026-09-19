@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
 import { IconeContatos, IconeEscudo, IconeFechar, IconeImportar } from '@/components/app/icones';
@@ -120,6 +121,10 @@ export default function PaginaContatos() {
         titulo="Contatos"
         descricao="Quem pode receber suas campanhas — com o registro de como cada pessoa autorizou."
         acao={
+          <div className="flex flex-wrap gap-2">
+          <Link href="/contatos/bloqueios">
+            <Button variante="secundario">Bloqueios</Button>
+          </Link>
           <Button
             variante={importando ? 'secundario' : 'primario'}
             onClick={() => setImportando((v) => !v)}
@@ -128,6 +133,7 @@ export default function PaginaContatos() {
             {importando ? <IconeFechar /> : <IconeImportar />}
             {importando ? 'Cancelar' : 'Importar contatos'}
           </Button>
+          </div>
         }
       />
 
