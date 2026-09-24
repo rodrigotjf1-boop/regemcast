@@ -87,6 +87,11 @@ export interface ContaResumo {
   plano: PlanoResumo | null;
   assinatura: AssinaturaResumo | null;
   uso: UsoResumo;
+  /**
+   * Algum número guarda conversas (coexistência + resposta "sim")? É o que faz
+   * o menu "Conversas" aparecer. A rota de conversas confere de novo.
+   */
+  conversasHabilitadas: boolean;
 }
 
 export interface UsuarioResumo {
@@ -145,6 +150,10 @@ export class ContaService {
         planoCodigo: tPlano.codigo,
         planoNome: tPlano.nome,
         planoDisparosMes: tPlano.disparosMes,
+        conversasHabilitadas: sql<boolean>`exists (
+          select 1 from wa_numero n
+           where n.conta_id = conta.id and n.coexistencia and n.integrar_conversas is true
+        )`,
       })
       .from(tConta)
       .leftJoin(tAssinatura, eq(tAssinatura.contaId, tConta.id))
@@ -207,6 +216,7 @@ export class ContaService {
         teto,
         restantes: teto === null ? null : Math.max(0, teto - disparos),
       },
+      conversasHabilitadas: linha.conversasHabilitadas === true,
     };
   }
 

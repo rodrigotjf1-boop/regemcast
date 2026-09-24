@@ -405,6 +405,53 @@ export class ContatoService {
     });
   }
 
+  /**
+   * Põe um contato numa lista — o "etiquetar" feito a partir da conversa, que
+   * substitui as etiquetas do WhatsApp Business (a Meta não as sincroniza).
+   *
+   * Quem pediu para sair das promoções não entra: lista é público de campanha,
+   * e a importação da agenda segue a mesma regra.
+   */
+  async adicionarNaLista(contaId: string, usuarioId: string, contatoId: string, listaId: string) {
+    return this.ctx.comConta(contaId, async (db) => {
+      const [c] = await db
+        .select({ id: contato.id, optOut: contato.optOut })
+        .from(contato)
+        .where(and(eq(contato.contaId, contaId), eq(contato.id, contatoId)))
+        .limit(1);
+      if (!c) throw new NotFoundException('Contato não encontrado.');
+      if (c.optOut) {
+        throw new BadRequestException('Esta pessoa pediu para sair das promoções: ela não entra em lista de campanha.');
+      }
+
+      const [l] = await db
+        .select({ id: contatoLista.id, nome: contatoLista.nome })
+        .from(contatoLista)
+        .where(and(eq(contatoLista.contaId, contaId), eq(contatoLista.id, listaId)))
+        .limit(1);
+      if (!l) throw new NotFoundException('Lista não encontrada.');
+
+      const inseridos = await db
+        .insert(contatoListaItem)
+        .values({ contaId, listaId, contatoId })
+        .onConflictDoNothing()
+        .returning({ id: contatoListaItem.id });
+
+      if (inseridos.length) {
+        await this.auditoria.registrar({
+          contaId,
+          atorTipo: 'usuario',
+          atorUsuarioId: usuarioId,
+          acao: 'contato.lista.adicionado',
+          entidade: 'contato',
+          entidadeId: contatoId,
+          detalhe: { listaId, lista: l.nome },
+        });
+      }
+      return { ok: true as const, jaEstava: inseridos.length === 0, lista: l.nome };
+    });
+  }
+
   // ---------------------------------------------------------------- contatos
 
   /** Contatos da conta, mais recentes primeiro. */

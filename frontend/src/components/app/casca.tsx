@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import {
+  IconeBalao,
   IconeCampanha,
   IconeCartao,
   IconeContatos,
@@ -22,6 +23,7 @@ import { Logotipo } from '@/components/marca/logotipo';
 import { cn } from '@/lib/cn';
 import { formatarNumero, percentual } from '@/lib/formato';
 import { conta } from '@/lib/servicos';
+import type { ResumoConta } from '@/lib/tipos';
 import { useCarga } from '@/lib/use-carga';
 
 /**
@@ -40,11 +42,23 @@ import { useCarga } from '@/lib/use-carga';
  * cima do conteúdo. Fecha no Esc, no clique fora e ao trocar de tela.
  */
 
-const SECOES = [
+interface ItemDoMenu {
+  href: string;
+  rotulo: string;
+  Icone: (p: { className?: string }) => JSX.Element;
+  /**
+   * Só aparece com conversas ligadas (coexistência com "sim"). É conveniência:
+   * a rota recusa no servidor do mesmo jeito.
+   */
+  soComConversas?: boolean;
+}
+
+const SECOES: Array<{ titulo: string; itens: ItemDoMenu[] }> = [
   {
     titulo: 'Operação',
     itens: [
       { href: '/painel', rotulo: 'Painel', Icone: IconePainel },
+      { href: '/conversas', rotulo: 'Conversas', Icone: IconeBalao, soComConversas: true },
       { href: '/modelos', rotulo: 'Modelos', Icone: IconeModelo },
       { href: '/contatos', rotulo: 'Contatos', Icone: IconeContatos },
       { href: '/campanhas', rotulo: 'Campanhas', Icone: IconeCampanha },
@@ -62,7 +76,7 @@ const SECOES = [
     titulo: 'Ajuda',
     itens: [{ href: '/regras', rotulo: 'Regras', Icone: IconeEscudo }],
   },
-] as const;
+];
 
 /** Iniciais para o avatar. Duas no máximo — três já viram borrão. */
 function iniciais(nome: string): string {
@@ -159,6 +173,8 @@ function Lateral({ aoFechar, caminho }: { aoFechar: () => void; caminho: string 
   const { sessao, sair } = useSessao();
   const [saindo, setSaindo] = useState(false);
   const ativo = (href: string) => caminho === href || caminho.startsWith(href + '/');
+  const resumo = useResumoDaConta();
+  const visivel = (item: ItemDoMenu) => !item.soComConversas || resumo?.conversasHabilitadas === true;
 
   return (
     <>
@@ -198,7 +214,7 @@ function Lateral({ aoFechar, caminho }: { aoFechar: () => void; caminho: string 
               {secao.titulo}
             </p>
             <ul className="space-y-0.5">
-              {secao.itens.map(({ href, rotulo, Icone }) => {
+              {secao.itens.filter(visivel).map(({ href, rotulo, Icone }) => {
                 const estaAtivo = ativo(href);
                 return (
                   <li key={href}>
@@ -228,7 +244,7 @@ function Lateral({ aoFechar, caminho }: { aoFechar: () => void; caminho: string 
         ))}
       </nav>
 
-      <ConsumoLateral />
+      <ConsumoLateral dados={resumo} />
 
       <div className="relative border-t border-lateral-borda p-3">
         <div className="flex items-center gap-3 rounded-xl px-2 py-2">
@@ -261,21 +277,24 @@ function Lateral({ aoFechar, caminho }: { aoFechar: () => void; caminho: string 
   );
 }
 
-/**
- * Consumo do ciclo, sempre à vista.
- *
- * Só aparece com dado lido. Carregando, mostra o trilho vazio; falhou, some —
- * o painel tem o erro completo, e a lateral não é lugar de mensagem de erro.
- */
 /** Avisado pela tela de plano quando o plano muda, para o consumo não ficar velho. */
 export const EVENTO_PLANO_ALTERADO = 'regemcast:plano-alterado';
 
-function ConsumoLateral() {
+/** Avisado quando a resposta sobre conversas muda, para o menu aparecer (ou sumir) na hora. */
+export const EVENTO_CONVERSAS_ALTERADAS = 'regemcast:conversas-alteradas';
+
+/**
+ * O resumo da conta que a lateral usa: o consumo do ciclo e se as conversas
+ * estão ligadas. Uma leitura só para os dois.
+ *
+ * A casca monta uma vez só; sem a releitura, o plano e o menu ficavam os da
+ * entrada até recarregar a página. Relê ao trocar de tela e quando o plano ou
+ * a resposta sobre conversas mudam.
+ */
+function useResumoDaConta(): ResumoConta | null {
   const { dados, recarregar } = useCarga(() => conta.resumo());
   const caminho = usePathname();
 
-  // A casca monta uma vez só; sem isto o nome do plano e o teto ficavam os da
-  // entrada até recarregar a página. Relê ao trocar de tela e ao mudar o plano.
   const primeiraTela = useRef(true);
   useEffect(() => {
     if (primeiraTela.current) {
@@ -287,9 +306,23 @@ function ConsumoLateral() {
   useEffect(() => {
     const ouvir = () => void recarregar();
     window.addEventListener(EVENTO_PLANO_ALTERADO, ouvir);
-    return () => window.removeEventListener(EVENTO_PLANO_ALTERADO, ouvir);
+    window.addEventListener(EVENTO_CONVERSAS_ALTERADAS, ouvir);
+    return () => {
+      window.removeEventListener(EVENTO_PLANO_ALTERADO, ouvir);
+      window.removeEventListener(EVENTO_CONVERSAS_ALTERADAS, ouvir);
+    };
   }, [recarregar]);
 
+  return dados;
+}
+
+/**
+ * Consumo do ciclo, sempre à vista.
+ *
+ * Só aparece com dado lido. Carregando, mostra o trilho vazio; falhou, some —
+ * o painel tem o erro completo, e a lateral não é lugar de mensagem de erro.
+ */
+function ConsumoLateral({ dados }: { dados: ResumoConta | null }) {
   if (!dados?.uso) return null;
 
   const { disparos, teto } = dados.uso;

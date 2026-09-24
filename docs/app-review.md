@@ -65,7 +65,12 @@ no celular.
 
 ## A ordem é da Meta, não nossa
 
-O Regemcast **ainda não é Tech Provider** — quem é, é o app do Regem, e pelo
+> **Atualização, 24/09/2026:** App Review aprovado nas três permissões, app
+> publicado, e o painel do caso de uso mostra **"Provedor de Tecnologia
+> verificado"**. A coexistência abre o QR Code no Embedded Signup. O texto
+> abaixo é o registro de como se chegou aqui.
+
+O Regemcast **ainda não era Tech Provider** — quem era, era o app do Regem, e pelo
 fluxo oficial essa condição é do app, não da pessoa. A ordem que a Meta publica
 para virar Tech Provider é esta, e o que importa é onde o App Review aparece:
 

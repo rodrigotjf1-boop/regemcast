@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
+import { EVENTO_CONVERSAS_ALTERADAS } from '@/components/app/casca';
 import { PerguntaIntegrar } from '@/components/app/pergunta-integrar';
 import { Alerta } from '@/components/ui/alerta';
 import { Badge } from '@/components/ui/badge';
@@ -71,6 +72,8 @@ export function IntegracaoDoNumero({
       setEditando(false);
       setEscolha(null);
       aoMudar();
+      // O menu "Conversas" aparece (ou some) sem precisar trocar de tela.
+      window.dispatchEvent(new Event(EVENTO_CONVERSAS_ALTERADAS));
     } catch (e) {
       setErro(mensagemDoErro(e));
     } finally {

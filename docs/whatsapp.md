@@ -182,6 +182,32 @@ O histórico guardado antes desta gravação existir volta à fila na subida do
 servidor (`AgendaService.reenfileirar({ semJanela: true })`), com o índice
 `idx_wa_evento_sincronizacao` (migration 025) mantendo a varredura barata.
 
+### A tela "Conversas"
+
+No jeito do WhatsApp Web, em `/conversas`
+([`modules/conversa/`](../backend/src/modules/conversa/)). O menu só aparece com
+algum número em coexistência com "sim" (`conversasHabilitadas` no `GET /conta`),
+e **toda rota confere de novo no servidor**: conta sem isso recebe 404.
+
+- **Lista** — a mais recente primeiro, com nome do contato (ou do perfil),
+  último trecho, não lidas e o ponto verde de "janela aberta". Busca por nome
+  ou telefone (`%` e `_` digitados valem como eles mesmos).
+- **Conversa** — páginas de 60 mensagens (as anteriores sob demanda), separador
+  de dia, status das respostas, mídia buscada na Meta na hora (nada guardado
+  aqui). Mídia que a Meta mandaria como HTML ou SVG sai como download, nunca
+  embutida, com `nosniff` e CSP `sandbox`.
+- **Resposta** — texto livre só dentro das 24 horas desde a última mensagem do
+  cliente; fora disso a caixa explica e aponta a tela de Campanhas (modelo
+  aprovado). A janela é conferida ANTES de chamar a Meta. Quem saiu das
+  promoções pode receber resposta: foi a pessoa que escreveu.
+- **Adicionar à lista** — o substituto das etiquetas; quem saiu das promoções
+  não entra em lista de campanha.
+- **Atualização** — conversa aberta a cada 5 s, lista a cada 15 s, pausando
+  com a aba escondida. A troca por SSE fica para quando o volume pedir.
+- **Guarda das mensagens** — o dono escolhe o prazo (0 = tudo); de hora em
+  hora, `ConversaRetencao` apaga o que passou, pela data da mensagem, em
+  blocos, e tira a conversa que ficou vazia.
+
 **Por que nada é decidido com resposta que ainda não existe:** a agenda pode
 chegar antes de o dono responder, ou antes de a transação da conexão terminar.
 Número ainda não gravado faz o evento voltar para a fila (tentativas); número

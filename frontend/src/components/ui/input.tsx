@@ -1,6 +1,11 @@
 'use client';
 
-import { forwardRef, type InputHTMLAttributes, type SelectHTMLAttributes } from 'react';
+import {
+  forwardRef,
+  type InputHTMLAttributes,
+  type SelectHTMLAttributes,
+  type TextareaHTMLAttributes,
+} from 'react';
 
 import { cn } from '@/lib/cn';
 
@@ -47,6 +52,25 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
     >
       {children}
     </select>
+  );
+});
+
+export interface AreaDeTextoProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
+  invalido?: boolean;
+}
+
+/** Campo de várias linhas, com o mesmo acabamento dos outros. */
+export const AreaDeTexto = forwardRef<HTMLTextAreaElement, AreaDeTextoProps>(function AreaDeTexto(
+  { className, invalido, ...props },
+  ref,
+) {
+  return (
+    <textarea
+      ref={ref}
+      aria-invalid={invalido || undefined}
+      className={cn(BASE_CAMPO, 'resize-none leading-relaxed', invalido && 'border-erro', className)}
+      {...props}
+    />
   );
 });
 

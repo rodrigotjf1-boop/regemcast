@@ -29,6 +29,7 @@ import type { UsuarioAutenticado } from '../../common/auth.guard';
 import { DonoGuard } from '../../common/dono.guard';
 import { UsuarioAtual } from '../../common/usuario-atual.decorator';
 import { ContatoService } from './contato.service';
+import { AdicionarNaListaDto } from './dto/adicionar-na-lista.dto';
 import { CriarListaDoPerfilDto, ParametrosSegmentacaoDto } from './dto/segmentacao.dto';
 import type { Segmento } from './segmentacao';
 import { SegmentacaoService } from './segmentacao.service';
@@ -149,6 +150,16 @@ export class ContatoController {
   @Post('listas')
   criarLista(@UsuarioAtual() usuario: UsuarioAutenticado, @Body() dto: CriarListaDto) {
     return this.servico.criarLista(usuario.contaId, usuario.id, dto.nome, dto.descricao);
+  }
+
+  /** Põe o contato numa lista (usado pela tela de conversas). */
+  @Post(':id/listas')
+  adicionarNaLista(
+    @UsuarioAtual() usuario: UsuarioAutenticado,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AdicionarNaListaDto,
+  ) {
+    return this.servico.adicionarNaLista(usuario.contaId, usuario.id, id, dto.listaId);
   }
 
   @Get('listas/:id/publico')
