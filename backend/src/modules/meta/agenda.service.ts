@@ -14,17 +14,23 @@
  * existe a retomada o devolve à fila, onde ele passa pelo MESMO caminho do
  * webhook. Nenhum lote é decidido com uma resposta que ainda não foi gravada.
  */
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  type OnApplicationBootstrap,
+} from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 
+import { emPartes } from '../../common/em-partes';
 import { mascararTelefone } from '../../common/telefone';
 import { ContextoDb, type Db } from '../../db/contexto';
 import { contato, contatoLista, importacao, usuario, waNumero } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import {
   DECLARACAO_INTEGRACAO,
-  destinoDaAgenda,
-  destinoDoHistorico,
+  destinoPelaResposta,
   separarAgenda,
   type DestinoDoEvento,
   type LoteDaAgenda,
@@ -33,7 +39,7 @@ import {
 /** Linhas por comando: bem abaixo do teto de parâmetros do Postgres. */
 const POR_COMANDO = 1000;
 
-/** Só números com resposta recente entram na varredura da retomada. */
+/** Só números com resposta recente entram na varredura de cada minuto. */
 const DIAS_PARA_REENFILEIRAR = 7;
 
 const CAMPOS_DO_NUMERO = {
@@ -60,12 +66,6 @@ type NumeroTravado = {
   integrarImportacaoId: string | null;
 };
 
-function emPartes<T>(lista: T[]): T[][] {
-  const partes: T[][] = [];
-  for (let i = 0; i < lista.length; i += POR_COMANDO) partes.push(lista.slice(i, i + POR_COMANDO));
-  return partes;
-}
-
 /** O número da empresa como a Meta mostra ("+55 21 98975-1705"), mascarado para log e auditoria. */
 function mascararNumero(exibicao: string | null): string | null {
   return mascararTelefone(exibicao ? exibicao.replace(/[^\d+]/g, '') : null);
@@ -76,13 +76,29 @@ function mascararId(valor: string): string {
 }
 
 @Injectable()
-export class AgendaService {
+export class AgendaService implements OnApplicationBootstrap {
   private readonly log = new Logger('Agenda');
 
   constructor(
     private readonly ctx: ContextoDb,
     private readonly auditoria: AuditoriaService,
   ) {}
+
+  /**
+   * Na subida, uma varredura SEM a janela de dias: devolve à fila o que ficou
+   * guardado de números que já têm resposta — o histórico que esperou a
+   * gravação das conversas, ou o que sobrou de um servidor fora do ar por mais
+   * tempo que a janela. Não segura a subida e não pode derrubá-la.
+   */
+  onApplicationBootstrap(): void {
+    void this.reenfileirar({ semJanela: true })
+      .then((n) => {
+        if (n > 0) this.log.log(`Subida: ${n} lote(s) guardados de agenda e histórico voltaram para a fila.`);
+      })
+      .catch((erro: unknown) => {
+        this.log.error(`Varredura da subida falhou: ${(erro as Error)?.message ?? String(erro)}`);
+      });
+  }
 
   // ------------------------------------------------------------ a resposta
 
@@ -241,7 +257,7 @@ export class AgendaService {
       // Número dedicado não tem agenda de celular; se algo chegar, não é nosso para guardar.
       if (!n.coexistencia) return 'esvaziar';
 
-      const destino = destinoDaAgenda(n.integrarConversas);
+      const destino = destinoPelaResposta(n.integrarConversas);
       if (destino === 'aguardar') return 'guardar';
       if (destino === 'descartar') return 'esvaziar';
 
@@ -257,24 +273,6 @@ export class AgendaService {
       await this.gravarLote(db, n, lote, destinos);
       return 'esvaziar';
     });
-  }
-
-  /** O histórico espera a gravação das conversas; só o "não" o descarta já. */
-  async destinoDoHistorico(phoneNumberId: string): Promise<DestinoDoEvento> {
-    const n = await this.ctx.comEscopoSistema('meta.agenda.historico', async (db) => {
-      const [linha] = await db
-        .select({ integrar: waNumero.integrarConversas })
-        .from(waNumero)
-        .where(eq(waNumero.phoneNumberId, phoneNumberId))
-        .limit(1);
-      return linha ?? null;
-    });
-    if (!n) {
-      throw new Error(
-        `Histórico de um número que ainda não está gravado (${mascararId(phoneNumberId)}). O evento volta para a fila.`,
-      );
-    }
-    return destinoDoHistorico(n.integrar) === 'descartar' ? 'esvaziar' : 'guardar';
   }
 
   /**
@@ -300,7 +298,7 @@ export class AgendaService {
       `${decididoEm.toLocaleDateString('pt-BR', fuso)}: "${DECLARACAO_INTEGRACAO}"`;
 
     let novos = 0;
-    for (const parte of emPartes(lote.adicionar)) {
+    for (const parte of emPartes(lote.adicionar, POR_COMANDO)) {
       // Quem já está na base fica como está: o consentimento que tinha pode ser
       // mais antigo e mais forte, e quem pediu para sair continua fora.
       const inseridos = await db
@@ -347,7 +345,7 @@ export class AgendaService {
 
     // Apagado da agenda do celular sai da lista deste número — não da base: o
     // contato pode estar em outras listas e ter histórico de campanha.
-    for (const parte of emPartes(lote.remover)) {
+    for (const parte of emPartes(lote.remover, POR_COMANDO)) {
       await db.execute(sql`
         delete from contato_lista_item i
          using contato c
@@ -378,36 +376,35 @@ export class AgendaService {
   // ------------------------------------------------------------ a retomada
 
   /**
-   * Devolve à fila o que chegou antes da resposta do dono.
+   * Devolve à fila os lotes de agenda e histórico guardados de números que já
+   * têm resposta.
    *
-   * Um evento processado enquanto o número não tinha resposta ficou guardado
-   * como chegou. Quando a resposta existe e é MAIS NOVA que o processamento,
-   * o evento volta para a fila e passa pelo mesmo caminho do webhook — que
-   * agora sabe o que fazer com ele. Depois de reprocessado, o conteúdo é
-   * esvaziado ou o processamento fica mais novo que a resposta: cada evento
-   * volta à fila uma vez só.
+   * Lote guardado + número com resposta só acontece de um jeito: o lote foi
+   * processado quando ainda não havia resposta. Com resposta, o caminho do
+   * webhook SEMPRE esvazia o conteúdo (gravou ou recusou) — então cada evento
+   * volta à fila uma vez só, e não há laço.
    *
-   * Só olha números com resposta dos últimos dias. No dia a dia a consulta não
-   * acha número nenhum e nem chega a ler a tabela de eventos.
-   *
-   * O histórico entra só com "não", para ser esvaziado. Com "sim" ele espera a
-   * gravação das conversas — que, quando existir, precisa devolver à fila os
-   * históricos guardados até lá.
+   * A cada minuto, só números com resposta dos últimos dias: no dia a dia a
+   * consulta não acha número nenhum. Na subida do servidor, `semJanela` pega
+   * o resto — inclusive o histórico que esperou a gravação das conversas
+   * existir. O índice `idx_wa_evento_sincronizacao` (migration 025) mantém as
+   * duas baratas.
    */
-  async reenfileirar(): Promise<number> {
+  async reenfileirar(opcoes: { semJanela?: boolean } = {}): Promise<number> {
+    const janela = opcoes.semJanela
+      ? sql``
+      : sql`and n.integrar_decidido_em > now() - make_interval(days => ${DIAS_PARA_REENFILEIRAR})`;
     return this.ctx.comEscopoSistema('meta.agenda.reenfileirar', async (db) => {
       const r = await db.execute(sql`
         update wa_evento e
            set processado_em = null, tentativas = 0, erro = null
           from wa_numero n
          where n.integrar_conversas is not null
-           and n.integrar_decidido_em > now() - make_interval(days => ${DIAS_PARA_REENFILEIRAR})
+           ${janela}
            and e.phone_number_id = n.phone_number_id
+           and e.tipo in ('smb_app_state_sync', 'history')
            and e.processado_em is not null
-           and e.processado_em < n.integrar_decidido_em
            and e.payload -> 'value' is not null
-           and (e.tipo = 'smb_app_state_sync'
-                or (e.tipo = 'history' and n.integrar_conversas = false))
         returning e.id
       `);
       return r.rows.length;

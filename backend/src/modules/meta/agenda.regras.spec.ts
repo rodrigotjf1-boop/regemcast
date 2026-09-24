@@ -1,4 +1,4 @@
-import { destinoDaAgenda, destinoDoHistorico, separarAgenda } from './agenda.regras';
+import { destinoPelaResposta, separarAgenda } from './agenda.regras';
 
 const add = (phone_number: string, full_name?: string, first_name?: string) => ({
   type: 'contact',
@@ -13,19 +13,11 @@ const remove = (phone_number: string) => ({
   metadata: { timestamp: '1739321024' },
 });
 
-describe('destinoDaAgenda', () => {
-  it('sim grava, não descarta, sem resposta espera', () => {
-    expect(destinoDaAgenda(true)).toBe('aplicar');
-    expect(destinoDaAgenda(false)).toBe('descartar');
-    expect(destinoDaAgenda(null)).toBe('aguardar');
-  });
-});
-
-describe('destinoDoHistorico', () => {
-  it('só o "não" descarta: com "sim" o histórico espera a gravação das conversas', () => {
-    expect(destinoDoHistorico(false)).toBe('descartar');
-    expect(destinoDoHistorico(true)).toBe('aguardar');
-    expect(destinoDoHistorico(null)).toBe('aguardar');
+describe('destinoPelaResposta', () => {
+  it('sim grava, não descarta, sem resposta espera — para agenda e histórico', () => {
+    expect(destinoPelaResposta(true)).toBe('aplicar');
+    expect(destinoPelaResposta(false)).toBe('descartar');
+    expect(destinoPelaResposta(null)).toBe('aguardar');
   });
 });
 

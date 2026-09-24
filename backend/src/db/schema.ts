@@ -69,6 +69,8 @@ export const conta = pgTable('conta', {
   cnpjSituacao: text('cnpj_situacao'),
   /** Quando o CNPJ foi conferido como ATIVO. Nulo = nunca conferido. */
   cnpjConferidoEm: timestamp('cnpj_conferido_em', { withTimezone: true }),
+  /** Por quantos dias guardar as mensagens das conversas (migration 024). 0 = tudo. */
+  conversasRetencaoDias: integer('conversas_retencao_dias').notNull().default(0),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
@@ -788,4 +790,64 @@ export const codigoVerificacao = pgTable('codigo_verificacao', {
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   emailIdx: index('idx_codigo_verificacao_email').on(t.finalidade, t.email, t.criadoEm),
+}));
+
+/**
+ * Conversa do WhatsApp: número da empresa × pessoa (migration 024).
+ *
+ * Só existe para número em coexistência cujo dono respondeu "sim" sobre
+ * trazer contatos e conversas. `telefoneE164` no formato do `contato` (com o
+ * 9º dígito), e os totais (última mensagem, não lidas, janela de 24h) são
+ * mantidos pelo código, uma vez por lote — sem gatilho.
+ */
+export const conversa = pgTable('conversa', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  contaId: uuid('conta_id').notNull().references(() => conta.id, { onDelete: 'cascade' }),
+  waNumeroId: uuid('wa_numero_id').notNull().references(() => waNumero.id, { onDelete: 'cascade' }),
+  telefoneE164: text('telefone_e164').notNull(),
+  nomePerfil: text('nome_perfil'),
+  ultimaMensagemEm: timestamp('ultima_mensagem_em', { withTimezone: true }),
+  ultimaMensagem: text('ultima_mensagem'),
+  /** Última mensagem DO CLIENTE: a janela de 24h de texto livre conta daqui. */
+  ultimaEntradaEm: timestamp('ultima_entrada_em', { withTimezone: true }),
+  naoLidas: integer('nao_lidas').notNull().default(0),
+  lidaEm: timestamp('lida_em', { withTimezone: true }),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  numeroTelefoneUq: uniqueIndex('conversa_numero_telefone_uq').on(t.waNumeroId, t.telefoneE164),
+  listaIdx: index('conversa_lista_idx').on(t.contaId, t.ultimaMensagemEm),
+}));
+
+/**
+ * Uma mensagem de uma conversa (migration 024).
+ *
+ * `wamid` único por conta: a Meta reentrega o webhook, e o histórico pode
+ * repetir o que chegou ao vivo. `criadaEm` é a data ORIGINAL da mensagem.
+ */
+export const mensagem = pgTable('mensagem', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  contaId: uuid('conta_id').notNull().references(() => conta.id, { onDelete: 'cascade' }),
+  conversaId: uuid('conversa_id').notNull().references(() => conversa.id, { onDelete: 'cascade' }),
+  wamid: text('wamid').notNull(),
+  /** entrada | saida */
+  direcao: text('direcao').notNull(),
+  /** cliente | celular | painel | historico | campanha */
+  origem: text('origem').notNull(),
+  tipo: text('tipo').notNull().default('text'),
+  texto: text('texto'),
+  midiaId: text('midia_id'),
+  midiaMime: text('midia_mime'),
+  midiaNome: text('midia_nome'),
+  /** Só saída: enviando | enviada | entregue | lida | falhou */
+  status: text('status'),
+  erroCodigo: integer('erro_codigo'),
+  erroTitulo: text('erro_titulo'),
+  enviadaPor: uuid('enviada_por').references(() => usuario.id, { onDelete: 'set null' }),
+  criadaEm: timestamp('criada_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  wamidUq: uniqueIndex('mensagem_wamid_uq').on(t.contaId, t.wamid),
+  conversaIdx: index('mensagem_conversa_idx').on(t.conversaId, t.criadaEm),
+  retencaoIdx: index('mensagem_retencao_idx').on(t.contaId, t.criadaEm),
 }));

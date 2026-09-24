@@ -43,27 +43,16 @@ export type Destino = 'aplicar' | 'aguardar' | 'descartar';
 export type DestinoDoEvento = 'guardar' | 'esvaziar';
 
 /**
- * Agenda: `true` grava, `false` descarta, sem resposta espera.
+ * Agenda e histórico: `true` grava, `false` descarta, sem resposta espera.
  *
  * Esperar significa guardar o lote como chegou: quando o dono responder, a
  * retomada o reprocessa. Descartar apaga o conteúdo do evento — quem disse
- * "não" não tem a agenda guardada em lugar nenhum.
+ * "não" não tem a agenda nem as conversas guardadas em lugar nenhum.
  */
-export function destinoDaAgenda(integrar: boolean | null): Destino {
+export function destinoPelaResposta(integrar: boolean | null): Destino {
   if (integrar === true) return 'aplicar';
   if (integrar === false) return 'descartar';
   return 'aguardar';
-}
-
-/**
- * Histórico de conversas: só o "não" decide por ora.
- *
- * Com "sim" ou sem resposta, o lote espera: é a gravação das conversas
- * (próxima etapa) que vai consumi-lo. Descartar aqui perderia de vez os 6
- * meses de conversa — a Meta só manda o histórico uma vez.
- */
-export function destinoDoHistorico(integrar: boolean | null): Destino {
-  return integrar === false ? 'descartar' : 'aguardar';
 }
 
 export interface ContatoDaAgenda {
