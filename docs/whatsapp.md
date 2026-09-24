@@ -95,7 +95,22 @@ O que vem:
 o fluxo inteiro. Por isso o estado fica gravado em `wa_numero.sincronizacao` —
 não implícito em log — e existe o
 [`coexistencia.job.ts`](../backend/src/modules/meta/coexistencia.job.ts), que a
-cada 15 minutos carimba quem venceu e tenta de novo quem ficou em `pendente`.
+cada 15 minutos conclui quem já recebeu o 100%, expira quem ficou 24 horas sem
+sinal e tenta de novo quem ficou em `pendente`.
+
+**Onde a Meta avisa o fim — e onde avisava errado aqui.** O `progress` (100 =
+terminou) e o erro `2593109` vêm **dentro de cada item de `value.history[]`**
+(`history[].metadata.progress`, `history[].errors`), não em `value`. Até
+24/09/2026 o webhook procurava em `value`: nenhuma cópia aparecia como
+concluída, e o job marcava "expirada" — mandando conectar de novo — quem tinha
+terminado. A leitura mora em
+[`coexistencia.regras.ts`](../backend/src/modules/meta/coexistencia.regras.ts),
+testada com os exemplos da página oficial, e o job também conclui a partir dos
+lotes de histórico já guardados.
+
+**Expirar exige 24 horas sem sinal**, não 24 horas desde a conexão: com lotes
+de agenda ou histórico chegando, a cópia está andando, e "expirado" seria um
+alarme falso.
 
 Estados possíveis:
 
@@ -104,8 +119,8 @@ Estados possíveis:
 | `nao_se_aplica` | Número dedicado; não há app de onde copiar |
 | `pendente` | Onboarding feito, pedido ainda não saiu |
 | `sincronizando` | Pedimos; os dados chegam por webhook, em fases |
-| `concluida` | A Meta sinalizou o fim |
-| `expirada` | Passou das 24h; a Meta desfaz e o cliente refaz |
+| `concluida` | A Meta sinalizou o fim (`progress` 100 em `history[].metadata`) |
+| `expirada` | 24h desde a conexão **e** 24h sem lote nenhum; a Meta desfaz e o cliente refaz |
 | `falhou` | A Meta recusou — o caso comum é o código `2593109`, o cliente não autorizar o compartilhamento |
 
 ## Coexistência: a pergunta sobre contatos e conversas

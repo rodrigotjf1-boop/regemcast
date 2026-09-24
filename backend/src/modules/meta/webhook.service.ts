@@ -23,6 +23,7 @@ import { AvisoService } from '../aviso/aviso.service';
 import { campanhaDestinatario, modelo, waEvento, waNumero } from '../../db/schema';
 import type { DestinoDoEvento } from './agenda.regras';
 import { AgendaService } from './agenda.service';
+import { historicoRecusado, sincronizacaoConcluida } from './coexistencia.regras';
 import { codigoDoErro, mensagemDoErroMeta, traduzirErroMeta } from './erros-meta';
 
 /** Quantos eventos processar por passada. */
@@ -544,10 +545,9 @@ export class WebhookService {
     const phoneNumberId = this.phoneNumberIdDe(m);
     if (!phoneNumberId) return;
 
-    const erros = Array.isArray(v.errors) ? (v.errors as Array<Record<string, unknown>>) : [];
-    const recusado = erros.some((e) => Number(e.code) === 2593109);
-
-    if (recusado) {
+    // O 2593109 e o `progress` vêm DENTRO de `history[]` (ver
+    // `coexistencia.regras.ts`). Procurá-los em `value` nunca achava nada.
+    if (historicoRecusado(v)) {
       await this.marcarSincronizacao(phoneNumberId, 'falhou', 'O cliente não autorizou compartilhar os dados do app.');
       this.log.warn(
         `Sincronização recusada pelo cliente no número ${this.mascarar(phoneNumberId)} (2593109).`,
@@ -555,15 +555,9 @@ export class WebhookService {
       return;
     }
 
-    // A Meta manda a fase em `chunk_order`/`phase`; a última traz `progress`
-    // completo. Sem um marcador confiável, o seguro é só concluir quando ela
-    // sinalizar o fim — e continuar "sincronizando" enquanto houver dúvida.
-    const fim =
-      v.sync_status === 'COMPLETED' ||
-      v.status === 'COMPLETED' ||
-      Number(v.progress) >= 100;
-
-    if (fim) {
+    // Os lotes chegam em fases e fora de ordem; `progress` 100 é o fim. Sem
+    // ele, o seguro é continuar "sincronizando".
+    if (sincronizacaoConcluida(v)) {
       await this.marcarSincronizacao(phoneNumberId, 'concluida', null);
       this.log.log(`Sincronização (${tipo}) concluída no número ${this.mascarar(phoneNumberId)}.`);
     } else {

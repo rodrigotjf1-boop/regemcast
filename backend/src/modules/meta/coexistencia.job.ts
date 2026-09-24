@@ -5,13 +5,18 @@
  * dados do WhatsApp Business do celular. Estourado o prazo, ela desfaz a
  * conexão — e o cliente só descobre quando a primeira campanha não sai.
  *
- * Duas coisas acontecem aqui, e a segunda é a que justifica o job existir:
+ * Três coisas acontecem aqui, nesta ordem:
  *
- * 1. **Quem passou do prazo vira `expirada`.** Um estado errado no banco é
- *    pior que nenhum: a tela mostraria "sincronizando" para sempre, e o
- *    suporte procuraria defeito onde não há.
+ * 1. **Quem terminou vira `concluida`**, pelo histórico já recebido. É a rede
+ *    de segurança do webhook: até 24/09/2026 o aviso de 100% era procurado no
+ *    lugar errado e nunca concluía nada (ver `coexistencia.regras.ts`).
  *
- * 2. **Quem ficou em `pendente` ganha nova tentativa.** Existe uma janela real
+ * 2. **Quem ficou 24 horas SEM SINAL vira `expirada`.** Não basta o relógio da
+ *    conexão: com a cópia chegando, marcar "expirado" mandaria o cliente
+ *    conectar de novo sem motivo. Por isso só expira quem não recebeu lote
+ *    nenhum de agenda ou histórico nas últimas 24 horas.
+ *
+ * 3. **Quem ficou em `pendente` ganha nova tentativa.** Existe uma janela real
  *    entre gravar o número (que já nasce "pendente") e pedir a sincronização à
  *    Meta. Processo que cai nesse intervalo deixa o número parado, com o
  *    relógio das 24 horas correndo em silêncio. Sem esta retomada, a única
@@ -28,7 +33,7 @@
  */
 import { Injectable, Logger } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
-import { and, inArray, isNotNull, lt } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, lt, sql } from 'drizzle-orm';
 
 import { ContextoDb } from '../../db/contexto';
 import { waNumero } from '../../db/schema';
@@ -58,6 +63,8 @@ export class CoexistenciaJob {
     if (this.rodando) return;
     this.rodando = true;
     try {
+      // Concluir ANTES de expirar: quem terminou não pode ser tratado como vencido.
+      await this.concluirPeloHistorico();
       await this.expirarVencidos();
       await this.retomarPendentes();
     } catch (erro) {
@@ -73,7 +80,44 @@ export class CoexistenciaJob {
   }
 
   /**
-   * Marca como `expirada` quem passou das 24 horas.
+   * Conclui quem já recebeu o aviso de 100% no histórico.
+   *
+   * O lote de histórico fica guardado no registro de eventos até ser gravado
+   * nas conversas, então a conclusão pode ser lida dali — inclusive a de quem
+   * terminou antes de o webhook saber ler o progresso. Só olha números ainda
+   * "sincronizando": no dia a dia, a consulta não acha ninguém.
+   *
+   * A referência ao número é `wa_numero.phone_number_id` escrita por extenso,
+   * de propósito: `wa_evento` também tem `phone_number_id`, e um nome sem
+   * tabela dentro do `exists` casaria o evento com ele mesmo — concluindo
+   * todos os números de uma vez.
+   */
+  private async concluirPeloHistorico(): Promise<void> {
+    const concluidos = await this.ctx.comEscopoSistema('coexistencia.concluir', (db) =>
+      db
+        .update(waNumero)
+        .set({ sincronizacao: 'concluida', sincronizacaoEm: new Date(), sincronizacaoErro: null })
+        .where(
+          and(
+            eq(waNumero.sincronizacao, 'sincronizando'),
+            sql`exists (
+              select 1 from wa_evento e
+               where e.phone_number_id = wa_numero.phone_number_id
+                 and e.tipo = 'history'
+                 and jsonb_path_exists(e.payload, '$.value.history[*].metadata.progress ? (@ >= 100 || @ == "100")')
+            )`,
+          ),
+        )
+        .returning({ phoneNumberId: waNumero.phoneNumberId }),
+    );
+
+    for (const n of concluidos) {
+      this.log.log(`Sincronização concluída pelo histórico recebido no número ${this.mascarar(n.phoneNumberId)}.`);
+    }
+  }
+
+  /**
+   * Marca como `expirada` quem passou das 24 horas sem sinal da cópia.
    *
    * Escopo de sistema porque a varredura é entre contas: o job acorda sem
    * sessão e sem conta. Ele não faz regra de negócio aqui — só carimba o
@@ -95,6 +139,14 @@ export class CoexistenciaJob {
             inArray(waNumero.sincronizacao, ['pendente', 'sincronizando']),
             isNotNull(waNumero.onboardadoEm),
             lt(waNumero.onboardadoEm, limite),
+            // Lote chegando é cópia andando: só expira quem ficou 24 horas sem
+            // receber nada de agenda nem de histórico.
+            sql`not exists (
+              select 1 from wa_evento e
+               where e.phone_number_id = wa_numero.phone_number_id
+                 and e.tipo in ('history', 'smb_app_state_sync')
+                 and e.recebido_em > now() - make_interval(hours => ${PRAZO_HORAS})
+            )`,
           ),
         )
         .returning({ id: waNumero.id, phoneNumberId: waNumero.phoneNumberId }),
