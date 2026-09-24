@@ -21,12 +21,20 @@ import { ContextoDb } from '../../db/contexto';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { AvisoService } from '../aviso/aviso.service';
 import { campanhaDestinatario, modelo, waEvento, waNumero } from '../../db/schema';
+import type { DestinoDoEvento } from './agenda.regras';
+import { AgendaService } from './agenda.service';
 import { codigoDoErro, mensagemDoErroMeta, traduzirErroMeta } from './erros-meta';
 
 /** Quantos eventos processar por passada. */
 const LOTE = 50;
 /** Depois disso, o evento para de ser retomado e fica para inspeção. */
 const MAX_TENTATIVAS = 5;
+
+/**
+ * O que sobra de um evento cujo conteúdo foi esvaziado: a linha continua (é a
+ * trava de idempotência e o rastro de que o evento chegou), o conteúdo não.
+ */
+const CONTEUDO_ESVAZIADO = { esvaziado: true };
 
 interface Mudanca {
   field?: string;
@@ -127,6 +135,7 @@ export class WebhookService {
     private readonly ctx: ContextoDb,
     private readonly auditoria: AuditoriaService,
     private readonly avisos: AvisoService,
+    private readonly agenda: AgendaService,
   ) {}
 
   /** Grava cada mudança do payload como um evento próprio. */
@@ -171,11 +180,18 @@ export class WebhookService {
     let tratados = 0;
     for (const evento of pendentes) {
       try {
-        await this.aplicar(evento.tipo, evento.payload as Mudanca);
+        const destino = await this.aplicar(evento.tipo, evento.payload as Mudanca);
         await this.ctx.comEscopoSistema('meta.webhook.concluir', async (db) => {
           await db
             .update(waEvento)
-            .set({ processadoEm: new Date(), erro: null })
+            .set({
+              processadoEm: new Date(),
+              erro: null,
+              // Agenda e histórico de conversa são dado pessoal: depois de
+              // gravados no lugar deles (ou recusados pelo dono), não ficam
+              // copiados aqui.
+              ...(destino === 'esvaziar' ? { payload: CONTEUDO_ESVAZIADO } : {}),
+            })
             .where(eq(waEvento.id, evento.id));
         });
         tratados++;
@@ -193,8 +209,12 @@ export class WebhookService {
     return tratados;
   }
 
-  /** Despacha pelo tipo. Tipo desconhecido não é erro: fica registrado e segue. */
-  private async aplicar(tipo: string, mudanca: Mudanca): Promise<void> {
+  /**
+   * Despacha pelo tipo. Tipo desconhecido não é erro: fica registrado e segue.
+   *
+   * Devolve `esvaziar` quando o conteúdo do evento não deve continuar guardado.
+   */
+  private async aplicar(tipo: string, mudanca: Mudanca): Promise<DestinoDoEvento | void> {
     switch (tipo) {
       case 'phone_number_quality_update':
         return this.qualidadeDoNumero(mudanca);
@@ -207,8 +227,11 @@ export class WebhookService {
       case 'account_review_update':
         return this.contaAtualizada(mudanca);
       case 'smb_app_state_sync':
+        await this.sincronizacaoDoApp(tipo, mudanca);
+        return this.agendaDoApp(mudanca);
       case 'history':
-        return this.sincronizacaoDoApp(tipo, mudanca);
+        await this.sincronizacaoDoApp(tipo, mudanca);
+        return this.historicoDoApp(mudanca);
       case 'smb_message_echoes':
         return this.ecoDeMensagem(mudanca);
       case 'message_template_status_update':
@@ -546,6 +569,30 @@ export class WebhookService {
     } else {
       this.log.debug(`Sincronização (${tipo}) em andamento no número ${this.mascarar(phoneNumberId)}.`);
     }
+  }
+
+  /**
+   * A agenda do celular: contatos salvos, editados ou apagados no app.
+   *
+   * O que fazer com eles é a resposta do dono (ver `AgendaService`): sem
+   * resposta, o lote fica guardado; com "não", é esvaziado; com "sim", vira
+   * contato e o conteúdo sai daqui.
+   */
+  private async agendaDoApp(m: Mudanca): Promise<DestinoDoEvento | void> {
+    const phoneNumberId = this.phoneNumberIdDe(m);
+    const itens = m.value?.state_sync;
+    if (!phoneNumberId || !Array.isArray(itens) || itens.length === 0) return;
+    return this.agenda.aplicarLote(phoneNumberId, itens);
+  }
+
+  /**
+   * O histórico de conversas. A gravação das conversas é a próxima etapa;
+   * até lá, o lote espera — só o "não" do dono o esvazia já.
+   */
+  private async historicoDoApp(m: Mudanca): Promise<DestinoDoEvento | void> {
+    const phoneNumberId = this.phoneNumberIdDe(m);
+    if (!phoneNumberId) return;
+    return this.agenda.destinoDoHistorico(phoneNumberId);
   }
 
   /**

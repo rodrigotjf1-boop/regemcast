@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { PerguntaIntegrar } from '@/components/app/pergunta-integrar';
 import { Alerta } from '@/components/ui/alerta';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -78,6 +79,9 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
   const [resultado, setResultado] = useState<ResultadoConexao | null>(null);
   const [config, setConfig] = useState<ConfigSignup | null>(null);
   const [modo, setModo] = useState<Modo>('coexistencia');
+  // Coexistência: trazer contatos e conversas? Sem resposta, não conecta — a
+  // resposta precisa estar gravada antes de a agenda começar a chegar.
+  const [integrar, setIntegrar] = useState<boolean | null>(null);
   // A janela da Meta é um pop-up. Bloqueado pelo navegador, o FB.login nunca
   // responde e o botão ficaria em "Conectando…" para sempre — parece defeito.
   // Depois de alguns segundos, a tela diz o provável motivo e deixa voltar.
@@ -95,6 +99,8 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
   const infoRef = useRef<InfoDaSessao>({});
   /** O modo escolhido, lido dentro do callback do SDK pelo mesmo motivo da ref acima. */
   const modoRef = useRef<Modo>('coexistencia');
+  /** A resposta sobre contatos e conversas, lida no callback pelo mesmo motivo. */
+  const integrarRef = useRef<boolean | null>(null);
 
   // 1. Busca a configuração e carrega o SDK.
   useEffect(() => {
@@ -163,13 +169,23 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
     modoRef.current = novo;
   }, []);
 
+  const escolherIntegrar = useCallback((valor: boolean) => {
+    setIntegrar(valor);
+    integrarRef.current = valor;
+  }, []);
+
   const abrir = useCallback(() => {
     if (!config || !window.FB) return;
+    const escolhido = modoRef.current;
+    const integrarEscolhido = integrarRef.current;
+    if (escolhido === 'coexistencia' && integrarEscolhido === null) {
+      setErro('Responda se quer trazer os contatos e as conversas antes de conectar.');
+      return;
+    }
+
     setErro('');
     setEtapa('conectando');
     infoRef.current = {};
-
-    const escolhido = modoRef.current;
 
     window.FB.login(
       (resposta) => {
@@ -197,6 +213,9 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
             wabaId,
             ...(phoneNumberId ? { phoneNumberId } : {}),
             coexistencia: escolhido === 'coexistencia',
+            ...(escolhido === 'coexistencia' && integrarEscolhido !== null
+              ? { integrar: integrarEscolhido }
+              : {}),
           })
           .then((r) => {
             setResultado(r);
@@ -239,8 +258,9 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
 
         {resultado.coexistencia && (
           <Alerta tom="atencao">
-            Deixe o WhatsApp Business aberto no celular pelos próximos minutos. Estamos copiando
-            seus contatos e conversas, e a cópia só acontece com o aplicativo aberto.
+            {resultado.integrarConversas === false
+              ? 'Deixe o WhatsApp Business aberto no celular pelos próximos minutos: a Meta faz uma cópia para concluir a conexão. Como você respondeu não, nada da agenda nem das conversas fica guardado aqui.'
+              : 'Deixe o WhatsApp Business aberto no celular pelos próximos minutos. Estamos trazendo seus contatos e conversas, e a cópia só acontece com o aplicativo aberto.'}
           </Alerta>
         )}
 
@@ -290,7 +310,7 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
             resumo="Mesmo número, mesmo aplicativo no celular."
             marcadores={[
               'Você continua atendendo pelo celular, normalmente',
-              'Seus contatos e conversas são copiados para cá',
+              'Você escolhe se traz seus contatos e conversas',
               'Envia até 20 mensagens por segundo',
             ]}
             recomendado
@@ -319,9 +339,30 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
         {modo === 'coexistencia' && <MudancasNoApp />}
       </fieldset>
 
-      <Button onClick={abrir} carregando={etapa === 'conectando'}>
-        {etapa === 'conectando' ? 'Conectando…' : 'Conectar meu número'}
-      </Button>
+      {modo === 'coexistencia' && config && (
+        <PerguntaIntegrar
+          nome="integrar-conexao"
+          valor={integrar}
+          aoEscolher={escolherIntegrar}
+          declaracao={config.declaracaoIntegracao}
+          desabilitada={etapa === 'conectando'}
+        />
+      )}
+
+      <div className="space-y-2">
+        <Button
+          onClick={abrir}
+          carregando={etapa === 'conectando'}
+          disabled={modo === 'coexistencia' && integrar === null}
+        >
+          {etapa === 'conectando' ? 'Conectando…' : 'Conectar meu número'}
+        </Button>
+        {modo === 'coexistencia' && integrar === null && etapa !== 'conectando' && (
+          <p className="text-xs text-tinta-suave">
+            Responda sobre os contatos e as conversas para continuar.
+          </p>
+        )}
+      </div>
 
       {etapa === 'conectando' && demorou && (
         <Alerta tom="atencao">

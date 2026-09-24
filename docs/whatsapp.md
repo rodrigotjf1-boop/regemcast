@@ -108,6 +108,52 @@ Estados possíveis:
 | `expirada` | Passou das 24h; a Meta desfaz e o cliente refaz |
 | `falhou` | A Meta recusou — o caso comum é o código `2593109`, o cliente não autorizar o compartilhamento |
 
+## Coexistência: a pergunta sobre contatos e conversas
+
+O número é de uso empresarial e a agenda é da empresa: o Regemcast só pergunta
+ao dono se quer **trazer os contatos e as conversas** do WhatsApp Business. Não
+filtra nem separa ninguém — a responsabilidade pela agenda é do lojista, e a
+declaração que ele aceita ao responder "sim" é o registro de consentimento dos
+contatos (`consentimento_origem = 'declarado'`, com o texto e quem declarou).
+
+Quatro fatos da Meta moldam o fluxo (conferidos na referência oficial em
+23/09/2026):
+
+- **O pedido de sincronização é obrigatório.** Sem ele em 24 horas, a Meta
+  desfaz a conexão. Então o "não" não cancela o pedido: decide só o que
+  guardamos.
+- **O histórico vem uma vez só** (6 meses; mídia só dos últimos 14 dias). Quem
+  responde "não" não recupera as conversas antigas depois — a tela avisa.
+- **A agenda continua chegando** depois da cópia inicial: contato salvo,
+  editado ou apagado no celular gera outro `smb_app_state_sync`.
+- **Etiquetas não vêm.** O webhook traz só `type: contact` (nome, primeiro nome,
+  telefone) com `action` `add` ou `remove`. Quem lê etiqueta é ferramenta não
+  oficial — proibida aqui. As listas do Regemcast fazem esse papel.
+
+A resposta fica **por número** (`wa_numero.integrar_conversas`, migration 023) e
+é dada na tela de conexão — gravada na mesma transação do número, **antes** do
+pedido de sincronização — ou depois, no cartão do número (`POST
+/whatsapp/integrar`, só o dono).
+
+| Resposta | Agenda (`smb_app_state_sync`) | Histórico (`history`) |
+|---|---|---|
+| sem resposta | guardada como chegou, esperando | guardado |
+| sim | vira contato e entra na lista "WhatsApp Business"; o conteúdo sai do evento | guardado para a gravação das conversas |
+| não | o conteúdo sai do evento | o conteúdo sai do evento |
+
+**Por que nada é decidido com resposta que ainda não existe:** a agenda pode
+chegar antes de o dono responder, ou antes de a transação da conexão terminar.
+Número ainda não gravado faz o evento voltar para a fila (tentativas); número
+sem resposta guarda o lote. Quando a resposta existe, a
+[retomada](../backend/src/modules/meta/webhook.retomada.ts) devolve à fila os
+eventos processados antes dela, e eles passam pelo **mesmo caminho** do webhook
+([`agenda.service.ts`](../backend/src/modules/meta/agenda.service.ts)).
+
+Contato que já estava na base fica como está (consentimento e nome); quem pediu
+para sair continua fora da lista. Celular antigo que a Meta manda sem o 9º
+dígito é corrigido antes de gravar (`doWhatsapp`, em `common/telefone.ts`) —
+sem isso, a mesma pessoa viraria dois contatos.
+
 ### O que a coexistência TIRA do cliente
 
 Isto é material de venda, não detalhe técnico — e está na tela da escolha,

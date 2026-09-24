@@ -6,7 +6,7 @@
  * campanha sem o `55`, e a Meta o lia como um número internacional inexistente.
  * O erro que voltava não dizia nada sobre formato.
  */
-import { mascararTelefone, normalizarTelefoneE164, paraCloudApi } from './telefone';
+import { doWhatsapp, mascararTelefone, normalizarTelefoneE164, paraCloudApi } from './telefone';
 
 describe('paraCloudApi', () => {
   it('acrescenta o 55 quando o número vem só com DDD — e avisa que acrescentou', () => {
@@ -50,6 +50,31 @@ describe('paraCloudApi', () => {
     const comMais = normalizarTelefoneE164('21989751705');
     const semMais = paraCloudApi('21989751705').e164;
     expect(comMais).toBe(`+${semMais}`);
+  });
+});
+
+describe('doWhatsapp', () => {
+  it('devolve o 9 ao celular antigo que a Meta manda com 12 dígitos', () => {
+    expect(doWhatsapp('552189751705')).toBe('5521989751705');
+    expect(doWhatsapp('551196543210')).toBe('5511996543210');
+  });
+
+  it('sem a correção, a mesma pessoa viraria dois números diferentes', () => {
+    // A biblioteca aceita o de 12 dígitos como está — é daí que vem a duplicata.
+    expect(paraCloudApi('552189751705').e164).toBe('552189751705');
+    expect(paraCloudApi(`+${doWhatsapp('552189751705')}`).e164).toBe(paraCloudApi('5521989751705').e164);
+  });
+
+  it('não mexe em quem já tem o 9, em fixo nem em número de fora', () => {
+    expect(doWhatsapp('5521989751705')).toBe('5521989751705');
+    expect(doWhatsapp('552133334444')).toBe('552133334444');
+    expect(doWhatsapp('16505551234')).toBe('16505551234');
+  });
+
+  it('tira o que não é dígito e não estoura com vazio', () => {
+    expect(doWhatsapp('+55 21 8975-1705')).toBe('5521989751705');
+    expect(doWhatsapp(null)).toBe('');
+    expect(doWhatsapp(undefined)).toBe('');
   });
 });
 

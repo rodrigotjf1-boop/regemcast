@@ -328,6 +328,18 @@ export const waNumero = pgTable('wa_numero', {
   sincronizacaoErro: text('sincronizacao_erro'),
   /** De onde o prazo de 24h da coexistência é contado. */
   onboardadoEm: timestamp('onboardado_em', { withTimezone: true }),
+  /**
+   * Coexistência (migration 023): guardar os contatos e as conversas do
+   * WhatsApp Business? `true` guarda, `false` descarta o que chega, `null` =
+   * o dono ainda não respondeu (o que chega fica esperando a resposta).
+   */
+  integrarConversas: boolean('integrar_conversas'),
+  integrarDecididoEm: timestamp('integrar_decidido_em', { withTimezone: true }),
+  integrarDecididoPor: uuid('integrar_decidido_por').references(() => usuario.id, { onDelete: 'set null' }),
+  /** A lista "WhatsApp Business" deste número. */
+  integrarListaId: uuid('integrar_lista_id').references(() => contatoLista.id, { onDelete: 'set null' }),
+  /** Um registro de importação por número, somando os lotes da agenda. */
+  integrarImportacaoId: uuid('integrar_importacao_id').references(() => importacao.id, { onDelete: 'set null' }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({

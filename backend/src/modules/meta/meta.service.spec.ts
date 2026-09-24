@@ -118,6 +118,7 @@ function montar() {
   };
 
   const registrar = jest.fn().mockResolvedValue(undefined);
+  const agenda = { decidirNaConexao: jest.fn().mockResolvedValue(undefined) };
 
   const ctx = {
     db,
@@ -133,9 +134,10 @@ function montar() {
     { registrar, registrarForaDeContexto: jest.fn() } as unknown as ConstructorParameters<
       typeof MetaService
     >[2],
+    agenda as unknown as ConstructorParameters<typeof MetaService>[3],
   );
 
-  return { service, db, graph, registrar, diario };
+  return { service, db, graph, registrar, diario, agenda };
 }
 
 /** Última escrita que mexeu no campo pedido. */
@@ -228,6 +230,75 @@ describe('concluirOnboarding — coexistência', () => {
     expect(r.wabaId).toBe('WABA1');
     expect(ultimaEscritaCom(diario, 'sincronizacao')?.sincronizacao).toBe('falhou');
     expect(r.pendencias.length).toBeGreaterThan(0);
+  });
+});
+
+describe('concluirOnboarding — a resposta sobre contatos e conversas', () => {
+  it('é gravada ANTES do pedido de sincronização', async () => {
+    const { service, graph, agenda } = montar();
+
+    const r = await service.concluirOnboarding(CONTA, USUARIO, {
+      code: 'codigo-de-30-segundos',
+      wabaId: 'WABA1',
+      phoneNumberId: 'PN1',
+      coexistencia: true,
+      integrar: true,
+    });
+
+    expect(agenda.decidirNaConexao).toHaveBeenCalledWith(expect.anything(), 'num-1', true, USUARIO);
+    // A agenda só começa a chegar depois do pedido; a resposta tem de estar
+    // gravada antes, senão o primeiro lote chegaria sem saber o que fazer.
+    const ordemDaResposta = agenda.decidirNaConexao.mock.invocationCallOrder[0];
+    const ordemDoPedido = graph.sincronizarDadosDoApp.mock.invocationCallOrder[0];
+    expect(ordemDaResposta).toBeLessThan(ordemDoPedido);
+    expect(r.integrarConversas).toBe(true);
+  });
+
+  it('"não" também é resposta — e o pedido de sincronização sai mesmo assim', async () => {
+    const { service, graph, agenda } = montar();
+
+    const r = await service.concluirOnboarding(CONTA, USUARIO, {
+      code: 'codigo-de-30-segundos',
+      wabaId: 'WABA1',
+      phoneNumberId: 'PN1',
+      coexistencia: true,
+      integrar: false,
+    });
+
+    expect(agenda.decidirNaConexao).toHaveBeenCalledWith(expect.anything(), 'num-1', false, USUARIO);
+    // Sem o pedido, a Meta desfaz a conexão em 24 horas. O "não" decide o
+    // que guardamos, não se pedimos.
+    expect(graph.sincronizarDadosDoApp).toHaveBeenCalledTimes(2);
+    expect(r.integrarConversas).toBe(false);
+  });
+
+  it('sem resposta, nada é decidido: o cartão do número pergunta depois', async () => {
+    const { service, agenda } = montar();
+
+    const r = await service.concluirOnboarding(CONTA, USUARIO, {
+      code: 'codigo-de-30-segundos',
+      wabaId: 'WABA1',
+      phoneNumberId: 'PN1',
+      coexistencia: true,
+    });
+
+    expect(agenda.decidirNaConexao).not.toHaveBeenCalled();
+    expect(r.integrarConversas).toBeNull();
+  });
+
+  it('número dedicado ignora a resposta: não há agenda de celular', async () => {
+    const { service, agenda } = montar();
+
+    const r = await service.concluirOnboarding(CONTA, USUARIO, {
+      code: 'codigo-de-30-segundos',
+      wabaId: 'WABA1',
+      phoneNumberId: 'PN1',
+      coexistencia: false,
+      integrar: true,
+    });
+
+    expect(agenda.decidirNaConexao).not.toHaveBeenCalled();
+    expect(r.integrarConversas).toBeNull();
   });
 });
 

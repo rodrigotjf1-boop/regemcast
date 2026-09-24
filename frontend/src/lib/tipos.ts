@@ -115,6 +115,11 @@ export interface ConfigSignup {
   appId: string;
   configId: string;
   graphVersao: string;
+  /**
+   * O que o dono declara ao trazer a agenda do WhatsApp Business. Vem do
+   * servidor para a tela mostrar exatamente o texto que a auditoria grava.
+   */
+  declaracaoIntegracao: string;
 }
 
 export type QualidadeNumero = 'verde' | 'amarela' | 'vermelha' | 'desconhecida';
@@ -154,6 +159,12 @@ export interface NumeroWhatsapp {
   horasParaSincronizar: number | null;
   /** Teto de mensagens por segundo: 20 na coexistência, 80 no número dedicado. */
   vazaoMaxima: number;
+  /**
+   * Coexistência: trazer os contatos e as conversas do WhatsApp Business?
+   * `null` = o dono ainda não respondeu (o que chega fica esperando).
+   */
+  integrarConversas: boolean | null;
+  integrarDecididoEm: string | null;
 }
 
 export interface ContaWhatsapp {
@@ -307,6 +318,8 @@ export interface ResultadoConexao {
   registrado: boolean;
   /** O número segue também no app do celular. */
   coexistencia: boolean;
+  /** A resposta gravada sobre contatos e conversas. `null` = sem resposta ou número dedicado. */
+  integrarConversas: boolean | null;
   /** O que ainda falta o cliente fazer, já em pt-BR. */
   pendencias: string[];
 }

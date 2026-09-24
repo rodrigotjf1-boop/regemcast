@@ -8,13 +8,18 @@ import { Publico } from '../../common/publico.decorator';
 import { DistTokenGuard } from '../lista-espera/dist-token.guard';
 import { ConcluirSignupDto } from './dto/concluir-signup.dto';
 import { ConectarManualDto } from './dto/conectar-manual.dto';
+import { IntegrarDto } from './dto/integrar.dto';
 import { RegistrarNumeroDto } from './dto/registrar-numero.dto';
+import { AgendaService } from './agenda.service';
 import { MetaService } from './meta.service';
 
 @ApiTags('WhatsApp')
 @Controller('whatsapp')
 export class MetaController {
-  constructor(private readonly servico: MetaService) {}
+  constructor(
+    private readonly servico: MetaService,
+    private readonly agenda: AgendaService,
+  ) {}
 
   /** O que o front precisa para abrir o Embedded Signup. Nada aqui é segredo. */
   @Get('config')
@@ -78,5 +83,18 @@ export class MetaController {
   @UseGuards(DonoGuard)
   registrarNumero(@UsuarioAtual() usuario: UsuarioAutenticado, @Body() dto: RegistrarNumeroDto) {
     return this.servico.registrarNumero(usuario.contaId, usuario.id, dto.phoneNumberId, dto.pin);
+  }
+
+  /**
+   * Coexistência: trazer, ou não, os contatos e as conversas do WhatsApp
+   * Business deste número.
+   *
+   * Só o dono responde: a resposta vem com a declaração de que a agenda pode
+   * receber mensagens da empresa, e essa declaração é dele.
+   */
+  @Post('integrar')
+  @UseGuards(DonoGuard)
+  integrar(@UsuarioAtual() usuario: UsuarioAutenticado, @Body() dto: IntegrarDto) {
+    return this.agenda.decidir(usuario.contaId, usuario.id, dto.phoneNumberId, dto.integrar);
   }
 }
