@@ -16,6 +16,7 @@ import { AvisoModule } from './modules/aviso/aviso.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ContaModule } from './modules/conta/conta.module';
 import { ContatoModule } from './modules/contato/contato.module';
+import { ConversaModule } from './modules/conversa/conversa.module';
 import { ListaEsperaModule } from './modules/lista-espera/lista-espera.module';
 import { CampanhaModule } from './modules/campanha/campanha.module';
 import { CardapiowebModule } from './modules/cardapioweb/cardapioweb.module';
@@ -72,6 +73,7 @@ import { CobrancaModule } from './modules/cobranca/cobranca.module';
     MetaModule,
     CampanhaModule,
     ContatoModule,
+    ConversaModule,
     CardapiowebModule,
     ModeloModule,
     MidiaModule,

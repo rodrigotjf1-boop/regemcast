@@ -33,6 +33,8 @@ import type { SituacaoCardapioWeb, Segmento, ResumoSegmentos, ParametrosSegmenta
   NovaCampanha,
   ResumoCampanha,
   Conta,
+  ConversaResumo,
+  MensagemDaConversa,
   ResumoConta,
   Sessao,
   SessaoCriada,
@@ -348,6 +350,13 @@ export const contatos = {
   criarLista: (nome: string, descricao?: string) =>
     api.post<{ id: string }>('/contatos/listas', { nome, descricao }),
 
+  /** `POST /contatos/:id/listas` — põe o contato numa lista (a partir da conversa). */
+  adicionarNaLista: (contatoId: string, listaId: string) =>
+    api.post<{ ok: true; jaEstava: boolean; lista: string }>(
+      `/contatos/${encodeURIComponent(contatoId)}/listas`,
+      { listaId },
+    ),
+
   /** `DELETE /contatos/:id` — marca como descadastrado; não apaga. */
   descadastrar: (id: string) => api.delete<{ ok: boolean }>(`/contatos/${id}`),
 };
@@ -588,4 +597,38 @@ export const distribuicao = {
     api.patch<{ ok: boolean; campanhasRetomadas: number }>('/distribuicao/planos/' + id, dados, SEM_REDIRECT_DIST),
   telemetria: (dias = 7) =>
     api.get<TelemetriaDoConsole>(`/distribuicao/telemetria?dias=${dias}`, SEM_REDIRECT_DIST),
+};
+
+/** A tela de conversas (coexistência com "sim"). O servidor recusa se não estiver ligada. */
+export const conversas = {
+  /** `GET /conversas` — as conversas, a mais recente primeiro. */
+  listar: (busca?: string, sinal?: AbortSignal) =>
+    api.get<ConversaResumo[]>(`/conversas${busca?.trim() ? `?busca=${encodeURIComponent(busca.trim())}` : ''}`, { sinal }),
+
+  /** `GET /conversas/:id` */
+  detalhe: (id: string, sinal?: AbortSignal) => api.get<ConversaResumo>(`/conversas/${id}`, { sinal }),
+
+  /** `GET /conversas/:id/mensagens` — `antesDe` pede a página anterior. */
+  mensagens: (id: string, antesDe?: string, sinal?: AbortSignal) =>
+    api.get<MensagemDaConversa[]>(
+      `/conversas/${id}/mensagens${antesDe ? `?antesDe=${encodeURIComponent(antesDe)}` : ''}`,
+      { sinal },
+    ),
+
+  /** `POST /conversas/:id/lida` */
+  marcarLida: (id: string) => api.post<{ ok: true }>(`/conversas/${id}/lida`, {}),
+
+  /** `POST /conversas/:id/mensagens` — texto livre, só dentro da janela de 24 h. */
+  responder: (id: string, texto: string) => api.post<MensagemDaConversa>(`/conversas/${id}/mensagens`, { texto }),
+
+  /** Endereço da mídia, para `<img>`, `<audio>` e `<video>` (o cookie vai junto). */
+  enderecoDaMidia: (conversaId: string, mensagemId: string) =>
+    enderecoDaApi(`/conversas/${conversaId}/mensagens/${mensagemId}/midia`),
+
+  /** `GET /conversas/config` */
+  configuracao: () => api.get<{ retencaoDias: number }>('/conversas/config'),
+
+  /** `PATCH /conversas/config` — só o dono. */
+  salvarConfiguracao: (retencaoDias: number) =>
+    api.patch<{ retencaoDias: number }>('/conversas/config', { retencaoDias }),
 };

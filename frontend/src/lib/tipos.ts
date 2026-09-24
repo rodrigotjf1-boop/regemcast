@@ -83,6 +83,48 @@ export interface ResumoConta {
   plano: Plano | null;
   assinatura: Assinatura | null;
   uso: UsoCiclo;
+  /** Algum número guarda conversas (coexistência com "sim"): mostra o menu Conversas. */
+  conversasHabilitadas: boolean;
+}
+
+// ------------------------------------------------------------------ conversas
+
+/** `GET /conversas` — uma conversa na lista. */
+export interface ConversaResumo {
+  id: string;
+  telefone: string;
+  /** Nome do contato na base; sem ele, o do perfil no WhatsApp. */
+  nome: string | null;
+  contatoId: string | null;
+  /** Pediu para sair das promoções — ainda pode receber resposta. */
+  optOut: boolean;
+  naoLidas: number;
+  ultimaMensagem: string | null;
+  ultimaMensagemEm: string | null;
+  /** Até quando dá para responder com texto livre. `null` = janela fechada. */
+  janelaAteEm: string | null;
+  /** O número da empresa desta conversa. */
+  numero: string | null;
+}
+
+/** `GET /conversas/:id/mensagens` — uma mensagem. */
+export interface MensagemDaConversa {
+  id: string;
+  direcao: 'entrada' | 'saida';
+  /** cliente | celular | painel | historico | campanha */
+  origem: string;
+  tipo: string;
+  texto: string | null;
+  temMidia: boolean;
+  midiaMime: string | null;
+  midiaNome: string | null;
+  /** Só saída: enviando | enviada | entregue | lida | falhou */
+  status: string | null;
+  erroCodigo: number | null;
+  erroTitulo: string | null;
+  /** Quem respondeu pelo painel. */
+  enviadaPor: string | null;
+  criadaEm: string;
 }
 
 /** `UsuarioResumo` (GET /conta/usuarios). */

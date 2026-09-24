@@ -106,6 +106,12 @@ export class ErroGraph extends Error {
   }
 }
 
+/**
+ * Falha ao abrir uma mídia recebida. A mensagem já vem em português, pronta
+ * para a tela: quem chama traduz para 4xx em vez de deixar virar 500.
+ */
+export class ErroMidia extends Error {}
+
 interface OpcoesChamada {
   metodo?: 'GET' | 'POST' | 'DELETE';
   corpo?: unknown;
@@ -402,6 +408,107 @@ export class GraphService {
       });
     }
     return wamid;
+  }
+
+  /**
+   * Resposta de texto livre, na conversa.
+   *
+   * A Meta só aceita dentro da janela de 24 horas aberta pela última mensagem
+   * do cliente; fora dela, recusa com 131047 — quem chama confere a janela
+   * antes, e o erro traduzido cobre o resto. `tentativas: 0` pelo mesmo motivo
+   * do `enviarModelo`: retentar no request duplica mensagem.
+   */
+  async enviarTexto(
+    phoneNumberId: string,
+    dados: { para: string; texto: string },
+    tokenDoCliente: string,
+  ): Promise<string> {
+    const r = await this.chamar<{ messages?: Array<{ id?: string }> }>(`${phoneNumberId}/messages`, {
+      metodo: 'POST',
+      token: tokenDoCliente,
+      corpo: {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: dados.para,
+        type: 'text',
+        text: { body: dados.texto, preview_url: false },
+      },
+      tentativas: 0,
+    });
+    const wamid = r.messages?.[0]?.id;
+    if (!wamid) {
+      throw new ErroGraph({
+        status: 200,
+        codigo: null,
+        traduzido: {
+          codigo: 0,
+          classe: 'transitorio',
+          titulo: 'A Meta aceitou sem devolver o identificador',
+          explicacao: 'A Meta respondeu sem o identificador da mensagem. Confira no celular se ela chegou antes de mandar de novo.',
+          esperaSegundos: 30,
+        },
+        corpo: r,
+      });
+    }
+    return wamid;
+  }
+
+  /**
+   * Os bytes de uma mídia recebida (foto, áudio, documento).
+   *
+   * Dois passos, como a Meta manda: o id devolve um endereço temporário, e o
+   * endereço só entrega o arquivo com o token do cliente no cabeçalho. O
+   * endereço é conferido contra os domínios da Meta — nada de seguir para onde
+   * uma resposta adulterada mandasse — e o tamanho tem teto: o arquivo passa
+   * pela memória do servidor.
+   */
+  async baixarMidia(
+    midiaId: string,
+    tokenDoCliente: string,
+    tetoBytes: number,
+  ): Promise<{ conteudo: Buffer; tipoMime: string }> {
+    const meta = await this.chamar<{ url?: string; mime_type?: string; file_size?: number }>(
+      encodeURIComponent(midiaId),
+      { token: tokenDoCliente },
+    );
+
+    const endereco = typeof meta.url === 'string' ? new URL(meta.url) : null;
+    const dominioDaMeta = (h: string) =>
+      ['fbsbx.com', 'facebook.com', 'whatsapp.net', 'fbcdn.net'].some((d) => h === d || h.endsWith(`.${d}`));
+    if (!endereco || endereco.protocol !== 'https:' || !dominioDaMeta(endereco.hostname)) {
+      throw new ErroMidia('A Meta não devolveu um endereço válido para esta mídia.');
+    }
+    if (typeof meta.file_size === 'number' && meta.file_size > tetoBytes) {
+      throw new ErroMidia('Arquivo grande demais para abrir aqui. Veja no WhatsApp Business do celular.');
+    }
+
+    let resposta: Response;
+    try {
+      resposta = await fetch(endereco, {
+        headers: { Authorization: `Bearer ${tokenDoCliente}` },
+        redirect: 'error',
+        signal: AbortSignal.timeout(TIMEOUT_PADRAO_MS),
+      });
+    } catch {
+      throw new ErroMidia('Não consegui baixar a mídia da Meta agora. Tente de novo em instantes.');
+    }
+    if (!resposta.ok) {
+      throw new ErroMidia(
+        resposta.status === 404
+          ? 'Esta mídia não está mais disponível na Meta.'
+          : 'Não consegui baixar a mídia da Meta agora. Tente de novo em instantes.',
+      );
+    }
+    // O tamanho declarado é conferido ANTES de ler o corpo inteiro para a memória.
+    if (Number(resposta.headers.get('content-length')) > tetoBytes) {
+      throw new ErroMidia('Arquivo grande demais para abrir aqui. Veja no WhatsApp Business do celular.');
+    }
+
+    const conteudo = Buffer.from(await resposta.arrayBuffer());
+    if (conteudo.length > tetoBytes) {
+      throw new ErroMidia('Arquivo grande demais para abrir aqui. Veja no WhatsApp Business do celular.');
+    }
+    return { conteudo, tipoMime: meta.mime_type ?? resposta.headers.get('content-type') ?? 'application/octet-stream' };
   }
 
   /**

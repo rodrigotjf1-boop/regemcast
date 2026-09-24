@@ -53,6 +53,16 @@ export function IconeConversa(p: Props) {
   );
 }
 
+/** Conversas: dois balões, um respondendo o outro. */
+export function IconeBalao(p: Props) {
+  return (
+    <Base {...p}>
+      <path d="M15 9.5a5.5 5.5 0 0 1-8 4.9L3.5 15.5l1-3.2A5.5 5.5 0 1 1 15 9.5Z" />
+      <path d="M17.6 8.3A5.5 5.5 0 0 1 19.5 17l1 3.2-3.5-1.1a5.5 5.5 0 0 1-6.3-1.4" />
+    </Base>
+  );
+}
+
 /** Modelos: um documento com linhas. */
 export function IconeModelo(p: Props) {
   return (
@@ -159,6 +169,16 @@ export function IconeCheck(p: Props) {
   return (
     <Base {...p}>
       <path d="m5 12.5 4.5 4.5L19 7.5" />
+    </Base>
+  );
+}
+
+/** Dois tiques: entregue (e, destacado, lida). */
+export function IconeCheckDuplo(p: Props) {
+  return (
+    <Base {...p}>
+      <path d="m2.5 12.5 4.5 4.5 9.5-9.5" />
+      <path d="m11.5 16.5.5.5 9.5-9.5" />
     </Base>
   );
 }
