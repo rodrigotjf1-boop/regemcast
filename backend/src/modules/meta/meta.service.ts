@@ -28,6 +28,8 @@ import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
 import { conta, waConta, waNumero } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { DECLARACAO_INTEGRACAO } from './agenda.regras';
+import { AgendaService } from './agenda.service';
 import { cifrarToken, decifrarToken } from './cripto';
 import { ErroGraph, GraphService, type ModeloBruto } from './graph.service';
 
@@ -42,6 +44,11 @@ export interface DadosDoSignup {
   phoneNumberId?: string;
   /** true quando o cliente escolheu manter o WhatsApp Business no celular. */
   coexistencia?: boolean;
+  /**
+   * Coexistência: trazer os contatos e as conversas? Ausente = sem resposta
+   * (o cartão do número pergunta depois), nunca "não".
+   */
+  integrar?: boolean;
 }
 
 /** O que `conectarComToken` precisa, venha o token de onde vier. */
@@ -56,6 +63,8 @@ interface ParametrosConexao {
   coexistencia: boolean;
   /** O número já está registrado na Cloud API; pular o `/register`. */
   jaRegistrado: boolean;
+  /** Resposta da tela de conexão sobre contatos e conversas. `null` = não respondeu. */
+  integrar: boolean | null;
 }
 
 export interface ResultadoOnboarding {
@@ -67,6 +76,8 @@ export interface ResultadoOnboarding {
   registrado: boolean;
   /** true quando o numero tambem segue no app do celular. */
   coexistencia: boolean;
+  /** A resposta gravada sobre contatos e conversas. `null` = sem resposta ou número dedicado. */
+  integrarConversas: boolean | null;
   /** O que ainda falta o cliente fazer, em pt-BR. */
   pendencias: string[];
 }
@@ -251,10 +262,16 @@ export class MetaService {
     private readonly ctx: ContextoDb,
     private readonly graph: GraphService,
     private readonly auditoria: AuditoriaService,
+    private readonly agenda: AgendaService,
   ) {}
 
-  /** O que o front precisa para abrir o Embedded Signup. Nada aqui é segredo. */
-  configDoSignup(): { appId: string; configId: string; graphVersao: string } {
+  /**
+   * O que o front precisa para abrir o Embedded Signup. Nada aqui é segredo.
+   *
+   * A declaração da coexistência vem daqui para a tela mostrar exatamente o
+   * texto que a auditoria grava quando o dono responde "sim".
+   */
+  configDoSignup(): { appId: string; configId: string; graphVersao: string; declaracaoIntegracao: string } {
     if (!env.meta.appId || !env.meta.configId) {
       throw new BadRequestException(
         'A conexão com o WhatsApp ainda não está configurada no servidor. Fale com o suporte do Regemcast.',
@@ -264,6 +281,7 @@ export class MetaService {
       appId: env.meta.appId,
       configId: env.meta.configId,
       graphVersao: env.meta.graphVersao,
+      declaracaoIntegracao: DECLARACAO_INTEGRACAO,
     };
   }
 
@@ -311,6 +329,8 @@ export class MetaService {
       // No Embedded Signup nunca sabemos de antemão: o registro é tentado e o
       // erro, se houver, vira pendência com instrução.
       jaRegistrado: false,
+      // Só `true`/`false` explícitos contam como resposta. Ausente não é "não".
+      integrar: typeof dados.integrar === 'boolean' ? dados.integrar : null,
     });
   }
 
@@ -373,6 +393,7 @@ export class MetaService {
         // temos. Número de teste é sempre dedicado.
         coexistencia: false,
         jaRegistrado: dados.jaRegistrado === true,
+        integrar: null,
       }),
     );
   }
@@ -469,10 +490,20 @@ export class MetaService {
 
     if (numero && coexistencia) {
       /*
+       * A resposta sobre contatos e conversas é gravada ANTES do pedido de
+       * sincronização: a agenda só começa a chegar depois desse pedido. Sem
+       * resposta, o que chegar fica guardado até o dono responder no cartão.
+       */
+      if (p.integrar !== null) {
+        await this.agenda.decidirNaConexao(this.ctx.db, numero.id, p.integrar, atorUsuarioId);
+      }
+
+      /*
        * Coexistência: o número JÁ está registrado, pelo app do celular.
        * Chamar /register aqui dá erro. Em vez disso, o que a Meta exige é
        * sincronizar os dados do app — e há prazo: 24 horas, ou ela desfaz a
-       * conexão e o cliente refaz tudo.
+       * conexão e o cliente refaz tudo. O pedido sai SEMPRE, mesmo com
+       * "não": a resposta do dono decide o que guardamos, não se pedimos.
        */
       registrado = true;
       await this.iniciarSincronizacao(numero.id, idDoNumero!, token, pendencias);
@@ -547,6 +578,7 @@ export class MetaService {
       nome: waba.name ?? null,
       registrado,
       coexistencia,
+      integrarConversas: numero && coexistencia ? p.integrar : null,
       pendencias,
     };
   }
@@ -723,6 +755,9 @@ export class MetaService {
         sincronizacao: waNumero.sincronizacao,
         sincronizacaoEm: waNumero.sincronizacaoEm,
         onboardadoEm: waNumero.onboardadoEm,
+        // Coexistência: a resposta sobre contatos e conversas (null = não respondeu).
+        integrarConversas: waNumero.integrarConversas,
+        integrarDecididoEm: waNumero.integrarDecididoEm,
       })
       .from(waNumero)
       .where(eq(waNumero.contaId, contaId));

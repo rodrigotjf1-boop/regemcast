@@ -68,6 +68,26 @@ export function paraCloudApi(bruto: unknown): TelefoneDeEnvio {
 }
 
 /**
+ * Número como a META manda (`wa_id`, `from`, a agenda da coexistência) no
+ * formato em que o `contato` guarda.
+ *
+ * Celular brasileiro cadastrado no WhatsApp antes do 9º dígito chega com 12
+ * dígitos: `55 21 8975-1705`. A Meta entrega nos dois formatos, mas o contato
+ * guarda com o 9. `paraCloudApi` aceita o de 12 como está (pelo formato, a
+ * biblioteca não distingue celular antigo de fixo) — então, sem esta correção,
+ * a mesma pessoa viraria dois contatos: um com o 9, outro sem.
+ *
+ * Só mexe no que é inequívoco: DDI 55, 12 dígitos e primeiro dígito do número
+ * entre 6 e 9 (faixa de celular). Fixo (2 a 5) e número de fora passam como
+ * vieram. Devolve só dígitos; a validação continua sendo a de `paraCloudApi`.
+ */
+export function doWhatsapp(bruto: unknown): string {
+  const digitos = String(bruto ?? '').replace(/\D/g, '');
+  if (/^55\d{2}[6-9]\d{7}$/.test(digitos)) return `${digitos.slice(0, 4)}9${digitos.slice(4)}`;
+  return digitos;
+}
+
+/**
  * Esconde o miolo do número para log e auditoria: `+5511*****4321`.
  * Nunca registramos o telefone inteiro.
  */

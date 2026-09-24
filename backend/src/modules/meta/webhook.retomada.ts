@@ -19,6 +19,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 
+import { AgendaService } from './agenda.service';
 import { WebhookService } from './webhook.service';
 
 const INTERVALO_MS = 60_000;
@@ -28,13 +29,26 @@ export class WebhookRetomada {
   private readonly log = new Logger('MetaWebhook');
   private rodando = false;
 
-  constructor(private readonly servico: WebhookService) {}
+  constructor(
+    private readonly servico: WebhookService,
+    private readonly agenda: AgendaService,
+  ) {}
 
   @Interval(INTERVALO_MS)
   async retomar(): Promise<void> {
     if (this.rodando) return;
     this.rodando = true;
     try {
+      // Antes de processar: a agenda que chegou antes da resposta do dono volta
+      // para a fila agora que a resposta existe (ver `AgendaService.reenfileirar`).
+      // Falhar aqui não pode impedir o processamento dos pendentes logo abaixo.
+      const devolvidos = await this.agenda.reenfileirar().catch((erro: unknown) => {
+        this.log.error(`Retomada da agenda falhou: ${(erro as Error)?.message ?? String(erro)}`);
+        return 0;
+      });
+      if (devolvidos > 0) {
+        this.log.log(`Retomada: ${devolvidos} evento(s) da agenda do celular voltaram para a fila.`);
+      }
       const tratados = await this.servico.processarPendentes();
       if (tratados > 0) {
         this.log.log(`Retomada: ${tratados} evento(s) que estavam pendentes foram processados.`);

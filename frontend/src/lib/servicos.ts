@@ -207,6 +207,8 @@ export interface DadosConexao {
   phoneNumberId?: string;
   /** O cliente escolheu manter o WhatsApp Business no celular. */
   coexistencia?: boolean;
+  /** Coexistência: trazer os contatos e as conversas. Ausente = sem resposta. */
+  integrar?: boolean;
 }
 
 /** Corpo de `POST /whatsapp/registrar-numero` (RegistrarNumeroDto). */
@@ -262,6 +264,13 @@ export const whatsapp = {
   /** `POST /whatsapp/registrar-numero` */
   registrarNumero: (dados: DadosRegistroNumero) =>
     api.post<{ registrado: boolean; mensagem: string }>('/whatsapp/registrar-numero', dados),
+
+  /** `POST /whatsapp/integrar` — só o dono: trazer, ou não, contatos e conversas. */
+  integrar: (phoneNumberId: string, integrar: boolean) =>
+    api.post<{ phoneNumberId: string; integrarConversas: boolean }>('/whatsapp/integrar', {
+      phoneNumberId,
+      integrar,
+    }),
 };
 
 /** Conexão com a loja do Cardápio Web: importar a base de clientes. */

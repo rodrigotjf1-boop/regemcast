@@ -41,4 +41,18 @@ export class ConcluirSignupDto {
   @IsOptional()
   @IsBoolean({ message: 'Informe se o número é de coexistência.' })
   coexistencia?: boolean;
+
+  /**
+   * Na coexistência: trazer os contatos e as conversas do WhatsApp Business?
+   *
+   * Opcional porque só existe na coexistência. Ausente NÃO vira "não": fica
+   * sem resposta, e o cartão do número pergunta depois.
+   */
+  @ApiProperty({
+    required: false,
+    description: 'Coexistência: guardar os contatos e as conversas do WhatsApp Business.',
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'Responda se quer trazer os contatos e as conversas.' })
+  integrar?: boolean;
 }

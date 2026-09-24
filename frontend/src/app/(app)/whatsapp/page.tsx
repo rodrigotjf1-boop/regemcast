@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { ConectarWhatsapp } from '@/components/app/conectar-whatsapp';
 import { IconeCelular, IconeConversa, IconeEscudo, IconeRaio } from '@/components/app/icones';
+import { IntegracaoDoNumero } from '@/components/app/integracao-do-numero';
+import { useSessao } from '@/components/app/sessao';
 import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
@@ -35,6 +37,8 @@ const TOM_QUALIDADE: Record<QualidadeNumero, { tom: 'sucesso' | 'atencao' | 'err
 };
 
 export default function PaginaWhatsapp() {
+  const { sessao } = useSessao();
+  const dono = sessao.usuario.papel === 'dono';
   const [situacao, setSituacao] = useState<SituacaoWhatsapp | null>(null);
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(true);
@@ -57,6 +61,16 @@ export default function PaginaWhatsapp() {
   useEffect(() => {
     void carregar();
   }, [carregar]);
+
+  // Depois de uma resposta no cartão: relê sem o esqueleto, para a tela não
+  // piscar nem apagar o aviso de "resposta salva". Se falhar, fica o que está.
+  const atualizar = useCallback(async () => {
+    try {
+      setSituacao(await whatsapp.situacao());
+    } catch {
+      /* mantém o que está na tela */
+    }
+  }, []);
 
   return (
     <div className="space-y-6 lg:space-y-8">
@@ -128,7 +142,12 @@ export default function PaginaWhatsapp() {
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             {situacao.numeros.map((n) => (
-              <CartaoNumero key={n.phoneNumberId} numero={n} />
+              <CartaoNumero
+                key={n.phoneNumberId}
+                numero={n}
+                podeResponder={dono}
+                aoMudar={() => void atualizar()}
+              />
             ))}
           </div>
         </div>
@@ -137,7 +156,15 @@ export default function PaginaWhatsapp() {
   );
 }
 
-function CartaoNumero({ numero }: { numero: NumeroWhatsapp }) {
+function CartaoNumero({
+  numero,
+  podeResponder,
+  aoMudar,
+}: {
+  numero: NumeroWhatsapp;
+  podeResponder: boolean;
+  aoMudar: () => void;
+}) {
   const q = TOM_QUALIDADE[numero.qualidade];
 
   return (
@@ -203,6 +230,10 @@ function CartaoNumero({ numero }: { numero: NumeroWhatsapp }) {
         </div>
 
         <EstadoSincronizacao numero={numero} />
+
+        {numero.coexistencia && (
+          <IntegracaoDoNumero numero={numero} podeResponder={podeResponder} aoMudar={aoMudar} />
+        )}
 
         {/*
           Lembrete permanente, não aviso de uma vez só: a Meta derruba a conexão

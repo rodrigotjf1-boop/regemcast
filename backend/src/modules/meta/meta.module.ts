@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { DrizzleModule } from '../../db/drizzle.module';
 import { DistTokenGuard } from '../lista-espera/dist-token.guard';
+import { AgendaService } from './agenda.service';
 import { CoexistenciaJob } from './coexistencia.job';
 import { GraphService } from './graph.service';
 import { MetaController } from './meta.controller';
@@ -13,7 +14,15 @@ import { WebhookService } from './webhook.service';
 @Module({
   imports: [DrizzleModule],
   controllers: [MetaController, WebhookController],
-  providers: [MetaService, GraphService, WebhookService, WebhookRetomada, CoexistenciaJob, DistTokenGuard],
+  providers: [
+    MetaService,
+    GraphService,
+    AgendaService,
+    WebhookService,
+    WebhookRetomada,
+    CoexistenciaJob,
+    DistTokenGuard,
+  ],
   exports: [MetaService, GraphService],
 })
 export class MetaModule {}
