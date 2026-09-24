@@ -93,8 +93,8 @@ caber em um deles:
 | `whatsapp.conectar-manual` | `meta.service.ts` | A rota é da distribuição e não tem sessão: o operador informa qual conta está conectando, e antes de qualquer chamada à Meta é preciso confirmar que ela existe. Dura o `select` e acaba — a gravação acontece em `comConta`. |
 | `coexistencia.fila` | `coexistencia.job.ts` | Lê a fila de números com sincronização pendente, de todas as contas. A ação em cima de cada um acontece em `comConta`, dentro do `MetaService`, que é onde o token daquele cliente pode ser lido. |
 | `meta.agenda.lote` | `agenda.service.ts` | Um lote da agenda do celular (`smb_app_state_sync`) chega identificado pelo número. A transação acha o número, trava a linha e grava os contatos **daquela** conta — todo `insert`/`update` leva o `conta_id` do número achado. |
-| `meta.agenda.historico` | `agenda.service.ts` | O histórico (`history`) chega pelo número; lê só a resposta do dono sobre contatos e conversas, para decidir se o conteúdo do evento fica ou é esvaziado. |
-| `meta.agenda.reenfileirar` | `agenda.service.ts` | A retomada devolve à fila os eventos que chegaram antes da resposta do dono. É um `update` em `wa_evento` (tabela `rc_sistema`) cruzado com `wa_numero` de todas as contas — e só pega números com resposta dos últimos 7 dias. |
+| `meta.conversas.historico` / `.ecos` / `.recebidas` | `conversas.service.ts` | Histórico, ecos do celular e mensagens ao vivo chegam pelo número. A transação acha o número, trava a linha e grava conversas e mensagens **daquela** conta — todo `insert`/`update` leva o `conta_id` do número achado. |
+| `meta.agenda.reenfileirar` | `agenda.service.ts` | A retomada devolve à fila os lotes de agenda e histórico guardados de números que já têm resposta. É um `update` em `wa_evento` (tabela `rc_sistema`) cruzado com `wa_numero` de todas as contas — a cada minuto só números com resposta dos últimos 7 dias; na subida do servidor, sem janela. |
 
 **(B) O registro precisa sobreviver ao rollback da operação.**
 

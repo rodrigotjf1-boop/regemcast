@@ -23,6 +23,7 @@ import { AvisoService } from '../aviso/aviso.service';
 import { campanhaDestinatario, modelo, waEvento, waNumero } from '../../db/schema';
 import type { DestinoDoEvento } from './agenda.regras';
 import { AgendaService } from './agenda.service';
+import { ConversasService } from './conversas.service';
 import { historicoRecusado, sincronizacaoConcluida } from './coexistencia.regras';
 import { codigoDoErro, mensagemDoErroMeta, traduzirErroMeta } from './erros-meta';
 
@@ -137,6 +138,7 @@ export class WebhookService {
     private readonly auditoria: AuditoriaService,
     private readonly avisos: AvisoService,
     private readonly agenda: AgendaService,
+    private readonly conversas: ConversasService,
   ) {}
 
   /** Grava cada mudança do payload como um evento próprio. */
@@ -222,8 +224,13 @@ export class WebhookService {
       case 'business_capability_update':
       case 'messaging_limit_update':
         return this.limiteDoNumero(mudanca);
-      case 'messages':
-        return this.mensagens(mudanca);
+      case 'messages': {
+        // Primeiro o de sempre (pedido de saída, status de campanha), que não
+        // depende da conversa; depois a conversa, se o número guarda.
+        await this.mensagens(mudanca);
+        const phoneNumberId = this.phoneNumberIdDe(mudanca);
+        return phoneNumberId ? this.conversas.recebidas(phoneNumberId, mudanca.value ?? {}) : undefined;
+      }
       case 'account_update':
       case 'account_review_update':
         return this.contaAtualizada(mudanca);
@@ -579,29 +586,24 @@ export class WebhookService {
     return this.agenda.aplicarLote(phoneNumberId, itens);
   }
 
-  /**
-   * O histórico de conversas. A gravação das conversas é a próxima etapa;
-   * até lá, o lote espera — só o "não" do dono o esvazia já.
-   */
+  /** O histórico de conversas: vira conversa, conforme a resposta do dono (`ConversasService`). */
   private async historicoDoApp(m: Mudanca): Promise<DestinoDoEvento | void> {
     const phoneNumberId = this.phoneNumberIdDe(m);
     if (!phoneNumberId) return;
-    return this.agenda.destinoDoHistorico(phoneNumberId);
+    return this.conversas.historico(phoneNumberId, m.value ?? {});
   }
 
   /**
-   * Eco de mensagem: o cliente respondeu alguém pelo app do celular.
+   * Eco de mensagem: o lojista respondeu alguém pelo aplicativo do celular.
    *
-   * Por ora só registramos. Na Fase 4 isto passa a importar de verdade: uma
-   * resposta do próprio lojista abre a janela de 24 horas com aquele contato, e
-   * o motor precisa saber disso para escolher entre modelo aprovado e texto
-   * livre.
+   * Entra na conversa como resposta (e zera as não lidas dela). NÃO abre a
+   * janela de 24 horas: quem abre é a mensagem do cliente, e é dela que
+   * `conversa.ultima_entrada_em` conta.
    */
-  private async ecoDeMensagem(m: Mudanca): Promise<void> {
+  private async ecoDeMensagem(m: Mudanca): Promise<DestinoDoEvento | void> {
     const phoneNumberId = this.phoneNumberIdDe(m);
-    this.log.debug(
-      `Eco de mensagem do app no número ${phoneNumberId ? this.mascarar(phoneNumberId) : '?'}.`,
-    );
+    if (!phoneNumberId) return;
+    return this.conversas.ecos(phoneNumberId, m.value ?? {});
   }
 
   private async marcarSincronizacao(

@@ -4,6 +4,7 @@ import { DrizzleModule } from '../../db/drizzle.module';
 import { DistTokenGuard } from '../lista-espera/dist-token.guard';
 import { AgendaService } from './agenda.service';
 import { CoexistenciaJob } from './coexistencia.job';
+import { ConversasService } from './conversas.service';
 import { GraphService } from './graph.service';
 import { MetaController } from './meta.controller';
 import { MetaService } from './meta.service';
@@ -18,6 +19,7 @@ import { WebhookService } from './webhook.service';
     MetaService,
     GraphService,
     AgendaService,
+    ConversasService,
     WebhookService,
     WebhookRetomada,
     CoexistenciaJob,

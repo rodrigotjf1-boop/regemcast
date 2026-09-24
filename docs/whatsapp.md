@@ -150,11 +150,37 @@ A resposta fica **por número** (`wa_numero.integrar_conversas`, migration 023) 
 pedido de sincronização — ou depois, no cartão do número (`POST
 /whatsapp/integrar`, só o dono).
 
-| Resposta | Agenda (`smb_app_state_sync`) | Histórico (`history`) |
-|---|---|---|
-| sem resposta | guardada como chegou, esperando | guardado |
-| sim | vira contato e entra na lista "WhatsApp Business"; o conteúdo sai do evento | guardado para a gravação das conversas |
-| não | o conteúdo sai do evento | o conteúdo sai do evento |
+| Resposta | Agenda (`smb_app_state_sync`) | Histórico (`history`) | Ao vivo (`messages`) e ecos (`smb_message_echoes`) |
+|---|---|---|---|
+| sem resposta | guardada como chegou, esperando | guardado, esperando | seguem como sempre (não viram conversa) |
+| sim | vira contato na lista "WhatsApp Business"; o conteúdo sai do evento | vira conversa; o conteúdo sai do evento | viram conversa; o conteúdo sai do evento |
+| não | o conteúdo sai do evento | o conteúdo sai do evento | o conteúdo sai do evento |
+
+### As conversas (migration 024)
+
+Com "sim", tudo o que é conversa vai para `conversa` (número da empresa ×
+pessoa) e `mensagem` — gravado em
+[`conversas.service.ts`](../backend/src/modules/meta/conversas.service.ts), a
+leitura dos formatos da Meta em
+[`conversas.regras.ts`](../backend/src/modules/meta/conversas.regras.ts):
+
+- **histórico** — direção pelo remetente (`from` = cliente da thread → entrada);
+  status de `history_context.status`; data ORIGINAL da mensagem;
+- **mídia recente** — chega num aviso `history` à parte (`value.messages[]`),
+  com o MESMO wamid: preenche a mídia da mensagem que já existe, sem duplicar;
+- **ao vivo** — o cliente escreveu; o nome do perfil vem de `contacts`;
+- **ecos** — o lojista respondeu pelo celular (`to` = cliente): conta como
+  resposta e zera as não lidas;
+- **status** das respostas — só andam para frente (entregue atrasado não desfaz lida).
+
+Não lidas = mensagens do cliente AO VIVO depois da última resposta (histórico
+é passado e não conta). A janela de 24h de texto livre conta da última
+mensagem **do cliente** (`conversa.ultima_entrada_em`). Tudo em comandos por
+conjunto, com o número travado durante a gravação.
+
+O histórico guardado antes desta gravação existir volta à fila na subida do
+servidor (`AgendaService.reenfileirar({ semJanela: true })`), com o índice
+`idx_wa_evento_sincronizacao` (migration 025) mantendo a varredura barata.
 
 **Por que nada é decidido com resposta que ainda não existe:** a agenda pode
 chegar antes de o dono responder, ou antes de a transação da conexão terminar.
@@ -251,9 +277,10 @@ clássico.
   escrita. Verificação de Negócio e Verificação de Acesso já estão aprovadas.
 - **Vazão de 20 mps** respeitada pelo motor de disparo (Fase 4). O valor já
   está gravado e exposto em `vazaoMaxima`; falta quem o obedeça.
-- **Janela de 24h de atendimento**: o eco (`smb_message_echoes`) de uma resposta
-  do lojista abre a janela com aquele contato. Hoje só registramos; na Fase 4 o
-  motor usa isso para escolher entre modelo aprovado e texto livre.
+- **Janela de 24h de atendimento**: quem abre a janela é a mensagem do
+  **cliente**, não a resposta do lojista (o eco não abre nada). A conversa já
+  guarda `ultima_entrada_em`; a tela de conversas usa isso para escolher entre
+  texto livre e modelo aprovado.
 
 ## Fontes
 
