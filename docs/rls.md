@@ -87,7 +87,8 @@ caber em um deles:
 | `auth.convite.aceitar` | `auth.service.ts` | É a transação que **cria** a conta. |
 | `lista-espera.*` (5 usos) | `lista-espera.service.ts` | `lista_espera` vive antes da conta e tem policy `rc_sistema`: nenhuma linha dela pertence a uma conta. |
 | `meta.webhook.*` (7 usos) | `webhook.service.ts` | O webhook da Meta chega identificado por `phone_number_id`, não por conta — e chega sem sessão, autenticado só pela assinatura HMAC. Descobrir de quem é aquele número exige enxergar entre contas. |
-| `coexistencia.expirar` | `coexistencia.job.ts` | Varredura entre contas: o job acorda sem sessão para carimbar quem passou das 24 horas da coexistência. Só carimba o estado — regra de negócio nenhuma acontece aqui. |
+| `coexistencia.expirar` | `coexistencia.job.ts` | Varredura entre contas: o job acorda sem sessão para carimbar quem passou das 24 horas da coexistência sem sinal da cópia. Só carimba o estado — regra de negócio nenhuma acontece aqui. |
+| `coexistencia.concluir` | `coexistencia.job.ts` | Mesma varredura, antes de expirar: conclui quem já tem, no registro de eventos (tabela `rc_sistema`), um lote de histórico com 100%. Só carimba o estado. |
 | `meta.webhook.status` | `webhook.service.ts` | O status de entrega chega identificado por `wamid`, não por conta. Encontrar o destinatário exige enxergar entre contas — e a guarda de ordem vai no próprio `where`, então o escopo dura o `update` e acaba. |
 | `whatsapp.conectar-manual` | `meta.service.ts` | A rota é da distribuição e não tem sessão: o operador informa qual conta está conectando, e antes de qualquer chamada à Meta é preciso confirmar que ela existe. Dura o `select` e acaba — a gravação acontece em `comConta`. |
 | `coexistencia.fila` | `coexistencia.job.ts` | Lê a fila de números com sincronização pendente, de todas as contas. A ação em cima de cada um acontece em `comConta`, dentro do `MetaService`, que é onde o token daquele cliente pode ser lido. |
