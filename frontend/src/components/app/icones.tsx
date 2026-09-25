@@ -309,3 +309,24 @@ export function IconeEditar(p: Props) {
     </Base>
   );
 }
+
+/** Blocos: a base fatiada em partes iguais. */
+export function IconeBlocos(p: Props) {
+  return (
+    <Base {...p}>
+      <rect x="3" y="4" width="18" height="4" rx="1.2" />
+      <rect x="3" y="10" width="18" height="4" rx="1.2" />
+      <rect x="3" y="16" width="11" height="4" rx="1.2" />
+    </Base>
+  );
+}
+
+/** Mapa: regiões pelo DDD. */
+export function IconeMapa(p: Props) {
+  return (
+    <Base {...p}>
+      <path d="M12 21s-6.5-5.4-6.5-11a6.5 6.5 0 0 1 13 0c0 5.6-6.5 11-6.5 11Z" />
+      <circle cx="12" cy="10" r="2.3" />
+    </Base>
+  );
+}

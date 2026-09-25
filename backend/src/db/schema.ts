@@ -482,10 +482,41 @@ export const contatoLista = pgTable('contato_lista', {
   contaId: uuid('conta_id').notNull(),
   nome: text('nome').notNull(),
   descricao: text('descricao'),
+  /** O bloco é uma lista comum, marcada com a divisão de onde saiu (migration 028). */
+  divisaoId: uuid('divisao_id'),
+  /** Posição do bloco na divisão, de 1 em diante. Nulo fora de divisão. */
+  bloco: integer('bloco'),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   contaIdx: index('idx_contato_lista_conta').on(t.contaId, t.criadoEm),
+  divisaoIdx: index('idx_contato_lista_divisao').on(t.divisaoId, t.bloco).where(sql`divisao_id is not null`),
+}));
+
+/**
+ * A base dividida em blocos (migration 028). Cada bloco é uma `contato_lista`
+ * com `divisao_id` e `bloco`; aqui fica de onde os blocos saíram e com que
+ * regra. É uma foto do momento da divisão.
+ */
+export const listaDivisao = pgTable('lista_divisao', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contaId: uuid('conta_id').notNull(),
+  nome: text('nome').notNull(),
+  /** lista | importacao | base | perfil | regiao */
+  origem: text('origem').notNull(),
+  origemId: uuid('origem_id'),
+  origemRotulo: text('origem_rotulo'),
+  tamanho: integer('tamanho').notNull(),
+  /** importacao | sorteio | recentes | regiao | valor */
+  ordem: text('ordem').notNull(),
+  soNuncaReceberam: boolean('so_nunca_receberam').notNull().default(false),
+  totalContatos: integer('total_contatos').notNull(),
+  totalBlocos: integer('total_blocos').notNull(),
+  criadaPor: uuid('criada_por'),
+  criadaEm: timestamp('criada_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  contaIdx: index('idx_lista_divisao_conta').on(t.contaId, t.criadaEm),
 }));
 
 /**

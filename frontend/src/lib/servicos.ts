@@ -21,6 +21,10 @@ import type { SituacaoCardapioWeb, Segmento, ResumoSegmentos, ParametrosSegmenta
   ConfirmacaoDaImportacao,
   ConvitePendente,
   ListaDeContatos,
+  DivisaoDeBlocos,
+  OpcoesDeBloco,
+  PedidoDeDivisao,
+  RegioesDaBase,
   PaginaDeContatos,
   PreviaDaImportacao,
   DestinatarioCampanha,
@@ -293,10 +297,25 @@ export const cardapioWeb = {
 
 export const contatos = {
   /** `GET /contatos` */
-  listar: (pagina = 1, porPagina = 50, segmento?: Segmento | null) =>
+  listar: (pagina = 1, porPagina = 50, segmento?: Segmento | null, uf?: string | null) =>
     api.get<PaginaDeContatos>(
-      `/contatos?pagina=${pagina}&porPagina=${porPagina}${segmento ? `&segmento=${segmento}` : ''}`,
+      `/contatos?pagina=${pagina}&porPagina=${porPagina}${segmento ? `&segmento=${segmento}` : ''}${uf ? `&uf=${encodeURIComponent(uf)}` : ''}`,
     ),
+
+  /** `GET /contatos/regioes` — contatos por estado e DDD. */
+  regioes: () => api.get<RegioesDaBase>('/contatos/regioes'),
+
+  /** `GET /contatos/divisoes/opcoes` — tamanhos de bloco liberados pelo limite da Meta. */
+  opcoesDeBloco: () => api.get<OpcoesDeBloco>('/contatos/divisoes/opcoes'),
+
+  /** `GET /contatos/divisoes` — as divisões em blocos, com o resultado de cada bloco. */
+  divisoes: () => api.get<DivisaoDeBlocos[]>('/contatos/divisoes'),
+
+  /** `POST /contatos/divisoes` — cada bloco vira uma lista. */
+  dividir: (pedido: PedidoDeDivisao) => api.post<DivisaoDeBlocos>('/contatos/divisoes', pedido),
+
+  /** `DELETE /contatos/divisoes/:id` — só o dono, e só divisão que nenhuma campanha usou. */
+  apagarDivisao: (id: string) => api.delete<void>(`/contatos/divisoes/${encodeURIComponent(id)}`),
 
   /** `GET /contatos?situacao=bloqueados` — quem pediu para sair. */
   bloqueados: (pagina = 1, porPagina = 50) =>

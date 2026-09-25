@@ -30,6 +30,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { and, count, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 
 import { paraCloudApi } from '../../common/telefone';
+import { gemeoEmSql } from '../../common/telefone-sql';
 import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
 import { assinatura, campanha, campanhaDestinatario, conta, contatoLista, waNumero } from '../../db/schema';
@@ -58,7 +59,7 @@ export const TITULO_DESCADASTRADO = 'Pediu para sair';
  *
  * Confere as DUAS formas do celular brasileiro (com e sem o 9º dígito): a
  * pessoa pode ter pedido para sair numa forma e estar na campanha na outra. É a
- * regra de `gemeoDoCelular` (common/telefone.ts), aqui em SQL.
+ * regra de `gemeoDoCelular` (common/telefone.ts), em SQL (`gemeoEmSql`).
  */
 export async function marcarDescadastrados(db: Executor, filtro: SQL): Promise<void> {
   await db.execute(sql`
@@ -71,15 +72,7 @@ export async function marcarDescadastrados(db: Executor, filtro: SQL): Promise<v
      where ${filtro}
        and d.status = 'pendente'
        and c.conta_id = d.conta_id
-       and c.telefone_e164 in (
-             d.telefone_e164,
-             case
-               when d.telefone_e164 ~ '^55[0-9]{2}9[6-9][0-9]{7}$'
-                 then substr(d.telefone_e164, 1, 4) || substr(d.telefone_e164, 6)
-               when d.telefone_e164 ~ '^55[0-9]{2}[6-9][0-9]{7}$'
-                 then substr(d.telefone_e164, 1, 4) || '9' || substr(d.telefone_e164, 5)
-             end
-           )
+       and c.telefone_e164 in (d.telefone_e164, ${gemeoEmSql(sql`d.telefone_e164`)})
        and c.opt_out = true
   `);
 }

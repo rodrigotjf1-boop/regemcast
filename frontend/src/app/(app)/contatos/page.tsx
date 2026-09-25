@@ -3,7 +3,10 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
-import { IconeContatos, IconeEscudo, IconeFechar, IconeImportar } from '@/components/app/icones';
+import { BlocosDaBase } from '@/components/app/blocos/blocos-da-base';
+import { DividirEmBlocos, type AlvoDaDivisao } from '@/components/app/blocos/dividir-em-blocos';
+import { RegioesPeloDdd } from '@/components/app/blocos/regioes-da-base';
+import { IconeBlocos, IconeContatos, IconeEscudo, IconeFechar, IconeImportar } from '@/components/app/icones';
 import { ImportarContatos } from '@/components/app/importar-contatos';
 import { COR_PERFIL, PerfisDaBase } from '@/components/app/perfis-base';
 import { useSessao } from '@/components/app/sessao';
@@ -13,10 +16,11 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { EsqueletoLista } from '@/components/ui/esqueleto';
 import { EstadoErro } from '@/components/ui/estado-erro';
+import { Alerta } from '@/components/ui/alerta';
 import { mensagemDoErro } from '@/lib/api';
 import { diasDesde, formatarData, formatarNumero, formatarReais } from '@/lib/formato';
 import { contatos as servico } from '@/lib/servicos';
-import type { ListaDeContatos, PaginaDeContatos, ResumoSegmentos, Segmento } from '@/lib/tipos';
+import type { DivisaoDeBlocos, ListaDeContatos, PaginaDeContatos, RegioesDaBase, ResumoSegmentos, Segmento } from '@/lib/tipos';
 
 /**
  * A base de contatos.
@@ -67,6 +71,11 @@ export default function PaginaContatos() {
   const [fonteInicial, setFonteInicial] = useState<'arquivo' | 'cardapioweb'>('arquivo');
   const [perfis, setPerfis] = useState<ResumoSegmentos | null>(null);
   const [segmento, setSegmento] = useState<Segmento | null>(null);
+  const [regioes, setRegioes] = useState<RegioesDaBase | null>(null);
+  const [uf, setUf] = useState<string | null>(null);
+  const [divisoes, setDivisoes] = useState<DivisaoDeBlocos[]>([]);
+  const [dividindo, setDividindo] = useState<AlvoDaDivisao | null>(null);
+  const [avisoBlocos, setAvisoBlocos] = useState('');
   const { sessao } = useSessao();
   const ehDono = sessao.usuario.papel === 'dono';
 
@@ -74,21 +83,32 @@ export default function PaginaContatos() {
     setCarregando(true);
     setErro('');
     try {
-      const [p, l, s] = await Promise.all([
-        servico.listar(numero, POR_PAGINA, segmento),
+      const [p, l, s, r, d] = await Promise.all([
+        servico.listar(numero, POR_PAGINA, segmento, uf),
         servico.listas(),
         servico.segmentos().catch(() => null),
+        servico.regioes().catch(() => null),
+        servico.divisoes().catch(() => []),
       ]);
       setPagina(p);
       setListas(l);
       setPerfis(s);
+      setRegioes(r);
+      setDivisoes(d);
     } catch (e) {
       setErro(mensagemDoErro(e));
       setPagina(null);
     } finally {
       setCarregando(false);
     }
-  }, [numero, segmento]);
+  }, [numero, segmento, uf]);
+
+  function abrirDivisao(alvo: AlvoDaDivisao) {
+    setAvisoBlocos('');
+    setImportando(false);
+    setDividindo(alvo);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   useEffect(() => {
     void carregar();
@@ -112,6 +132,10 @@ export default function PaginaContatos() {
 
   const total = pagina?.total ?? 0;
   const ultimaPagina = Math.max(1, Math.ceil(total / POR_PAGINA));
+  // Os blocos aparecem na seção deles; aqui, só as listas comuns.
+  const listasComuns = listas.filter((l) => !l.divisaoId);
+  // Quem pode receber: a soma das regiões já conta só os ativos.
+  const ativosDaBase = regioes ? regioes.regioes.reduce((t, r) => t + r.total, 0) + regioes.semRegiao : null;
 
   return (
     <div className="space-y-6 lg:space-y-8">
@@ -125,6 +149,20 @@ export default function PaginaContatos() {
           <Link href="/contatos/bloqueios">
             <Button variante="secundario">Bloqueios</Button>
           </Link>
+          {total > 0 && (
+            <Button
+              variante="secundario"
+              onClick={() =>
+                dividindo
+                  ? setDividindo(null)
+                  : abrirDivisao({ origem: 'base', rotulo: 'Base inteira', total: ativosDaBase })
+              }
+              aria-expanded={Boolean(dividindo)}
+            >
+              <IconeBlocos />
+              Dividir em blocos
+            </Button>
+          )}
           <Button
             variante={importando ? 'secundario' : 'primario'}
             onClick={() => setImportando((v) => !v)}
@@ -145,9 +183,26 @@ export default function PaginaContatos() {
               setNumero(1);
               void carregar();
             }}
+            aoDividir={abrirDivisao}
           />
         </div>
       )}
+
+      {dividindo && (
+        <DividirEmBlocos
+          alvo={dividindo}
+          aoCancelar={() => setDividindo(null)}
+          aoConcluir={(d) => {
+            setDividindo(null);
+            setAvisoBlocos(
+              `${formatarNumero(d.totalBlocos)} ${d.totalBlocos === 1 ? 'bloco criado' : 'blocos criados'} com ${formatarNumero(d.totalContatos)} ${d.totalContatos === 1 ? 'pessoa' : 'pessoas'}. Cada bloco é uma lista: escolha-o ao montar a campanha.`,
+            );
+            void carregar().then(() => document.getElementById('blocos')?.scrollIntoView({ behavior: 'smooth' }));
+          }}
+        />
+      )}
+
+      {avisoBlocos && <Alerta tom="sucesso">{avisoBlocos}</Alerta>}
 
       {perfis && (
         <PerfisDaBase
@@ -156,21 +211,42 @@ export default function PaginaContatos() {
           selecionado={segmento}
           aoSelecionar={(s) => {
             setSegmento(s);
+            setUf(null);
             setNumero(1);
           }}
           ehDono={ehDono}
           aoMudar={() => void carregar()}
+          aoDividir={(s, nome, totalDoPerfil) =>
+            abrirDivisao({ origem: 'perfil', segmento: s, rotulo: nome, total: totalDoPerfil })
+          }
         />
       )}
 
-      {listas.length > 0 && (
+      {regioes && regioes.regioes.length > 0 && (
+        <RegioesPeloDdd
+          regioes={regioes}
+          selecionada={uf}
+          aoSelecionar={(u) => {
+            setUf(u);
+            setSegmento(null);
+            setNumero(1);
+          }}
+          aoDividir={(u, estado, totalDaRegiao) =>
+            abrirDivisao({ origem: 'regiao', uf: u, rotulo: estado, total: totalDaRegiao })
+          }
+        />
+      )}
+
+      {divisoes.length > 0 && <BlocosDaBase divisoes={divisoes} ehDono={ehDono} aoMudar={() => void carregar()} />}
+
+      {listasComuns.length > 0 && (
         <section aria-label="Listas" className="anima-entrada space-y-3">
           <div className="flex items-baseline justify-between gap-2">
             <h2 className="text-base font-semibold text-tinta">Listas</h2>
             <p className="text-xs text-tinta-suave">A contagem exclui quem pediu para sair.</p>
           </div>
           <ul className="escalonado grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {listas.map((l) => (
+            {listasComuns.map((l) => (
               <li
                 key={l.id}
                 className="cartao-interativo flex items-center gap-3 rounded-card border border-borda bg-superficie p-4 shadow-card"
@@ -178,13 +254,23 @@ export default function PaginaContatos() {
                 <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-realce text-tinta">
                   <IconeContatos className="h-5 w-5" />
                 </span>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-tinta">{l.nome}</p>
                   <p className="text-xs text-tinta-suave">
                     <span className="numerico text-tinta">{formatarNumero(l.total)}</span>{' '}
                     {l.total === 1 ? 'pessoa' : 'pessoas'} · {formatarData(l.criadoEm)}
                   </p>
                 </div>
+                {l.total > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => abrirDivisao({ origem: 'lista', origemId: l.id, rotulo: l.nome, total: l.total })}
+                    className="shrink-0 rounded-lg px-2 py-1 text-xs font-medium text-acento-forte underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento"
+                    aria-label={`Dividir a lista ${l.nome} em blocos`}
+                  >
+                    Dividir
+                  </button>
+                )}
               </li>
             ))}
           </ul>

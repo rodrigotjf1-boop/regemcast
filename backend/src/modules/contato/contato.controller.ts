@@ -30,6 +30,8 @@ import { DonoGuard } from '../../common/dono.guard';
 import { UsuarioAtual } from '../../common/usuario-atual.decorator';
 import { ContatoService } from './contato.service';
 import { AdicionarNaListaDto } from './dto/adicionar-na-lista.dto';
+import { DividirEmBlocosDto } from './dto/divisao.dto';
+import { DivisaoService } from './divisao.service';
 import { CriarListaDoPerfilDto, ParametrosSegmentacaoDto } from './dto/segmentacao.dto';
 import type { Segmento } from './segmentacao';
 import { SegmentacaoService } from './segmentacao.service';
@@ -67,6 +69,7 @@ export class ContatoController {
   constructor(
     private readonly servico: ContatoService,
     private readonly segmentacao: SegmentacaoService,
+    private readonly divisoes: DivisaoService,
   ) {}
 
   @Get()
@@ -76,6 +79,7 @@ export class ContatoController {
     @Query('porPagina') porPagina?: string,
     @Query('segmento') segmento?: string,
     @Query('situacao') situacao?: string,
+    @Query('uf') uf?: string,
   ) {
     if (situacao && situacao !== 'ativos' && situacao !== 'bloqueados') {
       throw new BadRequestException('Situação desconhecida.');
@@ -86,7 +90,43 @@ export class ContatoController {
       Number(porPagina) || 50,
       segmento || undefined,
       situacao as 'ativos' | 'bloqueados' | undefined,
+      uf || undefined,
     );
+  }
+
+  // ------------------------------------------------------------ regiões e blocos
+  //
+  // Antes das rotas com `:id`: "divisoes" e "regioes" não são uuid.
+
+  /** Contatos por estado e DDD — a classificação que existe até em lista só com nome e número. */
+  @Get('regioes')
+  regioes(@UsuarioAtual() usuario: UsuarioAutenticado) {
+    return this.divisoes.regioes(usuario.contaId);
+  }
+
+  /** Os tamanhos de bloco liberados hoje, pelo limite de envio da Meta. */
+  @Get('divisoes/opcoes')
+  opcoesDeBloco(@UsuarioAtual() usuario: UsuarioAutenticado) {
+    return this.divisoes.opcoes(usuario.contaId);
+  }
+
+  /** As divisões em blocos, com o resultado de cada bloco em campanha. */
+  @Get('divisoes')
+  listarDivisoes(@UsuarioAtual() usuario: UsuarioAutenticado) {
+    return this.divisoes.listar(usuario.contaId);
+  }
+
+  /** Divide lista, importação, base, perfil ou região em blocos — cada bloco vira uma lista. */
+  @Post('divisoes')
+  dividir(@UsuarioAtual() usuario: UsuarioAutenticado, @Body() dto: DividirEmBlocosDto) {
+    return this.divisoes.dividir(usuario.contaId, usuario.id, dto);
+  }
+
+  /** Apaga a divisão e os blocos — só se nenhuma campanha os usou. Do dono. */
+  @Delete('divisoes/:id')
+  @UseGuards(DonoGuard)
+  apagarDivisao(@UsuarioAtual() usuario: UsuarioAutenticado, @Param('id', ParseUUIDPipe) id: string) {
+    return this.divisoes.apagar(usuario.contaId, usuario.id, id);
   }
 
   // ------------------------------------------------------------ perfis da base

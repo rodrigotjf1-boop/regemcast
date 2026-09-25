@@ -59,9 +59,13 @@ export default function PaginaCampanhas() {
     void carregar();
   }, [carregar]);
 
-  // Chegou pelo atalho "Nova campanha" do painel: já abre a montagem.
+  // Chegou pelo atalho "Nova campanha" do painel — ou por "Usar em campanha" num
+  // bloco, que traz a lista escolhida: já abre a montagem.
+  const [listaInicial, setListaInicial] = useState<string | undefined>(undefined);
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('nova') === '1') setMontando(true);
+    const busca = new URLSearchParams(window.location.search);
+    if (busca.get('nova') === '1') setMontando(true);
+    setListaInicial(busca.get('lista') ?? undefined);
   }, []);
 
   const saindo = lista?.filter((c) => c.status === 'enviando' || c.status === 'agendada').length ?? 0;
@@ -91,6 +95,7 @@ export default function PaginaCampanhas() {
 
       {montando && (
         <FormularioCampanha
+          listaInicial={listaInicial}
           aoConcluir={() => {
             setMontando(false);
             void carregar();

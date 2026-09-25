@@ -13,11 +13,12 @@
  * colunas transformaria aquela frase em declaração falsa.
  */
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 
+import { dddsDaUf } from '../../common/ddd';
 import { mascararTelefone, paraCloudApi } from '../../common/telefone';
 import { ContextoDb } from '../../db/contexto';
-import { contato, contatoLista, contatoListaItem, importacao } from '../../db/schema';
+import { campanha, contato, contatoLista, contatoListaItem, importacao, listaDivisao } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import type { ConfirmarImportacaoDto, PreviaImportacaoDto } from './dto/importacao.dto';
 import { gravarExtras } from './extras';
@@ -361,10 +362,24 @@ export class ContatoService {
           nome: contatoLista.nome,
           descricao: contatoLista.descricao,
           criadoEm: contatoLista.criadoEm,
+          // Bloco de uma divisão: a campanha agrupa por divisão e sugere o próximo bloco.
+          divisaoId: contatoLista.divisaoId,
+          bloco: contatoLista.bloco,
+          divisaoNome: listaDivisao.nome,
+          blocos: listaDivisao.totalBlocos,
         })
         .from(contatoLista)
+        .leftJoin(listaDivisao, eq(listaDivisao.id, contatoLista.divisaoId))
         .where(eq(contatoLista.contaId, contaId))
-        .orderBy(desc(contatoLista.criadoEm));
+        .orderBy(desc(contatoLista.criadoEm), contatoLista.bloco);
+
+      // Quando cada lista foi usada em campanha pela última vez ("já enviado em…").
+      const usos = await db
+        .select({ listaId: campanha.listaId, usadaEm: sql<string>`max(${campanha.criadoEm})` })
+        .from(campanha)
+        .where(and(eq(campanha.contaId, contaId), isNotNull(campanha.listaId)))
+        .groupBy(campanha.listaId);
+      const usadaEm = new Map(usos.map((u) => [u.listaId, new Date(u.usadaEm)]));
 
       // Contagem por lista: uma consulta agregada, não uma por lista. Conta só
       // quem pode receber — a tela promete isso, e é o número que a campanha
@@ -383,7 +398,7 @@ export class ContatoService {
         .groupBy(contatoListaItem.listaId);
 
       const porLista = new Map(totais.map((t) => [t.listaId, Number(t.total)]));
-      return linhas.map((l) => ({ ...l, total: porLista.get(l.id) ?? 0 }));
+      return linhas.map((l) => ({ ...l, total: porLista.get(l.id) ?? 0, usadaEm: usadaEm.get(l.id) ?? null }));
     });
   }
 
@@ -468,19 +483,34 @@ export class ContatoService {
     segmento?: string,
     /** `bloqueados` = quem pediu para sair; `ativos` = quem pode receber. */
     situacao?: 'ativos' | 'bloqueados',
+    /** Estado pelo DDD — só quem pode receber, como no filtro por perfil. */
+    uf?: string,
   ) {
     const limite = Math.min(Math.max(porPagina, 1), 200);
     const salto = (Math.max(pagina, 1) - 1) * limite;
     if (segmento && !SEGMENTOS.includes(segmento as Segmento)) {
       throw new BadRequestException('Perfil desconhecido.');
     }
+    const ddds = uf ? dddsDaUf(uf) : [];
+    if (uf && !ddds.length) throw new BadRequestException('Estado desconhecido.');
 
     return this.ctx.comConta(contaId, async (db) => {
       const perfil = expressaoSegmento(await parametrosDaConta(db, contaId));
       // Filtrar por perfil mostra só quem pode receber: é a pergunta que a tela
       // faz ("quem são os Em risco?") antes de virar lista de campanha.
-      const filtro = segmento
-        ? and(eq(contato.contaId, contaId), eq(contato.optOut, false), sql`${perfil} = ${segmento}`)
+      const porRegiao = ddds.length
+        ? sql`${contato.telefoneE164} like '55%' and substr(${contato.telefoneE164}, 3, 2) in (${sql.join(
+            ddds.map((d) => sql`${d}`),
+            sql`, `,
+          )})`
+        : undefined;
+      const filtro = segmento || porRegiao
+        ? and(
+            eq(contato.contaId, contaId),
+            eq(contato.optOut, false),
+            segmento ? sql`${perfil} = ${segmento}` : undefined,
+            porRegiao,
+          )
         : situacao
           ? and(eq(contato.contaId, contaId), eq(contato.optOut, situacao === 'bloqueados'))
           : eq(contato.contaId, contaId);

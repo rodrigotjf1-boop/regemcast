@@ -436,6 +436,82 @@ export interface ListaDeContatos {
   descricao: string | null;
   total: number;
   criadoEm: string;
+  /** Quando a lista é um bloco: a divisão, a posição e quantos blocos a divisão tem. */
+  divisaoId: string | null;
+  bloco: number | null;
+  divisaoNome: string | null;
+  blocos: number | null;
+  /** Última vez que uma campanha usou esta lista. */
+  usadaEm: string | null;
+}
+
+/** `GET /contatos/divisoes/opcoes` — os tamanhos liberados pelo limite da Meta. */
+export interface OpcoesDeBloco {
+  limite: number | null;
+  limiteConhecido: boolean;
+  maximo: number;
+  tamanhos: { valor: number; disponivel: boolean }[];
+  sugerido: number;
+}
+
+export type OrigemDaDivisao = 'lista' | 'importacao' | 'base' | 'perfil' | 'regiao';
+export type OrdemDosBlocos = 'importacao' | 'sorteio' | 'recentes' | 'regiao' | 'valor';
+
+/** `POST /contatos/divisoes` */
+export interface PedidoDeDivisao {
+  origem: OrigemDaDivisao;
+  origemId?: string;
+  segmento?: Segmento;
+  uf?: string;
+  tamanho: number;
+  ordem: OrdemDosBlocos;
+  soNuncaReceberam?: boolean;
+  nome?: string;
+}
+
+/** O que aconteceu com um bloco numa campanha — o que deixa aquecer uma lista fria. */
+export interface UsoDoBloco {
+  campanhaId: string;
+  campanhaNome: string;
+  status: string;
+  em: string;
+  total: number;
+  enviadas: number;
+  entregues: number;
+  lidas: number;
+  falhas: number;
+  /** Do bloco, quem pediu para sair depois que a campanha começou. */
+  sairam: number;
+}
+
+export interface BlocoDaDivisao {
+  id: string;
+  bloco: number;
+  nome: string;
+  /** Quem ainda pode receber. */
+  total: number;
+  usos: UsoDoBloco[];
+}
+
+/** `GET /contatos/divisoes` */
+export interface DivisaoDeBlocos {
+  id: string;
+  nome: string;
+  origem: OrigemDaDivisao;
+  origemRotulo: string | null;
+  tamanho: number;
+  ordem: OrdemDosBlocos;
+  soNuncaReceberam: boolean;
+  totalContatos: number;
+  totalBlocos: number;
+  criadaEm: string;
+  blocos: BlocoDaDivisao[];
+}
+
+/** `GET /contatos/regioes` — contatos por estado e DDD, só quem pode receber. */
+export interface RegioesDaBase {
+  regioes: { uf: string; estado: string; total: number; ddds: { ddd: string; cidade: string; total: number }[] }[];
+  semRegiao: number;
 }
 
 /** Uma linha da prévia: já normalizada, ainda não gravada. */

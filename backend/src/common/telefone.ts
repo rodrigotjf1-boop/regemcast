@@ -97,8 +97,8 @@ export function doWhatsapp(bruto: unknown): string {
  * manda o `from` do jeito que o WhatsApp da pessoa foi cadastrado. Um pedido de
  * saída que bloqueasse só uma das formas deixaria a outra recebendo campanha.
  *
- * A mesma regra existe em SQL, em `marcarDescadastrados` (campanha.service.ts)
- * e na migration 026 — mudou aqui, muda lá.
+ * A mesma regra existe em SQL, em `gemeoEmSql` (telefone-sql.ts), e na
+ * migration 026 — mudou aqui, muda lá.
  */
 export function gemeoDoCelular(bruto: unknown): string | null {
   const d = String(bruto ?? '').replace(/\D/g, '');
