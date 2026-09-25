@@ -573,6 +573,10 @@ export const contato = pgTable('contato', {
   ultimoPedidoEm: timestamp('ultimo_pedido_em', { withTimezone: true }),
   /** A primeira compra conhecida (migration 029). */
   primeiroPedidoEm: timestamp('primeiro_pedido_em', { withTimezone: true }),
+  /** O bairro mais frequente nas entregas (migration 030). Dado pessoal. */
+  bairro: text('bairro'),
+  /** entrega | retirada | salao — o que mais faz nas compras (migration 030). */
+  tipoPreferido: text('tipo_preferido'),
   metricasEm: timestamp('metricas_em', { withTimezone: true }),
   metricasOrigem: text('metricas_origem'),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 
 import { Alerta } from '@/components/ui/alerta';
@@ -8,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { mensagemDoErro } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { formatarNumero } from '@/lib/formato';
+import { formatarNumero, formatarReais } from '@/lib/formato';
 import { contatos as servico } from '@/lib/servicos';
 import type { ParametrosSegmentacao, ResumoSegmentos, Segmento } from '@/lib/tipos';
 
@@ -109,8 +110,12 @@ export function PerfisDaBase({
 
       {!comHistorico && (
         <Alerta tom="informacao">
-          Para classificar a base, importe uma planilha com <strong>pedidos</strong> e <strong>última compra</strong>{' '}
-          (ou dias sem comprar) — a exportação de clientes do seu cardápio costuma trazer.
+          Para classificar a base, conecte o cardápio em{' '}
+          <Link href="/integracoes" className="font-semibold underline underline-offset-2">
+            Integrações
+          </Link>{' '}
+          ou importe uma planilha com <strong>pedidos</strong> e <strong>última compra</strong> (ou dias sem comprar) — a
+          exportação de clientes do seu cardápio costuma trazer.
         </Alerta>
       )}
 
@@ -174,6 +179,12 @@ export function PerfisDaBase({
                 <span className="min-w-0">
                   <span className="block text-sm font-semibold text-tinta">{s.nome}</span>
                   <span className="block text-xs leading-snug text-tinta-suave">{s.regra}</span>
+                  {s.gastoCentavos != null && s.gastoCentavos > 0 && (
+                    <span className="numerico mt-1 block text-xs text-tinta">
+                      {formatarReais(s.gastoCentavos)} no total
+                      {s.ticketMedioCentavos != null && ` · ticket ${formatarReais(s.ticketMedioCentavos)}`}
+                    </span>
+                  )}
                 </span>
                 <span className="numerico shrink-0 text-lg font-semibold text-tinta">{formatarNumero(s.total)}</span>
               </button>

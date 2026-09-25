@@ -75,6 +75,36 @@ contato (`pedidos`, `total_gasto_centavos`, `primeiro_pedido_em`,
 num comando só, e alimentam os perfis da base. Contato **anonimizado** perde as
 compras junto.
 
+### O que as compras alimentam
+
+Em **Contatos**, tudo conta só quem pode receber (sem descadastro), como o disparo:
+
+- **Perfis da base** (Campeões, Fiéis, Em risco…): a regra continua a de
+  recência e frequência; cada perfil passa a mostrar **quanto gastou** e o
+  **ticket médio** (o "M" do RFM).
+- **Públicos pelas compras** (`contato/publicos.ts`, uma definição só para a
+  contagem, o filtro da tabela, a lista e os blocos):
+
+  | Público | Regra |
+  | --- | --- |
+  | VIP | os 10% que mais gastaram (percentil 90 do total gasto, em reais inteiros) |
+  | Ticket alto / médio / baixo | os terços do ticket médio (total ÷ pedidos) da própria loja |
+  | Um pedido só | 1 pedido, comprado dentro do "ativo" dos perfis — chamar para o segundo |
+  | Rumo ao 10º pedido | 9 pedidos |
+  | Pedem entrega / Retiram na loja / Consomem no salão | o jeito de comprar mais frequente (empate: o mais recente) |
+  | Bairro | o bairro mais frequente nas entregas, sem ligar para maiúscula |
+  | Aniversariantes | o mês da data de nascimento (o Cardápio Web manda) |
+
+  VIP e ticket são **relativos à loja**: uma pizzaria e uma loja de açaí têm
+  tickets diferentes, e um corte fixo em reais não serviria às duas.
+- Bairro e jeito de comprar ficam guardados no contato (`contato.bairro`,
+  `contato.tipo_preferido`, migration 030), refeitos a cada sincronização junto
+  com os totais; o resto é calculado na consulta.
+- **Planilha não passa por cima das compras:** quem tem compras sincronizadas
+  tem os totais calculados delas; a planilha só completa e-mail e aniversário.
+- Cada público vira lista ("Criar lista com estes contatos") ou blocos
+  (`lista_divisao.origem = 'publico'`), como os perfis.
+
 ### Limites da API e o ritmo
 
 Conferidos na documentação oficial em 25/09/2026

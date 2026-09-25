@@ -10,6 +10,7 @@ import { RegioesPeloDdd } from '@/components/app/blocos/regioes-da-base';
 import { IconeBlocos, IconeContatos, IconeEscudo, IconeFechar, IconeImportar } from '@/components/app/icones';
 import { ImportarContatos } from '@/components/app/importar-contatos';
 import { COR_PERFIL, PerfisDaBase } from '@/components/app/perfis-base';
+import { PublicosDaBase } from '@/components/app/publicos-base';
 import { useSessao } from '@/components/app/sessao';
 import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
 import { Badge } from '@/components/ui/badge';
@@ -21,7 +22,16 @@ import { Alerta } from '@/components/ui/alerta';
 import { mensagemDoErro } from '@/lib/api';
 import { diasDesde, formatarData, formatarNumero, formatarReais } from '@/lib/formato';
 import { contatos as servico } from '@/lib/servicos';
-import type { DivisaoDeBlocos, ListaDeContatos, PaginaDeContatos, RegioesDaBase, ResumoSegmentos, Segmento } from '@/lib/tipos';
+import type {
+  AlvoDePublico,
+  DivisaoDeBlocos,
+  ListaDeContatos,
+  PaginaDeContatos,
+  RegioesDaBase,
+  ResumoPublicos,
+  ResumoSegmentos,
+  Segmento,
+} from '@/lib/tipos';
 
 /**
  * A base de contatos.
@@ -73,6 +83,8 @@ export default function PaginaContatos() {
   const [segmento, setSegmento] = useState<Segmento | null>(null);
   const [regioes, setRegioes] = useState<RegioesDaBase | null>(null);
   const [uf, setUf] = useState<string | null>(null);
+  const [publicos, setPublicos] = useState<ResumoPublicos | null>(null);
+  const [publico, setPublico] = useState<AlvoDePublico | null>(null);
   const [divisoes, setDivisoes] = useState<DivisaoDeBlocos[]>([]);
   const [dividindo, setDividindo] = useState<AlvoDaDivisao | null>(null);
   const [avisoBlocos, setAvisoBlocos] = useState('');
@@ -84,25 +96,27 @@ export default function PaginaContatos() {
     setCarregando(true);
     setErro('');
     try {
-      const [p, l, s, r, d] = await Promise.all([
-        servico.listar(numero, POR_PAGINA, segmento, uf),
+      const [p, l, s, r, d, pb] = await Promise.all([
+        servico.listar(numero, POR_PAGINA, segmento, uf, publico),
         servico.listas(),
         servico.segmentos().catch(() => null),
         servico.regioes().catch(() => null),
         servico.divisoes().catch(() => []),
+        servico.publicos().catch(() => null),
       ]);
       setPagina(p);
       setListas(l);
       setPerfis(s);
       setRegioes(r);
       setDivisoes(d);
+      setPublicos(pb);
     } catch (e) {
       setErro(mensagemDoErro(e));
       setPagina(null);
     } finally {
       setCarregando(false);
     }
-  }, [numero, segmento, uf]);
+  }, [numero, segmento, uf, publico]);
 
   function abrirDivisao(alvo: AlvoDaDivisao) {
     setAvisoBlocos('');
@@ -143,7 +157,11 @@ export default function PaginaContatos() {
     <div className="space-y-6 lg:space-y-8">
       <CabecalhoPagina
         icone={<IconeContatos />}
-        sobretitulo={pagina ? `${formatarNumero(total)} ${total === 1 ? 'contato' : 'contatos'} na base` : 'Operação'}
+        sobretitulo={
+          pagina
+            ? `${formatarNumero(total)} ${total === 1 ? 'contato' : 'contatos'} ${segmento || uf || publico ? 'neste filtro' : 'na base'}`
+            : 'Operação'
+        }
         titulo="Contatos"
         descricao="Quem pode receber suas campanhas — com o registro de como cada pessoa autorizou."
         acao={
@@ -213,12 +231,36 @@ export default function PaginaContatos() {
           aoSelecionar={(s) => {
             setSegmento(s);
             setUf(null);
+            setPublico(null);
             setNumero(1);
           }}
           ehDono={ehDono}
           aoMudar={() => void carregar()}
           aoDividir={(s, nome, totalDoPerfil) =>
             abrirDivisao({ origem: 'perfil', segmento: s, rotulo: nome, total: totalDoPerfil })
+          }
+        />
+      )}
+
+      {publicos && (
+        <PublicosDaBase
+          resumo={publicos}
+          selecionado={publico}
+          aoSelecionar={(alvo) => {
+            setPublico(alvo);
+            setSegmento(null);
+            setUf(null);
+            setNumero(1);
+          }}
+          aoMudar={() => void carregar()}
+          aoDividir={(alvo) =>
+            abrirDivisao({
+              origem: 'publico',
+              publico: alvo.publico,
+              publicoValor: alvo.valor ?? null,
+              rotulo: alvo.nome,
+              total: alvo.total,
+            })
           }
         />
       )}
@@ -230,6 +272,7 @@ export default function PaginaContatos() {
           aoSelecionar={(u) => {
             setUf(u);
             setSegmento(null);
+            setPublico(null);
             setNumero(1);
           }}
           aoDividir={(u, estado, totalDaRegiao) =>

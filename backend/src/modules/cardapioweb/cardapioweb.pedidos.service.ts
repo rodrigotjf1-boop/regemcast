@@ -509,10 +509,12 @@ async function gravarClientesNovos(db: Db, contaId: string, l: Linha, clientes: 
 }
 
 /**
- * Os totais do contato (pedidos, gasto, primeira e última compra) refeitos das
- * compras — para os contatos tocados neste lote, num comando só. Quem ficou
- * sem compra nenhuma (o único pedido foi cancelado) volta a "sem histórico",
- * se o histórico vinha daqui.
+ * Os totais do contato (pedidos, gasto, primeira e última compra), o bairro
+ * mais frequente nas entregas e o jeito de comprar mais frequente (entrega,
+ * retirada, salão; empate: o mais recente), refeitos das compras — para os
+ * contatos tocados neste lote, num comando só. Quem ficou sem compra nenhuma
+ * (o único pedido foi cancelado) volta a "sem histórico", se o histórico vinha
+ * daqui.
  */
 export async function recalcularTotais(db: Db, contaId: string, contatoIds: string[]): Promise<void> {
   for (const parte of emPartes([...new Set(contatoIds)], 500)) {
@@ -523,6 +525,8 @@ export async function recalcularTotais(db: Db, contaId: string, contatoIds: stri
              total_gasto_centavos = a.total,
              primeiro_pedido_em = a.primeiro,
              ultimo_pedido_em = a.ultimo,
+             bairro = b.bairro,
+             tipo_preferido = t.tipo,
              metricas_em = now(),
              metricas_origem = 'cardapioweb'
         from (
@@ -532,12 +536,33 @@ export async function recalcularTotais(db: Db, contaId: string, contatoIds: stri
            where conta_id = ${contaId} and contato_id in (${lista})
            group by contato_id
         ) a
+        left join lateral (
+          -- O bairro que mais aparece (sem ligar para maiúscula; empate: o mais
+          -- recente) e, dentro dele, a grafia mais usada, de preferência com
+          -- inicial maiúscula — "Tijuca" e "tijuca" são o mesmo bairro.
+          select x.bairro
+            from compra x
+           where x.contato_id = a.contato_id and x.bairro is not null
+           group by x.bairro
+           order by sum(count(*)) over (partition by lower(x.bairro)) desc,
+                    max(max(x.feita_em)) over (partition by lower(x.bairro)) desc,
+                    count(*) desc, (x.bairro ~ '^[[:upper:]]') desc, x.bairro
+           limit 1
+        ) b on true
+        left join lateral (
+          select x.tipo
+            from compra x
+           where x.contato_id = a.contato_id and x.tipo in ('entrega', 'retirada', 'salao')
+           group by x.tipo
+           order by count(*) desc, max(x.feita_em) desc
+           limit 1
+        ) t on true
        where c.id = a.contato_id and c.conta_id = ${contaId}
     `);
     await db.execute(sql`
       update contato c
          set pedidos = null, total_gasto_centavos = null, primeiro_pedido_em = null, ultimo_pedido_em = null,
-             metricas_em = now()
+             bairro = null, tipo_preferido = null, metricas_em = now()
        where c.conta_id = ${contaId}
          and c.id in (${lista})
          and c.metricas_origem = 'cardapioweb'

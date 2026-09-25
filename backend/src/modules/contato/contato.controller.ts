@@ -32,7 +32,9 @@ import { ContatoService } from './contato.service';
 import { AdicionarNaListaDto } from './dto/adicionar-na-lista.dto';
 import { DividirEmBlocosDto } from './dto/divisao.dto';
 import { DivisaoService } from './divisao.service';
+import { CriarListaDoPublicoDto } from './dto/publicos.dto';
 import { CriarListaDoPerfilDto, ParametrosSegmentacaoDto } from './dto/segmentacao.dto';
+import { PublicosService } from './publicos.service';
 import type { Segmento } from './segmentacao';
 import { SegmentacaoService } from './segmentacao.service';
 import {
@@ -70,6 +72,7 @@ export class ContatoController {
     private readonly servico: ContatoService,
     private readonly segmentacao: SegmentacaoService,
     private readonly divisoes: DivisaoService,
+    private readonly publicos: PublicosService,
   ) {}
 
   @Get()
@@ -80,6 +83,8 @@ export class ContatoController {
     @Query('segmento') segmento?: string,
     @Query('situacao') situacao?: string,
     @Query('uf') uf?: string,
+    @Query('publico') publico?: string,
+    @Query('valor') valor?: string,
   ) {
     if (situacao && situacao !== 'ativos' && situacao !== 'bloqueados') {
       throw new BadRequestException('Situação desconhecida.');
@@ -91,6 +96,7 @@ export class ContatoController {
       segmento || undefined,
       situacao as 'ativos' | 'bloqueados' | undefined,
       uf || undefined,
+      publico ? { publico, valor: valor ?? null } : undefined,
     );
   }
 
@@ -127,6 +133,20 @@ export class ContatoController {
   @UseGuards(DonoGuard)
   apagarDivisao(@UsuarioAtual() usuario: UsuarioAutenticado, @Param('id', ParseUUIDPipe) id: string) {
     return this.divisoes.apagar(usuario.contaId, usuario.id, id);
+  }
+
+  // ------------------------------------------------------------ públicos prontos (das compras)
+
+  /** VIP, faixas de ticket, marcos, jeito de comprar, bairros e aniversariantes — com quantos há em cada. */
+  @Get('publicos')
+  resumoDosPublicos(@UsuarioAtual() usuario: UsuarioAutenticado) {
+    return this.publicos.resumo(usuario.contaId);
+  }
+
+  /** Foto do público de hoje numa lista — como a dos perfis. */
+  @Post('publicos/lista')
+  criarListaDoPublico(@UsuarioAtual() usuario: UsuarioAutenticado, @Body() dto: CriarListaDoPublicoDto) {
+    return this.publicos.criarLista(usuario.contaId, usuario.id, dto.publico, dto.valor, dto.nome);
   }
 
   // ------------------------------------------------------------ perfis da base

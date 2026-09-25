@@ -20,6 +20,8 @@ import { conta, contatoLista, importacao, listaDivisao, waNumero } from '../../d
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { contaDosBlocos, opcoesDeBloco, type OpcoesDeBloco, type OrdemDosBlocos } from './blocos.regras';
 import type { DividirEmBlocosDto } from './dto/divisao.dto';
+import { descreverPublico, expressaoPublico } from './publicos';
+import { limitesDosPublicos, publicoValido } from './publicos.service';
 import { SEGMENTOS, descreverSegmentos, expressaoSegmento, type Segmento } from './segmentacao';
 import { parametrosDaConta } from './segmentacao.service';
 
@@ -279,6 +281,16 @@ export class DivisaoService {
           )})`,
           nome: ESTADOS[uf] ?? uf,
           rotulo: uf,
+          origemId: null,
+        };
+      }
+      case 'publico': {
+        const { publico, valor } = publicoValido(dto.publico, dto.publicoValor);
+        const l = await limitesDosPublicos(db, contaId);
+        return {
+          filtro: expressaoPublico(publico, valor, l),
+          nome: descreverPublico(publico, valor, l).nome,
+          rotulo: valor ? `${publico}:${valor}` : publico,
           origemId: null,
         };
       }

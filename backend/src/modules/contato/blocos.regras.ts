@@ -17,7 +17,7 @@ export const TAMANHO_MAXIMO = 100_000;
 /** O degrau em que toda conta nova começa. */
 export const LIMITE_INICIAL = 250;
 
-export const ORIGENS_DA_DIVISAO = ['lista', 'importacao', 'base', 'perfil', 'regiao'] as const;
+export const ORIGENS_DA_DIVISAO = ['lista', 'importacao', 'base', 'perfil', 'regiao', 'publico'] as const;
 export type OrigemDaDivisao = (typeof ORIGENS_DA_DIVISAO)[number];
 
 export const ORDENS_DOS_BLOCOS = ['importacao', 'sorteio', 'recentes', 'regiao', 'valor'] as const;

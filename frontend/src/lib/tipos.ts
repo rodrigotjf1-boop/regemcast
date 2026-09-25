@@ -390,6 +390,9 @@ export interface Contato {
   pedidos?: number | null;
   totalGastoCentavos?: number | null;
   ultimoPedidoEm?: string | null;
+  /** Das compras sincronizadas: o bairro mais frequente e o jeito de comprar. */
+  bairro?: string | null;
+  tipoPreferido?: 'entrega' | 'retirada' | 'salao' | null;
   segmento?: Segmento;
   /** Quando e como a pessoa saiu (quando saiu). */
   optOutEm?: string | null;
@@ -418,7 +421,55 @@ export interface ParametrosSegmentacao {
 /** `GET /contatos/segmentos` */
 export interface ResumoSegmentos {
   parametros: ParametrosSegmentacao;
-  segmentos: { id: Segmento; nome: string; regra: string; total: number }[];
+  segmentos: {
+    id: Segmento;
+    nome: string;
+    regra: string;
+    total: number;
+    /** O "M" do RFM: quanto o perfil gastou e o ticket médio. `null` sem valor gasto (ou numa API anterior). */
+    gastoCentavos?: number | null;
+    ticketMedioCentavos?: number | null;
+  }[];
+}
+
+/** Públicos prontos a partir das compras (`GET /contatos/publicos`). */
+export type Publico =
+  | 'vip'
+  | 'ticket_alto'
+  | 'ticket_medio'
+  | 'ticket_baixo'
+  | 'um_pedido'
+  | 'marco_10'
+  | 'entrega'
+  | 'retirada'
+  | 'salao'
+  | 'bairro'
+  | 'aniversario';
+
+/** Um público escolhido: `valor` é o bairro ou o mês (1 a 12), quando o público pede. */
+export interface AlvoDePublico {
+  publico: Publico;
+  valor?: string | null;
+  /** O que a tela mostra: "VIP", "Bairro Tijuca", "Aniversariantes de outubro"… */
+  nome: string;
+  total: number;
+}
+
+export interface ResumoPublicos {
+  limites: {
+    vipCentavos: number | null;
+    ticketBaixoAteCentavos: number | null;
+    ticketAltoAcimaCentavos: number | null;
+    ativoDias: number;
+  };
+  comValor: number;
+  comCompras: number;
+  comNascimento: number;
+  publicos: { id: Exclude<Publico, 'bairro' | 'aniversario'>; nome: string; regra: string; total: number; gastoCentavos: number }[];
+  bairros: { bairro: string; total: number }[];
+  /** O mês de hoje no fuso da conta (1 a 12). */
+  mesAtual: number;
+  aniversarios: { mes: number; total: number }[];
 }
 
 /** `GET /contatos` */
@@ -454,7 +505,7 @@ export interface OpcoesDeBloco {
   sugerido: number;
 }
 
-export type OrigemDaDivisao = 'lista' | 'importacao' | 'base' | 'perfil' | 'regiao';
+export type OrigemDaDivisao = 'lista' | 'importacao' | 'base' | 'perfil' | 'regiao' | 'publico';
 export type OrdemDosBlocos = 'importacao' | 'sorteio' | 'recentes' | 'regiao' | 'valor';
 
 /** `POST /contatos/divisoes` */
@@ -463,6 +514,9 @@ export interface PedidoDeDivisao {
   origemId?: string;
   segmento?: Segmento;
   uf?: string;
+  publico?: Publico;
+  /** O bairro ou o mês, quando o público pede. */
+  publicoValor?: string;
   tamanho: number;
   ordem: OrdemDosBlocos;
   soNuncaReceberam?: boolean;
