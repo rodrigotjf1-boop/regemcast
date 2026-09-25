@@ -129,7 +129,14 @@ export function conteudo(m: Obj): Pick<MensagemNormalizada, 'tipo' | 'texto' | '
   }
 }
 
-/** O trecho que a lista de conversas mostra. */
+/**
+ * O trecho que a lista de conversas mostra.
+ *
+ * `media_placeholder` é como o histórico traz mídia: o conteúdo vem omitido, e
+ * o arquivo chega depois (só dos últimos 14 dias). Tipo sem texto que a API não
+ * repassa — `errors` e `unsupported`, que chegam no histórico sem estarem na
+ * documentação — cai em "só no celular": é lá que a pessoa consegue ver.
+ */
 export function resumoDaMensagem(tipo: string, conteudoTexto: string | null): string {
   const t = conteudoTexto?.replace(/\s+/g, ' ').trim() ?? '';
   const rotulo: Record<string, string> = {
@@ -140,9 +147,10 @@ export function resumoDaMensagem(tipo: string, conteudoTexto: string | null): st
     sticker: 'Figurinha',
     location: '📍 Localização',
     contacts: '👤 Contato',
+    media_placeholder: '📎 Mídia',
   };
   if (tipo === 'reaction') return t ? `Reagiu com ${t}` : 'Reação';
-  const base = t || rotulo[tipo] || '[mensagem]';
+  const base = t || rotulo[tipo] || 'Mensagem só no celular';
   return base.length > 120 ? `${base.slice(0, 119)}…` : base;
 }
 
@@ -192,8 +200,9 @@ export function ecosDoCelular(value: Obj): MensagemNormalizada[] {
  *
  * Direção pelo remetente: quem mandou é o cliente da thread → entrada; senão,
  * foi a empresa → saída. No aviso de mídia não há thread: se `from` é a
- * empresa, a pessoa está em `to`; sem `to`, não dá para saber a conversa, e a
- * mensagem fica de fora (o texto dela já veio no lote da thread).
+ * empresa, a pessoa está em `to`. O exemplo oficial desse aviso não tem `to` —
+ * sem ele, a mensagem não entra por aqui; a mídia chega à mensagem que já
+ * existe pelo wamid (`midiasDoHistorico`).
  */
 export function mensagensDoHistorico(value: Obj): MensagemNormalizada[] {
   const empresa = telefoneDaPessoa(obj(value.metadata).display_phone_number);
@@ -223,6 +232,34 @@ export function mensagensDoHistorico(value: Obj): MensagemNormalizada[] {
   return saida;
 }
 
+/** A mídia que chega depois, num aviso `history` à parte, para a mensagem que já existe. */
+export interface MidiaTardia {
+  wamid: string;
+  tipo: string;
+  texto: string | null;
+  midiaId: string;
+  midiaMime: string | null;
+  midiaNome: string | null;
+}
+
+/**
+ * O aviso de mídia do histórico (`value.messages`), lido só pelo que interessa
+ * à mensagem que já existe: o wamid, o tipo real e o arquivo. Não depende de
+ * saber a pessoa — por isso cobre a mídia que a EMPRESA mandou, que pode vir
+ * sem `to`.
+ */
+export function midiasDoHistorico(value: Obj): MidiaTardia[] {
+  const saida: MidiaTardia[] = [];
+  for (const m of lista(value.messages)) {
+    const wamid = texto(m.id);
+    const c = conteudo(m);
+    if (wamid && c.midiaId) {
+      saida.push({ wamid, tipo: c.tipo, texto: c.texto, midiaId: c.midiaId, midiaMime: c.midiaMime, midiaNome: c.midiaNome });
+    }
+  }
+  return saida;
+}
+
 /** Status de entrega do webhook `messages` (enviada, entregue, lida, falhou). */
 export function statusesRecebidos(value: Obj): StatusRecebido[] {
   return lista(value.statuses)
@@ -244,7 +281,8 @@ export function statusesRecebidos(value: Obj): StatusRecebido[] {
 /**
  * Uma linha por wamid. O mesmo lote pode repetir a mensagem — e um `insert ...
  * on conflict do update` que toca a mesma linha duas vezes aborta o comando
- * inteiro. Mantém a versão com mídia, se houver.
+ * inteiro. Mantém a versão com mídia, se houver — e, se a primeira era o
+ * `media_placeholder`, o tipo real (a mesma regra do banco).
  */
 export function deduplicar(mensagens: MensagemNormalizada[]): MensagemNormalizada[] {
   const porWamid = new Map<string, MensagemNormalizada>();
@@ -252,7 +290,14 @@ export function deduplicar(mensagens: MensagemNormalizada[]): MensagemNormalizad
     const atual = porWamid.get(m.wamid);
     if (!atual) porWamid.set(m.wamid, m);
     else if (!atual.midiaId && m.midiaId) {
-      porWamid.set(m.wamid, { ...atual, midiaId: m.midiaId, midiaMime: m.midiaMime, midiaNome: m.midiaNome ?? atual.midiaNome });
+      porWamid.set(m.wamid, {
+        ...atual,
+        tipo: atual.tipo === 'media_placeholder' ? m.tipo : atual.tipo,
+        texto: atual.texto ?? m.texto,
+        midiaId: m.midiaId,
+        midiaMime: m.midiaMime,
+        midiaNome: m.midiaNome ?? atual.midiaNome,
+      });
     }
   }
   return [...porWamid.values()];

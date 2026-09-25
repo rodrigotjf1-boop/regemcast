@@ -8,6 +8,7 @@ import {
   ecosDoCelular,
   mensagensDoHistorico,
   mensagensRecebidas,
+  midiasDoHistorico,
   resumoDaMensagem,
   statusDaMeta,
   statusesRecebidos,
@@ -112,6 +113,51 @@ describe('mensagensDoHistorico', () => {
   it('o aviso de recusa (2593109) não produz mensagem', () => {
     expect(mensagensDoHistorico({ metadata, history: [{ errors: [{ code: 2593109 }] }] })).toEqual([]);
   });
+
+  it('mídia do histórico vem como `media_placeholder`, sem o arquivo', () => {
+    const [m] = mensagensDoHistorico({
+      metadata,
+      history: [
+        {
+          threads: [
+            {
+              id: '16505551234',
+              messages: [{ from: '15550783881', id: 'wamid.P1', timestamp: '1739230955', type: 'media_placeholder', history_context: { status: 'DELIVERED' } }],
+            },
+          ],
+        },
+      ],
+    });
+    expect(m).toMatchObject({ wamid: 'wamid.P1', direcao: 'saida', tipo: 'media_placeholder', midiaId: null, status: 'entregue' });
+  });
+});
+
+describe('midiasDoHistorico', () => {
+  it('lê a mídia pelo wamid, com o tipo real — inclusive a da empresa, que vem sem `to`', () => {
+    const r = midiasDoHistorico({
+      metadata,
+      messages: [
+        { from: '15550783881', id: 'wamid.P1', timestamp: '1', type: 'image', image: { caption: 'cardápio novo', mime_type: 'image/jpeg', id: 'm1' } },
+        { from: '16505551234', id: 'wamid.P2', timestamp: '1', type: 'document', document: { mime_type: 'application/pdf', filename: 'pedido.pdf', id: 'm2' } },
+      ],
+    });
+    expect(r).toEqual([
+      { wamid: 'wamid.P1', tipo: 'image', texto: 'cardápio novo', midiaId: 'm1', midiaMime: 'image/jpeg', midiaNome: null },
+      { wamid: 'wamid.P2', tipo: 'document', texto: null, midiaId: 'm2', midiaMime: 'application/pdf', midiaNome: 'pedido.pdf' },
+    ]);
+  });
+
+  it('ignora o que não tem arquivo ou não tem id', () => {
+    expect(
+      midiasDoHistorico({
+        messages: [
+          { from: '16505551234', id: 'wamid.T', type: 'text', text: { body: 'oi' } },
+          { from: '16505551234', type: 'image', image: { id: 'm3' } },
+          { from: '16505551234', id: 'wamid.Q', type: 'media_placeholder' },
+        ],
+      }),
+    ).toEqual([]);
+  });
 });
 
 describe('conteudo', () => {
@@ -137,7 +183,13 @@ describe('resumoDaMensagem', () => {
     expect(resumoDaMensagem('image', null)).toBe('📷 Foto');
     expect(resumoDaMensagem('image', 'legenda')).toBe('legenda');
     expect(resumoDaMensagem('reaction', '👍')).toBe('Reagiu com 👍');
-    expect(resumoDaMensagem('desconhecido', null)).toBe('[mensagem]');
+    expect(resumoDaMensagem('media_placeholder', null)).toBe('📎 Mídia');
+  });
+
+  it('o que a API não repassa (`errors`, `unsupported`, tipo novo) aponta para o celular', () => {
+    expect(resumoDaMensagem('errors', null)).toBe('Mensagem só no celular');
+    expect(resumoDaMensagem('unsupported', null)).toBe('Mensagem só no celular');
+    expect(resumoDaMensagem('desconhecido', null)).toBe('Mensagem só no celular');
   });
 
   it('corta texto longo', () => {
@@ -171,6 +223,11 @@ describe('deduplicar', () => {
     const r = deduplicar([base('w1', null), base('w1', 'mid'), base('w2', null)]);
     expect(r).toHaveLength(2);
     expect(r.find((m) => m.wamid === 'w1')!.midiaId).toBe('mid');
+  });
+
+  it('o `media_placeholder` ganha o tipo real e a legenda junto com o arquivo', () => {
+    const [m] = deduplicar([{ ...base('w1', null), tipo: 'media_placeholder' }, { ...base('w1', 'mid'), texto: 'legenda' }]);
+    expect(m).toMatchObject({ tipo: 'image', texto: 'legenda', midiaId: 'mid' });
   });
 });
 
