@@ -366,14 +366,20 @@ export class ContatoService {
         .where(eq(contatoLista.contaId, contaId))
         .orderBy(desc(contatoLista.criadoEm));
 
-      // Contagem por lista: uma consulta agregada, não uma por lista.
+      // Contagem por lista: uma consulta agregada, não uma por lista. Conta só
+      // quem pode receber — a tela promete isso, e é o número que a campanha
+      // vai alcançar.
       const totais = await db
         .select({
           listaId: contatoListaItem.listaId,
           total: count(contatoListaItem.id),
         })
         .from(contatoListaItem)
-        .where(eq(contatoListaItem.contaId, contaId))
+        .innerJoin(
+          contato,
+          and(eq(contato.id, contatoListaItem.contatoId), eq(contato.contaId, contatoListaItem.contaId)),
+        )
+        .where(and(eq(contatoListaItem.contaId, contaId), eq(contato.optOut, false)))
         .groupBy(contatoListaItem.listaId);
 
       const porLista = new Map(totais.map((t) => [t.listaId, Number(t.total)]));

@@ -6,7 +6,7 @@
  * campanha sem o `55`, e a Meta o lia como um número internacional inexistente.
  * O erro que voltava não dizia nada sobre formato.
  */
-import { doWhatsapp, mascararTelefone, normalizarTelefoneE164, paraCloudApi } from './telefone';
+import { doWhatsapp, gemeoDoCelular, mascararTelefone, normalizarTelefoneE164, paraCloudApi } from './telefone';
 
 describe('paraCloudApi', () => {
   it('acrescenta o 55 quando o número vem só com DDD — e avisa que acrescentou', () => {
@@ -86,5 +86,27 @@ describe('mascararTelefone', () => {
   it('não estoura com nulo nem com número curto', () => {
     expect(mascararTelefone(null)).toBeNull();
     expect(mascararTelefone('123')).toBe('***');
+  });
+});
+
+describe('gemeoDoCelular', () => {
+  it('devolve o mesmo celular na outra forma, com e sem o 9º dígito', () => {
+    expect(gemeoDoCelular('5521989751705')).toBe('552189751705');
+    expect(gemeoDoCelular('552189751705')).toBe('5521989751705');
+    expect(gemeoDoCelular('+55 (11) 96543-2100')).toBe('551165432100');
+  });
+
+  it('ida e volta dá o número de partida', () => {
+    for (const n of ['5521989751705', '552189751705', '5511970001234']) {
+      expect(gemeoDoCelular(gemeoDoCelular(n))).toBe(n);
+    }
+  });
+
+  it('fixo, celular novo que nunca existiu sem o 9, número de fora e lixo não têm gêmeo', () => {
+    expect(gemeoDoCelular('552133334444')).toBeNull(); // fixo (começa em 3)
+    expect(gemeoDoCelular('5511912345678')).toBeNull(); // 9 seguido de 1: nunca teve 8 dígitos
+    expect(gemeoDoCelular('16505551234')).toBeNull();
+    expect(gemeoDoCelular('')).toBeNull();
+    expect(gemeoDoCelular(null)).toBeNull();
   });
 });
