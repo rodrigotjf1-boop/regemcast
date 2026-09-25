@@ -17,6 +17,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
+import { doWhatsapp, gemeoDoCelular } from '../../common/telefone';
 import { ContextoDb } from '../../db/contexto';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { AvisoService } from '../aviso/aviso.service';
@@ -403,6 +404,10 @@ export class WebhookService {
    * O contato pode não existir na base (a campanha aceita número digitado):
    * então a linha é criada já bloqueada, para uma importação futura não
    * ressuscitar o envio para quem pediu para sair.
+   *
+   * Celular brasileiro antigo chega no `from` com 12 dígitos (sem o 9º), e a
+   * base pode ter a pessoa em qualquer das duas formas. O bloqueio vale para as
+   * DUAS: bloquear só a que veio deixava a outra recebendo campanha.
    */
   private async pedidosDeSaida(m: Mudanca): Promise<void> {
     const v = m.value ?? {};
@@ -448,16 +453,39 @@ export class WebhookService {
       return;
     }
 
+    // A pessoa no formato da base (com o 9) e a outra forma do mesmo celular.
+    const pessoa = doWhatsapp(telefone);
+    const gemeo = gemeoDoCelular(pessoa);
+    const formas = [...new Set([telefone, pessoa, gemeo].filter((f): f is string => Boolean(f)))];
+    const lista = sql.join(
+      formas.map((f) => sql`${f}::text`),
+      sql`, `,
+    );
+
     const bloqueou = await this.ctx.comEscopoSistema('meta.webhook.saida.bloquear', async (db) => {
+      // Bloqueia a pessoa em qualquer forma que já esteja na base; só se não
+      // estiver em nenhuma, cria a linha — na forma com o 9, a da base.
       const r = await db.execute(sql`
-        insert into contato (conta_id, telefone_e164, opt_out, opt_out_em, opt_out_origem)
-        values (${contaId}, ${telefone}, true, now(), ${origem})
-        on conflict (conta_id, telefone_e164) do update
-           set opt_out = true,
-               opt_out_em = coalesce(contato.opt_out_em, now()),
-               opt_out_origem = coalesce(contato.opt_out_origem, excluded.opt_out_origem)
-         where contato.opt_out = false
-        returning id
+        with bloqueados as (
+          update contato
+             set opt_out = true,
+                 opt_out_em = coalesce(opt_out_em, now()),
+                 opt_out_origem = coalesce(opt_out_origem, ${origem})
+           where conta_id = ${contaId}
+             and telefone_e164 in (${lista})
+             and opt_out = false
+          returning id
+        ),
+        criados as (
+          insert into contato (conta_id, telefone_e164, opt_out, opt_out_em, opt_out_origem)
+          select ${contaId}, ${pessoa}, true, now(), ${origem}
+           where not exists (
+             select 1 from contato where conta_id = ${contaId} and telefone_e164 in (${lista})
+           )
+          on conflict (conta_id, telefone_e164) do nothing
+          returning id
+        )
+        select (select count(*) from bloqueados) + (select count(*) from criados) as total
       `);
 
       // O que ainda não saiu não sai mais: a campanha em fila para essa pessoa
@@ -468,21 +496,21 @@ export class WebhookService {
                erro_titulo = 'Pediu para sair',
                erro_detalhe = 'Esta pessoa pediu para não receber mais mensagens da sua empresa. Nada foi enviado.',
                falhou_em = now()
-         where conta_id = ${contaId} and telefone_e164 = ${telefone} and status = 'pendente'
+         where conta_id = ${contaId} and telefone_e164 in (${lista}) and status = 'pendente'
       `);
 
-      return r.rows.length > 0;
+      return Number((r.rows[0] as { total?: unknown } | undefined)?.total ?? 0) > 0;
     });
 
     if (!bloqueou) return;
 
-    this.log.log(`Contato ${this.mascarar(telefone)} entrou na lista de bloqueio da conta (${origem}).`);
+    this.log.log(`Contato ${this.mascarar(pessoa)} entrou na lista de bloqueio da conta (${origem}).`);
     await this.auditoria.registrarForaDeContexto({
       contaId,
       atorTipo: 'sistema',
       acao: 'contato.opt_out',
       entidade: 'contato',
-      detalhe: { origem, telefone: this.mascarar(telefone) },
+      detalhe: { origem, telefone: this.mascarar(pessoa) },
     });
   }
 

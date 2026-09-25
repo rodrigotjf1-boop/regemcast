@@ -88,6 +88,26 @@ export function doWhatsapp(bruto: unknown): string {
 }
 
 /**
+ * O mesmo celular brasileiro na OUTRA forma: com 13 dígitos devolve o de 12
+ * (sem o 9º dígito), com 12 devolve o de 13. `null` para o resto — fixo,
+ * número de fora, ou celular novo que nunca existiu sem o 9.
+ *
+ * Existe porque a base pode ter a pessoa nas duas formas: a importação de
+ * arquivo guarda o número como veio (`paraCloudApi` aceita os dois), e a Meta
+ * manda o `from` do jeito que o WhatsApp da pessoa foi cadastrado. Um pedido de
+ * saída que bloqueasse só uma das formas deixaria a outra recebendo campanha.
+ *
+ * A mesma regra existe em SQL, em `marcarDescadastrados` (campanha.service.ts)
+ * e na migration 026 — mudou aqui, muda lá.
+ */
+export function gemeoDoCelular(bruto: unknown): string | null {
+  const d = String(bruto ?? '').replace(/\D/g, '');
+  if (/^55\d{2}9[6-9]\d{7}$/.test(d)) return `${d.slice(0, 4)}${d.slice(5)}`;
+  if (/^55\d{2}[6-9]\d{7}$/.test(d)) return `${d.slice(0, 4)}9${d.slice(4)}`;
+  return null;
+}
+
+/**
  * Esconde o miolo do número para log e auditoria: `+5511*****4321`.
  * Nunca registramos o telefone inteiro.
  */

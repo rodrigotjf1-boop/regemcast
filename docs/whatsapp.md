@@ -229,6 +229,14 @@ para sair continua fora da lista. Celular antigo que a Meta manda sem o 9º
 dígito é corrigido antes de gravar (`doWhatsapp`, em `common/telefone.ts`) —
 sem isso, a mesma pessoa viraria dois contatos.
 
+**O descadastro vale para as duas formas do celular.** A importação de arquivo
+guarda o número como veio, então a base pode ter a pessoa com ou sem o 9. O
+pedido de saída ("Parar promoções", "sair") bloqueia a pessoa em qualquer forma
+que já exista na base — e só cria linha nova, na forma com o 9, se não houver
+nenhuma. A trava do disparo (`marcarDescadastrados`) confere as duas formas, e
+a migration 026 bloqueou os "gêmeos" que ficaram para trás antes da correção. A
+regra do gêmeo é uma só: `gemeoDoCelular`, em `common/telefone.ts`.
+
 ### O que a coexistência TIRA do cliente
 
 Isto é material de venda, não detalhe técnico — e está na tela da escolha,
