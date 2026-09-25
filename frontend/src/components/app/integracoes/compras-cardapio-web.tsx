@@ -6,7 +6,7 @@ import { Alerta } from '@/components/ui/alerta';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { formatarData, formatarDataHora, formatarNumero } from '@/lib/formato';
-import type { SituacaoCardapioWeb, StatusPedidosCardapioWeb } from '@/lib/tipos';
+import type { PedidosCardapioWeb, SituacaoCardapioWeb, StatusPedidosCardapioWeb } from '@/lib/tipos';
 
 const SELO: Record<StatusPedidosCardapioWeb, { texto: string; tom: 'neutro' | 'acento' | 'sucesso' | 'erro' }> = {
   parado: { texto: 'Não buscadas', tom: 'neutro' },
@@ -23,19 +23,23 @@ const SELO: Record<StatusPedidosCardapioWeb, { texto: string; tom: 'neutro' | 'a
  */
 export function ComprasCardapioWeb({
   situacao: s,
+  pedidos,
   ehDono,
   ocupado,
   aoBuscar,
   aoTrocarToken,
 }: {
   situacao: SituacaoCardapioWeb;
+  /** `undefined` só numa API mais antiga que a tela: o bloco não aparece. */
+  pedidos: PedidosCardapioWeb | undefined;
   ehDono: boolean;
   ocupado: boolean;
   aoBuscar: () => void;
   /** Parou porque o Cardápio Web recusou o token: a saída é um token novo. */
   aoTrocarToken: () => void;
 }) {
-  const p = s.pedidos;
+  if (!pedidos) return null;
+  const p = pedidos;
   const selo = SELO[p.status];
   const esperandoClientes = p.status === 'carga' && s.sincronizacao.status === 'rodando';
 

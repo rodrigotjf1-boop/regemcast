@@ -51,7 +51,7 @@ export function IntegracaoCardapioWeb() {
   }, [carregar]);
 
   const importando = s?.sincronizacao.status === 'rodando';
-  const buscandoPedidos = s?.pedidos.status === 'carga';
+  const buscandoPedidos = s?.pedidos?.status === 'carga';
   useEffect(() => {
     if (!importando && !buscandoPedidos) return;
     const t = window.setInterval(
@@ -156,6 +156,7 @@ export function IntegracaoCardapioWeb() {
               />
               <ComprasCardapioWeb
                 situacao={s}
+                pedidos={s.pedidos}
                 ehDono={ehDono}
                 ocupado={ocupado}
                 aoBuscar={() => void agir(() => cardapioWeb.buscarPedidos())}
