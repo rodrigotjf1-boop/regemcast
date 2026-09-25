@@ -7,13 +7,18 @@ import type { MensagemDaConversa } from '@/lib/tipos';
 
 import { MidiaDaMensagem } from './midia-da-mensagem';
 
-/** Como a mídia se chama quando não dá mais para abrir (histórico antigo). */
+/**
+ * Como a mídia se chama quando não dá mais para abrir (histórico antigo).
+ * `media_placeholder` é a mídia que o histórico trouxe sem o arquivo — ele só
+ * vem depois, e só dos últimos 14 dias; quando vem, a mensagem ganha o tipo real.
+ */
 const ROTULO_DA_MIDIA: Record<string, string> = {
   image: '📷 Foto',
   video: '🎥 Vídeo',
   audio: '🎤 Áudio',
   document: '📄 Documento',
   sticker: 'Figurinha',
+  media_placeholder: '📎 Mídia',
 };
 
 const TIPOS_DE_MIDIA = new Set(Object.keys(ROTULO_DA_MIDIA));

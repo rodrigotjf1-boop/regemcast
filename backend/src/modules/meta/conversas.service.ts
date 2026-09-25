@@ -32,9 +32,11 @@ import {
   ecosDoCelular,
   mensagensDoHistorico,
   mensagensRecebidas,
+  midiasDoHistorico,
   statusesRecebidos,
   totaisDoLote,
   type MensagemNormalizada,
+  type MidiaTardia,
   type StatusRecebido,
 } from './conversas.regras';
 
@@ -93,6 +95,9 @@ export class ConversasService {
       if (destino === 'descartar') return 'esvaziar';
 
       const gravadas = await this.gravar(db, n, mensagensDoHistorico(value), new Map());
+      // A mídia tardia sem destinatário (a que a EMPRESA mandou pode vir sem
+      // `to`) chega à mensagem que já existe pelo wamid.
+      await this.aplicarMidiasTardias(db, n.contaId, midiasDoHistorico(value));
       if (gravadas) this.log.log(`Histórico: ${gravadas} mensagem(ns) nova(s) no número ${mascararId(phoneNumberId)}.`);
       return 'esvaziar';
     });
@@ -208,13 +213,18 @@ export class ConversasService {
         )
         .onConflictDoUpdate({
           target: [mensagem.contaId, mensagem.wamid],
+          // A mídia que faltava — e, se a mensagem era o `media_placeholder`
+          // do histórico, o tipo real junto. O que já existe não é trocado.
           set: {
-            midiaId: sql`excluded.midia_id`,
-            midiaMime: sql`excluded.midia_mime`,
-            midiaNome: sql`coalesce(excluded.midia_nome, ${mensagem.midiaNome})`,
+            tipo: sql`case when ${mensagem.tipo} = 'media_placeholder' then excluded.tipo else ${mensagem.tipo} end`,
+            texto: sql`coalesce(${mensagem.texto}, excluded.texto)`,
+            midiaId: sql`coalesce(${mensagem.midiaId}, excluded.midia_id)`,
+            midiaMime: sql`coalesce(${mensagem.midiaMime}, excluded.midia_mime)`,
+            midiaNome: sql`coalesce(${mensagem.midiaNome}, excluded.midia_nome)`,
           },
-          // Só a mídia que faltava; repetição sem novidade não toca a linha.
-          setWhere: sql`${mensagem.midiaId} is null and excluded.midia_id is not null`,
+          // Repetição sem novidade não toca a linha.
+          setWhere: sql`(${mensagem.midiaId} is null and excluded.midia_id is not null)
+            or (${mensagem.tipo} = 'media_placeholder' and excluded.tipo <> 'media_placeholder')`,
         })
         .returning({
           conversaId: mensagem.conversaId,
@@ -268,6 +278,35 @@ export class ConversasService {
     }
 
     return novas.length;
+  }
+
+  /**
+   * O arquivo que chega depois, aplicado à mensagem que já existe, pelo wamid.
+   * Troca o `media_placeholder` pelo tipo real; o que já existe não é trocado.
+   * Mensagem ainda não gravada fica como está — o lote da thread a criará, e o
+   * insert dela já traz a mídia se o aviso vier de novo.
+   */
+  private async aplicarMidiasTardias(db: Db, contaId: string, midias: MidiaTardia[]): Promise<void> {
+    for (const parte of emPartes(midias)) {
+      await db.execute(sql`
+        update mensagem m
+           set tipo = case when m.tipo = 'media_placeholder' then v.tipo else m.tipo end,
+               texto = coalesce(m.texto, v.texto),
+               midia_id = coalesce(m.midia_id, v.midia_id),
+               midia_mime = coalesce(m.midia_mime, v.midia_mime),
+               midia_nome = coalesce(m.midia_nome, v.midia_nome)
+          from (values ${sql.join(
+            parte.map(
+              (d) =>
+                sql`(${d.wamid}::text, ${d.tipo}::text, ${d.texto}::text, ${d.midiaId}::text, ${d.midiaMime}::text, ${d.midiaNome}::text)`,
+            ),
+            sql`, `,
+          )}) as v(wamid, tipo, texto, midia_id, midia_mime, midia_nome)
+         where m.conta_id = ${contaId}
+           and m.wamid = v.wamid
+           and (m.midia_id is null or m.tipo = 'media_placeholder')
+      `);
+    }
   }
 
   /**

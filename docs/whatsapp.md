@@ -166,8 +166,16 @@ leitura dos formatos da Meta em
 
 - **histórico** — direção pelo remetente (`from` = cliente da thread → entrada);
   status de `history_context.status`; data ORIGINAL da mensagem;
-- **mídia recente** — chega num aviso `history` à parte (`value.messages[]`),
-  com o MESMO wamid: preenche a mídia da mensagem que já existe, sem duplicar;
+- **mídia recente** — no histórico, mídia vem como `media_placeholder` (o
+  conteúdo omitido). O arquivo chega num aviso `history` à parte
+  (`value.messages[]`), com o MESMO wamid, e só dos últimos 14 dias: preenche a
+  mensagem que já existe, sem duplicar, e troca o `media_placeholder` pelo tipo
+  real (foto, documento…). A mídia que a EMPRESA mandou pode vir sem `to` —
+  por isso a aplicação é pelo wamid (`midiasDoHistorico`), sem depender de
+  saber a pessoa. Mídia mais antiga fica "📎 Mídia — só no celular";
+- **tipos que a API não repassa** — `errors` (visto no histórico em produção,
+  fora da documentação) e `unsupported`: gravados sem texto, aparecem como
+  "Mensagem só no celular";
 - **ao vivo** — o cliente escreveu; o nome do perfil vem de `contacts`;
 - **ecos** — o lojista respondeu pelo celular (`to` = cliente): conta como
   resposta e zera as não lidas;
