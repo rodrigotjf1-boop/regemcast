@@ -96,6 +96,8 @@ caber em um deles:
 | `meta.agenda.lote` | `agenda.service.ts` | Um lote da agenda do celular (`smb_app_state_sync`) chega identificado pelo número. A transação acha o número, trava a linha e grava os contatos **daquela** conta — todo `insert`/`update` leva o `conta_id` do número achado. |
 | `meta.conversas.historico` / `.ecos` / `.recebidas` | `conversas.service.ts` | Histórico, ecos do celular e mensagens ao vivo chegam pelo número. A transação acha o número, trava a linha e grava conversas e mensagens **daquela** conta — todo `insert`/`update` leva o `conta_id` do número achado. |
 | `meta.agenda.reenfileirar` | `agenda.service.ts` | A retomada devolve à fila os lotes de agenda e histórico guardados de números que já têm resposta. É um `update` em `wa_evento` (tabela `rc_sistema`) cruzado com `wa_numero` de todas as contas — a cada minuto só números com resposta dos últimos 7 dias; na subida do servidor, sem janela. |
+| `campanha.worker.*` (8 usos) | `campanha.service.ts` | O worker do disparo acorda sem sessão e roda as campanhas ativas de todas as contas. Cada escopo dura um passo curto — listar, ler, reservar (com a trava por conta), marcar início, pausar, desacelerar, concluir, soltar presos — e todo comando leva o `id` da campanha ou o `conta_id` dela; nenhuma transação fica aberta durante a chamada à Meta. |
+| `meta.limite.vencidos` / `meta.limite.gravar` | `limite.job.ts` | O job relê o limite de envio da Meta de todos os números, de 6 em 6 horas: um `select` entre contas para achar os vencidos (com o token cifrado de cada um) e um `update` por número, no id dele, depois da chamada à Meta — nunca durante. |
 
 **(B) O registro precisa sobreviver ao rollback da operação.**
 

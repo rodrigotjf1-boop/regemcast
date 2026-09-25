@@ -85,8 +85,10 @@ const CATALOGO: Record<number, Omit<ErroMetaTraduzido, 'codigo'>> = {
     classe: 'limite',
     titulo: 'Meta segurou esta mensagem',
     explicacao:
-      'A Meta não entregou porque esta pessoa já recebeu muita mensagem de marketing hoje. Não é erro seu nem do número: é a regra que a Meta chama de "engajamento saudável". Vamos tentar de novo em 24 horas.',
-    // A própria documentação manda esperar 24h.
+      'A Meta não entregou porque esta pessoa já recebeu muita mensagem de marketing hoje. Não é erro seu nem do número: é a regra que a Meta chama de "engajamento saudável". Reenviar antes de 24 horas piora a situação — ela pode receber numa próxima campanha.',
+    // A própria documentação manda esperar 24h. Este código costuma chegar
+    // DEPOIS, pelo aviso de entrega; aí não reenviamos sozinhos — a Meta pune
+    // quem insiste com quem atingiu o limite.
     esperaSegundos: 86_400,
   },
 

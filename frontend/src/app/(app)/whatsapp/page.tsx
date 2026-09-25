@@ -209,7 +209,7 @@ function CartaoNumero({
             Limite da Meta
           </p>
           <p className="numerico mt-1 text-2xl font-semibold text-tinta">
-            {numero.tierLimite === null
+            {numero.tierNome === 'TIER_UNLIMITED'
               ? 'Sem teto'
               : numero.tierLimite
                 ? `${numero.tierLimite.toLocaleString('pt-BR')} pessoas / 24h`
@@ -217,8 +217,13 @@ function CartaoNumero({
           </p>
           <p className="mt-2 text-xs leading-relaxed text-tinta-suave">
             Este limite é da Meta e conta <strong>pessoas diferentes</strong> em 24 horas — é
-            separado do teto do seu plano. Conta nova começa em 250 e sobe conforme o histórico
-            de envios.
+            separado do teto do seu plano, e vale para todos os números do seu portfólio na Meta.
+            Começa em 250 e sobe para 2.000 (empresa verificada, ou 2.000 entregas de boa
+            qualidade em 30 dias); depois 10.000, 100.000 e sem teto, sozinho.
+          </p>
+          <p className="mt-2 text-xs leading-relaxed text-tinta-suave">
+            As campanhas obedecem a esse limite: quando ele enche, a campanha espera e continua
+            sozinha quando a janela de 24 horas abrir vaga.
           </p>
           <p className="mt-2 text-xs leading-relaxed text-tinta-suave">
             Velocidade de envio: até{' '}

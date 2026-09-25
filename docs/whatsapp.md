@@ -272,12 +272,49 @@ declarado na seção 4 da
 de 180 dias dito por extenso e a informação de que ele pode recusar o
 compartilhamento na própria janela da Meta.
 
+## Limite de envio
+
+Pessoas DIFERENTES alcançadas com modelo, fora de conversa aberta, numa janela
+MÓVEL de 24 horas. Desde 07/10/2025 o limite é do **portfólio** — todos os
+números dele dividem o mesmo teto — e os degraus são **250 → 2.000 → 10.000 →
+100.000 → sem teto**. Sobe para 2.000 com a empresa verificada ou com 2.000
+entregas de boa qualidade em 30 dias; daí em diante sozinho, em até 6 horas,
+para quem usa metade do limite em 7 dias com qualidade alta.
+
+- **Leitura:** o campo `whatsapp_business_manager_messaging_limit` do número
+  (v24.0+; o antigo `messaging_limit_tier` foi descontinuado), na conexão e de 6
+  em 6 horas pelo [`limite.job.ts`](../backend/src/modules/meta/limite.job.ts);
+  e o aviso `business_capability_update`, que chega pela WABA, sem número — por
+  isso o evento guarda o `entry.id` (e ele entra na chave de idempotência).
+- **Formatos:** a documentação se contradiz (nome do degrau, número ou `-1`);
+  [`limite.regras.ts`](../backend/src/modules/meta/limite.regras.ts) aceita os
+  três e trata o desconhecido como "não sabemos" — nunca como "sem teto".
+- **No disparo:** cada rodada conta, dentro da trava por conta, quantas pessoas
+  a conta já alcançou em 24 h. Cheio, a rodada não pega ninguém e a campanha
+  **espera** — não pausa — e continua sozinha quando a vaga abre. A tela da
+  campanha mostra o motivo e a hora.
+
 ## Erros e retentativa
 
 O catálogo em [`erros-meta.ts`](../backend/src/modules/meta/erros-meta.ts)
 traduz 25 códigos da Meta para pt-BR e classifica cada um em `transitorio`,
-`limite`, `destinatario`, `config`, `credencial` ou `politica`. Só `transitorio`
-volta automaticamente, e é o catálogo — não um `catch` genérico — que decide.
+`limite`, `destinatario`, `config`, `credencial` ou `politica`. É o catálogo —
+não um `catch` genérico — que decide o que volta.
+
+No envio da campanha:
+
+- **A Meta respondeu recusando por ritmo ou instabilidade** (`transitorio` ou
+  `limite`, com resposta HTTP): ela não aceitou a mensagem, então tentar de novo
+  não duplica nada. O destinatário volta para a fila com hora marcada (a espera
+  do catálogo, dobrando, até 1 h), no máximo 3 vezes. **130429** e **80007**
+  fazem a campanha inteira esperar — continuar a rodada seria bater no mesmo
+  muro com os próximos.
+- **A rede caiu ou o tempo esgotou no meio do envio** (sem resposta): não dá
+  para saber se a mensagem chegou. Não reenviamos — duplicar é pior que perder
+  —, e a tela diz exatamente isso.
+- **131049** (limite de marketing por pessoa) chega depois, pelo aviso de
+  entrega. Não reenviamos sozinhos: a Meta pune quem insiste com quem atingiu o
+  limite.
 
 Dois códigos que importam neste fluxo:
 
@@ -318,13 +355,18 @@ clássico.
   `whatsapp_business_messaging`: vídeo de tela por permissão + descrição
   escrita. Verificação de Negócio e Verificação de Acesso já estão aprovadas.
 - **Vazão de 20 mps** respeitada pelo motor de disparo (Fase 4). O valor já
-  está gravado e exposto em `vazaoMaxima`; falta quem o obedeça.
+  está gravado e exposto em `vazaoMaxima`; falta quem o obedeça (o lote de 20
+  por rodada fica bem abaixo dele hoje, e a recusa de ritmo já desacelera).
 - **Janela de 24h de atendimento**: quem abre a janela é a mensagem do
   **cliente**, não a resposta do lojista (o eco não abre nada). A conversa já
   guarda `ultima_entrada_em`; a tela de conversas usa isso para escolher entre
   texto livre e modelo aprovado.
 
 ## Fontes
+
+- [Messaging limits (limite de envio, portfólio)](https://developers.facebook.com/documentation/business-messaging/whatsapp/messaging-limits/)
+- [`business_capability_update` webhook](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/business_capability_update/)
+- [Per-user marketing template limits (131049)](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/per-user-limits/)
 
 - [Onboard WhatsApp Business app users (coexistência)](https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/onboarding-business-app-users)
 - [`smb_app_state_sync` webhook](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/reference/smb_app_state_sync/)

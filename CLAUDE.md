@@ -25,7 +25,8 @@ nem deploy**. Nunca copie arquivo do Regem para cá e nunca altere nada lá.
 Monorepo em `C:\RegemCast`.
 
 - **`backend/`** — NestJS 10 + TypeScript estrito + Drizzle ORM + `pg`
-  (Postgres/Supabase) + BullMQ/Redis para a fila de disparo. Prefixo da API:
+  (Postgres/Supabase). A fila de disparo mora no próprio Postgres (worker com
+  `FOR UPDATE SKIP LOCKED`); BullMQ/Redis estão nas dependências, sem uso. Prefixo da API:
   `/api/v1`. Um módulo por domínio em `src/modules/<dominio>/`
   (`*.module.ts`, `*.controller.ts`, `*.service.ts`, `dto/`). Schema Drizzle em
   `src/db/schema.ts`. Swagger em `/api/v1/docs` (só com `SWAGGER_ENABLED=true`).
@@ -99,10 +100,12 @@ Detalhe e o porquê em `docs/marca.md`; fonte da verdade em `kit/LEIA-ME.md`.
   livre só dentro da janela de 24h aberta pelo contato. A categoria declarada
   (marketing / utilidade / autenticação) precisa corresponder ao conteúdo —
   marketing disfarçado de utilidade derruba a qualidade da WABA do cliente.
-- **Respeitar limite e qualidade.** Tier de mensagens (1k / 10k / 100k /
-  ilimitado) e nota de qualidade são da WABA do cliente. O disparo respeita o
-  teto do tier e **pausa** quando a Meta responde limite atingido — nunca insiste
-  em cima do erro.
+- **Respeitar limite e qualidade.** Limite de envio (pessoas diferentes em 24 h,
+  do portfólio: 250 / 2.000 / 10.000 / 100.000 / sem teto) e nota de qualidade
+  são da conta do cliente. O disparo respeita o limite — cheio, a campanha
+  **espera** e continua sozinha quando a janela abre vaga — e desacelera quando a
+  Meta responde "ritmo" (130429, 80007) — nunca insiste em cima do erro. Detalhe
+  em `docs/whatsapp.md`.
 
 ### Dados e acesso
 

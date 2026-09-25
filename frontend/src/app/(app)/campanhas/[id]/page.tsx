@@ -314,9 +314,42 @@ export default function PaginaCampanha() {
         </div>
       )}
 
-      {campanha.status === 'agendada' && (
+      {campanha.status === 'agendada' && !campanha.espera && (
         <Alerta tom="informacao">
           Agendada. As mensagens começam a sair na próxima abertura da janela de envio.
+        </Alerta>
+      )}
+
+      {campanha.espera?.motivo === 'limite_meta' && (
+        <Alerta tom="informacao">
+          <span className="block space-y-2">
+            <span className="block">
+              Aguardando o limite da Meta: sua conta já falou com{' '}
+              {campanha.espera.limite ? (
+                <strong className="numerico">{formatarNumero(campanha.espera.limite)}</strong>
+              ) : (
+                'o máximo de'
+              )}{' '}
+              pessoas diferentes nas últimas 24 horas, o teto do seu número hoje.{' '}
+              {campanha.espera.ate
+                ? `A campanha continua sozinha a partir de ${formatarDataHora(campanha.espera.ate)}`
+                : 'A campanha continua sozinha assim que abrir vaga'}
+              {' '}— ninguém fica de fora nem é marcado como falha.
+            </span>
+            <Link href="/whatsapp" className="text-sm font-medium text-tinta underline underline-offset-4">
+              Ver o limite do número
+            </Link>
+          </span>
+        </Alerta>
+      )}
+
+      {campanha.espera?.motivo === 'ritmo' && (
+        <Alerta tom="informacao">
+          A Meta pediu para desacelerar: muitas mensagens em pouco tempo.{' '}
+          {campanha.espera.ate
+            ? `A campanha continua sozinha a partir de ${formatarDataHora(campanha.espera.ate)}`
+            : 'A campanha continua sozinha em instantes'}
+          {' '}— quem ficou na fila sai depois, sem perder a mensagem.
         </Alerta>
       )}
 

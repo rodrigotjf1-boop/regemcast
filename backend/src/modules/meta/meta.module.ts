@@ -6,6 +6,7 @@ import { AgendaService } from './agenda.service';
 import { CoexistenciaJob } from './coexistencia.job';
 import { ConversasService } from './conversas.service';
 import { GraphService } from './graph.service';
+import { LimiteJob } from './limite.job';
 import { MetaController } from './meta.controller';
 import { MetaService } from './meta.service';
 import { WebhookController } from './webhook.controller';
@@ -23,6 +24,7 @@ import { WebhookService } from './webhook.service';
     WebhookService,
     WebhookRetomada,
     CoexistenciaJob,
+    LimiteJob,
     DistTokenGuard,
   ],
   exports: [MetaService, GraphService],

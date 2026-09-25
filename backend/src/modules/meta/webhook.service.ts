@@ -27,6 +27,7 @@ import { AgendaService } from './agenda.service';
 import { ConversasService } from './conversas.service';
 import { historicoRecusado, sincronizacaoConcluida } from './coexistencia.regras';
 import { codigoDoErro, mensagemDoErroMeta, traduzirErroMeta } from './erros-meta';
+import { limiteInformado } from './limite.regras';
 
 /** Quantos eventos processar por passada. */
 const LOTE = 50;
@@ -42,6 +43,13 @@ const CONTEUDO_ESVAZIADO = { esvaziado: true };
 interface Mudanca {
   field?: string;
   value?: Record<string, unknown>;
+  /**
+   * O `entry.id` de onde a mudança veio — a WABA. Aviso de conta (limite de
+   * envio, por exemplo) não traz número nenhum no `value`: sem isto, não dá
+   * para saber de quem é. E entra na chave de idempotência: o mesmo aviso de
+   * duas WABAs diferentes (as duas subiram para 2.000) não é o mesmo evento.
+   */
+  entrada?: string;
 }
 
 /** Evento da Meta → status do nosso registro. O que não está aqui é ignorado. */
@@ -327,28 +335,45 @@ export class WebhookService {
     }
   }
 
+  /**
+   * O limite de envio mudou (`business_capability_update`).
+   *
+   * Desde out/2025 o limite é do PORTFÓLIO: o aviso chega pela WABA, sem
+   * número nenhum, e vale para todos os números dela. Os formatos (nome do
+   * degrau, número, -1) e a fonte estão em `limite.regras.ts`; valor que não
+   * reconhecemos não grava nada — nunca vira "sem teto".
+   */
   private async limiteDoNumero(m: Mudanca): Promise<void> {
     const v = m.value ?? {};
+    const informado =
+      limiteInformado(v.max_daily_conversations_per_business) ??
+      limiteInformado(v.max_daily_conversation_per_phone) ??
+      limiteInformado(v.messaging_limit_tier);
+    if (!informado) return;
+
     const phoneNumberId = this.phoneNumberIdDe(m);
-    if (!phoneNumberId) return;
+    const wabaId = m.entrada ?? null;
+    if (!phoneNumberId && !wabaId) return;
 
-    const bruto = Number(
-      v.max_daily_conversation_per_phone ?? v.max_daily_conversations_per_business ?? 0,
-    );
-    const tierNome = typeof v.messaging_limit_tier === 'string' ? v.messaging_limit_tier : null;
-    if (!bruto && !tierNome) return;
-
-    await this.ctx.comEscopoSistema('meta.webhook.limite', async (db) => {
-      await db
-        .update(waNumero)
-        .set({
-          ...(bruto ? { tierLimite: bruto } : {}),
-          ...(tierNome ? { tierNome } : {}),
-          tierEm: new Date(),
-        })
-        .where(eq(waNumero.phoneNumberId, phoneNumberId));
+    const alterados = await this.ctx.comEscopoSistema('meta.webhook.limite', async (db) => {
+      const r = await db.execute(sql`
+        update wa_numero n
+           set tier_limite = ${informado.limite},
+               tier_nome = ${informado.nome},
+               tier_em = now()
+         where ${
+           phoneNumberId
+             ? sql`n.phone_number_id = ${phoneNumberId}`
+             : sql`n.wa_conta_id in (select c.id from wa_conta c where c.waba_id = ${wabaId})`
+         }
+        returning n.id
+      `);
+      return r.rows.length;
     });
+
+    this.log.log(`Limite de envio agora ${informado.nome}: ${alterados} número(s) atualizado(s).`);
   }
+
 
   /**
    * Eventos de mensagem: status de entrega e mensagens recebidas.
@@ -663,7 +688,8 @@ export class WebhookService {
     const saida: Mudanca[] = [];
     for (const e of entradas as Array<Record<string, unknown>>) {
       const mudancas = Array.isArray(e.changes) ? e.changes : [];
-      for (const c of mudancas as Mudanca[]) saida.push(c);
+      const entrada = typeof e.id === 'string' && e.id ? e.id : undefined;
+      for (const c of mudancas as Mudanca[]) saida.push(entrada ? { ...c, entrada } : c);
     }
     return saida;
   }
