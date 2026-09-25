@@ -13,6 +13,7 @@ import {
   IconeConversa,
   IconeEscudo,
   IconeFechar,
+  IconeIntegracao,
   IconeMenu,
   IconeModelo,
   IconePainel,
@@ -68,6 +69,7 @@ const SECOES: Array<{ titulo: string; itens: ItemDoMenu[] }> = [
     titulo: 'Configuração',
     itens: [
       { href: '/whatsapp', rotulo: 'WhatsApp', Icone: IconeConversa },
+      { href: '/integracoes', rotulo: 'Integrações', Icone: IconeIntegracao },
       { href: '/plano', rotulo: 'Plano e pagamento', Icone: IconeCartao },
       { href: '/conta', rotulo: 'Conta e usuários', Icone: IconeConta },
     ],

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
 import { Alerta } from '@/components/ui/alerta';
@@ -9,9 +10,8 @@ import { Card } from '@/components/ui/card';
 import { Input, Select } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import { ImportarCardapioWeb } from '@/components/app/importar-cardapioweb';
 import type { AlvoDaDivisao } from '@/components/app/blocos/dividir-em-blocos';
-import { IconeBlocos } from '@/components/app/icones';
+import { IconeBlocos, IconeIntegracao } from '@/components/app/icones';
 import { mensagemDoErro } from '@/lib/api';
 import { formatarNumero } from '@/lib/formato';
 import { contatos } from '@/lib/servicos';
@@ -36,16 +36,13 @@ type Fonte = 'arquivo' | 'texto' | 'cardapioweb';
 
 export function ImportarContatos({
   aoConcluir,
-  fonteInicial = 'arquivo',
   aoDividir,
 }: {
   aoConcluir: () => void;
-  /** `cardapioweb` quando chega pela CW App Store (?importar=cardapioweb). */
-  fonteInicial?: Fonte;
   /** Abre a divisão em blocos do que acabou de entrar. */
   aoDividir?: (alvo: AlvoDaDivisao) => void;
 }) {
-  const [fonte, setFonte] = useState<Fonte>(fonteInicial);
+  const [fonte, setFonte] = useState<Fonte>('arquivo');
   const [texto, setTexto] = useState('');
   const [previa, setPrevia] = useState<PreviaDaImportacao | null>(null);
   const [carregando, setCarregando] = useState(false);
@@ -264,7 +261,18 @@ export function ImportarContatos({
             </div>
 
             {fonte === 'cardapioweb' ? (
-              <ImportarCardapioWeb aoConcluir={aoConcluir} />
+              <div className="space-y-3">
+                <p className="max-w-prose text-sm leading-relaxed text-tinta-suave">
+                  A loja do Cardápio Web se conecta em <strong>Integrações</strong>: além dos clientes, traz o
+                  histórico de compras de cada um e continua trazendo os pedidos novos.
+                </p>
+                <Link href="/integracoes">
+                  <Button variante="secundario">
+                    <IconeIntegracao />
+                    Abrir Integrações
+                  </Button>
+                </Link>
+              </div>
             ) : fonte === 'arquivo' ? (
               <div className="space-y-2">
                 <Label htmlFor="arquivo-contatos">Arquivo de contatos</Label>

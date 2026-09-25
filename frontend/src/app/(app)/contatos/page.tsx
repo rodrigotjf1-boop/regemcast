@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 
 import { BlocosDaBase } from '@/components/app/blocos/blocos-da-base';
@@ -68,7 +69,6 @@ export default function PaginaContatos() {
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(true);
   const [importando, setImportando] = useState(false);
-  const [fonteInicial, setFonteInicial] = useState<'arquivo' | 'cardapioweb'>('arquivo');
   const [perfis, setPerfis] = useState<ResumoSegmentos | null>(null);
   const [segmento, setSegmento] = useState<Segmento | null>(null);
   const [regioes, setRegioes] = useState<RegioesDaBase | null>(null);
@@ -78,6 +78,7 @@ export default function PaginaContatos() {
   const [avisoBlocos, setAvisoBlocos] = useState('');
   const { sessao } = useSessao();
   const ehDono = sessao.usuario.papel === 'dono';
+  const router = useRouter();
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -115,11 +116,12 @@ export default function PaginaContatos() {
   }, [carregar]);
 
   // Chegou pelo atalho "Importar contatos" do painel: já abre a importação.
+  // O endereço antigo do Cardápio Web (?importar=cardapioweb) mora agora em Integrações.
   useEffect(() => {
     const importar = new URLSearchParams(window.location.search).get('importar');
-    if (importar === 'cardapioweb') setFonteInicial('cardapioweb');
-    if (importar === '1' || importar === 'cardapioweb') setImportando(true);
-  }, []);
+    if (importar === 'cardapioweb') router.replace('/integracoes');
+    else if (importar === '1') setImportando(true);
+  }, [router]);
 
   async function descadastrar(id: string) {
     try {
@@ -178,7 +180,6 @@ export default function PaginaContatos() {
       {importando && (
         <div className="anima-entrada">
           <ImportarContatos
-            fonteInicial={fonteInicial}
             aoConcluir={() => {
               setNumero(1);
               void carregar();
