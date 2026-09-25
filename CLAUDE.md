@@ -104,6 +104,11 @@ Detalhe e o porquê em `docs/marca.md`; fonte da verdade em `kit/LEIA-ME.md`.
   livre só dentro da janela de 24h aberta pelo contato. A categoria declarada
   (marketing / utilidade / autenticação) precisa corresponder ao conteúdo —
   marketing disfarçado de utilidade derruba a qualidade da WABA do cliente.
+- **Descanso entre campanhas e número sem WhatsApp** (Fase 4A): quem recebeu
+  marketing nos últimos N dias da conta fica de fora (`descanso`, sem custo no
+  plano); número recusado com 131026 em duas campanhas sai sozinho dos envios e
+  de toda contagem — "quem pode receber" é `opt_out = false` E
+  `sem_whatsapp_em is null`, em todo lugar. Detalhe em `docs/whatsapp.md`.
 - **Respeitar limite e qualidade.** Limite de envio (pessoas diferentes em 24 h,
   do portfólio: 250 / 2.000 / 10.000 / 100.000 / sem teto) e nota de qualidade
   são da conta do cliente. O disparo respeita o limite — cheio, a campanha

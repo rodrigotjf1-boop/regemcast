@@ -302,6 +302,29 @@ para quem usa metade do limite em 7 dias com qualidade alta.
   uma `contato_lista` com `divisao_id` e `bloco`; a divisão inteira é um comando
   só no banco ([`divisao.service.ts`](../backend/src/modules/contato/divisao.service.ts)).
 
+## Descanso, número sem WhatsApp e resposta (Fase 4A)
+
+- **Descanso entre campanhas.** Quem recebeu campanha de MARKETING nos últimos
+  N dias fica de fora da próxima (`descanso`, que não é falha e não conta no
+  plano). N é da conta (Conta → Dados da conta, padrão 3, 0 desliga) e é
+  copiado para a campanha ao criar — mudar depois não mexe em campanha
+  existente. Só modelo de marketing; o dono pode liberar uma campanha. A regra
+  (`recebeuMarketingRecente`) conta o que saiu de verdade (enviada, entregue,
+  lida) e o que está saindo (`enviando`), nas duas formas do celular, e roda
+  na reserva da rodada, dentro da trava por conta. Motivo: a Meta limita o
+  marketing por pessoa (131049) e pune quem insiste; mandar menos para quem
+  acabou de receber protege a qualidade do número.
+- **Número sem WhatsApp.** 131026 ("não tem WhatsApp, não aceitou os termos ou
+  usa versão antiga") em DUAS campanhas diferentes marca o contato
+  (`sem_whatsapp_em`): ele sai dos envios e de todos os públicos e contagens, e
+  aparece em Contatos → Bloqueios → Sem WhatsApp, com "Tentar de novo" (só as
+  recusas depois disso contam para marcar de novo). Vale a recusa na hora do
+  envio e a que chega pelo aviso de status.
+- **Resposta à campanha.** A mensagem que responde a uma nossa chega com
+  `context.id` = o `wamid` da campanha: marca `respondida_em` no destinatário
+  (em qualquer número — não depende das conversas ligadas). Só o fato; o texto
+  não é guardado. "Parar promoções" e os pedidos de saída não contam.
+
 ## Erros e retentativa
 
 O catálogo em [`erros-meta.ts`](../backend/src/modules/meta/erros-meta.ts)
