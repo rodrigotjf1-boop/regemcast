@@ -165,3 +165,47 @@ describe('excluir modelo', () => {
     expect(r).toEqual({ ok: true, naMeta: false });
   });
 });
+
+describe('cópia de outro modelo (a Meta recusa corpo e rodapé iguais aos de um que já existe)', () => {
+  it('conferir aponta a cópia de um modelo nosso, pelo nome dele', async () => {
+    const m = montar();
+    const problemas = await m.service.conferir('c1', { ...DTO, nome: 'promo_nova', corpo: MODELO_BASE.corpo });
+    expect(problemas.map((p) => p.mensagem).join(' ')).toContain('O modelo "promo_sexta" já tem este mesmo texto');
+  });
+
+  it('conferir aponta a cópia de um modelo criado direto no painel da Meta', async () => {
+    const m = montar();
+    Object.assign(m.meta, {
+      modelos: jest.fn().mockResolvedValue([{ id: '555', nome: 'feito_na_meta', corpo: DTO.corpo, rodape: null }]),
+    });
+    const problemas = await m.service.conferir('c1', { ...DTO, nome: 'promo_nova' });
+    expect(problemas.map((p) => p.mensagem).join(' ')).toContain('"feito_na_meta"');
+  });
+
+  it('o modelo editado não é cópia de si mesmo', async () => {
+    const m = montar();
+    Object.assign(m.meta, {
+      modelos: jest.fn().mockResolvedValue([{ id: '999', nome: 'promo_sexta', corpo: MODELO_BASE.corpo, rodape: null }]),
+    });
+    await m.service.editarNaMeta('c1', 'u1', 'm1', { ...DTO, corpo: MODELO_BASE.corpo });
+    expect(m.graph.editarModelo).toHaveBeenCalledTimes(1);
+  });
+
+  it('envio para aprovação: cópia é barrada ANTES de ir à Meta', async () => {
+    const m = montar({ status: 'rascunho', metaTemplateId: null });
+    const criarModelo = jest.fn();
+    Object.assign(m.graph, { criarModelo });
+    Object.assign(m.meta, {
+      modelos: jest.fn().mockResolvedValue([{ id: '555', nome: 'feito_na_meta', corpo: MODELO_BASE.corpo, rodape: null }]),
+    });
+    await expect(m.service.enviarParaAprovacao('c1', 'u1', 'm1')).rejects.toBeInstanceOf(BadRequestException);
+    expect(criarModelo).not.toHaveBeenCalled();
+  });
+
+  it('sem a lista da Meta (fora do ar), confere só os nossos e não trava', async () => {
+    const m = montar();
+    Object.assign(m.meta, { modelos: jest.fn().mockRejectedValue(new Error('fora do ar')) });
+    const problemas = await m.service.conferir('c1', { ...DTO, nome: 'promo_nova' });
+    expect(problemas).toEqual([]);
+  });
+});

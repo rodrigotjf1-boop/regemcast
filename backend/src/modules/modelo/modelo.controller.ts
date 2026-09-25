@@ -7,7 +7,7 @@
  * divergiriam — foi assim que um telefone sem o código do país passou na tela e
  * foi recusado pela Meta.
  */
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
 import type { UsuarioAutenticado } from '../../common/auth.guard';
@@ -26,10 +26,17 @@ export class ModeloController {
     return this.servico.listar(usuario.contaId);
   }
 
-  /** Confere contra as regras da Meta. Não grava, não envia. */
+  /**
+   * Confere contra as regras da Meta e contra os modelos que já existem. Não
+   * grava, não envia. `id`: o modelo sendo editado.
+   */
   @Post('conferir')
-  conferir(@Body() dto: SalvarModeloDto) {
-    return { problemas: this.servico.conferir(dto) };
+  async conferir(
+    @UsuarioAtual() usuario: UsuarioAutenticado,
+    @Body() dto: SalvarModeloDto,
+    @Query('id', new ParseUUIDPipe({ optional: true })) id?: string,
+  ) {
+    return { problemas: await this.servico.conferir(usuario.contaId, dto, id) };
   }
 
   /** Criar modelo é do navegador: formulário longo, prévia e regras da Meta. */

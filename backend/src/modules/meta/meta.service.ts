@@ -33,6 +33,7 @@ import { AgendaService } from './agenda.service';
 import { cifrarToken, decifrarToken } from './cripto';
 import { ErroGraph, GraphService, type ModeloBruto } from './graph.service';
 import { limiteInformado, type LimiteDaMeta } from './limite.regras';
+import { motivoDoModelo } from './motivos-modelo';
 
 export interface DadosDoSignup {
   code: string;
@@ -154,7 +155,7 @@ function traduzirModelo(m: ModeloBruto): ModeloDeMensagem {
     idioma: m.language ?? '—',
     categoria: traduzirOuMostrarCru(CATEGORIA_MODELO, m.category),
     status: traduzirOuMostrarCru(STATUS_MODELO, m.status),
-    motivo: m.rejected_reason && m.rejected_reason !== 'NONE' ? m.rejected_reason : null,
+    motivo: motivoDoModelo(m.rejected_reason),
     // Cabeçalho de imagem/vídeo não tem texto: dizemos o formato, que é o que
     // a pessoa precisa saber para montar o disparo.
     cabecalho:

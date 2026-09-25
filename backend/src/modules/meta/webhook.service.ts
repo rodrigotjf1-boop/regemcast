@@ -19,6 +19,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { doWhatsapp, gemeoDoCelular } from '../../common/telefone';
 import { ContextoDb } from '../../db/contexto';
+import { motivoDoModelo } from './motivos-modelo';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { AvisoService } from '../aviso/aviso.service';
 import { campanhaDestinatario, modelo, waEvento, waNumero } from '../../db/schema';
@@ -62,20 +63,6 @@ const STATUS_DO_MODELO: Record<string, string> = {
   IN_APPEAL: 'enviado',
   REINSTATED: 'aprovado',
 };
-
-/** O motivo da Meta vem em código; os mais comuns, em português. */
-function motivoDoModelo(codigo: string): string | null {
-  const c = codigo.toUpperCase();
-  if (!c || c === 'NONE') return null;
-  const conhecidos: Record<string, string> = {
-    ABUSIVE_CONTENT: 'conteúdo considerado abusivo.',
-    INCORRECT_CATEGORY: 'categoria errada para o conteúdo.',
-    INVALID_FORMAT: 'formato inválido (variáveis, botões ou texto).',
-    SCAM: 'conteúdo considerado golpe.',
-    PROMOTIONAL: 'conteúdo promocional fora da categoria Marketing.',
-  };
-  return conhecidos[c] ?? codigo.toLowerCase().replace(/_/g, ' ');
-}
 
 const QUALIDADE: Record<string, string> = {
   GREEN: 'verde',

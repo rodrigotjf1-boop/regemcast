@@ -126,7 +126,73 @@ export function botoesComSaida(m: {
   ];
 }
 export const LIMITE_BOTAO_TEXTO = 25;
+/** Telefone do botão: até 20 caracteres (documentação de componentes da Meta). */
+export const LIMITE_BOTAO_TELEFONE = 20;
 export const LIMITE_LTO_TEXTO = 16;
+
+/**
+ * Chaves fora do padrão da Meta: tudo que tem `{` ou `}` e não é `{{n}}` —
+ * `{nome}`, `{{nome}}`, `{{1}`. A Meta recusa o modelo inteiro por isso
+ * ("variable parameters … have mismatched curly braces"), horas depois, com o
+ * código INVALID_FORMAT; aqui a pessoa vê na hora, com o que trocar.
+ */
+export function chavesForaDoPadrao(texto: string): string[] {
+  const semVariaveis = texto.replace(/\{\{\s*\d+\s*\}\}/g, ' ');
+  const achados = semVariaveis.match(/\{+[^{}\n]{0,40}\}*|[^{}\s]{0,20}\}+/g) ?? [];
+  return [...new Set(achados.map((a) => a.trim()).filter(Boolean))];
+}
+
+/**
+ * Pedido de dado sensível: a política do WhatsApp Business proíbe pedir
+ * "identificadores sensíveis" — senha, dados de cartão, documento de
+ * identidade (CPF, RG). Motivo de recusa listado pela Meta na revisão de
+ * modelos (conferido em 25/09/2026).
+ */
+const DADO_SENSIVEL =
+  /(?<![\p{L}\p{N}])(senhas?|cvv|c[óo]digo de seguran[çc]a|n[úu]mero do cart[ãa]o|dados do cart[ãa]o|cpf|rg)(?![\p{L}\p{N}])/iu;
+
+/** Tom de ameaça ao cliente (ação judicial, negativação): outro motivo de recusa da lista da Meta. */
+const AMEACA =
+  /(?<![\p{L}\p{N}])(processo judicial|a[çc][ãa]o judicial|cobran[çc]a judicial|negativa[çc][ãa]o|negativar|protestar|protesto|serasa|spc|nome sujo)(?![\p{L}\p{N}])/iu;
+
+/** O conteúdo que a Meta recusa pela política, em qualquer parte de texto do modelo. */
+function problemasDeConteudo(texto: string): string[] {
+  const achados: string[] = [];
+  const sensivel = texto.match(DADO_SENSIVEL);
+  if (sensivel) {
+    achados.push(
+      `"${sensivel[0]}": a Meta recusa modelo que pede dado sensível (senha, dados de cartão, CPF, RG) — é a política do WhatsApp Business. Tire esse pedido do texto; se precisar do dado, peça numa conversa.`,
+    );
+  }
+  const ameaca = texto.match(AMEACA);
+  if (ameaca) {
+    achados.push(
+      `"${ameaca[0]}": a Meta recusa modelo com tom de ameaça ao cliente (ação judicial, negativação, protesto). Reescreva sem isso.`,
+    );
+  }
+  return achados;
+}
+
+/**
+ * Palavras FORA das variáveis. A Meta recusa modelo com "variável demais para o
+ * tamanho da mensagem" sem publicar o número; a regra que os provedores
+ * documentam é de pelo menos 2N + 1 palavras fixas para N variáveis.
+ */
+export function palavrasFixas(texto: string): number {
+  return texto
+    .replace(/\{\{\s*\d+\s*\}\}/g, ' ')
+    .split(/\s+/)
+    .filter((t) => /[\p{L}\p{N}]/u.test(t)).length;
+}
+
+/** A frase para cada chave fora do padrão, dizendo o que pôr no lugar. */
+function problemasDeChaves(texto: string): string[] {
+  return chavesForaDoPadrao(texto).map((trecho) =>
+    /^\{\{?\s*(primeiro[\s_]?nome|nome|name|cliente)\s*\}?\}$/i.test(trecho)
+      ? `"${trecho}" não é variável do WhatsApp: troque por {{1}}. Na hora de montar a campanha você escolhe que {{1}} é o nome do contato.`
+      : `"${trecho}" está fora do padrão: a Meta só aceita variável como {{1}}, {{2}}… (número entre chaves duplas). Troque, ou tire as chaves.`,
+  );
+}
 
 /** Encontra as variáveis `{{n}}` na ordem em que aparecem. */
 export function variaveisDe(texto: string): number[] {
@@ -181,6 +247,8 @@ export function conferirModelo(m: ModeloParaValidar): ProblemaNoModelo[] {
   }
 
   if (corpo) problemas.push(...conferirVariaveis(corpo, m.corpoExemplos ?? []));
+  for (const mensagem of problemasDeChaves(corpo)) p('corpo', mensagem);
+  for (const mensagem of problemasDeConteudo(corpo)) p('corpo', mensagem);
 
   // -------------------------------------------------------------- carrossel
   //
@@ -216,6 +284,8 @@ export function conferirModelo(m: ModeloParaValidar): ProblemaNoModelo[] {
   // -------------------------------------------------------------- cabeçalho
   if (m.cabecalhoFormato === 'TEXT') {
     const cab = (m.cabecalhoTexto ?? '').trim();
+    for (const mensagem of problemasDeChaves(cab)) p('cabecalho', mensagem);
+    for (const mensagem of problemasDeConteudo(cab)) p('cabecalho', mensagem);
     if (!cab) {
       p('cabecalho', 'Escreva o cabeçalho ou troque o tipo para "sem cabeçalho".');
     } else {
@@ -252,6 +322,8 @@ export function conferirModelo(m: ModeloParaValidar): ProblemaNoModelo[] {
 
   // ----------------------------------------------------------------- rodapé
   const rodape = (m.rodape ?? '').trim();
+  for (const mensagem of problemasDeChaves(rodape)) p('rodape', mensagem);
+  for (const mensagem of problemasDeConteudo(rodape)) p('rodape', mensagem);
   if (rodape) {
     if (rodape.length > LIMITE_RODAPE) {
       p('rodape', `O rodapé precisa ter até ${LIMITE_RODAPE} caracteres.`);
@@ -318,6 +390,16 @@ function conferirVariaveis(corpo: string, exemplos: string[]): ProblemaNoModelo[
   }
   if (/\}\}\s*\{\{/.test(texto)) {
     p('Duas variáveis não podem ficar coladas. Escreva algo entre elas.');
+  }
+
+  // Variável demais para o tamanho do texto: a Meta recusa (motivo da lista
+  // dela). Cada ocorrência conta — é o que ela vê no texto.
+  const fixas = palavrasFixas(texto);
+  const minimo = 2 * ocorrencias.length + 1;
+  if (fixas < minimo) {
+    p(
+      `Texto curto para ${ocorrencias.length} ${ocorrencias.length === 1 ? 'variável' : 'variáveis'}: a Meta recusa modelo com variável demais para o tamanho da mensagem. Escreva pelo menos ${minimo} palavras fora das variáveis (hoje são ${fixas}).`,
+    );
   }
 
   // Um exemplo por variável distinta. Contar ocorrências em vez de distintas é
@@ -429,15 +511,26 @@ function conferirBotoes(botoes: BotaoDoModelo[]): ProblemaNoModelo[] {
     else if (texto.length > LIMITE_BOTAO_TEXTO) {
       p(`${onde}: o texto precisa ter até ${LIMITE_BOTAO_TEXTO} caracteres.`);
     }
+    if (b.tipo !== 'COPY_CODE' && /[{}]/.test(texto)) {
+      p(`${onde}: o texto do botão não aceita variável nem chaves { }.`);
+    }
 
     if (b.tipo === 'URL') {
       const url = (b.url ?? '').trim();
       if (!url) p(`${onde}: informe o link.`);
       else if (!/^https?:\/\//i.test(url)) p(`${onde}: o link precisa começar com http:// ou https://.`);
+      else if (/[{}]/.test(url)) {
+        // Link com variável exige exemplo na Meta, e o envio daqui manda link fixo.
+        p(`${onde}: use o link completo, sem variável ou chaves { } — link com variável ainda não é aceito aqui.`);
+      }
     }
 
-    if (b.tipo === 'PHONE_NUMBER' && !(b.telefone ?? '').trim()) {
-      p(`${onde}: informe o telefone.`);
+    if (b.tipo === 'PHONE_NUMBER') {
+      const telefone = (b.telefone ?? '').trim();
+      if (!telefone) p(`${onde}: informe o telefone.`);
+      else if (telefone.length > LIMITE_BOTAO_TELEFONE) {
+        p(`${onde}: o telefone precisa ter até ${LIMITE_BOTAO_TELEFONE} caracteres.`);
+      }
     }
   });
 

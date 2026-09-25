@@ -419,8 +419,11 @@ export const modelos = {
    * duas implementações da mesma regra, e elas divergem: foi assim que um
    * telefone sem o código do país passou na tela e foi recusado pela Meta.
    */
-  conferir: (dados: DadosModelo) =>
-    api.post<{ problemas: ProblemaNoModelo[] }>('/modelos/conferir', dados),
+  conferir: (dados: DadosModelo, id?: string) =>
+    api.post<{ problemas: ProblemaNoModelo[] }>(
+      `/modelos/conferir${id ? `?id=${encodeURIComponent(id)}` : ''}`,
+      dados,
+    ),
 
   /** `POST /modelos` — grava o rascunho. Nada vai para a Meta ainda. */
   criar: (dados: DadosModelo) => api.post<{ id: string }>('/modelos', dados),

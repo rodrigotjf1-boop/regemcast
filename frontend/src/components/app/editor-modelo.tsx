@@ -146,15 +146,19 @@ export function EditorModelo({
 
   const problemasDe = (campo: ProblemaNoModelo['campo']) =>
     problemas.filter((p) => p.campo === campo);
+  /** O topo do editor: é para lá que a tela rola quando o envio é barrado. */
+  const topo = useRef<HTMLDivElement>(null);
 
   async function conferir() {
     setErro('');
     setAviso('');
     setOcupado(true);
     try {
-      const { problemas: achados } = await modelos.conferir(dados);
+      const { problemas: achados } = await modelos.conferir(dados, inicial?.id);
       setProblemas(achados);
-      if (!achados.length) setAviso('Passou em todas as regras da Meta. Pode enviar.');
+      if (!achados.length) {
+        setAviso('Passou em todas as regras que dá para conferir antes de enviar. A Meta ainda revisa o conteúdo.');
+      }
     } catch (e) {
       setErro(mensagemDoErro(e));
     } finally {
@@ -167,6 +171,24 @@ export function EditorModelo({
     setAviso('');
     setOcupado(true);
     try {
+      // Tudo que vai para a Meta passa ANTES pela análise das regras dela (e
+      // pela duplicata). Com problema, nada é enviado: a tela diz o que corrigir,
+      // em cada seção, e a pessoa corrige antes de tentar de novo. Uma recusa da
+      // Meta chega horas depois, com um código só; aqui chega na hora, completa.
+      if (enviar || naMeta) {
+        const { problemas: achados } = await modelos.conferir(dados, inicial?.id);
+        setProblemas(achados);
+        if (achados.length) {
+          setErro(
+            `Nada foi enviado para a Meta: ${
+              achados.length === 1 ? 'há 1 ponto' : `há ${achados.length} pontos`
+            } a corrigir antes. Veja abaixo, na seção de cada um.`,
+          );
+          topo.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          return;
+        }
+      }
+
       const { id } = inicial
         ? await modelos.atualizar(inicial.id, dados)
         : await modelos.criar(dados);
@@ -183,7 +205,7 @@ export function EditorModelo({
   }
 
   return (
-    <div className="overflow-hidden rounded-card border border-borda bg-superficie shadow-card">
+    <div ref={topo} className="overflow-hidden rounded-card border border-borda bg-superficie shadow-card">
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_21rem]">
         {/* ------------------------------------------------------ formulário */}
         <div className="min-w-0 divide-y divide-borda">

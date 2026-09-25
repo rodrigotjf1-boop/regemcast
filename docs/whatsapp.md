@@ -331,6 +331,34 @@ Dois códigos que importam neste fluxo:
 - **`133010`** — número não registrado. É o erro que aparece quando se pula o
   `/register` num número dedicado — e o texto cru da Meta não diz isso.
 
+## Modelos: análise antes de enviar
+
+Nada vai para a Meta sem passar pela análise (`modelo/regras-modelo.ts`): o
+botão "Enviar para aprovação" e o salvar de modelo que já está lá conferem
+primeiro e, com problema, **não enviam nada** — cada ponto aparece na seção do
+formulário, com o que trocar. A recusa da Meta chega horas depois, com um
+código só; a nossa chega na hora, completa.
+
+As regras seguem a página oficial de revisão de modelos (motivos de recusa) e a
+de componentes, conferidas em 25/09/2026:
+
+| Motivo de recusa da Meta | O que a análise barra |
+| --- | --- |
+| Variável fora do padrão ("mismatched curly braces") | `{nome}`, `{{nome}}`, `{{1}` — em mensagem, cabeçalho, rodapé e botões; com a troca sugerida (`{{1}}` + "nome do contato" na campanha) |
+| Variável com `#`, `$`, `%` | qualquer coisa entre chaves que não seja número |
+| Variáveis fora de sequência | `{{1}}`, `{{2}}`, `{{4}}` |
+| Variável demais para o tamanho | menos de 2N + 1 palavras fixas para N variáveis (a Meta não publica o número; a fórmula é a que os provedores documentam) |
+| Variável no começo ou no fim | "dangling parameters" |
+| Pedido de dado sensível | senha, dados de cartão, CPF, RG |
+| Tom de ameaça | ação judicial, negativação, protesto, Serasa |
+| Cópia de outro modelo | mesmo texto de mensagem e rodapé de outro modelo da conta (nossos e os da lista da Meta) |
+| Limites dos componentes | cabeçalho 60 (sem formatação), mensagem 1.024, rodapé 60, botão 25, telefone 20, até 10 botões (2 de link, 1 de telefone, 1 de copiar código) |
+
+Recusado mesmo assim (conteúdo que só a revisão da Meta julga): o motivo aparece
+em português (`meta/motivos-modelo.ts`) e o caminho é **Editar** — a correção
+volta para a Meta com o mesmo nome. Criar outro com nome novo e o mesmo texto só
+repete a recusa.
+
 ## Webhook
 
 - **Verificação (GET)**: fail-closed, comparação em tempo constante.
@@ -371,6 +399,8 @@ clássico.
   texto livre e modelo aprovado.
 
 ## Fontes
+
+- [Revisão de modelos — motivos de recusa](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/template-review/) · [Componentes de modelo](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/components/) (conferidas em 25/09/2026)
 
 - [Messaging limits (limite de envio, portfólio)](https://developers.facebook.com/documentation/business-messaging/whatsapp/messaging-limits/)
 - [`business_capability_update` webhook](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/business_capability_update/)

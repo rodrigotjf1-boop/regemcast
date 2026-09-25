@@ -79,9 +79,65 @@ export class ModeloService {
     private readonly midia: MidiaService,
   ) {}
 
-  /** Confere sem gravar nada. É o botão "conferir regras" da tela. */
-  conferir(dto: SalvarModeloDto): ProblemaNoModelo[] {
-    return conferirModelo(this.paraValidacao(dto));
+  /**
+   * Confere sem gravar nada — o botão "conferir regras" da tela, e o passo que
+   * a tela SEMPRE dá antes de enviar: as regras da Meta e a duplicata.
+   * `id` é o modelo sendo editado (ele não é duplicata de si mesmo).
+   */
+  async conferir(contaId: string, dto: SalvarModeloDto, id?: string): Promise<ProblemaNoModelo[]> {
+    const problemas = conferirModelo(this.paraValidacao(dto));
+    const proprio = id ? await this.ctx.comConta(contaId, (db) => this.buscar(db, contaId, id)) : null;
+    return [...problemas, ...(await this.duplicado(contaId, dto, proprio))];
+  }
+
+  /**
+   * Cópia de outro modelo: a Meta recusa modelo com o MESMO texto de corpo e
+   * rodapé de um que já existe (motivo da revisão dela, conferido em
+   * 25/09/2026). Confere contra os nossos e contra a lista da Meta — modelo
+   * criado direto no painel dela também conta. Sem a lista da Meta (fora do
+   * ar), confere só os nossos: melhor meia conferência que nenhuma.
+   */
+  private async duplicado(
+    contaId: string,
+    dto: SalvarModeloDto,
+    proprio: { id: string; nome: string; metaTemplateId: string | null } | null,
+  ): Promise<ProblemaNoModelo[]> {
+    const normal = (t?: string | null) => (t ?? '').replace(/\s+/g, ' ').trim();
+    if (!normal(dto.corpo)) return [];
+    const chave = (corpo?: string | null, rodape?: string | null) => `${normal(corpo)}\u0000${normal(rodape)}`;
+    const alvo = chave(dto.corpo, dto.rodape);
+    const problema = (nome: string): ProblemaNoModelo[] => [
+      {
+        campo: 'corpo',
+        mensagem: `O modelo "${nome}" já tem este mesmo texto (mensagem e rodapé), e a Meta recusa cópia de modelo. Mude o texto — ou, se é para corrigir o "${nome}", edite ele.`,
+      },
+    ];
+
+    const nossos = await this.ctx.comConta(contaId, (db) =>
+      db
+        .select({ id: modelo.id, nome: modelo.nome, corpo: modelo.corpo, rodape: modelo.rodape, status: modelo.status })
+        .from(modelo)
+        .where(eq(modelo.contaId, contaId)),
+    );
+    // Rascunho não existe na Meta: não é duplicata de nada lá.
+    const igualAqui = nossos.find(
+      (n) => n.id !== proprio?.id && n.status !== 'rascunho' && chave(n.corpo, n.rodape) === alvo,
+    );
+    if (igualAqui) return problema(igualAqui.nome);
+
+    try {
+      const naMeta = await this.meta.modelos(contaId);
+      const igualLa = naMeta.find(
+        (m) =>
+          m.id !== proprio?.metaTemplateId &&
+          m.nome !== proprio?.nome &&
+          chave(m.corpo, m.rodape) === alvo,
+      );
+      if (igualLa) return problema(igualLa.nome);
+    } catch (erro) {
+      this.log.warn(`Sem a lista da Meta para conferir duplicata: ${String(erro)}`);
+    }
+    return [];
   }
 
   /** Modelos da conta, mais recentes primeiro. */
@@ -248,7 +304,10 @@ export class ModeloService {
       );
     }
 
-    const problemas = conferirModelo(this.paraValidacao(atual as unknown as SalvarModeloDto));
+    const problemas = [
+      ...conferirModelo(this.paraValidacao(atual as unknown as SalvarModeloDto)),
+      ...(await this.duplicado(contaId, atual as unknown as SalvarModeloDto, atual)),
+    ];
     if (problemas.length) {
       throw new BadRequestException({
         mensagem: 'O modelo precisa de ajustes antes de ir para a Meta.',
@@ -432,7 +491,10 @@ export class ModeloService {
 
     // A categoria é a que já está lá: muda-la é modelo novo, não edição.
     const paraValidar = { ...dto, categoria: atual.categoria as SalvarModeloDto['categoria'] };
-    const problemas = conferirModelo(this.paraValidacao(paraValidar));
+    const problemas = [
+      ...conferirModelo(this.paraValidacao(paraValidar)),
+      ...(await this.duplicado(contaId, paraValidar, atual)),
+    ];
     if (problemas.length) {
       throw new BadRequestException({
         mensagem: 'O modelo tem pontos a corrigir antes de ir para a Meta.',

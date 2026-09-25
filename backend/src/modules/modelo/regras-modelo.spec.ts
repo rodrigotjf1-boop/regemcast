@@ -96,7 +96,7 @@ describe('variáveis do corpo', () => {
     expect(variaveisDe('Olá {{1}}, até logo {{1}}!')).toEqual([1, 1]);
     expect(quantasVariaveis('Olá {{1}}, até logo {{1}}!')).toBe(1);
 
-    const m = { ...modeloValido(), corpo: 'Olá {{1}}, até logo {{1}}!', corpoExemplos: ['Maria'] };
+    const m = { ...modeloValido(), corpo: 'Olá {{1}}, tudo bem? Até logo, {{1}}, e bom domingo!', corpoExemplos: ['Maria'] };
     expect(problemasDe(m, 'corpo')).toEqual([]);
   });
 
@@ -382,5 +382,66 @@ describe('botão de saída do marketing', () => {
       botoes: Array.from({ length: 9 }, (_, i) => ({ tipo: 'QUICK_REPLY' as const, texto: `Opção ${i + 1}` })),
     };
     expect(problemasDe(m, 'botoes')).toEqual([]);
+  });
+});
+
+describe('análise pelos motivos de recusa da Meta (revisão de modelos, 25/09/2026)', () => {
+  it('o caso real: {nome} com chave simples é recusado ANTES de ir à Meta, com o que trocar', () => {
+    const m = {
+      ...modeloValido(),
+      corpo: 'Olá {nome}, tudo bem com você? Já experimentou nosso combinado mais vendido?',
+      corpoExemplos: [],
+    };
+    const achados = problemasDe(m, 'corpo');
+    expect(achados).toHaveLength(1);
+    expect(achados[0]).toContain('"{nome}" não é variável do WhatsApp: troque por {{1}}');
+  });
+
+  it('variável com nome, chave aberta e símbolo dentro também são barrados', () => {
+    for (const trecho of ['{{nome}}', '{{1}', '{{#1}}', '{{ primeiro_nome }}']) {
+      const m = { ...modeloValido(), corpo: `Olá ${trecho}, hoje o frete é por nossa conta, aproveite.` };
+      expect(problemasDe(m, 'corpo').join(' ')).toMatch(/não é variável|fora do padrão/);
+    }
+  });
+
+  it('as chaves certas passam, e o cabeçalho e o rodapé também são conferidos', () => {
+    expect(conferirModelo(modeloValido())).toEqual([]);
+    const m = { ...modeloValido(), cabecalhoFormato: 'TEXT' as const, cabecalhoTexto: 'Promo {cliente}', rodape: 'Válido até {data}' };
+    expect(problemasDe(m, 'cabecalho').join(' ')).toContain('"{cliente}" não é variável');
+    expect(problemasDe(m, 'rodape').join(' ')).toContain('"{data}" está fora do padrão');
+  });
+
+  it('variável demais para o tamanho do texto: pelo menos 2N + 1 palavras fixas', () => {
+    const curto = { ...modeloValido(), corpo: 'Oi {{1}}, pedido {{2}} saiu.', corpoExemplos: ['Ana', '123'] };
+    expect(problemasDe(curto, 'corpo').join(' ')).toContain('Escreva pelo menos 5 palavras fora das variáveis (hoje são 3)');
+    const bom = { ...curto, corpo: 'Oi {{1}}, o seu pedido {{2}} já saiu para entrega agora.' };
+    expect(problemasDe(bom, 'corpo')).toEqual([]);
+  });
+
+  it('pedido de dado sensível e tom de ameaça: recusados pela política', () => {
+    const senha = { ...modeloValido(), corpo: 'Olá {{1}}, confirme sua senha para liberar o cupom de hoje.' };
+    expect(problemasDe(senha, 'corpo').join(' ')).toContain('dado sensível');
+    const cpf = { ...modeloValido(), corpo: 'Olá {{1}}, mande seu CPF para ganhar o desconto da semana.' };
+    expect(problemasDe(cpf, 'corpo').join(' ')).toContain('"CPF"');
+    const ameaca = { ...modeloValido(), corpo: 'Olá {{1}}, pague hoje ou seu nome vai para o Serasa amanhã cedo.' };
+    expect(problemasDe(ameaca, 'corpo').join(' ')).toContain('tom de ameaça');
+    // Palavra que só CONTÉM as letras não conta ("carga" tem "rg"; "spcial" não é "spc").
+    const inocente = { ...modeloValido(), corpo: 'Olá {{1}}, a carga de hoje chegou fresquinha para você.' };
+    expect(problemasDe(inocente, 'corpo')).toEqual([]);
+  });
+
+  it('botões: sem chaves no texto, link fixo e telefone de até 20 caracteres', () => {
+    const m = {
+      ...modeloValido(),
+      botoes: [
+        { tipo: 'QUICK_REPLY' as const, texto: 'Quero {promo}' },
+        { tipo: 'URL' as const, texto: 'Ver cardápio', url: 'https://loja.com/{{1}}' },
+        { tipo: 'PHONE_NUMBER' as const, texto: 'Ligar', telefone: '+55 (21) 99999-9999 ramal 12' },
+      ],
+    };
+    const achados = problemasDe(m, 'botoes').join(' ');
+    expect(achados).toContain('o texto do botão não aceita variável nem chaves');
+    expect(achados).toContain('use o link completo');
+    expect(achados).toContain('o telefone precisa ter até 20 caracteres');
   });
 });

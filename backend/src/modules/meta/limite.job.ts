@@ -8,7 +8,10 @@
  *
  * A cada 30 minutos pega até 50 números com leitura vencida (mais de 6 h, ou
  * nunca lida), um de cada vez. Nenhuma transação fica aberta durante a chamada
- * à Meta. Leitura que falha não grava nada — tenta de novo na próxima volta.
+ * à Meta. Leitura que falha não grava nada — tenta de novo na próxima volta,
+ * MENOS quando a autorização do número venceu (190, classe `credencial`): aí
+ * só volta a tentar 6 h depois. Insistir a cada 30 min não conserta o token —
+ * só enche o log, e o aviso útil ("reconecte") se perde no meio.
  *
  * Escopo de sistema: job sem conta (motivo A, `docs/rls.md`).
  */
@@ -25,11 +28,19 @@ import { limiteInformado } from './limite.regras';
 
 const INTERVALO_MS = 30 * 60_000;
 const POR_VOLTA = 50;
+/** Autorização vencida: a próxima tentativa, só depois disto. */
+const ESPERA_CREDENCIAL_MS = 6 * 3_600_000;
 
 @Injectable()
 export class LimiteJob {
   private readonly log = new Logger('LimiteDaMeta');
   private rodando = false;
+  /**
+   * Número com autorização vencida → quando tentar de novo. Em memória, de
+   * propósito: sem coluna nova só para isso; reiniciar a API tenta uma vez e
+   * volta a esperar.
+   */
+  private readonly esperaAte = new Map<string, number>();
 
   constructor(
     private readonly ctx: ContextoDb,
@@ -67,15 +78,25 @@ export class LimiteJob {
     });
 
     let atualizados = 0;
+    const agora = Date.now();
     for (const n of numeros) {
+      if ((this.esperaAte.get(n.id) ?? 0) > agora) continue;
       let bruto: unknown;
       try {
         bruto = await this.graph.limiteDoNumero(n.phone_number_id, decifrarToken(n.token_cifrado, env.meta.tokenChave));
       } catch (erro) {
         const detalhe = erro instanceof ErroGraph ? erro.detalheParaLog : String(erro);
-        this.log.warn(`Não consegui ler o limite de envio do número ${this.mascarar(n.phone_number_id)}: ${detalhe}`);
+        if (erro instanceof ErroGraph && erro.classe === 'credencial') {
+          this.esperaAte.set(n.id, agora + ESPERA_CREDENCIAL_MS);
+          this.log.warn(
+            `A autorização do número ${this.mascarar(n.phone_number_id)} venceu: a conta precisa reconectar o WhatsApp. Tento de novo em 6 h. ${detalhe}`,
+          );
+        } else {
+          this.log.warn(`Não consegui ler o limite de envio do número ${this.mascarar(n.phone_number_id)}: ${detalhe}`);
+        }
         continue;
       }
+      this.esperaAte.delete(n.id);
 
       const informado = limiteInformado(bruto);
       if (!informado) {
