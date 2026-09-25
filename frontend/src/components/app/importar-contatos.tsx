@@ -10,6 +10,8 @@ import { Input, Select } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { ImportarCardapioWeb } from '@/components/app/importar-cardapioweb';
+import type { AlvoDaDivisao } from '@/components/app/blocos/dividir-em-blocos';
+import { IconeBlocos } from '@/components/app/icones';
 import { mensagemDoErro } from '@/lib/api';
 import { formatarNumero } from '@/lib/formato';
 import { contatos } from '@/lib/servicos';
@@ -35,10 +37,13 @@ type Fonte = 'arquivo' | 'texto' | 'cardapioweb';
 export function ImportarContatos({
   aoConcluir,
   fonteInicial = 'arquivo',
+  aoDividir,
 }: {
   aoConcluir: () => void;
   /** `cardapioweb` quando chega pela CW App Store (?importar=cardapioweb). */
   fonteInicial?: Fonte;
+  /** Abre a divisão em blocos do que acabou de entrar. */
+  aoDividir?: (alvo: AlvoDaDivisao) => void;
 }) {
   const [fonte, setFonte] = useState<Fonte>(fonteInicial);
   const [texto, setTexto] = useState('');
@@ -55,7 +60,14 @@ export function ImportarContatos({
   const [salvando, setSalvando] = useState(false);
   /** Arquivo grande: quantos já foram gravados, para a tela não ficar muda. */
   const [progresso, setProgresso] = useState<{ feitos: number; total: number } | null>(null);
-  const [pronto, setPronto] = useState<{ gravados: number; jaExistiam: number } | null>(null);
+  const [pronto, setPronto] = useState<{
+    gravados: number;
+    jaExistiam: number;
+    importacaoId?: string;
+    rotulo: string;
+    /** Só nome e número, sem pedidos: o caso do arquivo exportado do celular. */
+    soNomeENumero: boolean;
+  } | null>(null);
 
   const campoArquivo = useRef<HTMLInputElement>(null);
 
@@ -156,7 +168,13 @@ export function ImportarContatos({
       }
 
       setProgresso(null);
-      setPronto({ gravados, jaExistiam });
+      setPronto({
+        gravados,
+        jaExistiam,
+        importacaoId,
+        rotulo: previa.arquivoNome || (previa.formato === 'texto' ? 'Números colados' : 'Importação'),
+        soNomeENumero: (previa.extras ?? []).length === 0,
+      });
       setPrevia(null);
       aoConcluir();
     } catch (e) {
@@ -176,15 +194,39 @@ export function ImportarContatos({
             sua base
             {pronto.jaExistiam > 0 && `; ${pronto.jaExistiam} já estavam lá e não foram duplicados`}.
           </Alerta>
-          <Button
-            variante="secundario"
-            onClick={() => {
-              setPronto(null);
-              limpar();
-            }}
-          >
-            Importar mais
-          </Button>
+          {aoDividir && pronto.importacaoId && pronto.soNomeENumero && pronto.gravados + pronto.jaExistiam > 0 && (
+            <p className="text-sm text-tinta-suave">
+              Lista só com nome e número — como a agenda exportada do celular? Divida em blocos para enviar
+              aos poucos, dentro do limite do seu número, e acompanhar o resultado de cada bloco.
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {aoDividir && pronto.importacaoId && pronto.gravados + pronto.jaExistiam > 0 && (
+              <Button
+                variante={pronto.soNomeENumero ? 'primario' : 'secundario'}
+                onClick={() =>
+                  aoDividir({
+                    origem: 'importacao',
+                    origemId: pronto.importacaoId,
+                    rotulo: pronto.rotulo,
+                    soNomeENumero: pronto.soNomeENumero,
+                  })
+                }
+              >
+                <IconeBlocos />
+                Dividir em blocos
+              </Button>
+            )}
+            <Button
+              variante="secundario"
+              onClick={() => {
+                setPronto(null);
+                limpar();
+              }}
+            >
+              Importar mais
+            </Button>
+          </div>
         </div>
       </Card>
     );

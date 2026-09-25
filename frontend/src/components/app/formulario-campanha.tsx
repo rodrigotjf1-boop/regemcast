@@ -13,7 +13,7 @@ import { Input, Select } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { mensagemDoErro } from '@/lib/api';
-import { formatarNumero } from '@/lib/formato';
+import { formatarData, formatarNumero } from '@/lib/formato';
 import { campanhas, contatos, whatsapp } from '@/lib/servicos';
 import type {
   ListaDeContatos,
@@ -72,15 +72,31 @@ function janelaDaEdicao(j: Janela) {
   };
 }
 
+/** Os blocos de uma divisão, como o seletor de lista agrupa. */
+interface GrupoDeBlocos {
+  divisaoId: string;
+  nome: string;
+  blocos: ListaDeContatos[];
+}
+
+function rotuloDoBloco(l: ListaDeContatos): string {
+  const casas = Math.max(2, String(l.blocos ?? 0).length);
+  const uso = l.usadaEm ? `já enviado em ${formatarData(l.usadaEm)}` : 'ainda não usado';
+  return `Bloco ${String(l.bloco ?? 0).padStart(casas, '0')} · ${formatarNumero(l.total)} ${l.total === 1 ? 'contato' : 'contatos'} · ${uso}`;
+}
+
 export function FormularioCampanha({
   campanha,
   aoConcluir,
   aoCancelar,
+  listaInicial,
 }: {
   /** Presente = edição. Ausente = campanha nova. */
   campanha?: ResumoCampanha;
   aoConcluir: () => void;
   aoCancelar?: () => void;
+  /** Lista (ou bloco) já escolhida — quando se chega por "Usar em campanha". */
+  listaInicial?: string;
 }) {
   const editando = Boolean(campanha);
   const podeTrocarConteudo = !editando || campanha?.status === 'rascunho';
@@ -130,6 +146,11 @@ export function FormularioCampanha({
         setListas(l);
         // Sem lista nenhuma, o caminho que resta é digitar.
         if (l.length === 0) setPublico('numeros');
+        // Chegou por "Usar em campanha" num bloco: já vem escolhido.
+        else if (listaInicial && l.some((x) => x.id === listaInicial)) {
+          setPublico('lista');
+          setListaId(listaInicial);
+        }
       })
       .catch(() => {
         if (vivo) {
@@ -140,7 +161,25 @@ export function FormularioCampanha({
     return () => {
       vivo = false;
     };
-  }, []);
+  }, [listaInicial]);
+
+  // Listas comuns primeiro; depois cada divisão, com os blocos em ordem.
+  const listasComuns = (listas ?? []).filter((l) => !l.divisaoId);
+  const grupos: GrupoDeBlocos[] = [];
+  for (const l of listas ?? []) {
+    if (!l.divisaoId) continue;
+    let g = grupos.find((x) => x.divisaoId === l.divisaoId);
+    if (!g) {
+      g = { divisaoId: l.divisaoId, nome: l.divisaoNome ?? 'Blocos', blocos: [] };
+      grupos.push(g);
+    }
+    g.blocos.push(l);
+  }
+  for (const g of grupos) g.blocos.sort((a, b) => (a.bloco ?? 0) - (b.bloco ?? 0));
+  const escolhida = (listas ?? []).find((l) => l.id === listaId) ?? null;
+  // O próximo bloco ainda não enviado: da divisão do bloco escolhido, ou da divisão mais recente.
+  const grupoDoProximo = escolhida?.divisaoId ? grupos.find((g) => g.divisaoId === escolhida.divisaoId) : grupos[0];
+  const proximoBloco = grupoDoProximo?.blocos.find((b) => !b.usadaEm && b.total > 0 && b.id !== listaId) ?? null;
 
   // Quantos da lista escolhida podem receber: quem pediu para sair não conta.
   useEffect(() => {
@@ -450,12 +489,41 @@ export function FormularioCampanha({
               <Label htmlFor="lista-campanha">Lista</Label>
               <Select id="lista-campanha" value={listaId} onChange={(e) => setListaId(e.target.value)}>
                 <option value="">{listas === null ? 'Carregando listas…' : 'Escolha…'}</option>
-                {(listas ?? []).map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.nome} · {formatarNumero(l.total)} {l.total === 1 ? 'contato' : 'contatos'}
-                  </option>
+                {listasComuns.length > 0 && (
+                  <optgroup label="Listas">
+                    {listasComuns.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.nome} · {formatarNumero(l.total)} {l.total === 1 ? 'contato' : 'contatos'}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {grupos.map((g) => (
+                  <optgroup key={g.divisaoId} label={`Blocos — ${g.nome}`}>
+                    {g.blocos.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {rotuloDoBloco(l)}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </Select>
+              {escolhida?.divisaoId && escolhida.usadaEm && (
+                <p className="rounded-md bg-atencao/10 px-2 py-1 text-xs text-tinta">
+                  Este bloco já foi enviado em {formatarData(escolhida.usadaEm)} — mandar de novo repete as mesmas
+                  pessoas.
+                </p>
+              )}
+              {proximoBloco && (
+                <button
+                  type="button"
+                  onClick={() => setListaId(proximoBloco.id)}
+                  className="text-xs font-medium text-acento-forte underline underline-offset-4"
+                >
+                  Usar o próximo bloco ainda não enviado ({rotuloDoBloco(proximoBloco).split(' · ')[0]} de{' '}
+                  {proximoBloco.blocos})
+                </button>
+              )}
               <p className="text-xs text-tinta-suave">
                 {listaId && alcance !== null ? (
                   <>

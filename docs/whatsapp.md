@@ -293,6 +293,14 @@ para quem usa metade do limite em 7 dias com qualidade alta.
   a conta já alcançou em 24 h. Cheio, a rodada não pega ninguém e a campanha
   **espera** — não pausa — e continua sozinha quando a vaga abre. A tela da
   campanha mostra o motivo e a hora.
+- **Nos blocos** (Contatos → Dividir em blocos, migration 028): a base, uma
+  lista, uma importação, um perfil ou um estado (pelo DDD) vira listas de 250,
+  500, 750, 1.000 ou do tamanho escolhido — e os tamanhos só são liberados até o
+  limite de hoje (decisão do dono, 25/09/2026). É o "envio de um dia" para lista
+  só com nome e número, como a agenda exportada do celular: um bloco por vez,
+  olhando entrega, leitura e quem pediu para sair antes do próximo. Cada bloco é
+  uma `contato_lista` com `divisao_id` e `bloco`; a divisão inteira é um comando
+  só no banco ([`divisao.service.ts`](../backend/src/modules/contato/divisao.service.ts)).
 
 ## Erros e retentativa
 

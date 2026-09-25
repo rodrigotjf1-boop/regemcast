@@ -55,7 +55,8 @@ export function CabecalhoPagina({
           ) : null}
         </div>
       </div>
-      {acao ? <div className="flex shrink-0 flex-wrap items-center gap-2">{acao}</div> : null}
+      {/* No celular a fila de botões quebra dentro da largura; lado a lado com o título, não encolhe. */}
+      {acao ? <div className="flex max-w-full flex-wrap items-center gap-2 sm:shrink-0">{acao}</div> : null}
     </header>
   );
 }

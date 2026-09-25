@@ -39,6 +39,7 @@ export function PerfisDaBase({
   aoSelecionar,
   ehDono,
   aoMudar,
+  aoDividir,
 }: {
   resumo: ResumoSegmentos;
   selecionado: Segmento | null;
@@ -46,6 +47,8 @@ export function PerfisDaBase({
   ehDono: boolean;
   /** Algo mudou (números da regra ou lista criada): recarregar. */
   aoMudar: () => void;
+  /** Dividir o perfil escolhido em blocos. */
+  aoDividir?: (s: Segmento, nome: string, total: number) => void;
 }) {
   const [ajustando, setAjustando] = useState(false);
   const [p, setP] = useState<ParametrosSegmentacao>(resumo.parametros);
@@ -194,6 +197,16 @@ export function PerfisDaBase({
             >
               Criar lista com estes contatos
             </Button>
+            {aoDividir && (
+              <Button
+                tamanho="sm"
+                variante="secundario"
+                onClick={() => aoDividir(escolhido.id, escolhido.nome, escolhido.total)}
+                disabled={escolhido.total === 0}
+              >
+                Dividir em blocos
+              </Button>
+            )}
             <Button tamanho="sm" variante="secundario" onClick={() => aoSelecionar(null)}>
               Ver todos
             </Button>
