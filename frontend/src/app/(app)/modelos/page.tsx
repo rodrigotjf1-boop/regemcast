@@ -431,10 +431,17 @@ function CartaoModelo({
         )}
       </div>
 
+      {/*
+        Recusado se corrige e reenvia com o MESMO nome (a Meta aceita edição de
+        modelo recusado). Mandar criar outro com nome novo levava a pessoa a
+        repetir o mesmo erro com outro nome.
+      */}
       {modelo.motivo && (
         <p className="border-t border-erro/30 bg-erro/10 p-3 text-xs leading-relaxed text-erro">
-          A Meta recusou este modelo. Motivo informado por ela: {modelo.motivo}. Crie outro aqui com
-          um nome novo.
+          A Meta recusou este modelo. {modelo.motivo}{' '}
+          {local
+            ? 'Toque em Editar, corrija e salve: a correção volta para a Meta com o mesmo nome.'
+            : 'Corrija no painel da Meta, ou crie um novo aqui.'}
         </p>
       )}
     </article>
