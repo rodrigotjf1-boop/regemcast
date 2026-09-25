@@ -12,7 +12,7 @@ import { mensagemDoErro } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { formatarNumero } from '@/lib/formato';
 import { contatos } from '@/lib/servicos';
-import type { DivisaoDeBlocos, OpcoesDeBloco, OrdemDosBlocos, OrigemDaDivisao, Segmento } from '@/lib/tipos';
+import type { DivisaoDeBlocos, OpcoesDeBloco, OrdemDosBlocos, OrigemDaDivisao, Publico, Segmento } from '@/lib/tipos';
 
 /** O que vai ser dividido, como a tela descreve. */
 export interface AlvoDaDivisao {
@@ -20,6 +20,9 @@ export interface AlvoDaDivisao {
   origemId?: string;
   segmento?: Segmento;
   uf?: string;
+  /** Um público pronto (VIP, bairro…) e o valor que ele pede. */
+  publico?: Publico;
+  publicoValor?: string | null;
   /** "Contatos do celular.vcf", "Em risco", "Rio de Janeiro"… */
   rotulo: string;
   /** Quantos podem receber, quando a tela já sabe. */
@@ -98,6 +101,8 @@ export function DividirEmBlocos({
         origemId: alvo.origemId,
         segmento: alvo.segmento,
         uf: alvo.uf,
+        publico: alvo.publico,
+        publicoValor: alvo.publicoValor ?? undefined,
         tamanho: escolhido,
         ordem,
         soNuncaReceberam: soNunca || undefined,

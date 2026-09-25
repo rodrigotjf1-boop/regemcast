@@ -33,8 +33,19 @@ export async function parametrosDaConta(db: Db, contaId: string): Promise<Parame
 
 export interface ResumoSegmentos {
   parametros: ParametrosSegmentacao;
-  /** Na ordem de exibição; só contatos que podem receber (sem descadastro). */
-  segmentos: { id: Segmento; nome: string; regra: string; total: number }[];
+  /**
+   * Na ordem de exibição; só contatos que podem receber (sem descadastro).
+   * O gasto e o ticket médio do perfil (o "M" do RFM) são `null` quando
+   * ninguém ali tem valor gasto.
+   */
+  segmentos: {
+    id: Segmento;
+    nome: string;
+    regra: string;
+    total: number;
+    gastoCentavos: number | null;
+    ticketMedioCentavos: number | null;
+  }[];
 }
 
 @Injectable()
@@ -47,17 +58,39 @@ export class SegmentacaoService {
   async resumo(contaId: string): Promise<ResumoSegmentos> {
     return this.ctx.comConta(contaId, async (db) => {
       const p = await parametrosDaConta(db, contaId);
+      // O ticket usa só quem tem os dois números (pedidos e gasto): somar gasto
+      // de uns com pedidos de outros daria um ticket que não existe.
       const r = await db.execute(sql`
-        select ${expressaoSegmento(p)} as segmento, count(*)::int as total
+        select ${expressaoSegmento(p)} as segmento, count(*)::int as total,
+               sum(contato.total_gasto_centavos) filter (where contato.total_gasto_centavos > 0)::bigint as gasto,
+               sum(contato.total_gasto_centavos) filter (where contato.total_gasto_centavos > 0 and contato.pedidos > 0)::bigint as gasto_com_pedidos,
+               sum(contato.pedidos) filter (where contato.total_gasto_centavos > 0 and contato.pedidos > 0)::bigint as pedidos_com_gasto
           from contato
          where contato.conta_id = ${contaId} and contato.opt_out = false
          group by 1
       `);
-      const porSegmento = new Map((r.rows as { segmento: Segmento; total: number }[]).map((x) => [x.segmento, x.total]));
+      type Linha = {
+        segmento: Segmento;
+        total: number;
+        gasto: string | null;
+        gasto_com_pedidos: string | null;
+        pedidos_com_gasto: string | null;
+      };
+      const porSegmento = new Map((r.rows as Linha[]).map((x) => [x.segmento, x]));
       const textos = descreverSegmentos(p);
       return {
         parametros: p,
-        segmentos: SEGMENTOS.map((id) => ({ id, ...textos[id], total: porSegmento.get(id) ?? 0 })),
+        segmentos: SEGMENTOS.map((id) => {
+          const x = porSegmento.get(id);
+          const pedidos = Number(x?.pedidos_com_gasto ?? 0);
+          return {
+            id,
+            ...textos[id],
+            total: x?.total ?? 0,
+            gastoCentavos: x?.gasto == null ? null : Number(x.gasto),
+            ticketMedioCentavos: pedidos > 0 ? Math.round(Number(x?.gasto_com_pedidos ?? 0) / pedidos) : null,
+          };
+        }),
       };
     });
   }

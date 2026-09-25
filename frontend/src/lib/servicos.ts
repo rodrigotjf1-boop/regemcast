@@ -12,6 +12,9 @@
  */
 import { api, enderecoDaApi } from './api';
 import type { SituacaoCardapioWeb, Segmento, ResumoSegmentos, ParametrosSegmentacao,
+  AlvoDePublico,
+  Publico,
+  ResumoPublicos,
   ResultadoContratacao,
   SituacaoCobranca,
   CnpjDoConvite,
@@ -303,10 +306,29 @@ export const cardapioWeb = {
 
 export const contatos = {
   /** `GET /contatos` */
-  listar: (pagina = 1, porPagina = 50, segmento?: Segmento | null, uf?: string | null) =>
+  listar: (
+    pagina = 1,
+    porPagina = 50,
+    segmento?: Segmento | null,
+    uf?: string | null,
+    publico?: Pick<AlvoDePublico, 'publico' | 'valor'> | null,
+  ) =>
     api.get<PaginaDeContatos>(
-      `/contatos?pagina=${pagina}&porPagina=${porPagina}${segmento ? `&segmento=${segmento}` : ''}${uf ? `&uf=${encodeURIComponent(uf)}` : ''}`,
+      `/contatos?pagina=${pagina}&porPagina=${porPagina}${segmento ? `&segmento=${segmento}` : ''}${uf ? `&uf=${encodeURIComponent(uf)}` : ''}${
+        publico ? `&publico=${publico.publico}${publico.valor ? `&valor=${encodeURIComponent(publico.valor)}` : ''}` : ''
+      }`,
     ),
+
+  /** `GET /contatos/publicos` — VIP, ticket, marcos, jeito de comprar, bairros e aniversariantes. */
+  publicos: () => api.get<ResumoPublicos>('/contatos/publicos'),
+
+  /** `POST /contatos/publicos/lista` — foto do público numa lista. */
+  criarListaDoPublico: (publico: Publico, valor?: string | null, nome?: string) =>
+    api.post<{ id: string; nome: string; total: number }>('/contatos/publicos/lista', {
+      publico,
+      valor: valor ?? undefined,
+      nome,
+    }),
 
   /** `GET /contatos/regioes` — contatos por estado e DDD. */
   regioes: () => api.get<RegioesDaBase>('/contatos/regioes'),

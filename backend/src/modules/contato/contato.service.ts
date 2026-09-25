@@ -22,6 +22,8 @@ import { campanha, contato, contatoLista, contatoListaItem, importacao, listaDiv
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import type { ConfirmarImportacaoDto, PreviaImportacaoDto } from './dto/importacao.dto';
 import { gravarExtras } from './extras';
+import { expressaoPublico } from './publicos';
+import { limitesDosPublicos, publicoValido } from './publicos.service';
 import { SEGMENTOS, expressaoSegmento, type Segmento } from './segmentacao';
 import { parametrosDaConta } from './segmentacao.service';
 import { detectarExtras, lerExtras, rotulosExtras, type Extras } from './parsers/metricas';
@@ -485,6 +487,8 @@ export class ContatoService {
     situacao?: 'ativos' | 'bloqueados',
     /** Estado pelo DDD — só quem pode receber, como no filtro por perfil. */
     uf?: string,
+    /** Público pronto (VIP, bairro…) — só quem pode receber, como no filtro por perfil. */
+    publicoPedido?: { publico: string; valor: string | null },
   ) {
     const limite = Math.min(Math.max(porPagina, 1), 200);
     const salto = (Math.max(pagina, 1) - 1) * limite;
@@ -493,6 +497,7 @@ export class ContatoService {
     }
     const ddds = uf ? dddsDaUf(uf) : [];
     if (uf && !ddds.length) throw new BadRequestException('Estado desconhecido.');
+    const alvo = publicoPedido ? publicoValido(publicoPedido.publico, publicoPedido.valor) : null;
 
     return this.ctx.comConta(contaId, async (db) => {
       const perfil = expressaoSegmento(await parametrosDaConta(db, contaId));
@@ -504,12 +509,16 @@ export class ContatoService {
             sql`, `,
           )})`
         : undefined;
-      const filtro = segmento || porRegiao
+      const porPublico = alvo
+        ? expressaoPublico(alvo.publico, alvo.valor, await limitesDosPublicos(db, contaId))
+        : undefined;
+      const filtro = segmento || porRegiao || porPublico
         ? and(
             eq(contato.contaId, contaId),
             eq(contato.optOut, false),
             segmento ? sql`${perfil} = ${segmento}` : undefined,
             porRegiao,
+            porPublico,
           )
         : situacao
           ? and(eq(contato.contaId, contaId), eq(contato.optOut, situacao === 'bloqueados'))
@@ -534,6 +543,8 @@ export class ContatoService {
           pedidos: contato.pedidos,
           totalGastoCentavos: contato.totalGastoCentavos,
           ultimoPedidoEm: contato.ultimoPedidoEm,
+          bairro: contato.bairro,
+          tipoPreferido: contato.tipoPreferido,
           optOutEm: contato.optOutEm,
           optOutOrigem: contato.optOutOrigem,
           segmento: perfil,
@@ -642,6 +653,8 @@ export class ContatoService {
           totalGastoCentavos: null,
           primeiroPedidoEm: null,
           ultimoPedidoEm: null,
+          bairro: null,
+          tipoPreferido: null,
           metricasEm: null,
           metricasOrigem: null,
           consentimentoEvidencia: `Dados pessoais apagados a pedido da pessoa em ${quando}. Número mantido bloqueado.`,

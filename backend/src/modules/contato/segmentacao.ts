@@ -63,7 +63,10 @@ export function descreverSegmentos(p: ParametrosSegmentacao): Record<Segmento, {
       nome: 'Perdidos',
       regra: `Sem comprar há mais de ${p.riscoDias} dias, ou um pedido só há mais de ${p.ativoDias} dias.`,
     },
-    sem_historico: { nome: 'Sem histórico', regra: 'Ainda sem dados de compra. Importe uma planilha com pedidos e última compra.' },
+    sem_historico: {
+      nome: 'Sem histórico',
+      regra: 'Ainda sem dados de compra: conecte o cardápio em Integrações ou importe uma planilha com pedidos.',
+    },
   };
 }
 

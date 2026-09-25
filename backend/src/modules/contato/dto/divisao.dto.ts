@@ -9,6 +9,7 @@ import {
   type OrdemDosBlocos,
   type OrigemDaDivisao,
 } from '../blocos.regras';
+import { PUBLICOS, TAMANHO_MAXIMO_BAIRRO, type Publico } from '../publicos';
 import { SEGMENTOS, type Segmento } from '../segmentacao';
 
 /** Dividir um conjunto de contatos em blocos (listas) do mesmo tamanho. */
@@ -31,6 +32,17 @@ export class DividirEmBlocosDto {
   @ValidateIf((d: DividirEmBlocosDto) => d.origem === 'regiao')
   @Matches(/^[A-Za-z]{2}$/, { message: 'Escolha o estado.' })
   uf?: string;
+
+  @ApiProperty({ required: false, enum: PUBLICOS, description: 'O público pronto, quando a origem é um público.' })
+  @ValidateIf((d: DividirEmBlocosDto) => d.origem === 'publico')
+  @IsIn(PUBLICOS, { message: 'Escolha o público.' })
+  publico?: Publico;
+
+  @ApiProperty({ required: false, description: 'O bairro ou o mês (1 a 12), quando o público pede.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(TAMANHO_MAXIMO_BAIRRO)
+  publicoValor?: string;
 
   @ApiProperty({ example: 250, description: 'Contatos por bloco. Acima do limite de envio da Meta é recusado.' })
   @IsInt({ message: 'O tamanho do bloco é um número inteiro.' })
