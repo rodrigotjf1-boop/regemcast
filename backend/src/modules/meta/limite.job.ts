@@ -10,7 +10,7 @@
  * nunca lida), um de cada vez. Nenhuma transação fica aberta durante a chamada
  * à Meta. Leitura que falha não grava nada — tenta de novo na próxima volta,
  * MENOS quando a autorização do número venceu (190, classe `credencial`): aí
- * só volta a tentar 6 h depois. Insistir a cada 30 min não conserta o token —
+ * só volta a tentar no dia seguinte (24 h). Insistir não conserta o token —
  * só enche o log, e o aviso útil ("reconecte") se perde no meio.
  *
  * Escopo de sistema: job sem conta (motivo A, `docs/rls.md`).
@@ -29,7 +29,7 @@ import { limiteInformado } from './limite.regras';
 const INTERVALO_MS = 30 * 60_000;
 const POR_VOLTA = 50;
 /** Autorização vencida: a próxima tentativa, só depois disto. */
-const ESPERA_CREDENCIAL_MS = 6 * 3_600_000;
+const ESPERA_CREDENCIAL_MS = 24 * 3_600_000;
 
 @Injectable()
 export class LimiteJob {
@@ -89,7 +89,7 @@ export class LimiteJob {
         if (erro instanceof ErroGraph && erro.classe === 'credencial') {
           this.esperaAte.set(n.id, agora + ESPERA_CREDENCIAL_MS);
           this.log.warn(
-            `A autorização do número ${this.mascarar(n.phone_number_id)} venceu: a conta precisa reconectar o WhatsApp. Tento de novo em 6 h. ${detalhe}`,
+            `A autorização do número ${this.mascarar(n.phone_number_id)} venceu: a conta precisa reconectar o WhatsApp. Tento de novo em 24 h. ${detalhe}`,
           );
         } else {
           this.log.warn(`Não consegui ler o limite de envio do número ${this.mascarar(n.phone_number_id)}: ${detalhe}`);
