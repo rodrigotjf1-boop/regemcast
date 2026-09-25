@@ -13,7 +13,7 @@ import { BadRequestException, Logger } from '@nestjs/common';
 
 jest.mock('../../config/env', () => ({ env: { mercadoPago: { carenciaDias: 5 } } }));
 
-import { CampanhaService } from './campanha.service';
+import { CampanhaService, MAX_TENTATIVAS_ENVIO, detalheDaFalha, esperaDaNovaTentativa } from './campanha.service';
 import { ErroGraph } from '../meta/graph.service';
 import { traduzirErroMeta } from '../meta/erros-meta';
 
@@ -237,6 +237,7 @@ describe('rodada do worker', () => {
     reivindicados: unknown[],
     campanha: Record<string, unknown> = ATIVA,
     saldo?: number,
+    limiteDaMeta: unknown[] = [],
   ) {
     m.db.select
       .mockReturnValueOnce(m.consulta([campanha])) // ler a campanha
@@ -248,7 +249,13 @@ describe('rodada do worker', () => {
       .mockResolvedValueOnce({ rows: [] }) // trava do teto da conta
       .mockResolvedValueOnce({ rows: [] }) // bloqueio por inadimplência (sem assinatura: libera)
       .mockResolvedValueOnce({ rows: saldo === undefined ? [] : [{ teto: 100, usados: 100 - saldo, em_voo: 0 }] }) // saldo do plano
+      .mockResolvedValueOnce({ rows: limiteDaMeta }) // limite da Meta (vazio: nunca lido, não trava)
       .mockResolvedValueOnce({ rows: reivindicados }); // reivindicação
+  }
+
+  /** A reivindicação e o limite que ela usou (o limite entra como parâmetro: ',N,'). */
+  function reivindicacao(m: ReturnType<typeof montar>): string | undefined {
+    return m.db.execute.mock.calls.map((c) => JSON.stringify(c[0])).find((t) => t.includes('skip locked'));
   }
 
   it('grava o wamid e marca "enviada" — nunca "entregue"', async () => {
@@ -416,6 +423,7 @@ describe('rodada do worker', () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] }) // limite da Meta
       .mockResolvedValueOnce({ rows: [{ id: 'd1', telefone_e164: '5521999998888', variaveis: [] }] });
 
     await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
@@ -480,5 +488,185 @@ describe('rodada do worker', () => {
     // de quem ia receber não tem nada a fazer lá.
     const gravado = JSON.stringify(m.telemetria.registrar.mock.calls[0][0]);
     expect(gravado).not.toContain('5521999998888');
+  });
+  // ------------------------------------------------------------- limite da Meta
+
+  it('limite da Meta cheio: não reivindica ninguém — e NÃO pausa: continua sozinha quando abrir vaga', async () => {
+    const m = montar();
+    m.db.select
+      .mockReturnValueOnce(m.consulta([ATIVA]))
+      .mockReturnValueOnce(m.consulta([{ restam: 40 }])); // concluir: ainda há fila
+    m.db.execute
+      .mockResolvedValueOnce({ rows: [{ dia: 0, semana: 0, mes: 0, ultimo: null }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ limite: 250, alcancados: 250, em_voo: 0, libera_em: '2026-09-17T10:00:00Z' }] });
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(m.graph.enviarModelo).not.toHaveBeenCalled();
+    expect(reivindicacao(m)).toBeUndefined();
+    // Pausar obrigaria alguém a retomar; a vaga abre sozinha na janela de 24 h.
+    const chamadas = m.db.execute.mock.calls.map((c) => JSON.stringify(c[0]));
+    expect(chamadas.some((t) => t.includes('pausa_motivo'))).toBe(false);
+    expect(m.diario.find((e) => e.valores.status === 'pausada')).toBeUndefined();
+  });
+
+  it('limite da Meta quase cheio: reivindica só as vagas que sobram', async () => {
+    const m = montar();
+    prepararRodada(m, [{ id: 'd1', telefone_e164: '5521999998888', variaveis: [] }], ATIVA, undefined, [
+      { limite: 250, alcancados: 247, em_voo: 1, libera_em: null },
+    ]);
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    // 250 - 247 alcançados - 1 saindo agora = 2 vagas; o lote padrão seria 20.
+    expect(reivindicacao(m)).toContain(',2,');
+    expect(reivindicacao(m)).not.toContain(',20,');
+  });
+
+  it('sem teto ou limite nunca lido: não trava', async () => {
+    const m = montar();
+    prepararRodada(m, [{ id: 'd1', telefone_e164: '5521999998888', variaveis: [] }], ATIVA, undefined, [
+      { limite: null, alcancados: 99_999, em_voo: 0, libera_em: null },
+    ]);
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(reivindicacao(m)).toContain(',20,');
+    expect(m.graph.enviarModelo).toHaveBeenCalledTimes(1);
+  });
+
+  it('a reserva é materializada antes do update — com a RLS, a forma `where id in (select … limit N)` reservava a fila inteira', async () => {
+    const m = montar();
+    prepararRodada(m, [{ id: 'd1', telefone_e164: '5521999998888', variaveis: [] }]);
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(reivindicacao(m)).toContain('as materialized');
+    expect(reivindicacao(m)).not.toMatch(/where id in \(/);
+  });
+
+  it('a reivindicação pula quem tem nova tentativa marcada para depois', async () => {
+    const m = montar();
+    prepararRodada(m, [{ id: 'd1', telefone_e164: '5521999998888', variaveis: [] }]);
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(reivindicacao(m)).toContain('proxima_tentativa_em is null or proxima_tentativa_em <= now()');
+  });
+
+  // ------------------------------------------------------------- recusas da Meta
+
+  it('a Meta pede calma (130429): quem recebeu a recusa volta com nova tentativa, o resto da rodada volta à fila e a campanha espera — sem pausar', async () => {
+    const m = montar();
+    prepararRodada(m, [
+      { id: 'd1', telefone_e164: '5521999998888', variaveis: [], tentativas: 0 },
+      { id: 'd2', telefone_e164: '5521777776666', variaveis: [], tentativas: 0 },
+      { id: 'd3', telefone_e164: '5521555554444', variaveis: [], tentativas: 0 },
+    ]);
+    m.graph.enviarModelo.mockRejectedValueOnce(
+      new ErroGraph({ status: 400, codigo: 130429, traduzido: traduzirErroMeta(130429) }),
+    );
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    // Continuar a rodada seria bater no mesmo muro com os próximos.
+    expect(m.graph.enviarModelo).toHaveBeenCalledTimes(1);
+    const novaTentativa = m.diario.find((e) => e.valores.tentativas === 1);
+    expect(novaTentativa?.valores.status).toBe('pendente');
+    expect(novaTentativa?.valores.proximaTentativaEm).toBeInstanceOf(Date);
+    // A campanha espera o tempo pedido; os outros dois voltam como estavam.
+    expect(m.diario.find((e) => 'retomarEm' in e.valores)).toBeDefined();
+    expect(m.diario.filter((e) => e.valores.status === 'pendente')).toHaveLength(2);
+    // "Nenhuma mensagem se perde": ninguém queimado, nada pausado.
+    expect(m.diario.find((e) => e.valores.status === 'falhou')).toBeUndefined();
+    expect(m.diario.find((e) => e.valores.status === 'pausada')).toBeUndefined();
+  });
+
+  it('instabilidade da Meta (133004): o destinatário volta mais tarde, e a rodada segue com os outros', async () => {
+    const m = montar();
+    prepararRodada(m, [
+      { id: 'd1', telefone_e164: '5521999998888', variaveis: [], tentativas: 0 },
+      { id: 'd2', telefone_e164: '5521777776666', variaveis: [], tentativas: 0 },
+    ]);
+    m.graph.enviarModelo
+      .mockRejectedValueOnce(new ErroGraph({ status: 503, codigo: 133004, traduzido: traduzirErroMeta(133004) }))
+      .mockResolvedValueOnce('wamid.2');
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(m.graph.enviarModelo).toHaveBeenCalledTimes(2);
+    expect(m.diario.find((e) => e.valores.tentativas === 1)?.valores.status).toBe('pendente');
+    expect(m.diario.find((e) => e.valores.waMessageId === 'wamid.2')?.valores.status).toBe('enviada');
+    expect(m.diario.find((e) => 'retomarEm' in e.valores)).toBeUndefined();
+  });
+
+  it('rede caída no meio do envio: falha SEM reenviar — pode ter chegado, e reenviar duplicaria', async () => {
+    const m = montar();
+    prepararRodada(m, [{ id: 'd1', telefone_e164: '5521999998888', variaveis: [], tentativas: 0 }]);
+    m.graph.enviarModelo.mockRejectedValueOnce(
+      new ErroGraph({
+        status: 0,
+        codigo: null,
+        traduzido: { codigo: 0, classe: 'transitorio', titulo: 'Não conseguimos falar com a Meta', explicacao: 'x', esperaSegundos: 60 },
+      }),
+    );
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    const falha = m.diario.find((e) => e.valores.status === 'falhou');
+    expect(falha).toBeDefined();
+    expect(String(falha?.valores.erroDetalhe)).toContain('não dá para saber se a mensagem chegou');
+    expect(m.diario.find((e) => e.valores.tentativas !== undefined)).toBeUndefined();
+  });
+
+  it(`depois de ${MAX_TENTATIVAS_ENVIO} novas tentativas, falha de vez dizendo quantas vezes a Meta recusou`, async () => {
+    const m = montar();
+    prepararRodada(m, [
+      { id: 'd1', telefone_e164: '5521999998888', variaveis: [], tentativas: MAX_TENTATIVAS_ENVIO },
+    ]);
+    m.graph.enviarModelo.mockRejectedValueOnce(
+      new ErroGraph({ status: 503, codigo: 133004, traduzido: traduzirErroMeta(133004) }),
+    );
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    const falha = m.diario.find((e) => e.valores.status === 'falhou');
+    expect(falha?.valores.erroCodigo).toBe(133004);
+    expect(String(falha?.valores.erroDetalhe)).toContain(`recusou ${MAX_TENTATIVAS_ENVIO + 1} vezes`);
+  });
+
+  it('campanha esperando a Meta (retomar_em no futuro) não reivindica nem envia', async () => {
+    const m = montar();
+    m.db.select.mockReturnValueOnce(m.consulta([{ ...ATIVA, retomarEm: new Date('2026-09-16T15:10:00Z') }]));
+    m.db.execute.mockResolvedValueOnce({ rows: [{ dia: 0, semana: 0, mes: 0, ultimo: null }] });
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(m.graph.enviarModelo).not.toHaveBeenCalled();
+    expect(m.db.execute).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('nova tentativa', () => {
+  it('espera o que a Meta pede, dobrando a cada recusa, até 1 hora', () => {
+    expect(esperaDaNovaTentativa(60, 0)).toBe(60);
+    expect(esperaDaNovaTentativa(60, 2)).toBe(240);
+    expect(esperaDaNovaTentativa(900, 3)).toBe(3_600);
+    expect(esperaDaNovaTentativa(undefined, 0)).toBe(60);
+  });
+
+  it('o que a Meta manda esperar um dia, espera um dia — não mais', () => {
+    expect(esperaDaNovaTentativa(86_400, 0)).toBe(86_400);
+    expect(esperaDaNovaTentativa(86_400, 5)).toBe(86_400);
+  });
+
+  it('a falha definitiva não promete o que não vai acontecer', () => {
+    const recusa = new ErroGraph({ status: 400, codigo: 131026, traduzido: traduzirErroMeta(131026) });
+    expect(detalheDaFalha(recusa, 0)).toBe(recusa.mensagemParaUsuario);
+    expect(detalheDaFalha(null, 0)).toBe('Não conseguimos enviar esta mensagem.');
   });
 });

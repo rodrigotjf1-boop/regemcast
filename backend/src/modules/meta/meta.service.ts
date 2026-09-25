@@ -32,6 +32,7 @@ import { DECLARACAO_INTEGRACAO } from './agenda.regras';
 import { AgendaService } from './agenda.service';
 import { cifrarToken, decifrarToken } from './cripto';
 import { ErroGraph, GraphService, type ModeloBruto } from './graph.service';
+import { limiteInformado, type LimiteDaMeta } from './limite.regras';
 
 export interface DadosDoSignup {
   code: string;
@@ -89,28 +90,6 @@ const QUALIDADE: Record<string, string> = {
   RED: 'vermelha',
   UNKNOWN: 'desconhecida',
 };
-
-/**
- * Teto de usuários únicos por 24h, por nome de tier.
- *
- * `TIER_UNLIMITED` devolve `null` — e aqui está uma armadilha que o Regem tem:
- * lá, tier desconhecido TAMBÉM devolve null, então um nome novo que a Meta
- * invente vira "sem teto" e a campanha dispara sem freio. Por isso separamos:
- * desconhecido devolve `undefined` (não sabemos) e ilimitado devolve `null`
- * (sabemos que não há teto).
- */
-function limiteDoTier(tier: string | undefined): number | null | undefined {
-  if (!tier) return undefined;
-  const mapa: Record<string, number | null> = {
-    TIER_50: 50,
-    TIER_250: 250,
-    TIER_1K: 1_000,
-    TIER_10K: 10_000,
-    TIER_100K: 100_000,
-    TIER_UNLIMITED: null,
-  };
-  return tier in mapa ? mapa[tier] : undefined;
-}
 
 /** Modelo de mensagem, já em português e sem o ruído da Graph. */
 export interface ModeloDeMensagem {
@@ -650,8 +629,7 @@ export class MetaService {
     let telefone: string | null = null;
     let nomeExibicao: string | null = null;
     let qualidade = 'desconhecida';
-    let tierLimite: number | null | undefined;
-    let tierNome: string | null = null;
+    let limite: LimiteDaMeta | undefined;
 
     try {
       const r = await this.graph.numerosDaWaba(wabaId, token);
@@ -660,12 +638,19 @@ export class MetaService {
         telefone = achado.display_phone_number ?? null;
         nomeExibicao = achado.verified_name ?? null;
         qualidade = QUALIDADE[achado.quality_rating ?? 'UNKNOWN'] ?? 'desconhecida';
-        tierNome = achado.messaging_limit_tier ?? null;
-        tierLimite = limiteDoTier(achado.messaging_limit_tier);
+        // O campo antigo, descontinuado — só vale se o novo não responder.
+        limite = limiteInformado(achado.messaging_limit_tier);
       }
     } catch (erro) {
       const detalhe = erro instanceof ErroGraph ? erro.detalheParaLog : String(erro);
       this.log.warn(`Não consegui ler os números da WABA ${wabaId}: ${detalhe}`);
+    }
+
+    try {
+      limite = limiteInformado(await this.graph.limiteDoNumero(phoneNumberId, token)) ?? limite;
+    } catch (erro) {
+      const detalhe = erro instanceof ErroGraph ? erro.detalheParaLog : String(erro);
+      this.log.warn(`Não consegui ler o limite de envio do número ${phoneNumberId}: ${detalhe}`);
     }
 
     const agora = new Date();
@@ -685,9 +670,9 @@ export class MetaService {
       // Coexistencia ja nasce registrada (foi o app do celular que registrou) e
       // com a sincronizacao pendente — que e o que tem prazo de 24h.
       ...(coexistencia ? { status: 'registrado', sincronizacao: 'pendente' } : {}),
-      // `undefined` significa "a Meta não disse" — não sobrescreve o que já
-      // sabíamos. `null` significa "ilimitado", e esse sim precisa ser gravado.
-      ...(tierLimite === undefined ? {} : { tierLimite, tierNome, tierEm: agora }),
+      // Sem limite lido, a Meta não disse — não sobrescreve o que já sabíamos.
+      // `limite: null` é "sem teto", e esse sim precisa ser gravado.
+      ...(limite === undefined ? {} : { tierLimite: limite.limite, tierNome: limite.nome, tierEm: agora }),
     };
 
     if (existente) {

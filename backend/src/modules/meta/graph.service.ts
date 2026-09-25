@@ -338,6 +338,21 @@ export class GraphService {
   }
 
   /**
+   * Limite de envio atual, pelo campo que substituiu `messaging_limit_tier`
+   * (descontinuado). Existe desde a v24.0 e vale para o portfólio inteiro.
+   * Pedido no próprio número, como a documentação mostra — no `phone_numbers`
+   * da WABA um campo desconhecido derrubaria a consulta inteira. Formatos e
+   * fonte em `limite.regras.ts`.
+   */
+  async limiteDoNumero(phoneNumberId: string, tokenDoCliente: string): Promise<unknown> {
+    const r = await this.chamar<{ whatsapp_business_manager_messaging_limit?: unknown }>(phoneNumberId, {
+      token: tokenDoCliente,
+      query: { fields: 'whatsapp_business_manager_messaging_limit' },
+    });
+    return r.whatsapp_business_manager_messaging_limit;
+  }
+
+  /**
    * Envia uma mensagem de modelo e devolve o `wamid`.
    *
    * O `wamid` é o que importa aqui — não o 200. Ele é a única chave que liga

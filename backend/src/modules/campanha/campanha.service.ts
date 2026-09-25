@@ -149,6 +149,111 @@ export async function motivoDeBloqueio(db: Executor, contaId: string): Promise<'
 }
 
 /**
+ * O limite de envio da META, como a rodada precisa: quanto cabe agora.
+ *
+ * É outro teto, separado do plano: pessoas DIFERENTES alcançadas com modelo
+ * numa janela MÓVEL de 24 horas, do portfólio inteiro (250 → 2.000 → 10.000 →
+ * 100.000 → sem teto; ver `limite.regras.ts`). Conta todas as campanhas da
+ * conta.
+ *
+ * `null` quando não há o que obedecer: sem teto, ou limite nunca lido — não
+ * sabemos, e travar por falta de leitura pararia quem não precisa (o job de
+ * limite relê de 6 em 6 horas).
+ *
+ * Conservador de propósito: conta também quem estava com a conversa aberta (a
+ * Meta não conta) e quem está saindo agora. Errar para menos só atrasa a
+ * campanha; errar para mais faz a Meta recusar.
+ */
+export interface CapacidadeDaMeta {
+  limite: number;
+  /** Alcançados nas últimas 24 h + os que estão saindo agora. */
+  usados: number;
+  /** Quando o envio mais antigo da janela completa 24 h — a próxima vaga. */
+  liberaEm: Date | null;
+}
+
+export async function capacidadeDaMeta(db: Executor, contaId: string): Promise<CapacidadeDaMeta | null> {
+  const r = (await db.execute(sql`
+    select n.tier_limite as limite,
+           (select count(distinct d.telefone_e164) from campanha_destinatario d
+             where d.conta_id = ${contaId} and d.enviada_em > now() - interval '24 hours') as alcancados,
+           (select count(*) from campanha_destinatario d
+             where d.conta_id = ${contaId} and d.status = 'enviando') as em_voo,
+           (select min(d.enviada_em) + interval '24 hours' from campanha_destinatario d
+             where d.conta_id = ${contaId} and d.enviada_em > now() - interval '24 hours') as libera_em
+      from wa_numero n
+     where n.conta_id = ${contaId} and n.status = 'registrado'
+     order by n.tier_em desc nulls last
+     limit 1
+  `)) as {
+    rows: { limite: number | null; alcancados: string | number; em_voo: string | number; libera_em: unknown }[];
+  };
+
+  const linha = r.rows[0];
+  if (!linha || linha.limite === null || linha.limite === undefined) return null;
+  return {
+    limite: Number(linha.limite),
+    usados: Number(linha.alcancados ?? 0) + Number(linha.em_voo ?? 0),
+    liberaEm: linha.libera_em ? new Date(String(linha.libera_em)) : null,
+  };
+}
+
+/**
+ * Recusas da Meta que pedem para DESACELERAR a campanha inteira (ritmo e teto
+ * de chamadas), e não só adiar um destinatário.
+ */
+const DESACELERA = new Set([130429, 80007]);
+
+/** Quantas vezes, no máximo, tentamos de novo um destinatário que a Meta recusou por ritmo ou instabilidade. */
+export const MAX_TENTATIVAS_ENVIO = 3;
+
+/**
+ * Espera até a próxima tentativa: a que a Meta pede, dobrando a cada nova
+ * recusa, até 1 hora. O que ela manda esperar um dia (131049), espera um dia —
+ * insistir antes disso ela pune.
+ */
+export function esperaDaNovaTentativa(baseSegundos: number | undefined, tentativasFeitas: number): number {
+  const base = baseSegundos && baseSegundos > 0 ? baseSegundos : 60;
+  if (base >= 86_400) return base;
+  return Math.min(base * 2 ** tentativasFeitas, 3_600);
+}
+
+/**
+ * O que a tela diz de uma falha definitiva de envio.
+ *
+ * Duas falhas precisam de texto próprio, porque a explicação padrão do erro
+ * promete o que não vai acontecer ("tentamos de novo automaticamente"):
+ * a rede que caiu no meio do envio (não reenviamos — pode ter chegado) e a
+ * recusa que continuou depois de todas as novas tentativas.
+ */
+export function detalheDaFalha(g: ErroGraph | null, tentativasFeitas: number): string {
+  if (!g) return 'Não conseguimos enviar esta mensagem.';
+  if (g.status === 0) {
+    return 'A conexão com a Meta caiu durante o envio e não dá para saber se a mensagem chegou. Para não correr o risco de enviar duas vezes, ela não foi reenviada.';
+  }
+  if (g.retentavel) {
+    return `A Meta recusou ${tentativasFeitas + 1} vezes seguidas (${g.traduzido.titulo.toLowerCase()}). Para não insistir, esta mensagem não foi reenviada.`;
+  }
+  return g.mensagemParaUsuario;
+}
+
+/** O que acontece com um destinatário depois da tentativa de envio. */
+type ResultadoEnvio =
+  | { tipo: 'enviada' }
+  | { tipo: 'falhou' }
+  | { tipo: 'nova_tentativa' }
+  | { tipo: 'desacelerar'; esperaSegundos: number };
+
+/** A campanha ativa que está esperando, e até quando. */
+export interface EsperaDaCampanha {
+  /** `limite_meta`: a conta já alcançou o limite de 24 h; `ritmo`: a Meta pediu calma. */
+  motivo: 'limite_meta' | 'ritmo';
+  ate: Date | null;
+  /** O limite de pessoas por 24 h, quando o motivo é ele. */
+  limite: number | null;
+}
+
+/**
  * Devolve à fila as campanhas pausadas por falta de disparos.
  *
  * Chamado quando o saldo pode ter voltado: ciclo virou, plano mudou. Não confere
@@ -219,6 +324,11 @@ export interface ResumoCampanha {
   maxPorDia: number | null;
   maxPorSemana: number | null;
   maxPorMes: number | null;
+  /**
+   * Por que uma campanha ativa não está saindo agora, e até quando. Nulo
+   * quando nada a segura. Não é pausa: ela continua sozinha.
+   */
+  espera: EsperaDaCampanha | null;
 }
 
 @Injectable()
@@ -845,6 +955,7 @@ export class CampanhaService {
           maxPorDia: campanha.maxPorDia,
           maxPorSemana: campanha.maxPorSemana,
           maxPorMes: campanha.maxPorMes,
+          retomarEm: campanha.retomarEm,
           fuso: conta.timezone,
           // O ciclo em que o disparo conta. É o MESMO campo que a tela de Conta
           // usa para ler o consumo — duas definições de ciclo divergiriam.
@@ -878,6 +989,10 @@ export class CampanhaService {
     }
 
     const c = estado.campanha;
+
+    // A Meta pediu calma (130429, 80007): a campanha espera até lá, sem pausar.
+    if (c.retomarEm && c.retomarEm > agora) return;
+
     const regra: RegraDeEnvio = {
       janelaDias: (c.janelaDias as number[] | null) ?? [],
       janelaInicio: c.janelaInicio,
@@ -944,21 +1059,46 @@ export class CampanhaService {
         return null;
       }
 
-      const limite = saldo === null ? decisao.quantas : Math.min(decisao.quantas, saldo);
+      // Limite da META (pessoas diferentes por 24 h). Cheio, a rodada não pega
+      // ninguém — e a campanha NÃO pausa: quando a janela de 24 h abre vaga,
+      // ela continua sozinha. A tela mostra até quando (`espera` no resumo).
+      // Dentro da mesma trava por conta: duas campanhas não gastam a mesma vaga.
+      const meta = await capacidadeDaMeta(db, c.contaId);
+      const cabeNaMeta = meta === null ? null : Math.max(0, meta.limite - meta.usados);
+      if (cabeNaMeta === 0) return [];
 
+      let limite = decisao.quantas;
+      if (saldo !== null) limite = Math.min(limite, saldo);
+      if (cabeNaMeta !== null) limite = Math.min(limite, cabeNaMeta);
+
+      /*
+       * A reserva em DUAS etapas, com a primeira MATERIALIZADA. A forma antiga
+       * — `update … where id in (select … for update skip locked limit N)` —
+       * reservava MAIS que N: com a RLS ligada, o planejador escolhe um nested
+       * loop e reexecuta o `select` para cada linha da tabela, e cada
+       * reexecução pula a linha que o próprio comando acabou de mudar e pega a
+       * seguinte. Pedia 1, marcava a fila inteira — e o lote da rodada, o teto
+       * do plano, o ritmo e o limite da Meta viravam enfeite. Medido no banco,
+       * com o papel da aplicação.
+       *
+       * Quem a Meta recusou por ritmo ou instabilidade volta só na hora marcada.
+       */
       const r = await db.execute(sql`
-        update campanha_destinatario
+        with alvo as materialized (
+          select id from campanha_destinatario
+           where campanha_id = ${campanhaId} and status = 'pendente'
+             and (proxima_tentativa_em is null or proxima_tentativa_em <= now())
+           order by criado_em
+           for update skip locked
+           limit ${limite}
+        )
+        update campanha_destinatario d
            set status = 'enviando', atualizado_em = now()
-         where id in (
-           select id from campanha_destinatario
-            where campanha_id = ${campanhaId} and status = 'pendente'
-            order by criado_em
-            for update skip locked
-            limit ${limite}
-         )
-        returning id, telefone_e164, variaveis
+          from alvo
+         where d.id = alvo.id
+        returning d.id, d.telefone_e164, d.variaveis, d.tentativas
       `);
-      return r.rows as { id: string; telefone_e164: string; variaveis: unknown }[];
+      return r.rows as { id: string; telefone_e164: string; variaveis: unknown; tentativas: number | null }[];
     });
 
     if (reivindicados === null) {
@@ -1034,19 +1174,48 @@ export class CampanhaService {
       return;
     }
 
-    for (const d of reivindicados) {
-      await this.enviarUm(
+    for (let i = 0; i < reivindicados.length; i++) {
+      const d = reivindicados[i]!;
+      const resultado = await this.enviarUm(
         c.contaId,
-        { id: d.id, telefone: d.telefone_e164, variaveis: d.variaveis },
+        { id: d.id, telefone: d.telefone_e164, variaveis: d.variaveis, tentativas: Number(d.tentativas ?? 0) },
         c,
         acesso.phoneNumberId,
         acesso.credencial.token,
         c.cicloInicio,
         campanhaId,
       );
+      // A Meta pediu calma: continuar a rodada seria bater no mesmo muro com
+      // os próximos. Eles voltam para a fila e a campanha espera.
+      if (resultado.tipo === 'desacelerar') {
+        await this.desacelerar(campanhaId, reivindicados.slice(i + 1).map((r) => r.id), resultado.esperaSegundos);
+        return;
+      }
     }
 
     await this.concluirSeTerminou(campanhaId);
+  }
+
+  /**
+   * A Meta recusou por ritmo (130429) ou teto de chamadas (80007): a campanha
+   * espera o tempo pedido. Não é pausa — ninguém precisa retomar, e nenhum
+   * destinatário é queimado: os que a rodada já tinha pego voltam para a fila
+   * como estavam.
+   */
+  private async desacelerar(campanhaId: string, restantes: string[], esperaSegundos: number): Promise<void> {
+    await this.ctx.comEscopoSistema('campanha.worker.desacelerar', async (db) => {
+      await db
+        .update(campanha)
+        .set({ retomarEm: sql`now() + make_interval(secs => ${esperaSegundos})` })
+        .where(eq(campanha.id, campanhaId));
+      if (restantes.length) {
+        await db
+          .update(campanhaDestinatario)
+          .set({ status: 'pendente' })
+          .where(and(inArray(campanhaDestinatario.id, restantes), eq(campanhaDestinatario.status, 'enviando')));
+      }
+    });
+    this.log.warn(`Campanha ${campanhaId}: a Meta pediu para desacelerar. Continua em ${esperaSegundos} s.`);
   }
 
   /**
@@ -1130,13 +1299,13 @@ export class CampanhaService {
    */
   private async enviarUm(
     contaId: string,
-    destinatario: { id: string; telefone: string; variaveis: unknown },
+    destinatario: { id: string; telefone: string; variaveis: unknown; tentativas?: number },
     alvo: { modeloNome: string; modeloIdioma: string },
     phoneNumberId: string,
     token: string,
     cicloInicio: Date | null,
     campanhaId: string,
-  ): Promise<void> {
+  ): Promise<ResultadoEnvio> {
     const variaveis = Array.isArray(destinatario.variaveis)
       ? destinatario.variaveis.map((v) => String(v))
       : [];
@@ -1186,6 +1355,7 @@ export class CampanhaService {
           `);
         }
       });
+      return { tipo: 'enviada' };
     } catch (erro) {
       const g = erro instanceof ErroGraph ? erro : null;
       const detalhe = g ? g.detalheParaLog : String(erro);
@@ -1204,6 +1374,30 @@ export class CampanhaService {
         detalhe: { campanhaId, traceId: g?.traceId ?? null },
       });
 
+      /*
+       * A Meta RESPONDEU recusando (status > 0) por ritmo ou instabilidade:
+       * ela não aceitou a mensagem, então tentar de novo não duplica nada.
+       * Rede caída ou tempo esgotado (status 0) é outra história — não dá para
+       * saber se a mensagem chegou, e reenviar poderia entregar duas vezes.
+       */
+      const feitas = destinatario.tentativas ?? 0;
+      if (g && g.status > 0 && g.retentavel && feitas < MAX_TENTATIVAS_ENVIO) {
+        const espera = esperaDaNovaTentativa(g.traduzido.esperaSegundos, feitas);
+        await this.ctx.comConta(contaId, (db) =>
+          db
+            .update(campanhaDestinatario)
+            .set({
+              status: 'pendente',
+              tentativas: feitas + 1,
+              proximaTentativaEm: new Date(Date.now() + espera * 1_000),
+            })
+            .where(eq(campanhaDestinatario.id, destinatario.id)),
+        );
+        return g.codigo !== null && DESACELERA.has(g.codigo)
+          ? { tipo: 'desacelerar', esperaSegundos: espera }
+          : { tipo: 'nova_tentativa' };
+      }
+
       await this.ctx.comConta(contaId, (db) =>
         db
           .update(campanhaDestinatario)
@@ -1213,10 +1407,11 @@ export class CampanhaService {
             erroCodigo: g?.codigo ?? null,
             erroTitulo: g?.traduzido.titulo ?? 'Falha no envio',
             // A explicação é o que a tela mostra; o detalhe técnico fica no log.
-            erroDetalhe: g?.mensagemParaUsuario ?? 'Não conseguimos enviar esta mensagem.',
+            erroDetalhe: detalheDaFalha(g, feitas),
           })
           .where(eq(campanhaDestinatario.id, destinatario.id)),
       );
+      return { tipo: 'falhou' };
     }
   }
 
@@ -1321,6 +1516,13 @@ export class CampanhaService {
       : [];
     const nomeDaLista = new Map(listas.map((l) => [l.id, l.nome]));
 
+    // O limite da Meta é da CONTA: uma leitura serve a todas as campanhas
+    // ativas da lista. Sem campanha ativa, nem pergunta.
+    const ativas = campanhas.some((c) => ESTADOS_ATIVOS.includes(c.status as (typeof ESTADOS_ATIVOS)[number]));
+    const meta = ativas ? await capacidadeDaMeta(this.ctx.db, campanhas[0]!.contaId) : null;
+    const metaCheia = meta && meta.usados >= meta.limite ? meta : null;
+    const agora = new Date();
+
     return campanhas.map((c) => {
       const porStatus: Record<string, number> = {};
       let total = 0;
@@ -1329,7 +1531,14 @@ export class CampanhaService {
         porStatus[l.status] = Number(l.quantos);
         total += Number(l.quantos);
       }
-      return this.montarResumo(c, porStatus, total, c.listaId ? (nomeDaLista.get(c.listaId) ?? null) : null);
+
+      let espera: EsperaDaCampanha | null = null;
+      if (ESTADOS_ATIVOS.includes(c.status as (typeof ESTADOS_ATIVOS)[number])) {
+        if (c.retomarEm && c.retomarEm > agora) espera = { motivo: 'ritmo', ate: c.retomarEm, limite: null };
+        else if (metaCheia) espera = { motivo: 'limite_meta', ate: metaCheia.liberaEm, limite: metaCheia.limite };
+      }
+
+      return this.montarResumo(c, porStatus, total, c.listaId ? (nomeDaLista.get(c.listaId) ?? null) : null, espera);
     });
   }
 
@@ -1338,6 +1547,7 @@ export class CampanhaService {
     porStatus: Record<string, number>,
     total: number,
     listaNome: string | null,
+    espera: EsperaDaCampanha | null = null,
   ): ResumoCampanha {
     return {
       id: c.id,
@@ -1361,6 +1571,7 @@ export class CampanhaService {
       maxPorDia: c.maxPorDia,
       maxPorSemana: c.maxPorSemana,
       maxPorMes: c.maxPorMes,
+      espera,
     };
   }
 

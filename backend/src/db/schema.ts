@@ -412,6 +412,11 @@ export const campanha = pgTable('campanha', {
   listaId: uuid('lista_id'),
   /** Campanha encerrada que o cliente tirou da lista (migration 018). O histórico fica. */
   arquivadaEm: timestamp('arquivada_em', { withTimezone: true }),
+  /**
+   * Até quando esperar porque a Meta pediu calma (130429, 80007). Não é pausa:
+   * a campanha segue ativa e o worker só a pula até lá (migration 027).
+   */
+  retomarEm: timestamp('retomar_em', { withTimezone: true }),
   iniciadaEm: timestamp('iniciada_em', { withTimezone: true }),
   concluidaEm: timestamp('concluida_em', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
@@ -448,10 +453,17 @@ export const campanhaDestinatario = pgTable('campanha_destinatario', {
   entregueEm: timestamp('entregue_em', { withTimezone: true }),
   lidaEm: timestamp('lida_em', { withTimezone: true }),
   falhouEm: timestamp('falhou_em', { withTimezone: true }),
+  /** Quantas vezes a Meta recusou por ritmo ou instabilidade e voltamos a tentar (migration 027). */
+  tentativas: smallint('tentativas').notNull().default(0),
+  /** Não reenviar antes disto. Nulo = pode sair já (migration 027). */
+  proximaTentativaEm: timestamp('proxima_tentativa_em', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   unicoUq: uniqueIndex('idx_campanha_destinatario_unico').on(t.campanhaId, t.telefoneE164),
+  enviadaIdx: index('idx_campanha_destinatario_enviada')
+    .on(t.contaId, t.enviadaEm)
+    .where(sql`enviada_em is not null`),
   statusIdx: index('idx_campanha_destinatario_status').on(t.campanhaId, t.status),
   wamidUq: uniqueIndex('idx_campanha_destinatario_wamid')
     .on(t.waMessageId)

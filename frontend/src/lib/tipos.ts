@@ -258,6 +258,12 @@ export interface ResumoCampanha {
   maxPorDia: number | null;
   maxPorSemana: number | null;
   maxPorMes: number | null;
+  /**
+   * Campanha ativa que está esperando, e até quando. Não é pausa: ela continua
+   * sozinha. `limite_meta` — a conta já alcançou as pessoas que a Meta permite
+   * em 24 h; `ritmo` — a Meta pediu para desacelerar.
+   */
+  espera: { motivo: 'limite_meta' | 'ritmo'; ate: string | null; limite: number | null } | null;
 }
 
 /** O que dá para mudar numa campanha já montada. A tela manda só o que mexeu. */
