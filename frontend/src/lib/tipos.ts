@@ -753,4 +753,28 @@ export interface SituacaoCardapioWeb {
     erro: string | null;
     listaId: string | null;
   };
+  /**
+   * As compras (pedidos) da loja: a carga do histórico e a consulta dos novos.
+   * Ausente só numa API mais antiga que a tela (a janela de um deploy).
+   */
+  pedidos?: {
+    status: StatusPedidosCardapioWeb;
+    /** Carga do histórico: quanto do período já foi (0 a 100). */
+    progresso: number;
+    cargaDe: string | null;
+    cargaAte: string | null;
+    lidos: number;
+    ignorados: number;
+    ultimaConsulta: string | null;
+    /** Com a busca em andamento, é um soluço que se resolve sozinho; parada, é o motivo. */
+    erro: string | null;
+    /** O que já está guardado. */
+    compras: number;
+    clientes: number;
+    primeira: string | null;
+    ultima: string | null;
+  };
 }
+
+export type StatusPedidosCardapioWeb = 'parado' | 'carga' | 'em_dia' | 'falhou';
+export type PedidosCardapioWeb = NonNullable<SituacaoCardapioWeb['pedidos']>;

@@ -12,6 +12,7 @@ import { IsBoolean, IsOptional, IsString, Length, MaxLength } from 'class-valida
 import type { UsuarioAutenticado } from '../../common/auth.guard';
 import { DonoGuard } from '../../common/dono.guard';
 import { UsuarioAtual } from '../../common/usuario-atual.decorator';
+import { PedidosCardapiowebService } from './cardapioweb.pedidos.service';
 import { CardapiowebService, type SituacaoCardapioWeb } from './cardapioweb.service';
 
 class ConectarChaveDto {
@@ -33,7 +34,10 @@ class IniciarImportacaoDto {
 @ApiTags('Cardápio Web')
 @Controller('integracoes/cardapioweb')
 export class CardapiowebController {
-  constructor(private readonly servico: CardapiowebService) {}
+  constructor(
+    private readonly servico: CardapiowebService,
+    private readonly pedidos: PedidosCardapiowebService,
+  ) {}
 
   @Get()
   situacao(@UsuarioAtual() u: UsuarioAutenticado): Promise<SituacaoCardapioWeb> {
@@ -50,6 +54,17 @@ export class CardapiowebController {
   @UseGuards(DonoGuard)
   importar(@UsuarioAtual() u: UsuarioAutenticado, @Body() dto: IniciarImportacaoDto): Promise<SituacaoCardapioWeb> {
     return this.servico.iniciar(u.contaId, u.id, dto);
+  }
+
+  /**
+   * Buscar pedidos: começa a carga do histórico (até 3 anos) ou, com a loja em
+   * dia, consulta os pedidos novos agora. Roda em segundo plano.
+   */
+  @Post('pedidos')
+  @UseGuards(DonoGuard)
+  async buscarPedidos(@UsuarioAtual() u: UsuarioAutenticado): Promise<SituacaoCardapioWeb> {
+    await this.pedidos.buscar(u.contaId, u.id);
+    return this.servico.situacao(u.contaId);
   }
 
   @Delete()

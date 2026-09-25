@@ -11,6 +11,8 @@
  *    na lista "Clientes Cardápio Web"; quem desligou entra descadastrado.
  * 4. O andamento fica no banco. Se o servidor reiniciar, o job retoma da página
  *    seguinte à última gravada.
+ * 5. Iniciar a importação engatilha a busca das compras (os pedidos de cada
+ *    cliente, `cardapioweb.pedidos.service.ts`), que começa quando ela termina.
  *
  * Nunca sobrescreve: um contato que já existe mantém o consentimento que tinha
  * (pode ser mais antigo e mais forte) e um descadastro nunca é desfeito.
@@ -30,6 +32,8 @@ import { AuditoriaService } from '../auditoria/auditoria.service';
 import { gravarExtras } from '../contato/extras';
 import { cifrarToken, decifrarToken } from '../meta/cripto';
 import { CardapiowebCliente, ErroCardapioWeb, type Credencial } from './cardapioweb.cliente';
+import { prepararCargaDePedidos } from './cardapioweb.pedidos.service';
+import { progressoDaCarga } from './cardapioweb.pedidos.regras';
 import { separarPagina } from './cardapioweb.regras';
 
 const NOME_LISTA = 'Clientes Cardápio Web';
@@ -55,6 +59,23 @@ export interface SituacaoCardapioWeb {
     concluidaEm: Date | null;
     erro: string | null;
     listaId: string | null;
+  };
+  /** As compras (pedidos) da loja: a carga do histórico e a consulta dos novos. */
+  pedidos: {
+    status: 'parado' | 'carga' | 'em_dia' | 'falhou';
+    /** Carga: quanto do período já foi (0 a 100). */
+    progresso: number;
+    cargaDe: Date | null;
+    cargaAte: Date | null;
+    lidos: number;
+    ignorados: number;
+    ultimaConsulta: Date | null;
+    erro: string | null;
+    /** O que está guardado: compras, quantos clientes compraram, e de quando a quando. */
+    compras: number;
+    clientes: number;
+    primeira: Date | null;
+    ultima: Date | null;
   };
 }
 
@@ -100,6 +121,14 @@ export class CardapiowebService {
         .from(integracaoCardapioweb)
         .where(eq(integracaoCardapioweb.contaId, contaId))
         .limit(1);
+      const [guardado] = (
+        await db.execute(sql`
+          select count(*)::int as compras, count(distinct contato_id)::int as clientes,
+                 min(feita_em) as primeira, max(feita_em) as ultima
+            from compra where conta_id = ${contaId} and fonte = 'cardapioweb'
+        `)
+      ).rows as { compras: number; clientes: number; primeira: string | null; ultima: string | null }[];
+      const status = (l?.pedidosStatus ?? 'parado') as SituacaoCardapioWeb['pedidos']['status'];
       return {
         conectado: Boolean(l?.credencialCifrada),
         modo: l?.credencialCifrada ? (l.modo as 'chave' | 'oauth') : null,
@@ -116,6 +145,25 @@ export class CardapiowebService {
           concluidaEm: l?.sincConcluidaEm ?? null,
           erro: l?.sincErro ?? null,
           listaId: l?.listaId ?? null,
+        },
+        pedidos: {
+          status,
+          progresso:
+            status === 'em_dia'
+              ? 100
+              : l?.pedidosCargaDe && l.pedidosCargaAte
+                ? progressoDaCarga(l.pedidosCargaDe, l.pedidosCargaAte, l.pedidosJanelaDe ?? l.pedidosCargaDe, l.pedidosPagina, null)
+                : 0,
+          cargaDe: l?.pedidosCargaDe ?? null,
+          cargaAte: l?.pedidosCargaAte ?? null,
+          lidos: l?.pedidosLidos ?? 0,
+          ignorados: l?.pedidosIgnorados ?? 0,
+          ultimaConsulta: l?.pedidosUltimaConsulta ?? null,
+          erro: l?.pedidosErro ?? null,
+          compras: guardado?.compras ?? 0,
+          clientes: guardado?.clientes ?? 0,
+          primeira: guardado?.primeira ? new Date(guardado.primeira) : null,
+          ultima: guardado?.ultima ? new Date(guardado.ultima) : null,
         },
       };
     });
@@ -165,6 +213,15 @@ export class CardapiowebService {
             lojaId: loja.id,
             lojaNome: loja.nome,
             sincErro: null,
+            // Parou por credencial recusada: a chave nova retoma de onde parou.
+            // Chave de OUTRA loja: a busca de pedidos recomeça pelo dono ("Buscar pedidos").
+            pedidosStatus: sql`case when ${integracaoCardapioweb.lojaId} is distinct from ${loja.id} then 'parado'
+              when ${integracaoCardapioweb.pedidosStatus} <> 'falhou' then ${integracaoCardapioweb.pedidosStatus}
+              when ${integracaoCardapioweb.pedidosJanelaDe} < ${integracaoCardapioweb.pedidosCargaAte} then 'carga'
+              when ${integracaoCardapioweb.pedidosUltimaConsulta} is not null then 'em_dia'
+              else 'parado' end`,
+            pedidosErro: null,
+            pedidosProximoEm: null,
           },
         });
 
@@ -274,6 +331,10 @@ export class CardapiowebService {
           consentimentoEm: new Date(),
         })
         .where(and(eq(integracaoCardapioweb.contaId, contaId), ne(integracaoCardapioweb.sincStatus, 'rodando')));
+
+      // Clientes e compras vêm juntos (opção B): a carga dos pedidos começa
+      // quando a importação de clientes terminar — o job espera.
+      if (l.pedidosStatus === 'parado' || l.pedidosStatus === 'falhou') await prepararCargaDePedidos(db, contaId);
 
       await this.auditoria.registrar({
         contaId,

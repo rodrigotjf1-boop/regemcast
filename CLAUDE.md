@@ -14,7 +14,10 @@ leitura e clique.
 
 **O que o Regemcast NÃO é:** não é ERP, não tem pedido, cardápio, entregador,
 loja, estoque, comanda nem PDV. Se uma tarefa pedir qualquer uma dessas coisas,
-o pedido está no projeto errado — pergunte.
+o pedido está no projeto errado — pergunte. **A única exceção** são as
+integrações com cardápio digital ([`docs/integracoes.md`](docs/integracoes.md)):
+elas LEEM o resumo das compras de cada cliente (tabela `compra`) para segmentar
+campanhas — o Regemcast nunca cria, altera nem gerencia pedido.
 
 **Relação com o Regem:** o Regem (`C:\Regen`) é outro produto, separado. O
 Regemcast nasceu das lições aprendidas lá, mas **não compartilha código, banco
@@ -38,7 +41,8 @@ Monorepo em `C:\RegemCast`.
 - **`docs/`** — [`banco.md`](docs/banco.md) (preparar o banco, passo a passo),
   [`rls.md`](docs/rls.md) (como o isolamento funciona e como provar que pega) e
   [`whatsapp.md`](docs/whatsapp.md) (os dois caminhos de conexão, coexistência,
-  prazos e erros da Meta — com as fontes).
+  prazos e erros da Meta — com as fontes) e [`integracoes.md`](docs/integracoes.md)
+  (cardápio digital → clientes e compras, com os limites da API).
 - **Infra** — `docker-compose.dev.yml` (Postgres + Redis local),
   `backend/Dockerfile`, `frontend/Dockerfile` (os dois com contexto na **raiz**
   do repositório), `.github/workflows/ci.yml`.
@@ -127,6 +131,13 @@ Detalhe e o porquê em `docs/marca.md`; fonte da verdade em `kit/LEIA-ME.md`.
 - **Usuário informa o mínimo; a distribuição conclui.** O cliente não cria app
   de desenvolvedor, não manuseia segredo, não vê `app secret` nem token. Ele
   autoriza pelo Embedded Signup e o resto é nosso, nos bastidores.
+- **Integração com cardápio é só leitura e segue as regras de consentimento.**
+  Compra de marketplace (iFood, 99Food, Keeta, aiqfome) não entra — o cliente é
+  do marketplace. Cliente que chega pelo pedido entra pelas mesmas regras da
+  importação, só com a declaração do dono; compra de quem pediu para sair não é
+  guardada. Os limites da API de cada cardápio são conferidos na documentação
+  oficial antes de codar (o Cardápio Web só devolve as alterações das últimas
+  8 h, por exemplo). Detalhe em [`docs/integracoes.md`](docs/integracoes.md).
 - **Auditoria append-only.** Toda mutação relevante registra quem, o quê, sobre
   qual entidade, de onde e quando. A tabela `auditoria` não aceita `update` nem
   `delete` — por trigger **e** por permissão.

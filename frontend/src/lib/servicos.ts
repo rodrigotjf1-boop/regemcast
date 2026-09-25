@@ -279,7 +279,7 @@ export const whatsapp = {
     }),
 };
 
-/** Conexão com a loja do Cardápio Web: importar a base de clientes. */
+/** Conexão com a loja do Cardápio Web: a base de clientes e as compras. */
 export const cardapioWeb = {
   /** `GET /integracoes/cardapioweb` */
   situacao: () => api.get<SituacaoCardapioWeb>('/integracoes/cardapioweb'),
@@ -291,7 +291,13 @@ export const cardapioWeb = {
   importar: (consentimento: boolean, evidencia?: string) =>
     api.post<SituacaoCardapioWeb>('/integracoes/cardapioweb/importar', { consentimento, evidencia }),
 
-  /** `DELETE /integracoes/cardapioweb` — apaga a credencial; os contatos ficam. */
+  /**
+   * `POST /integracoes/cardapioweb/pedidos` — só o dono: começa a busca do
+   * histórico de pedidos ou, com a loja em dia, consulta os novos agora.
+   */
+  buscarPedidos: () => api.post<SituacaoCardapioWeb>('/integracoes/cardapioweb/pedidos'),
+
+  /** `DELETE /integracoes/cardapioweb` — apaga a credencial; os contatos e as compras ficam. */
   desconectar: () => api.delete<void>('/integracoes/cardapioweb'),
 };
 

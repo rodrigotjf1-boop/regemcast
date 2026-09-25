@@ -321,6 +321,17 @@ export function IconeBlocos(p: Props) {
   );
 }
 
+/** Tomada: integrações — o Regemcast ligado a outro sistema. */
+export function IconeIntegracao(p: Props) {
+  return (
+    <Base {...p}>
+      <path d="M9 3v4M15 3v4" />
+      <path d="M6.5 7h11v3.5a5.5 5.5 0 0 1-11 0V7Z" />
+      <path d="M12 16v5" />
+    </Base>
+  );
+}
+
 /** Mapa: regiões pelo DDD. */
 export function IconeMapa(p: Props) {
   return (

@@ -640,6 +640,7 @@ export class ContatoService {
           dataNascimento: null,
           pedidos: null,
           totalGastoCentavos: null,
+          primeiroPedidoEm: null,
           ultimoPedidoEm: null,
           metricasEm: null,
           metricasOrigem: null,
@@ -652,6 +653,9 @@ export class ContatoService {
         .returning({ id: contato.id, telefone: contato.telefoneE164 });
 
       if (!alterado) throw new NotFoundException('Contato não encontrado.');
+
+      // As compras dessa pessoa também são dado pessoal: saem junto.
+      await db.execute(sql`delete from compra where conta_id = ${contaId} and contato_id = ${contatoId}`);
 
       await this.auditoria.registrar({
         contaId,

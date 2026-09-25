@@ -571,6 +571,8 @@ export const contato = pgTable('contato', {
   pedidos: integer('pedidos'),
   totalGastoCentavos: bigint('total_gasto_centavos', { mode: 'number' }),
   ultimoPedidoEm: timestamp('ultimo_pedido_em', { withTimezone: true }),
+  /** A primeira compra conhecida (migration 029). */
+  primeiroPedidoEm: timestamp('primeiro_pedido_em', { withTimezone: true }),
   metricasEm: timestamp('metricas_em', { withTimezone: true }),
   metricasOrigem: text('metricas_origem'),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
@@ -731,9 +733,54 @@ export const integracaoCardapioweb = pgTable('integracao_cardapioweb', {
   importacaoId: uuid('importacao_id'),
   consentimentoPor: uuid('consentimento_por'),
   consentimentoEm: timestamp('consentimento_em', { withTimezone: true }),
+  // ---- sincronização de pedidos (migration 029)
+  /** parado | carga (histórico) | em_dia (consulta periódica) | falhou */
+  pedidosStatus: text('pedidos_status').notNull().default('parado'),
+  pedidosCargaDe: timestamp('pedidos_carga_de', { withTimezone: true }),
+  pedidosCargaAte: timestamp('pedidos_carga_ate', { withTimezone: true }),
+  pedidosJanelaDe: timestamp('pedidos_janela_de', { withTimezone: true }),
+  pedidosPagina: integer('pedidos_pagina').notNull().default(0),
+  pedidosTotalEstimado: integer('pedidos_total_estimado'),
+  pedidosLidos: integer('pedidos_lidos').notNull().default(0),
+  pedidosGravados: integer('pedidos_gravados').notNull().default(0),
+  pedidosIgnorados: integer('pedidos_ignorados').notNull().default(0),
+  pedidosUltimaConsulta: timestamp('pedidos_ultima_consulta', { withTimezone: true }),
+  pedidosTravaAte: timestamp('pedidos_trava_ate', { withTimezone: true }),
+  pedidosProximoEm: timestamp('pedidos_proximo_em', { withTimezone: true }),
+  pedidosErro: text('pedidos_erro'),
+  pedidosAtualizadoEm: timestamp('pedidos_atualizado_em', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * O resumo de cada compra trazida de uma integração (migration 029) — só para
+ * segmentar. Os totais do contato (`pedidos`, `totalGastoCentavos`,
+ * `primeiroPedidoEm`, `ultimoPedidoEm`) saem daqui a cada sincronização.
+ */
+export const compra = pgTable('compra', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contaId: uuid('conta_id').notNull(),
+  contatoId: uuid('contato_id').notNull(),
+  /** cardapioweb | regem */
+  fonte: text('fonte').notNull(),
+  idExterno: text('id_externo').notNull(),
+  feitaEm: timestamp('feita_em', { withTimezone: true }).notNull(),
+  valorCentavos: bigint('valor_centavos', { mode: 'number' }).notNull(),
+  /** entrega | retirada | salao | outro */
+  tipo: text('tipo').notNull().default('outro'),
+  canal: text('canal'),
+  bairro: text('bairro'),
+  /** [{ n: nome, q: quantidade, v: centavos }] */
+  itens: jsonb('itens').notNull().default(sql`'[]'::jsonb`),
+  atualizadaNaFonte: timestamp('atualizada_na_fonte', { withTimezone: true }),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  externaUq: uniqueIndex('idx_compra_externa').on(t.contaId, t.fonte, t.idExterno),
+  contatoIdx: index('idx_compra_contato').on(t.contatoId, t.feitaEm),
+  dataIdx: index('idx_compra_conta_data').on(t.contaId, t.feitaEm),
+}));
 
 /**
  * Celular com o app Android logado (migration 019). `tokenFcm` é o endereço do

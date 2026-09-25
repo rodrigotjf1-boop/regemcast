@@ -219,16 +219,17 @@ Descrição: Plataforma de campanhas de WhatsApp pela API oficial da Meta para r
 --- INFORMAÇÕES BÁSICAS ---
 Nome do app: Regemcast
 Categoria: Marketing
-Descrição curta: Campanhas de WhatsApp pela API oficial da Meta para a base de clientes da sua loja. Importe os clientes do Cardápio Web em um clique, respeitando quem desligou as mensagens.
-Descrição completa: O Regemcast envia campanhas de WhatsApp pela API oficial da Meta, com modelos aprovados, janela de envio, limites por dia e o botão "Parar promoções" em toda mensagem de marketing. Ao instalar, a base de clientes da loja entra no Regemcast: só quem está com o WhatsApp liberado no Cardápio Web recebe; quem desligou entra descadastrado. O dono acompanha entregas, leituras e falhas de cada campanha pelo site e pelo app Android.
+Descrição curta: Campanhas de WhatsApp pela API oficial da Meta para a base de clientes da sua loja. Traga os clientes e o histórico de compras do Cardápio Web em um clique, respeitando quem desligou as mensagens.
+Descrição completa: O Regemcast envia campanhas de WhatsApp pela API oficial da Meta, com modelos aprovados, janela de envio, limites por dia e o botão "Parar promoções" em toda mensagem de marketing. Ao instalar, a base de clientes da loja entra no Regemcast: só quem está com o WhatsApp liberado no Cardápio Web recebe; quem desligou entra descadastrado. O histórico de compras de cada cliente (pedidos fechados, fora os de marketplace) vem junto e continua chegando, para separar a base por quem compra mais, quem sumiu e quem pede entrega. O dono acompanha entregas, leituras e falhas de cada campanha pelo site e pelo app Android.
 
 --- URLs DO APP ---
 Redirect URI: https://castapi.dmsregem.com/api/v1/integracoes/cardapioweb/oauth/callback
-URL de instalação: https://cast.dmsregem.com/contatos?importar=cardapioweb
+URL de instalação: https://cast.dmsregem.com/integracoes
 URL de login: https://cast.dmsregem.com/painel
 
 --- PERMISSÕES ---
 customers (listar clientes)
+orders (histórico e detalhe dos pedidos — as compras de cada cliente)
 store (consultar a loja — nome exibido na conexão)
 
 --- WEBHOOK (opcional) ---
