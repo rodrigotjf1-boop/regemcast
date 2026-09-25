@@ -19,6 +19,8 @@
  */
 import { sql, type SQL } from 'drizzle-orm';
 
+import { gemeoEmSql } from '../../common/telefone-sql';
+
 export const PUBLICOS = [
   'vip',
   'ticket_alto',
@@ -29,6 +31,11 @@ export const PUBLICOS = [
   'entrega',
   'retirada',
   'salao',
+  'leram_30d',
+  'responderam_30d',
+  'nao_leram_3',
+  'nunca_receberam',
+  'conversaram_7d',
   'bairro',
   'aniversario',
 ] as const;
@@ -57,6 +64,17 @@ export interface LimitesDosPublicos {
   /** "Um pedido só": comprou nos últimos N dias — o "ativo" dos perfis. */
   ativoDias: number;
 }
+
+/** As duas formas do celular do contato — as campanhas e conversas podem estar em qualquer uma. */
+const FORMAS_DO_CONTATO = sql`(contato.telefone_e164, ${gemeoEmSql(sql`contato.telefone_e164`)})`;
+
+/** Alguma mensagem de campanha para este contato que atenda à condição (em `d`). */
+const recebeu = (condicao: SQL) => sql`exists (
+  select 1 from campanha_destinatario d
+   where d.conta_id = contato.conta_id
+     and d.telefone_e164 in ${FORMAS_DO_CONTATO}
+     and ${condicao}
+)`;
 
 /** Ticket médio do contato, em centavos (numeric). */
 export const TICKET_SQL = sql`(contato.total_gasto_centavos::numeric / nullif(contato.pedidos, 0))`;
@@ -97,6 +115,32 @@ export function expressaoPublico(publico: Publico, valor: string | null, l: Limi
     case 'retirada':
     case 'salao':
       return sql`(contato.tipo_preferido = ${publico})`;
+    case 'leram_30d':
+      return recebeu(sql`d.lida_em >= now() - interval '30 days'`);
+    case 'responderam_30d':
+      return recebeu(sql`d.respondida_em >= now() - interval '30 days'`);
+    case 'nunca_receberam':
+      return sql`not ${recebeu(sql`d.enviada_em is not null`)}`;
+    case 'nao_leram_3':
+      // As 3 últimas que chegaram (enviada, entregue, lida): três, e nenhuma lida.
+      return sql`(
+        select count(*) = 3 and count(u.lida_em) = 0
+          from (
+            select d.lida_em from campanha_destinatario d
+             where d.conta_id = contato.conta_id
+               and d.telefone_e164 in ${FORMAS_DO_CONTATO}
+               and d.status in ('enviada', 'entregue', 'lida')
+             order by d.enviada_em desc
+             limit 3
+          ) u
+      )`;
+    case 'conversaram_7d':
+      return sql`exists (
+        select 1 from conversa v
+         where v.conta_id = contato.conta_id
+           and v.telefone_e164 in ${FORMAS_DO_CONTATO}
+           and v.ultima_entrada_em >= now() - interval '7 days'
+      )`;
     case 'bairro':
       return sql`(lower(contato.bairro) = lower(${valor}))`;
     case 'aniversario':
@@ -194,6 +238,19 @@ export function descreverPublico(publico: Publico, valor: string | null, l: Limi
       return { nome: 'Retiram na loja', regra: 'A maior parte das compras foi retirada no balcão.' };
     case 'salao':
       return { nome: 'Consomem no salão', regra: 'A maior parte das compras foi no salão ou na mesa.' };
+    case 'leram_30d':
+      return { nome: 'Leram nos últimos 30 dias', regra: 'Leram pelo menos uma campanha nos últimos 30 dias.' };
+    case 'responderam_30d':
+      return { nome: 'Responderam', regra: 'Responderam a uma campanha nos últimos 30 dias.' };
+    case 'nao_leram_3':
+      return {
+        nome: 'Não leram as últimas 3',
+        regra: 'Receberam as 3 últimas campanhas e não leram nenhuma: dê um tempo ou mude a oferta.',
+      };
+    case 'nunca_receberam':
+      return { nome: 'Nunca receberam campanha', regra: 'Ainda não receberam nenhuma campanha da sua loja.' };
+    case 'conversaram_7d':
+      return { nome: 'Conversaram na última semana', regra: 'Mandaram mensagem para a loja nos últimos 7 dias.' };
     case 'bairro':
       return { nome: `Bairro ${valor ?? ''}`.trim(), regra: 'O bairro mais frequente nas entregas.' };
     case 'aniversario': {

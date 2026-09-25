@@ -53,6 +53,8 @@ export interface Conta {
   cnpj: string | null;
   timezone: string;
   status: StatusConta;
+  /** Descanso entre campanhas de marketing, em dias; 0 = desligado. Ausente numa API anterior. */
+  descansoMarketingDias?: number;
 }
 
 /** `PlanoResumo`: catálogo da distribuição, só a parte que o cliente vê. */
@@ -264,6 +266,10 @@ export interface ResumoCampanha {
    * em 24 h; `ritmo` — a Meta pediu para desacelerar.
    */
   espera: { motivo: 'limite_meta' | 'ritmo'; ate: string | null; limite: number | null } | null;
+  /** Quantas pessoas responderam à mensagem. Ausente numa API anterior. */
+  respondidas?: number;
+  /** O descanso desta campanha, em dias; nulo = sem descanso. */
+  descansoDias?: number | null;
 }
 
 /** O que dá para mudar numa campanha já montada. A tela manda só o que mexeu. */
@@ -332,6 +338,8 @@ export interface NovaCampanha {
   maxPorDia?: number;
   maxPorSemana?: number;
   maxPorMes?: number;
+  /** Só o dono: enviar mesmo para quem está em descanso. */
+  ignorarDescanso?: boolean;
 }
 
 /**
@@ -390,6 +398,8 @@ export interface Contato {
   pedidos?: number | null;
   totalGastoCentavos?: number | null;
   ultimoPedidoEm?: string | null;
+  /** A Meta recusou o número (131026) em duas campanhas: fora dos envios até "tentar de novo". */
+  semWhatsappEm?: string | null;
   /** Das compras sincronizadas: o bairro mais frequente e o jeito de comprar. */
   bairro?: string | null;
   tipoPreferido?: 'entrega' | 'retirada' | 'salao' | null;
@@ -443,6 +453,11 @@ export type Publico =
   | 'entrega'
   | 'retirada'
   | 'salao'
+  | 'leram_30d'
+  | 'responderam_30d'
+  | 'nao_leram_3'
+  | 'nunca_receberam'
+  | 'conversaram_7d'
   | 'bairro'
   | 'aniversario';
 
@@ -467,6 +482,8 @@ export interface ResumoPublicos {
   comNascimento: number;
   publicos: { id: Exclude<Publico, 'bairro' | 'aniversario'>; nome: string; regra: string; total: number; gastoCentavos: number }[];
   bairros: { bairro: string; total: number }[];
+  /** Com as conversas ligadas, "Conversaram na última semana" faz sentido. */
+  conversasLigadas?: boolean;
   /** O mês de hoje no fuso da conta (1 a 12). */
   mesAtual: number;
   aniversarios: { mes: number; total: number }[];

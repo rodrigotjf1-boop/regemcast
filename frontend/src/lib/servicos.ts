@@ -184,7 +184,7 @@ export const conta = {
   resumo: (sinal?: AbortSignal) => api.get<ResumoConta>('/conta', { sinal }),
 
   /** `PATCH /conta` — devolve só a conta atualizada, não o resumo inteiro. */
-  atualizar: (dados: { nome?: string; cnpj?: string; timezone?: string }) =>
+  atualizar: (dados: { nome?: string; cnpj?: string; timezone?: string; descansoMarketingDias?: number }) =>
     api.patch<Conta>('/conta', dados),
 
   /** `GET /conta/usuarios` — quem tem acesso à conta. */
@@ -230,6 +230,10 @@ export interface DadosRegistroNumero {
 export const campanhas = {
   /** `GET /campanhas` */
   listar: () => api.get<ResumoCampanha[]>('/campanhas'),
+
+  /** `GET /campanhas/descanso?listaId=` — quantos da lista estão em descanso hoje e ficam de fora. */
+  previaDoDescanso: (listaId: string) =>
+    api.get<{ dias: number; emDescanso: number }>(`/campanhas/descanso?listaId=${encodeURIComponent(listaId)}`),
 
   /** `GET /campanhas/:id` */
   detalhe: (id: string) => api.get<ResumoCampanha>(`/campanhas/${id}`),
@@ -348,6 +352,13 @@ export const contatos = {
   /** `GET /contatos?situacao=bloqueados` — quem pediu para sair. */
   bloqueados: (pagina = 1, porPagina = 50) =>
     api.get<PaginaDeContatos>(`/contatos?pagina=${pagina}&porPagina=${porPagina}&situacao=bloqueados`),
+
+  /** `GET /contatos?situacao=sem_whatsapp` — a Meta recusou o número em duas campanhas. */
+  semWhatsapp: (pagina = 1, porPagina = 50) =>
+    api.get<PaginaDeContatos>(`/contatos?pagina=${pagina}&porPagina=${porPagina}&situacao=sem_whatsapp`),
+
+  /** `POST /contatos/:id/tentar-whatsapp` — volta para os envios; só falhas daqui em diante contam. */
+  tentarWhatsappDeNovo: (id: string) => api.post<{ ok: true }>(`/contatos/${id}/tentar-whatsapp`),
 
   /** `POST /contatos/:id/reativar` — volta à base, a pedido da pessoa. */
   reativar: (id: string, justificativa: string) =>

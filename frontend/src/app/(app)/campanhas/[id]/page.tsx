@@ -48,6 +48,7 @@ const EXPLICACAO_STATUS: Record<string, string> = {
   entregue: 'Chegou ao aparelho.',
   lida: 'A pessoa abriu.',
   falhou: 'Não foi entregue.',
+  descanso: 'Recebeu outra campanha de marketing há pouco e ficou de fora. Não contou no plano.',
   cancelado: 'A campanha foi cancelada antes de sair para esta pessoa.',
 };
 
@@ -243,6 +244,8 @@ export default function PaginaCampanha() {
   const entregues = (p.entregue ?? 0) + lidas;
   const enviadas = (p.enviada ?? 0) + entregues;
   const falhas = p.falhou ?? 0;
+  const emDescanso = p.descanso ?? 0;
+  const respondidas = campanha.respondidas ?? 0;
   const base = Math.max(campanha.total, 1);
   const pct = (n: number) => `${Math.round((n / base) * 100)}% de ${formatarNumero(campanha.total)}`;
 
@@ -469,7 +472,7 @@ export default function PaginaCampanha() {
           valor={lidas}
           tom="acento"
           icone={<IconeOlho className="h-5 w-5" />}
-          apoio={pct(lidas)}
+          apoio={respondidas > 0 ? `${pct(lidas)} · ${formatarNumero(respondidas)} ${respondidas === 1 ? 'respondeu' : 'responderam'}` : pct(lidas)}
         />
         <Estatistica
           rotulo="Falhas"
@@ -490,6 +493,19 @@ export default function PaginaCampanha() {
             </p>
           </div>
           <BarraStatus porStatus={campanha.porStatus} total={campanha.total} />
+          {campanha.descansoDias ? (
+            <p className="text-xs leading-relaxed text-tinta-suave">
+              Descanso de <strong className="text-tinta">{campanha.descansoDias} {campanha.descansoDias === 1 ? 'dia' : 'dias'}</strong>
+              : quem recebeu outra campanha de marketing nesse prazo fica de fora, sem contar no plano
+              {emDescanso > 0 ? (
+                <>
+                  {' '}— <span className="numerico text-tinta">{formatarNumero(emDescanso)}</span>{' '}
+                  {emDescanso === 1 ? 'pessoa ficou' : 'pessoas ficaram'} de fora até agora
+                </>
+              ) : null}
+              .
+            </p>
+          ) : null}
           {/*
             A distinção que o produto inteiro depende de acertar: "enviada"
             significa que a Meta aceitou, não que a pessoa recebeu.
@@ -547,6 +563,8 @@ export default function PaginaCampanha() {
                         <br />
                         {d.erroDetalhe}
                       </>
+                    ) : d.status === 'descanso' && d.erroDetalhe ? (
+                      d.erroDetalhe
                     ) : (
                       (EXPLICACAO_STATUS[d.status] ?? '—')
                     )}

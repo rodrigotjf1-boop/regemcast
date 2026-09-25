@@ -39,10 +39,13 @@ export const DESTINATARIO: Record<string, { rotulo: string; tom: Tom; barra: str
   // Cancelado NÃO é falha: a campanha foi cancelada antes de sair. Misturar os
   // dois esconderia o sinal que denuncia número com problema.
   cancelado: { rotulo: 'Cancelado', tom: 'neutro', barra: 'bg-borda' },
+  // Descanso NÃO é falha: a pessoa recebeu outra campanha de marketing há
+  // pouco, e a regra da conta a deixou de fora. Não saiu, não contou no plano.
+  descanso: { rotulo: 'Em descanso', tom: 'neutro', barra: 'bg-borda' },
 };
 
 /** Ordem do funil: do mais avançado ao que nem saiu, falha por último. */
-const ORDEM = ['lida', 'entregue', 'enviada', 'enviando', 'pendente', 'cancelado', 'falhou'];
+const ORDEM = ['lida', 'entregue', 'enviada', 'enviando', 'pendente', 'descanso', 'cancelado', 'falhou'];
 
 export function BadgeDestinatario({ status }: { status: string }) {
   const s = DESTINATARIO[status] ?? { rotulo: status, tom: 'neutro' as Tom };

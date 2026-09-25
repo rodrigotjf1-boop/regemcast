@@ -66,7 +66,7 @@ export class SegmentacaoService {
                sum(contato.total_gasto_centavos) filter (where contato.total_gasto_centavos > 0 and contato.pedidos > 0)::bigint as gasto_com_pedidos,
                sum(contato.pedidos) filter (where contato.total_gasto_centavos > 0 and contato.pedidos > 0)::bigint as pedidos_com_gasto
           from contato
-         where contato.conta_id = ${contaId} and contato.opt_out = false
+         where contato.conta_id = ${contaId} and contato.opt_out = false and contato.sem_whatsapp_em is null
          group by 1
       `);
       type Linha = {
@@ -143,7 +143,7 @@ export class SegmentacaoService {
         select contato.conta_id, ${lista!.id}, contato.id
           from contato
          where contato.conta_id = ${contaId}
-           and contato.opt_out = false
+           and contato.opt_out = false and contato.sem_whatsapp_em is null
            and ${expressaoSegmento(p)} = ${segmento}
         on conflict do nothing
       `);

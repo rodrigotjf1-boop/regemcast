@@ -26,7 +26,7 @@
  * vazão e paralelismo. O teto existe justamente para que a limitação seja
  * recusa explícita em vez de timeout no meio.
  */
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, count, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 
 import { paraCloudApi } from '../../common/telefone';
@@ -36,6 +36,7 @@ import { ContextoDb } from '../../db/contexto';
 import { assinatura, campanha, campanhaDestinatario, conta, contatoLista, waNumero } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { AvisoService } from '../aviso/aviso.service';
+import { ERRO_SEM_WHATSAPP, marcarSemWhatsappNaFila, registrarFalhaSemWhatsapp } from '../contato/sem-whatsapp';
 import { ErroGraph, GraphService } from '../meta/graph.service';
 import { MetaService } from '../meta/meta.service';
 import { TelemetriaService } from '../telemetria/telemetria.service';
@@ -76,6 +77,31 @@ export async function marcarDescadastrados(db: Executor, filtro: SQL): Promise<v
        and c.opt_out = true
   `);
 }
+
+/**
+ * Recebeu campanha de MARKETING nos últimos `dias` — está em descanso.
+ *
+ * Conta a mensagem que saiu de verdade (enviada, entregue, lida) e a que está
+ * saindo agora (`enviando`, de outra campanha na mesma rodada); falha não
+ * conta, porque não chegou. As duas formas do celular valem juntas. Campanha
+ * sem categoria gravada (antigas) conta como marketing: na dúvida, descansa.
+ */
+export function recebeuMarketingRecente(conta: SQL, telefone: SQL, dias: number, excetoCampanha?: SQL): SQL {
+  return sql`exists (
+    select 1
+      from campanha_destinatario o
+      join campanha oc on oc.id = o.campanha_id
+     where o.conta_id = ${conta}
+       ${excetoCampanha ? sql`and o.campanha_id <> ${excetoCampanha}` : sql``}
+       and upper(coalesce(oc.modelo_categoria, 'MARKETING')) = 'MARKETING'
+       and o.telefone_e164 in (${telefone}, ${gemeoEmSql(telefone)})
+       and (o.status = 'enviando'
+            or (o.status in ('enviada', 'entregue', 'lida')
+                and o.enviada_em >= now() - make_interval(days => ${dias})))
+  )`;
+}
+
+export const TITULO_DESCANSO = 'Em descanso';
 
 export const MENSAGEM_SEM_SALDO =
   'Os disparos do seu plano acabaram neste ciclo. A campanha pode sair quando o ciclo virar ou com um plano maior.';
@@ -322,6 +348,10 @@ export interface ResumoCampanha {
    * quando nada a segura. Não é pausa: ela continua sozinha.
    */
   espera: EsperaDaCampanha | null;
+  /** Quantas pessoas responderam à mensagem (só o fato; o texto não é guardado). */
+  respondidas: number;
+  /** O descanso desta campanha, em dias; nulo = sem descanso. */
+  descansoDias: number | null;
 }
 
 @Injectable()
@@ -338,7 +368,12 @@ export class CampanhaService {
   ) {}
 
   /** Cria a campanha com os destinatários em `pendente`. Nada é enviado aqui. */
-  async criar(contaId: string, usuarioId: string, dto: CriarCampanhaDto): Promise<{ id: string }> {
+  async criar(
+    contaId: string,
+    usuarioId: string,
+    dto: CriarCampanhaDto,
+    papel: 'dono' | 'operador' = 'operador',
+  ): Promise<{ id: string }> {
     // Recusa cedo: sem WhatsApp conectado a campanha não teria como sair, e
     // deixar criar para falhar no disparo só adianta a frustração.
     const credencial = await this.meta.tokenDaConta(contaId);
@@ -363,6 +398,21 @@ export class CampanhaService {
     if (dto.destinatarios?.length) this.conferirNumeros(dto.destinatarios);
     this.conferirTetos(dto.maxPorDia, dto.maxPorSemana, dto.maxPorMes);
 
+    // Descanso entre campanhas: o número da conta é COPIADO para a campanha
+    // agora — mudar o da conta depois não mexe em campanha já criada. Só para
+    // modelo de marketing; liberar (mandar mesmo para quem está em descanso) é
+    // decisão do dono.
+    if (dto.ignorarDescanso && papel !== 'dono') {
+      throw new ForbiddenException('Só o dono da conta pode enviar para quem está em descanso.');
+    }
+    const [config] = await this.ctx.db
+      .select({ dias: conta.descansoMarketingDias })
+      .from(conta)
+      .where(eq(conta.id, contaId))
+      .limit(1);
+    const ehMarketing = (dto.modeloCategoria ?? '').toUpperCase() === 'MARKETING';
+    const descansoDias = ehMarketing && !dto.ignorarDescanso && (config?.dias ?? 0) > 0 ? config!.dias : null;
+
     const [criada] = await this.ctx.db
       .insert(campanha)
       .values({
@@ -384,6 +434,7 @@ export class CampanhaService {
         maxPorDia: dto.maxPorDia ?? null,
         maxPorSemana: dto.maxPorSemana ?? null,
         maxPorMes: dto.maxPorMes ?? null,
+        descansoDias,
       })
       .returning({ id: campanha.id });
 
@@ -400,6 +451,7 @@ export class CampanhaService {
     // Já na montagem: a pessoa vê, antes de disparar, quem não vai receber e
     // por quê — em vez de descobrir no relatório depois.
     await marcarDescadastrados(this.ctx.db, sql`d.campanha_id = ${criada!.id}`);
+    await marcarSemWhatsappNaFila(this.ctx.db, sql`d.campanha_id = ${criada!.id}`);
 
     await this.auditoria.registrar({
       contaId,
@@ -413,6 +465,8 @@ export class CampanhaService {
         modelo: dto.modeloNome,
         destinatarios: totalDestinatarios,
         lista: publico.listaId,
+        descansoDias,
+        descansoLiberadoPeloDono: Boolean(dto.ignorarDescanso && ehMarketing),
       },
     });
 
@@ -670,6 +724,7 @@ export class CampanhaService {
         .set({ listaId: lista.listaId })
         .where(and(eq(campanha.id, campanhaId), eq(campanha.contaId, contaId)));
       await marcarDescadastrados(this.ctx.db, sql`d.campanha_id = ${campanhaId}`);
+      await marcarSemWhatsappNaFila(this.ctx.db, sql`d.campanha_id = ${campanhaId}`);
     }
 
     await this.auditoria.registrar({
@@ -949,6 +1004,7 @@ export class CampanhaService {
           maxPorSemana: campanha.maxPorSemana,
           maxPorMes: campanha.maxPorMes,
           retomarEm: campanha.retomarEm,
+          descansoDias: campanha.descansoDias,
           fuso: conta.timezone,
           // O ciclo em que o disparo conta. É o MESMO campo que a tela de Conta
           // usa para ler o consumo — duas definições de ciclo divergiriam.
@@ -1020,6 +1076,7 @@ export class CampanhaService {
       // montar e a janela abrir podem passar dias. Mandar para quem já pediu
       // para sair viola a política da Meta e derruba a qualidade do número.
       await marcarDescadastrados(db, sql`d.campanha_id = ${campanhaId}`);
+      await marcarSemWhatsappNaFila(db, sql`d.campanha_id = ${campanhaId}`);
 
       // Teto do PLANO (disparos por ciclo), somado de todas as campanhas da
       // conta. A trava por conta serializa as rodadas de campanhas diferentes da
@@ -1076,6 +1133,27 @@ export class CampanhaService {
        *
        * Quem a Meta recusou por ritmo ou instabilidade volta só na hora marcada.
        */
+      //
+      // Descanso: dos reservados, quem recebeu marketing de OUTRA campanha nos
+      // últimos N dias vira `descanso` — não sai, não é falha, não conta no
+      // plano. Dentro da mesma trava por conta, então duas campanhas da conta
+      // não mandam para a mesma pessoa na mesma rodada. Só é conferido para os
+      // reservados (no máximo o lote), nunca para a fila inteira.
+      const dias = c.descansoDias ?? 0;
+      const descanso =
+        dias > 0
+          ? sql`, descanso as (
+              update campanha_destinatario d
+                 set status = 'descanso',
+                     erro_titulo = ${TITULO_DESCANSO},
+                     erro_detalhe = ${`Recebeu outra campanha de marketing há menos de ${dias} ${dias === 1 ? 'dia' : 'dias'}. Nada foi enviado, e não contou no plano.`},
+                     atualizado_em = now()
+                from alvo
+               where d.id = alvo.id
+                 and ${recebeuMarketingRecente(sql`d.conta_id`, sql`d.telefone_e164`, dias, sql`d.campanha_id`)}
+              returning d.id
+            )`
+          : sql``;
       const r = await db.execute(sql`
         with alvo as materialized (
           select id from campanha_destinatario
@@ -1084,11 +1162,12 @@ export class CampanhaService {
            order by criado_em
            for update skip locked
            limit ${limite}
-        )
+        )${descanso}
         update campanha_destinatario d
            set status = 'enviando', atualizado_em = now()
           from alvo
          where d.id = alvo.id
+           ${dias > 0 ? sql`and d.id not in (select id from descanso)` : sql``}
         returning d.id, d.telefone_e164, d.variaveis, d.tentativas
       `);
       return r.rows as { id: string; telefone_e164: string; variaveis: unknown; tentativas: number | null }[];
@@ -1391,8 +1470,8 @@ export class CampanhaService {
           : { tipo: 'nova_tentativa' };
       }
 
-      await this.ctx.comConta(contaId, (db) =>
-        db
+      await this.ctx.comConta(contaId, async (db) => {
+        await db
           .update(campanhaDestinatario)
           .set({
             status: 'falhou',
@@ -1402,8 +1481,10 @@ export class CampanhaService {
             // A explicação é o que a tela mostra; o detalhe técnico fica no log.
             erroDetalhe: detalheDaFalha(g, feitas),
           })
-          .where(eq(campanhaDestinatario.id, destinatario.id)),
-      );
+          .where(eq(campanhaDestinatario.id, destinatario.id));
+        // Número sem WhatsApp em duas campanhas: sai sozinho dos próximos envios.
+        if (g?.codigo === ERRO_SEM_WHATSAPP) await registrarFalhaSemWhatsapp(db, contaId, destinatario.telefone);
+      });
       return { tipo: 'falhou' };
     }
   }
@@ -1422,6 +1503,33 @@ export class CampanhaService {
       );
     }
     return numero.phoneNumberId;
+  }
+
+  /**
+   * Antes de criar: quantos da lista estão em descanso hoje (receberam
+   * marketing nos últimos N dias da conta) e vão ficar de fora. A regra é a
+   * mesma do envio (`recebeuMarketingRecente`), e o envio confere de novo na
+   * hora — isto é uma prévia.
+   */
+  async previaDoDescanso(contaId: string, listaId: string): Promise<{ dias: number; emDescanso: number }> {
+    return this.ctx.comConta(contaId, async (db) => {
+      const [config] = await db
+        .select({ dias: conta.descansoMarketingDias })
+        .from(conta)
+        .where(eq(conta.id, contaId))
+        .limit(1);
+      const dias = config?.dias ?? 0;
+      if (dias <= 0) return { dias: 0, emDescanso: 0 };
+      const r = await db.execute(sql`
+        select count(distinct c.id)::int as total
+          from contato_lista_item i
+          join contato c on c.id = i.contato_id and c.conta_id = i.conta_id
+         where i.conta_id = ${contaId} and i.lista_id = ${listaId}
+           and c.opt_out = false and c.sem_whatsapp_em is null
+           and ${recebeuMarketingRecente(sql`c.conta_id`, sql`c.telefone_e164`, dias)}
+      `);
+      return { dias, emDescanso: Number((r.rows[0] as { total?: number } | undefined)?.total ?? 0) };
+    });
   }
 
   async listar(contaId: string): Promise<ResumoCampanha[]> {
@@ -1500,6 +1608,13 @@ export class CampanhaService {
       .where(inArray(campanhaDestinatario.campanhaId, ids))
       .groupBy(campanhaDestinatario.campanhaId, campanhaDestinatario.status);
 
+    const respostas = await this.ctx.db
+      .select({ campanhaId: campanhaDestinatario.campanhaId, quantas: count() })
+      .from(campanhaDestinatario)
+      .where(and(inArray(campanhaDestinatario.campanhaId, ids), sql`${campanhaDestinatario.respondidaEm} is not null`))
+      .groupBy(campanhaDestinatario.campanhaId);
+    const respondidas = new Map(respostas.map((r) => [r.campanhaId, Number(r.quantas)]));
+
     const idsListas = [...new Set(campanhas.map((c) => c.listaId).filter((v): v is string => Boolean(v)))];
     const listas = idsListas.length
       ? await this.ctx.db
@@ -1531,7 +1646,14 @@ export class CampanhaService {
         else if (metaCheia) espera = { motivo: 'limite_meta', ate: metaCheia.liberaEm, limite: metaCheia.limite };
       }
 
-      return this.montarResumo(c, porStatus, total, c.listaId ? (nomeDaLista.get(c.listaId) ?? null) : null, espera);
+      return this.montarResumo(
+        c,
+        porStatus,
+        total,
+        c.listaId ? (nomeDaLista.get(c.listaId) ?? null) : null,
+        espera,
+        respondidas.get(c.id) ?? 0,
+      );
     });
   }
 
@@ -1541,6 +1663,7 @@ export class CampanhaService {
     total: number,
     listaNome: string | null,
     espera: EsperaDaCampanha | null = null,
+    respondidas = 0,
   ): ResumoCampanha {
     return {
       id: c.id,
@@ -1565,6 +1688,8 @@ export class CampanhaService {
       maxPorSemana: c.maxPorSemana,
       maxPorMes: c.maxPorMes,
       espera,
+      respondidas,
+      descansoDias: c.descansoDias ?? null,
     };
   }
 

@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 
 import { JANELA_VAZIA, JanelaEnvio, janelaParaEnvio, problemaDosTetos, type Janela } from '@/components/app/janela-envio';
 import { IconeMais } from '@/components/app/icones';
+import { useSessao } from '@/components/app/sessao';
 import { Alerta } from '@/components/ui/alerta';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -110,6 +111,11 @@ export function FormularioCampanha({
   const [publico, setPublico] = useState<'lista' | 'numeros'>('lista');
   const [listaId, setListaId] = useState('');
   const [alcance, setAlcance] = useState<number | null>(null);
+  /** Quantos da lista estão em descanso hoje (receberam marketing nos últimos dias da conta). */
+  const [descanso, setDescanso] = useState<{ dias: number; emDescanso: number } | null>(null);
+  const [ignorarDescanso, setIgnorarDescanso] = useState(false);
+  const { sessao } = useSessao();
+  const ehDono = sessao.usuario.papel === 'dono';
   const [origens, setOrigens] = useState<VariavelDeLista['origem'][]>([]);
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
@@ -216,6 +222,24 @@ export function FormularioCampanha({
   }, []);
 
   const escolhido = modelos?.find((m) => m.id === modeloId) ?? null;
+  const ehMarketing = (escolhido?.categoria ?? '').toLowerCase() === 'marketing';
+
+  // Descanso: vale para campanha NOVA de marketing. A prévia usa a mesma regra
+  // do envio, que confere de novo na hora de mandar.
+  useEffect(() => {
+    if (editando || !listaId || !ehMarketing) {
+      setDescanso(null);
+      return;
+    }
+    let vivo = true;
+    campanhas
+      .previaDoDescanso(listaId)
+      .then((r) => vivo && setDescanso(r))
+      .catch(() => vivo && setDescanso(null));
+    return () => {
+      vivo = false;
+    };
+  }, [editando, listaId, ehMarketing]);
 
   const numeros = telefones
     .split(/[\s,;]+/)
@@ -295,6 +319,7 @@ export function FormularioCampanha({
         modeloIdioma: escolhido!.idioma,
         modeloId: escolhido!.id,
         modeloCategoria: escolhido!.categoria,
+        ...(!editando && ehDono && ignorarDescanso ? { ignorarDescanso: true } : {}),
         ...(publico === 'lista'
           ? {
               listaId,
@@ -541,6 +566,31 @@ export function FormularioCampanha({
                   </>
                 )}
               </p>
+              {descanso && descanso.dias > 0 && descanso.emDescanso > 0 && (
+                <div className="space-y-2 rounded-lg border border-borda bg-superficie-2 p-3 text-xs leading-relaxed text-tinta">
+                  <p>
+                    <strong className="numerico">{formatarNumero(descanso.emDescanso)}</strong>{' '}
+                    {descanso.emDescanso === 1 ? 'pessoa desta lista recebeu' : 'pessoas desta lista receberam'} campanha
+                    de marketing nos últimos {descanso.dias} {descanso.dias === 1 ? 'dia' : 'dias'} e{' '}
+                    {descanso.emDescanso === 1 ? 'fica' : 'ficam'} de fora — é o descanso entre campanhas. Não conta no
+                    plano. O prazo se ajusta em Conta.
+                  </p>
+                  {ehDono && (
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={ignorarDescanso}
+                        onChange={(e) => setIgnorarDescanso(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 shrink-0"
+                      />
+                      <span>
+                        Enviar mesmo para quem está em descanso (só nesta campanha). Mensagem demais faz a Meta segurar
+                        o marketing dessa pessoa e derruba a qualidade do número.
+                      </span>
+                    </label>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-1">

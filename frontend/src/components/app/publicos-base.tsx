@@ -27,6 +27,11 @@ const GRUPOS: { titulo: string; ids: Fixo[]; colunas: string }[] = [
   { titulo: 'Quanto gastam', ids: ['vip', 'ticket_alto', 'ticket_medio', 'ticket_baixo'], colunas: 'sm:grid-cols-2 xl:grid-cols-4' },
   { titulo: 'Momento', ids: ['um_pedido', 'marco_10'], colunas: 'sm:grid-cols-2' },
   { titulo: 'Como compram', ids: ['entrega', 'retirada', 'salao'], colunas: 'sm:grid-cols-3' },
+  {
+    titulo: 'Engajamento',
+    ids: ['leram_30d', 'responderam_30d', 'nao_leram_3', 'nunca_receberam', 'conversaram_7d'],
+    colunas: 'sm:grid-cols-2 xl:grid-cols-3',
+  },
 ];
 
 const MESES = [
@@ -69,13 +74,20 @@ export function PublicosDaBase({
   const [aviso, setAviso] = useState('');
   const [todosOsBairros, setTodosOsBairros] = useState(false);
 
-  const porId = new Map(resumo.publicos.map((p) => [p.id, p]));
+  // "Conversaram" só existe com as conversas ligadas (coexistência): sem elas, o
+  // zero diria "ninguém conversou" quando o certo é "não sabemos".
+  const porId = new Map(
+    resumo.publicos.filter((p) => p.id !== 'conversaram_7d' || resumo.conversasLigadas).map((p) => [p.id, p]),
+  );
   const grupos = GRUPOS.map((g) => ({ ...g, itens: g.ids.map((id) => porId.get(id)).filter((p) => p != null) })).filter(
     (g) => g.itens.some((p) => p.total > 0),
   );
   const aniversarios = resumo.aniversarios.filter((a) => a.total > 0);
   const bairros = todosOsBairros ? resumo.bairros : resumo.bairros.slice(0, BAIRROS_VISIVEIS);
   const vazio = !grupos.length && !resumo.bairros.length && !aniversarios.length;
+  // O aviso de "traga as compras" é sobre VALOR: com engajamento na tela e sem
+  // compra nenhuma, ele continua útil.
+  const semCompras = resumo.comValor === 0 && resumo.comCompras === 0;
 
   function escolher(alvo: AlvoDePublico) {
     setAviso('');
@@ -109,7 +121,7 @@ export function PublicosDaBase({
         <p className="text-xs text-tinta-suave">Só quem pode receber. VIP e ticket são calculados com os valores da sua loja.</p>
       </div>
 
-      {vazio ? (
+      {vazio || semCompras ? (
         <Alerta tom="informacao">
           Para separar a base por valor gasto, bairro e jeito de comprar, traga as compras: conecte o cardápio em{' '}
           <Link href="/integracoes" className="font-semibold underline underline-offset-2">
@@ -117,7 +129,8 @@ export function PublicosDaBase({
           </Link>{' '}
           ou importe uma planilha com <strong>pedidos</strong> e <strong>total gasto</strong>.
         </Alerta>
-      ) : (
+      ) : null}
+      {!vazio && (
         <>
           {grupos.map((g) => (
             <div key={g.titulo} className="space-y-2">

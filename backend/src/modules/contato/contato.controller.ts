@@ -86,7 +86,7 @@ export class ContatoController {
     @Query('publico') publico?: string,
     @Query('valor') valor?: string,
   ) {
-    if (situacao && situacao !== 'ativos' && situacao !== 'bloqueados') {
+    if (situacao && situacao !== 'ativos' && situacao !== 'bloqueados' && situacao !== 'sem_whatsapp') {
       throw new BadRequestException('Situação desconhecida.');
     }
     return this.servico.listar(
@@ -94,7 +94,7 @@ export class ContatoController {
       Number(pagina) || 1,
       Number(porPagina) || 50,
       segmento || undefined,
-      situacao as 'ativos' | 'bloqueados' | undefined,
+      situacao as 'ativos' | 'bloqueados' | 'sem_whatsapp' | undefined,
       uf || undefined,
       publico ? { publico, valor: valor ?? null } : undefined,
     );
@@ -242,6 +242,16 @@ export class ContatoController {
     @Body() dto: ReativarContatoDto,
   ) {
     return this.servico.reativar(usuario.contaId, usuario.id, id, dto.justificativa);
+  }
+
+  /**
+   * "Tentar de novo" para o número que a Meta recusou em duas campanhas
+   * (131026): volta para os envios. Só as falhas daqui em diante contam para
+   * marcar de novo.
+   */
+  @Post(':id/tentar-whatsapp')
+  tentarWhatsappDeNovo(@UsuarioAtual() usuario: UsuarioAutenticado, @Param('id', ParseUUIDPipe) id: string) {
+    return this.servico.tentarWhatsappDeNovo(usuario.contaId, usuario.id, id);
   }
 
   /** Apaga os dados pessoais e mantém o número bloqueado (pedido de exclusão). */

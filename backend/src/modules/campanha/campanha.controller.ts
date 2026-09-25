@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
 import type { UsuarioAutenticado } from '../../common/auth.guard';
@@ -24,6 +24,18 @@ export class CampanhaController {
   @Get()
   listar(@UsuarioAtual() usuario: UsuarioAutenticado) {
     return this.servico.listar(usuario.contaId);
+  }
+
+  /**
+   * Antes de criar: quantos da lista estão em descanso hoje e vão ficar de
+   * fora. Antes de `:id` — "descanso" não é uuid.
+   */
+  @Get('descanso')
+  previaDoDescanso(
+    @UsuarioAtual() usuario: UsuarioAutenticado,
+    @Query('listaId', ParseUUIDPipe) listaId: string,
+  ) {
+    return this.servico.previaDoDescanso(usuario.contaId, listaId);
   }
 
   @Get(':id')
@@ -52,7 +64,7 @@ export class CampanhaController {
   @Post()
   @UseGuards(SomenteWebGuard)
   criar(@UsuarioAtual() usuario: UsuarioAutenticado, @Body() dto: CriarCampanhaDto) {
-    return this.servico.criar(usuario.contaId, usuario.id, dto);
+    return this.servico.criar(usuario.contaId, usuario.id, dto, usuario.papel);
   }
 
   /** Dispara. Só funciona uma vez: disparar de novo reenviaria para quem já recebeu. */

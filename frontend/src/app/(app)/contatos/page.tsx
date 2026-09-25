@@ -433,6 +433,10 @@ export default function PaginaContatos() {
                         <Badge tom="erro" ponto>
                           Pediu para sair
                         </Badge>
+                      ) : c.semWhatsappEm ? (
+                        <Badge tom="atencao" ponto>
+                          Sem WhatsApp
+                        </Badge>
                       ) : (
                         ((c.consentimentoOrigem ? ORIGEM_CONSENTIMENTO[c.consentimentoOrigem] : null) ?? '—')
                       )}

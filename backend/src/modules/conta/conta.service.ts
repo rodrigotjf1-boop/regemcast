@@ -60,6 +60,8 @@ export interface ContaDados {
   cnpj: string | null;
   timezone: string;
   status: string;
+  /** Descanso entre campanhas de marketing, em dias; 0 = desligado. */
+  descansoMarketingDias: number;
 }
 
 export interface PlanoResumo {
@@ -142,6 +144,7 @@ export class ContaService {
         cnpj: tConta.cnpj,
         timezone: tConta.timezone,
         status: tConta.status,
+        descansoMarketingDias: tConta.descansoMarketingDias,
         assinaturaStatus: tAssinatura.status,
         cicloInicio: tAssinatura.cicloInicio,
         cicloFim: tAssinatura.cicloFim,
@@ -198,6 +201,7 @@ export class ContaService {
         cnpj: linha.cnpj,
         timezone: linha.timezone,
         status: linha.status,
+        descansoMarketingDias: linha.descansoMarketingDias,
       },
       plano,
       // O leftJoin deixa tudo nulo quando a conta ainda não tem assinatura —
@@ -227,7 +231,7 @@ export class ContaService {
     origem: OrigemRequest = {},
   ): Promise<ContaDados> {
     const contaId = this.ctx.contaObrigatoria();
-    const patch: { nome?: string; cnpj?: string | null; timezone?: string } = {};
+    const patch: { nome?: string; cnpj?: string | null; timezone?: string; descansoMarketingDias?: number } = {};
 
     if (dto.nome !== undefined) patch.nome = dto.nome.trim();
 
@@ -249,8 +253,10 @@ export class ContaService {
       patch.cnpj = limpo;
     }
 
+    if (dto.descansoMarketingDias !== undefined) patch.descansoMarketingDias = dto.descansoMarketingDias;
+
     if (Object.keys(patch).length === 0) {
-      throw new BadRequestException('Informe o que alterar: nome, CNPJ ou fuso horário.');
+      throw new BadRequestException('Informe o que alterar: nome, CNPJ, fuso horário ou descanso entre campanhas.');
     }
 
     const [antes] = await this.ctx.db
@@ -258,6 +264,7 @@ export class ContaService {
         nome: tConta.nome,
         cnpj: tConta.cnpj,
         timezone: tConta.timezone,
+        descansoMarketingDias: tConta.descansoMarketingDias,
         cnpjConferidoEm: tConta.cnpjConferidoEm,
       })
       .from(tConta)
@@ -286,7 +293,7 @@ export class ContaService {
       }
     }
 
-    let depois: { id: string; nome: string; cnpj: string | null; timezone: string; status: string } | undefined;
+    let depois: ContaDados | undefined;
     try {
       [depois] = await this.ctx.db
         .update(tConta)
@@ -298,6 +305,7 @@ export class ContaService {
           cnpj: tConta.cnpj,
           timezone: tConta.timezone,
           status: tConta.status,
+          descansoMarketingDias: tConta.descansoMarketingDias,
         });
     } catch (erro) {
       if ((erro as { code?: string } | null)?.code === '23505') {

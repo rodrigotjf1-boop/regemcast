@@ -44,6 +44,8 @@ export interface ResumoPublicos {
   comNascimento: number;
   publicos: PublicoResumido[];
   bairros: { bairro: string; total: number }[];
+  /** Com as conversas ligadas (coexistência), "Conversaram na última semana" faz sentido. */
+  conversasLigadas: boolean;
   /** O mês de hoje no fuso da conta (1 a 12) e quantos fazem aniversário em cada mês. */
   mesAtual: number;
   aniversarios: { mes: number; total: number }[];
@@ -59,13 +61,13 @@ export async function limitesDosPublicos(db: Db, contaId: string): Promise<Limit
     select
       (select percentile_disc(${1 - FRACAO_VIP}) within group (order by contato.total_gasto_centavos)
          from contato
-        where contato.conta_id = ${contaId} and contato.opt_out = false and contato.total_gasto_centavos > 0) as vip,
+        where contato.conta_id = ${contaId} and contato.opt_out = false and contato.sem_whatsapp_em is null and contato.total_gasto_centavos > 0) as vip,
       t.baixo, t.alto
       from (
         select percentile_disc(${1 / 3}) within group (order by ${TICKET_SQL}) as baixo,
                percentile_disc(${2 / 3}) within group (order by ${TICKET_SQL}) as alto
           from contato
-         where contato.conta_id = ${contaId} and contato.opt_out = false and ${TICKET_SQL} > 0
+         where contato.conta_id = ${contaId} and contato.opt_out = false and contato.sem_whatsapp_em is null and ${TICKET_SQL} > 0
       ) t
   `);
   const x = r.rows[0] as { vip: string | number | null; baixo: string | number | null; alto: string | number | null } | undefined;
@@ -111,7 +113,7 @@ export class PublicosService {
                count(*) filter (where contato.tipo_preferido is not null)::int as com_compras,
                count(*) filter (where contato.data_nascimento is not null)::int as com_nascimento
           from contato
-         where contato.conta_id = ${contaId} and contato.opt_out = false
+         where contato.conta_id = ${contaId} and contato.opt_out = false and contato.sem_whatsapp_em is null
       `);
       const linha = (r.rows[0] ?? {}) as Record<string, string | number>;
 
@@ -124,13 +126,13 @@ export class PublicosService {
             from (
               select lower(contato.bairro) as chave, count(*)::int as total
                 from contato
-               where contato.conta_id = ${contaId} and contato.opt_out = false and contato.bairro is not null
+               where contato.conta_id = ${contaId} and contato.opt_out = false and contato.sem_whatsapp_em is null and contato.bairro is not null
                group by 1
             ) g
             cross join lateral (
               select c2.bairro
                 from contato c2
-               where c2.conta_id = ${contaId} and c2.opt_out = false and lower(c2.bairro) = g.chave
+               where c2.conta_id = ${contaId} and c2.opt_out = false and c2.sem_whatsapp_em is null and lower(c2.bairro) = g.chave
                group by c2.bairro
                order by count(*) desc, (c2.bairro ~ '^[[:upper:]]') desc, c2.bairro
                limit 1
@@ -146,11 +148,23 @@ export class PublicosService {
             await db.execute(sql`
               select extract(month from contato.data_nascimento)::int as mes, count(*)::int as total
                 from contato
-               where contato.conta_id = ${contaId} and contato.opt_out = false and contato.data_nascimento is not null
+               where contato.conta_id = ${contaId} and contato.opt_out = false and contato.sem_whatsapp_em is null and contato.data_nascimento is not null
                group by 1
             `)
           ).rows as { mes: number; total: number }[]
         ).map((x) => [x.mes, x.total]),
+      );
+
+      const conversasLigadas = Boolean(
+        (
+          (
+            await db.execute(sql`
+              select exists (
+                select 1 from wa_numero where conta_id = ${contaId} and integrar_conversas = true
+              ) as ligadas
+            `)
+          ).rows[0] as { ligadas?: boolean } | undefined
+        )?.ligadas,
       );
 
       const [c] = await db.select({ fuso: conta.timezone }).from(conta).where(eq(conta.id, contaId)).limit(1);
@@ -170,6 +184,7 @@ export class PublicosService {
           gastoCentavos: Number(linha[`${id}_gasto`] ?? 0),
         })),
         bairros,
+        conversasLigadas,
         mesAtual,
         aniversarios: Array.from({ length: 12 }, (_, i) => ({ mes: i + 1, total: porMes.get(i + 1) ?? 0 })),
       };
@@ -206,7 +221,7 @@ export class PublicosService {
         select contato.conta_id, ${lista!.id}, contato.id
           from contato
          where contato.conta_id = ${contaId}
-           and contato.opt_out = false
+           and contato.opt_out = false and contato.sem_whatsapp_em is null
            and ${expressaoPublico(publico, valor, l)}
         on conflict do nothing
       `);

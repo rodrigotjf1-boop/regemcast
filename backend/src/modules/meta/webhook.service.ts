@@ -20,6 +20,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { doWhatsapp, gemeoDoCelular } from '../../common/telefone';
 import { ContextoDb } from '../../db/contexto';
 import { motivoDoModelo } from './motivos-modelo';
+import { ERRO_SEM_WHATSAPP, registrarFalhaSemWhatsapp } from '../contato/sem-whatsapp';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { AvisoService } from '../aviso/aviso.service';
 import { campanhaDestinatario, modelo, waEvento, waNumero } from '../../db/schema';
@@ -375,6 +376,7 @@ export class WebhookService {
     const statuses = Array.isArray(v.statuses) ? v.statuses : [];
 
     await this.pedidosDeSaida(m);
+    await this.respostasDeCampanha(m);
 
     for (const s of statuses as Array<Record<string, unknown>>) {
       const wamid = typeof s.id === 'string' ? s.id : null;
@@ -449,6 +451,48 @@ export class WebhookService {
       const origem = msg.button || msg.interactive ? 'botao_modelo' : 'mensagem';
       await this.bloquearContato(phoneNumberId, de, origem);
     }
+  }
+
+  /**
+   * A pessoa respondeu à mensagem da campanha.
+   *
+   * Resposta a uma mensagem nossa chega com `context.id` = o `wamid` dela — é
+   * o mesmo id guardado no destinatário. Vale para qualquer número (não
+   * depende das conversas ligadas) e só o FATO é gravado (`respondida_em`); o
+   * texto não. O botão "Parar promoções" (e "sair", "parar"…) não conta: é
+   * pedido de saída, não engajamento.
+   *
+   * O aviso chega pelo número, sem conta: o `update` é pelo `wamid`, que é
+   * único (motivo A de `docs/rls.md`).
+   */
+  private async respostasDeCampanha(m: Mudanca): Promise<void> {
+    const v = m.value ?? {};
+    const mensagens = Array.isArray(v.messages) ? (v.messages as Array<Record<string, unknown>>) : [];
+    const respondidas = new Set<string>();
+    for (const msg of mensagens) {
+      const contexto = msg.context as { id?: unknown } | undefined;
+      const wamid = typeof contexto?.id === 'string' ? contexto.id : '';
+      if (!wamid) continue;
+      const botao = msg.button as { text?: unknown; payload?: unknown } | undefined;
+      const interativo = msg.interactive as { button_reply?: { title?: unknown } } | undefined;
+      const texto = msg.text as { body?: unknown } | undefined;
+      const dito =
+        (typeof botao?.text === 'string' && botao.text) ||
+        (typeof botao?.payload === 'string' && botao.payload) ||
+        (typeof interativo?.button_reply?.title === 'string' && interativo.button_reply.title) ||
+        (typeof texto?.body === 'string' && texto.body) ||
+        '';
+      if (ehPedidoDeSaida(dito)) continue;
+      respondidas.add(wamid);
+    }
+    if (!respondidas.size) return;
+
+    await this.ctx.comEscopoSistema('meta.webhook.resposta', (db) =>
+      db
+        .update(campanhaDestinatario)
+        .set({ respondidaEm: sql`coalesce(${campanhaDestinatario.respondidaEm}, now())` })
+        .where(inArray(campanhaDestinatario.waMessageId, [...respondidas])),
+    );
   }
 
   private async bloquearContato(phoneNumberId: string, telefone: string, origem: string): Promise<void> {
@@ -552,7 +596,7 @@ export class WebhookService {
     };
 
     await this.ctx.comEscopoSistema('meta.webhook.status', async (db) => {
-      await db
+      const alterados = await db
         .update(campanhaDestinatario)
         .set({
           status: novo,
@@ -573,7 +617,14 @@ export class WebhookService {
             eq(campanhaDestinatario.waMessageId, wamid),
             inArray(campanhaDestinatario.status, ANTERIORES_VALIDOS[novo]),
           ),
-        );
+        )
+        .returning({ contaId: campanhaDestinatario.contaId, telefone: campanhaDestinatario.telefoneE164 });
+
+      // Número sem WhatsApp (131026) em duas campanhas: sai sozinho dos
+      // próximos envios. O `update` acima já achou a conta do destinatário.
+      if (novo === 'falhou' && erro.erroCodigo === ERRO_SEM_WHATSAPP) {
+        for (const a of alterados) await registrarFalhaSemWhatsapp(db, a.contaId, a.telefone);
+      }
     });
   }
 
