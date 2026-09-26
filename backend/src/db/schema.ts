@@ -421,6 +421,10 @@ export const campanha = pgTable('campanha', {
   retomarEm: timestamp('retomar_em', { withTimezone: true }),
   /** Descanso desta campanha, copiado da conta ao criar; nulo = sem descanso (migration 031). */
   descansoDias: integer('descanso_dias'),
+  /** De onde saiu o público (migration 033): lista | numeros | base | importacao | perfil | publico | regiao. */
+  publicoOrigem: text('publico_origem'),
+  /** O nome do público no cartão ("Toda a base", "Pedem à noite"…); nulo para lista e números. */
+  publicoRotulo: text('publico_rotulo'),
   iniciadaEm: timestamp('iniciada_em', { withTimezone: true }),
   concluidaEm: timestamp('concluida_em', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),

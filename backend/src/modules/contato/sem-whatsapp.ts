@@ -15,7 +15,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 
 import { gemeoDoCelular } from '../../common/telefone';
-import { gemeoEmSql } from '../../common/telefone-sql';
+import { formasDosContatos } from '../../common/telefone-sql';
 
 type Executor = { execute: (q: SQL) => Promise<{ rows: unknown[] }> };
 
@@ -57,20 +57,21 @@ export async function registrarFalhaSemWhatsapp(db: Executor, contaId: string, t
 /**
  * Tira da fila quem está marcado como sem WhatsApp — como `marcarDescadastrados`:
  * vira `falhou` com o motivo, nada é enviado, nada conta no plano. A campanha
- * inteira numa consulta.
+ * inteira numa consulta, cruzando por igualdade nas duas formas do celular
+ * (`formasDosContatos`, ERR-018).
  */
-export async function marcarSemWhatsappNaFila(db: Executor, filtro: SQL): Promise<void> {
+export async function marcarSemWhatsappNaFila(db: Executor, contaId: string, filtro: SQL): Promise<void> {
   await db.execute(sql`
+    with m as materialized ${formasDosContatos(contaId, sql`c.sem_whatsapp_em is not null`)}
     update campanha_destinatario d
        set status = 'falhou',
            erro_titulo = ${TITULO_SEM_WHATSAPP},
            erro_detalhe = 'A Meta recusou este número em duas campanhas: ele não tem WhatsApp, não aceitou os termos do aplicativo ou usa uma versão antiga. Nada foi enviado. Em Contatos → Bloqueios dá para tentar de novo.',
            falhou_em = now()
-      from contato c
-     where ${filtro}
+      from m
+     where d.conta_id = ${contaId}
+       and ${filtro}
        and d.status = 'pendente'
-       and c.conta_id = d.conta_id
-       and c.telefone_e164 in (d.telefone_e164, ${gemeoEmSql(sql`d.telefone_e164`)})
-       and c.sem_whatsapp_em is not null
+       and d.telefone_e164 = m.telefone
   `);
 }

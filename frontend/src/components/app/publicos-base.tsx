@@ -26,7 +26,8 @@ import type { AlvoDePublico, Publico, ResumoPublicos } from '@/lib/tipos';
 
 type Fixo = ResumoPublicos['publicos'][number]['id'];
 
-const GRUPOS: { titulo: string; ids: Fixo[]; colunas: string }[] = [
+/** Os públicos fixos em grupos, na ordem da tela — a campanha usa os mesmos grupos. */
+export const GRUPOS: { titulo: string; ids: Fixo[]; colunas: string }[] = [
   { titulo: 'Quanto gastam', ids: ['vip', 'ticket_alto', 'ticket_medio', 'ticket_baixo'], colunas: 'sm:grid-cols-2 xl:grid-cols-4' },
   { titulo: 'Momento', ids: ['um_pedido', 'marco_10'], colunas: 'sm:grid-cols-2' },
   { titulo: 'Como compram', ids: ['entrega', 'retirada', 'salao'], colunas: 'sm:grid-cols-3' },

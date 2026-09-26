@@ -5,9 +5,11 @@ import { useEffect, useState } from 'react';
 
 import { JANELA_VAZIA, JanelaEnvio, janelaParaEnvio, problemaDosTetos, type Janela } from '@/components/app/janela-envio';
 import { IconeMais } from '@/components/app/icones';
+import { PublicoDaBase } from '@/components/app/publico-da-base';
 import { useSessao } from '@/components/app/sessao';
 import { SugestaoHorario } from '@/components/app/sugestao-horario';
 import { Alerta } from '@/components/ui/alerta';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -15,11 +17,14 @@ import { Input, Select } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { mensagemDoErro } from '@/lib/api';
+import { explicacaoDaCategoria, nomeDaCategoria, tomDaCategoria } from '@/lib/categorias';
 import { formatarData, formatarNumero } from '@/lib/formato';
 import { campanhas, contatos, whatsapp } from '@/lib/servicos';
 import type {
   ListaDeContatos,
   ModeloDeMensagem,
+  PreviaDoPublico,
+  PublicoDaCampanha,
   ResumoCampanha,
   VariavelDeLista,
 } from '@/lib/tipos';
@@ -109,11 +114,12 @@ export function FormularioCampanha({
   const [telefones, setTelefones] = useState('');
   const [variaveis, setVariaveis] = useState<string[]>([]);
   const [listas, setListas] = useState<ListaDeContatos[] | null>(null);
-  const [publico, setPublico] = useState<'lista' | 'numeros'>('lista');
+  const [publico, setPublico] = useState<'lista' | 'base' | 'numeros'>('lista');
   const [listaId, setListaId] = useState('');
-  const [alcance, setAlcance] = useState<number | null>(null);
-  /** Quantos da lista estão em descanso hoje (receberam marketing nos últimos dias da conta). */
-  const [descanso, setDescanso] = useState<{ dias: number; emDescanso: number } | null>(null);
+  /** "Da base": toda a base, uma importação, um perfil ou um público pronto. */
+  const [daBase, setDaBase] = useState<PublicoDaCampanha | null>(null);
+  /** Do público escolhido (lista ou da base): quantos podem receber, descanso e horário. */
+  const [previa, setPrevia] = useState<PreviaDoPublico | null>(null);
   const [ignorarDescanso, setIgnorarDescanso] = useState(false);
   const { sessao } = useSessao();
   const ehDono = sessao.usuario.papel === 'dono';
@@ -151,8 +157,8 @@ export function FormularioCampanha({
       .then((l) => {
         if (!vivo) return;
         setListas(l);
-        // Sem lista nenhuma, o caminho que resta é digitar.
-        if (l.length === 0) setPublico('numeros');
+        // Sem lista nenhuma, os contatos importados estão na base.
+        if (l.length === 0) setPublico('base');
         // Chegou por "Usar em campanha" num bloco: já vem escolhido.
         else if (listaInicial && l.some((x) => x.id === listaInicial)) {
           setPublico('lista');
@@ -188,22 +194,26 @@ export function FormularioCampanha({
   const grupoDoProximo = escolhida?.divisaoId ? grupos.find((g) => g.divisaoId === escolhida.divisaoId) : grupos[0];
   const proximoBloco = grupoDoProximo?.blocos.find((b) => !b.usadaEm && b.total > 0 && b.id !== listaId) ?? null;
 
-  // Quantos da lista escolhida podem receber: quem pediu para sair não conta.
+  // O público escolhido — uma lista, ou um público da base — e a prévia dele:
+  // quantos podem receber (quem pediu para sair não conta), quantos estão em
+  // descanso e em que período pedem. Uma ida ao servidor, com a mesma regra
+  // da montagem.
+  const alvo: PublicoDaCampanha | null =
+    publico === 'lista' && listaId ? { origem: 'lista', origemId: listaId } : publico === 'base' ? daBase : null;
+  const chaveDoAlvo = alvo ? JSON.stringify(alvo) : '';
   useEffect(() => {
-    if (!listaId) {
-      setAlcance(null);
-      return;
-    }
+    setPrevia(null);
+    if (!chaveDoAlvo) return;
     let vivo = true;
-    setAlcance(null);
-    contatos
-      .publicoDaLista(listaId)
-      .then((r) => vivo && setAlcance(r.total))
-      .catch(() => vivo && setAlcance(null));
+    campanhas
+      .previa(JSON.parse(chaveDoAlvo) as PublicoDaCampanha)
+      .then((r) => vivo && setPrevia(r))
+      .catch(() => vivo && setPrevia(null));
     return () => {
       vivo = false;
     };
-  }, [listaId]);
+  }, [chaveDoAlvo]);
+  const alcance = previa ? previa.total : null;
 
   useEffect(() => {
     let vivo = true;
@@ -227,20 +237,7 @@ export function FormularioCampanha({
 
   // Descanso: vale para campanha NOVA de marketing. A prévia usa a mesma regra
   // do envio, que confere de novo na hora de mandar.
-  useEffect(() => {
-    if (editando || !listaId || !ehMarketing) {
-      setDescanso(null);
-      return;
-    }
-    let vivo = true;
-    campanhas
-      .previaDoDescanso(listaId)
-      .then((r) => vivo && setDescanso(r))
-      .catch(() => vivo && setDescanso(null));
-    return () => {
-      vivo = false;
-    };
-  }, [editando, listaId, ehMarketing]);
+  const descanso = !editando && ehMarketing && previa ? previa.descanso : null;
 
   const numeros = telefones
     .split(/[\s,;]+/)
@@ -282,6 +279,15 @@ export function FormularioCampanha({
         setErro('Essa lista não tem ninguém que possa receber: está vazia ou todos pediram para sair.');
         return;
       }
+    } else if (publico === 'base') {
+      if (!daBase) {
+        setErro('Escolha de onde sai o público: toda a base, uma importação, um perfil ou um público pronto.');
+        return;
+      }
+      if (alcance === 0) {
+        setErro('Esse público não tem ninguém que possa receber agora.');
+        return;
+      }
     } else {
       if (numeros.length === 0) {
         setErro('Informe ao menos um número.');
@@ -297,7 +303,7 @@ export function FormularioCampanha({
     for (let i = 0; i < nVars; i++) {
       if (!(variaveis[i] ?? '').trim()) {
         setErro(
-          publico === 'lista' && (origens[i] ?? 'fixo') !== 'fixo'
+          publico !== 'numeros' && (origens[i] ?? 'fixo') !== 'fixo'
             ? `Preencha o que usar em {{${i + 1}}} quando o contato não tiver nome.`
             : `Preencha o valor de {{${i + 1}}}.`,
         );
@@ -321,9 +327,9 @@ export function FormularioCampanha({
         modeloId: escolhido!.id,
         modeloCategoria: escolhido!.categoria,
         ...(!editando && ehDono && ignorarDescanso ? { ignorarDescanso: true } : {}),
-        ...(publico === 'lista'
+        ...(publico !== 'numeros'
           ? {
-              listaId,
+              ...(publico === 'lista' ? { listaId } : { daBase: daBase! }),
               variaveisLista: Array.from({ length: nVars }, (_, i) => ({
                 origem: origens[i] ?? 'fixo',
                 valor: (variaveis[i] ?? '').trim(),
@@ -430,10 +436,16 @@ export function FormularioCampanha({
               <option value="">Escolha…</option>
               {modelos.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.nome} · {m.categoria}
+                  {m.nome} — {nomeDaCategoria(m.categoria) ?? 'sem categoria'}
                 </option>
               ))}
             </Select>
+            {escolhido && nomeDaCategoria(escolhido.categoria) && (
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-xs leading-relaxed text-tinta-suave">
+                <Badge tom={tomDaCategoria(escolhido.categoria)}>{nomeDaCategoria(escolhido.categoria)}</Badge>
+                <span>{explicacaoDaCategoria(escolhido.categoria)}</span>
+              </p>
+            )}
           </div>
         </div>
 
@@ -446,11 +458,11 @@ export function FormularioCampanha({
             {escolhido.variaveis > 0 && (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {Array.from({ length: escolhido.variaveis }, (_, i) => {
-                  const origem = publico === 'lista' ? (origens[i] ?? 'fixo') : 'fixo';
+                  const origem = publico !== 'numeros' ? (origens[i] ?? 'fixo') : 'fixo';
                   return (
                     <div key={i} className="space-y-1.5 rounded-lg border border-borda bg-superficie p-2.5">
                       <Label htmlFor={`var-${i}`}>{`Variável {{${i + 1}}}`}</Label>
-                      {publico === 'lista' ? (
+                      {publico !== 'numeros' ? (
                         <Select
                           aria-label={`De onde vem {{${i + 1}}}`}
                           value={origem}
@@ -491,7 +503,7 @@ export function FormularioCampanha({
         <fieldset className="space-y-3">
           <legend className="text-sm font-medium text-tinta">Quem recebe</legend>
           <div className="flex flex-wrap gap-2" role="group" aria-label="Origem do público">
-            {(['lista', 'numeros'] as const).map((p) => (
+            {(['lista', 'base', 'numeros'] as const).map((p) => (
               <button
                 key={p}
                 type="button"
@@ -505,12 +517,12 @@ export function FormularioCampanha({
                     : 'border-borda bg-superficie text-tinta-suave hover:border-acento')
                 }
               >
-                {p === 'lista' ? 'Uma lista de contatos' : 'Digitar números'}
+                {p === 'lista' ? 'Uma lista de contatos' : p === 'base' ? 'Da base' : 'Digitar números'}
               </button>
             ))}
           </div>
 
-          {publico === 'lista' ? (
+          {publico === 'lista' && (
             <div className="space-y-1">
               <Label htmlFor="lista-campanha">Lista</Label>
               <Select id="lista-campanha" value={listaId} onChange={(e) => setListaId(e.target.value)}>
@@ -559,7 +571,15 @@ export function FormularioCampanha({
                   </>
                 ) : (
                   <>
-                    As listas nascem na importação em{' '}
+                    Os contatos importados sem lista (planilhas, Cardápio Web) estão em{' '}
+                    <button
+                      type="button"
+                      onClick={() => setPublico('base')}
+                      className="font-medium text-acento-forte underline underline-offset-4"
+                    >
+                      Da base
+                    </button>
+                    . As listas nascem em{' '}
                     <Link href="/contatos" className="text-acento-forte underline">
                       Contatos
                     </Link>
@@ -567,40 +587,61 @@ export function FormularioCampanha({
                   </>
                 )}
               </p>
-              {descanso && descanso.dias > 0 && descanso.emDescanso > 0 && (
-                <div className="space-y-2 rounded-lg border border-borda bg-superficie-2 p-3 text-xs leading-relaxed text-tinta">
-                  <p>
-                    <strong className="numerico">{formatarNumero(descanso.emDescanso)}</strong>{' '}
-                    {descanso.emDescanso === 1 ? 'pessoa desta lista recebeu' : 'pessoas desta lista receberam'} campanha
-                    de marketing nos últimos {descanso.dias} {descanso.dias === 1 ? 'dia' : 'dias'} e{' '}
-                    {descanso.emDescanso === 1 ? 'fica' : 'ficam'} de fora — é o descanso entre campanhas. Não conta no
-                    plano. O prazo se ajusta em Conta.
-                  </p>
-                  {ehDono && (
-                    <label className="flex items-start gap-2">
-                      <input
-                        type="checkbox"
-                        checked={ignorarDescanso}
-                        onChange={(e) => setIgnorarDescanso(e.target.checked)}
-                        className="mt-0.5 h-4 w-4 shrink-0"
-                      />
-                      <span>
-                        Enviar mesmo para quem está em descanso (só nesta campanha). Mensagem demais faz a Meta segurar
-                        o marketing dessa pessoa e derruba a qualidade do número.
-                      </span>
-                    </label>
-                  )}
-                </div>
-              )}
-              {!editando && listaId && (
-                <SugestaoHorario
-                  listaId={listaId}
-                  janelaAtual={janela}
-                  aoUsar={(inicio, fim) => setJanela((j) => ({ ...j, ativa: true, inicio, fim }))}
-                />
+            </div>
+          )}
+
+          {publico === 'base' && (
+            <div className="space-y-2">
+              <PublicoDaBase valor={daBase} aoMudar={setDaBase} />
+              <p className="text-xs text-tinta-suave">
+                {daBase && alcance !== null ? (
+                  <>
+                    <strong className="numerico text-tinta">{formatarNumero(alcance)}</strong>{' '}
+                    {alcance === 1 ? 'pessoa vai receber' : 'pessoas vão receber'}. O público é copiado ao montar a
+                    campanha: quem entrar na base depois não recebe esta.
+                  </>
+                ) : (
+                  'Toda a base, uma importação (os contatos importados sem lista estão aqui), um perfil ou um público pronto. Quem pediu para sair fica de fora automaticamente.'
+                )}
+              </p>
+            </div>
+          )}
+
+          {publico !== 'numeros' && descanso && descanso.dias > 0 && descanso.emDescanso > 0 && (
+            <div className="space-y-2 rounded-lg border border-borda bg-superficie-2 p-3 text-xs leading-relaxed text-tinta">
+              <p>
+                <strong className="numerico">{formatarNumero(descanso.emDescanso)}</strong>{' '}
+                {descanso.emDescanso === 1 ? 'pessoa deste público recebeu' : 'pessoas deste público receberam'}{' '}
+                campanha de marketing nos últimos {descanso.dias} {descanso.dias === 1 ? 'dia' : 'dias'} e{' '}
+                {descanso.emDescanso === 1 ? 'fica' : 'ficam'} de fora — é o descanso entre campanhas. Não conta no
+                plano. O prazo se ajusta em Conta.
+              </p>
+              {ehDono && (
+                <label className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={ignorarDescanso}
+                    onChange={(e) => setIgnorarDescanso(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 shrink-0"
+                  />
+                  <span>
+                    Enviar mesmo para quem está em descanso (só nesta campanha). Mensagem demais faz a Meta segurar o
+                    marketing dessa pessoa e derruba a qualidade do número.
+                  </span>
+                </label>
               )}
             </div>
-          ) : (
+          )}
+
+          {publico !== 'numeros' && !editando && alvo && (
+            <SugestaoHorario
+              dados={previa?.horario ?? null}
+              janelaAtual={janela}
+              aoUsar={(inicio, fim) => setJanela((j) => ({ ...j, ativa: true, inicio, fim }))}
+            />
+          )}
+
+          {publico === 'numeros' && (
             <div className="space-y-1">
               <Label htmlFor="numeros">Números</Label>
               <textarea

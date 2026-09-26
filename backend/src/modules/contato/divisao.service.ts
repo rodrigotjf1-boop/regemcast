@@ -13,17 +13,14 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
 
-import { DDDS, ESTADOS, dddsDaUf } from '../../common/ddd';
+import { DDDS, ESTADOS } from '../../common/ddd';
 import { gemeoEmSql } from '../../common/telefone-sql';
 import { ContextoDb, type Db } from '../../db/contexto';
-import { conta, contatoLista, importacao, listaDivisao, waNumero } from '../../db/schema';
+import { conta, listaDivisao, waNumero } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { contaDosBlocos, opcoesDeBloco, type OpcoesDeBloco, type OrdemDosBlocos } from './blocos.regras';
 import type { DividirEmBlocosDto } from './dto/divisao.dto';
-import { descreverPublico, expressaoPublico } from './publicos';
-import { limitesDosPublicos, publicoValido } from './publicos.service';
-import { SEGMENTOS, descreverSegmentos, expressaoSegmento, type Segmento } from './segmentacao';
-import { parametrosDaConta } from './segmentacao.service';
+import { origemDoPublico, type Origem } from './origem-do-publico';
 
 /** Mais que isso vira uma tela de listas que ninguém percorre: escolha um bloco maior. */
 export const MAX_BLOCOS = 500;
@@ -38,14 +35,6 @@ const ORDEM_SQL: Record<OrdemDosBlocos, SQL> = {
   regiao: sql`substr(contato.telefone_e164, 1, 4), contato.criado_em, contato.id`,
   valor: sql`contato.total_gasto_centavos desc nulls last, contato.ultimo_pedido_em desc nulls last, contato.criado_em, contato.id`,
 };
-
-interface Origem {
-  /** Filtro sobre a tabela `contato` (sem alias: é o que `expressaoSegmento` espera). */
-  filtro: SQL;
-  nome: string;
-  rotulo: string | null;
-  origemId: string | null;
-}
 
 export interface UsoDoBloco {
   campanhaId: string;
@@ -229,72 +218,9 @@ export class DivisaoService {
     return divisao!;
   }
 
-  /** De onde saem os contatos, com o nome que os blocos vão ter. */
-  private async origem(db: Db, contaId: string, dto: DividirEmBlocosDto): Promise<Origem> {
-    switch (dto.origem) {
-      case 'lista': {
-        const [l] = await db
-          .select({ id: contatoLista.id, nome: contatoLista.nome })
-          .from(contatoLista)
-          .where(and(eq(contatoLista.id, dto.origemId!), eq(contatoLista.contaId, contaId)))
-          .limit(1);
-        if (!l) throw new NotFoundException('Lista não encontrada.');
-        return {
-          filtro: sql`exists (select 1 from contato_lista_item i where i.lista_id = ${l.id} and i.contato_id = contato.id)`,
-          nome: l.nome,
-          rotulo: l.nome,
-          origemId: l.id,
-        };
-      }
-      case 'importacao': {
-        const [i] = await db
-          .select({ id: importacao.id, arquivoNome: importacao.arquivoNome, formato: importacao.formato, listaId: importacao.listaId })
-          .from(importacao)
-          .where(and(eq(importacao.id, dto.origemId!), eq(importacao.contaId, contaId)))
-          .limit(1);
-        if (!i) throw new NotFoundException('Importação não encontrada.');
-        // Quem o arquivo trouxe de novo e, se a importação foi para uma lista,
-        // também quem já estava na base e entrou nela.
-        const naLista = i.listaId
-          ? sql` or exists (select 1 from contato_lista_item li where li.lista_id = ${i.listaId} and li.contato_id = contato.id)`
-          : sql``;
-        const nome = i.arquivoNome || (i.formato === 'texto' ? 'Números colados' : 'Importação');
-        return { filtro: sql`(contato.importacao_id = ${i.id}${naLista})`, nome, rotulo: nome, origemId: i.id };
-      }
-      case 'base':
-        return { filtro: sql`true`, nome: 'Base inteira', rotulo: null, origemId: null };
-      case 'perfil': {
-        const segmento = dto.segmento as Segmento;
-        if (!SEGMENTOS.includes(segmento)) throw new BadRequestException('Perfil desconhecido.');
-        const p = await parametrosDaConta(db, contaId);
-        const nome = descreverSegmentos(p)[segmento].nome;
-        return { filtro: sql`${expressaoSegmento(p)} = ${segmento}`, nome, rotulo: segmento, origemId: null };
-      }
-      case 'regiao': {
-        const uf = (dto.uf ?? '').toUpperCase();
-        const ddds = dddsDaUf(uf);
-        if (!ddds.length) throw new BadRequestException('Estado desconhecido.');
-        return {
-          filtro: sql`contato.telefone_e164 like '55%' and substr(contato.telefone_e164, 3, 2) in (${sql.join(
-            ddds.map((d) => sql`${d}`),
-            sql`, `,
-          )})`,
-          nome: ESTADOS[uf] ?? uf,
-          rotulo: uf,
-          origemId: null,
-        };
-      }
-      case 'publico': {
-        const { publico, valor } = publicoValido(dto.publico, dto.publicoValor);
-        const l = await limitesDosPublicos(db, contaId);
-        return {
-          filtro: expressaoPublico(publico, valor, l),
-          nome: descreverPublico(publico, valor, l).nome,
-          rotulo: valor ? `${publico}:${valor}` : publico,
-          origemId: null,
-        };
-      }
-    }
+  /** De onde saem os contatos, com o nome que os blocos vão ter — a mesma regra da campanha. */
+  private origem(db: Db, contaId: string, dto: DividirEmBlocosDto): Promise<Origem> {
+    return origemDoPublico(db, contaId, dto);
   }
 
   /**

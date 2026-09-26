@@ -143,6 +143,11 @@ Detalhe e o porquê em `docs/marca.md`; fonte da verdade em `kit/LEIA-ME.md`.
   guardada. Os limites da API de cada cardápio são conferidos na documentação
   oficial antes de codar (o Cardápio Web só devolve as alterações das últimas
   8 h, por exemplo). Detalhe em [`docs/integracoes.md`](docs/integracoes.md).
+- **O público da campanha é uma foto tirada ao montar** — de uma lista, de um
+  público da base (toda a base, importação, perfil, estado, público pronto) ou
+  dos números digitados. Quem entra em cada origem é `contato/origem-do-publico.ts`,
+  a MESMA regra dos blocos e da prévia (`POST /campanhas/previa`): o número que
+  uma tela mostra é o que a outra entrega.
 - **O que sai das compras é refeito com elas.** Totais, bairro, jeito de
   comprar, período do dia (no fuso da conta) e produtos (`contato_produto`)
   são recalculados juntos em `recalcularTotais`. Todo caminho que grava, muda
@@ -199,6 +204,12 @@ Detalhe e o porquê em `docs/marca.md`; fonte da verdade em `kit/LEIA-ME.md`.
   `copy`, não 50 mil `insert`.
 - **Sem estado global mutável entre requisições.** Nada de singleton que guarda
   a conta do último request.
+- **Cruzar tabelas pelo telefone nas duas formas do celular** (com e sem o 9º
+  dígito): use `formasDosContatos` (`common/telefone-sql.ts`) — as formas de
+  UM lado numa CTE MATERIALIZED, cruzadas por igualdade. `in (x, gêmeo(x))`
+  entre duas tabelas vira varredura da tabela inteira por linha: foi o que
+  fazia montar campanha de milhares de contatos estourar os 30 s. Meça com
+  EXPLAIN ANALYZE, milhares de linhas e o papel da aplicação.
 - **Nenhum caminho serializa os outros clientes.** Campanha grande de uma conta
   não pode travar a fila das demais.
 

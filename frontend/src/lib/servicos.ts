@@ -13,10 +13,12 @@
 import { api, enderecoDaApi } from './api';
 import type { SituacaoCardapioWeb, Segmento, ResumoSegmentos, ParametrosSegmentacao,
   AlvoDePublico,
+  ImportacaoDaBase,
+  PreviaDoPublico,
   ProdutoDaBase,
   Publico,
+  PublicoDaCampanha,
   ResumoPublicos,
-  SugestaoDeHorario,
   ResultadoContratacao,
   SituacaoCobranca,
   CnpjDoConvite,
@@ -233,13 +235,12 @@ export const campanhas = {
   /** `GET /campanhas` */
   listar: () => api.get<ResumoCampanha[]>('/campanhas'),
 
-  /** `GET /campanhas/descanso?listaId=` — quantos da lista estão em descanso hoje e ficam de fora. */
-  previaDoDescanso: (listaId: string) =>
-    api.get<{ dias: number; emDescanso: number }>(`/campanhas/descanso?listaId=${encodeURIComponent(listaId)}`),
-
-  /** `GET /campanhas/horario?listaId=` — em que período do dia a lista pede e a janela de envio sugerida. */
-  sugestaoDeHorario: (listaId: string) =>
-    api.get<SugestaoDeHorario>(`/campanhas/horario?listaId=${encodeURIComponent(listaId)}`),
+  /**
+   * `POST /campanhas/previa` — antes de montar: quantos do público (lista ou
+   * público da base) podem receber, quantos estão em descanso e em que
+   * período do dia pedem.
+   */
+  previa: (publico: PublicoDaCampanha) => api.post<PreviaDoPublico>('/campanhas/previa', publico),
 
   /** `GET /campanhas/:id` */
   detalhe: (id: string) => api.get<ResumoCampanha>(`/campanhas/${id}`),
@@ -413,8 +414,8 @@ export const contatos = {
   /** `GET /contatos/listas` */
   listas: () => api.get<ListaDeContatos[]>('/contatos/listas'),
 
-  /** `GET /contatos/listas/:id/publico` — quantos da lista podem receber (sem quem pediu para sair). */
-  publicoDaLista: (id: string) => api.get<{ total: number }>(`/contatos/listas/${encodeURIComponent(id)}/publico`),
+  /** `GET /contatos/importacoes` — as importações da conta, com quantos de cada uma podem receber. */
+  importacoes: () => api.get<ImportacaoDaBase[]>('/contatos/importacoes'),
 
   /** `POST /contatos/listas` */
   criarLista: (nome: string, descricao?: string) =>

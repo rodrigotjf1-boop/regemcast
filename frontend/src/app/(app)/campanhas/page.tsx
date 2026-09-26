@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { FormularioCampanha } from '@/components/app/formulario-campanha';
 import {
   IconeCampanha,
+  IconeContatos,
   IconeFechar,
   IconeMais,
   IconeModelo,
@@ -18,6 +19,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { EsqueletoLista } from '@/components/ui/esqueleto';
 import { EstadoErro } from '@/components/ui/estado-erro';
 import { mensagemDoErro } from '@/lib/api';
+import { nomeDaCategoria } from '@/lib/categorias';
 import { formatarData, formatarNumero } from '@/lib/formato';
 import { campanhas } from '@/lib/servicos';
 import type { ResumoCampanha } from '@/lib/tipos';
@@ -158,17 +160,26 @@ function CartaoCampanha({ campanha }: { campanha: ResumoCampanha }) {
           </span>
           <div className="min-w-0">
             <p className="truncate text-base font-semibold text-tinta">{campanha.nome}</p>
-            <p className="flex items-center gap-1.5 truncate text-xs text-tinta-suave">
+            {/* Duas linhas: o modelo com o tipo, e o público com a data — numa só, o nome do modelo sumia. */}
+            <p className="flex items-center gap-1.5 text-xs text-tinta-suave">
               <IconeModelo className="h-3.5 w-3.5 shrink-0" />
               <span className="numerico truncate">{campanha.modeloNome}</span>
-              <span aria-hidden="true">·</span>
-              {campanha.listaNome ? (
+              {nomeDaCategoria(campanha.modeloCategoria) ? (
                 <>
-                  <span className="truncate">{campanha.listaNome}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className="shrink-0 font-medium text-tinta">{nomeDaCategoria(campanha.modeloCategoria)}</span>
+                </>
+              ) : null}
+            </p>
+            <p className="flex items-center gap-1.5 text-xs text-tinta-suave">
+              <IconeContatos className="h-3.5 w-3.5 shrink-0" />
+              {campanha.listaNome || campanha.publicoRotulo ? (
+                <>
+                  <span className="truncate">{campanha.listaNome ?? campanha.publicoRotulo}</span>
                   <span aria-hidden="true">·</span>
                 </>
               ) : null}
-              {formatarData(campanha.criadoEm)}
+              <span className="shrink-0">{formatarData(campanha.criadoEm)}</span>
             </p>
           </div>
         </div>

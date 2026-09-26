@@ -208,6 +208,12 @@ export class ContatoController {
     return this.servico.importar(usuario.contaId, usuario.id, dto);
   }
 
+  /** As importações da conta, com quantos de cada uma podem receber — "Quem recebe → Da base". */
+  @Get('importacoes')
+  importacoes(@UsuarioAtual() usuario: UsuarioAutenticado) {
+    return this.servico.importacoes(usuario.contaId);
+  }
+
   @Get('listas')
   listas(@UsuarioAtual() usuario: UsuarioAutenticado) {
     return this.servico.listas(usuario.contaId);

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
 import type { UsuarioAutenticado } from '../../common/auth.guard';
@@ -7,6 +7,7 @@ import { UsuarioAtual } from '../../common/usuario-atual.decorator';
 import { CampanhaService } from './campanha.service';
 import { CriarCampanhaDto } from './dto/criar-campanha.dto';
 import { EditarCampanhaDto } from './dto/editar-campanha.dto';
+import { PublicoDaCampanhaDto } from './dto/publico-da-campanha.dto';
 
 /**
  * Criar e disparar são rotas separadas de propósito.
@@ -27,27 +28,14 @@ export class CampanhaController {
   }
 
   /**
-   * Antes de criar: quantos da lista estão em descanso hoje e vão ficar de
-   * fora. Antes de `:id` — "descanso" não é uuid.
+   * Antes de montar: quantos do público (uma lista ou um público da base)
+   * podem receber, quantos estão em descanso e em que período pedem. POST
+   * porque o público é um objeto validado; não grava nada.
    */
-  @Get('descanso')
-  previaDoDescanso(
-    @UsuarioAtual() usuario: UsuarioAutenticado,
-    @Query('listaId', ParseUUIDPipe) listaId: string,
-  ) {
-    return this.servico.previaDoDescanso(usuario.contaId, listaId);
-  }
-
-  /**
-   * Antes de criar: em que período do dia a lista costuma pedir e a janela de
-   * envio sugerida. Antes de `:id` — "horario" não é uuid.
-   */
-  @Get('horario')
-  sugestaoDeHorario(
-    @UsuarioAtual() usuario: UsuarioAutenticado,
-    @Query('listaId', ParseUUIDPipe) listaId: string,
-  ) {
-    return this.servico.sugestaoDeHorario(usuario.contaId, listaId);
+  @Post('previa')
+  @HttpCode(HttpStatus.OK)
+  previaDoPublico(@UsuarioAtual() usuario: UsuarioAutenticado, @Body() dto: PublicoDaCampanhaDto) {
+    return this.servico.previaDoPublico(usuario.contaId, dto);
   }
 
   @Get(':id')
