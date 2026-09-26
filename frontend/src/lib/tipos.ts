@@ -403,6 +403,9 @@ export interface Contato {
   /** Das compras sincronizadas: o bairro mais frequente e o jeito de comprar. */
   bairro?: string | null;
   tipoPreferido?: 'entrega' | 'retirada' | 'salao' | null;
+  /** Das compras: o período do dia em que mais pede (no fuso da conta) e o produto que mais comprou. */
+  periodoPreferido?: Periodo | null;
+  produtoFavorito?: string | null;
   segmento?: Segmento;
   /** Quando e como a pessoa saiu (quando saiu). */
   optOutEm?: string | null;
@@ -453,15 +456,40 @@ export type Publico =
   | 'entrega'
   | 'retirada'
   | 'salao'
+  | 'periodo_cafe'
+  | 'periodo_almoco'
+  | 'periodo_tarde'
+  | 'periodo_noite'
+  | 'periodo_madrugada'
   | 'leram_30d'
   | 'responderam_30d'
   | 'nao_leram_3'
   | 'nunca_receberam'
   | 'conversaram_7d'
   | 'bairro'
-  | 'aniversario';
+  | 'aniversario'
+  | 'produto';
 
-/** Um público escolhido: `valor` é o bairro ou o mês (1 a 12), quando o público pede. */
+/** O período do dia em que o contato mais compra, no fuso da conta. */
+export type Periodo = 'cafe' | 'almoco' | 'tarde' | 'noite' | 'madrugada';
+
+/** Um produto da base (`GET /contatos/publicos/produtos`): quantos que podem receber já compraram. */
+export interface ProdutoDaBase {
+  nome: string;
+  total: number;
+}
+
+/** `GET /campanhas/horario?listaId=` — em que período a lista pede e a janela sugerida. */
+export interface SugestaoDeHorario {
+  total: number;
+  comHabito: number;
+  /** Com menos gente com compra que isso, não há sugestão. */
+  minimo: number;
+  periodos: { periodo: Periodo; total: number }[];
+  sugestao: { periodo: Periodo; percentual: number; inicio: string; fim: string } | null;
+}
+
+/** Um público escolhido: `valor` é o bairro, o mês (1 a 12) ou o produto, quando o público pede. */
 export interface AlvoDePublico {
   publico: Publico;
   valor?: string | null;
@@ -480,7 +508,13 @@ export interface ResumoPublicos {
   comValor: number;
   comCompras: number;
   comNascimento: number;
-  publicos: { id: Exclude<Publico, 'bairro' | 'aniversario'>; nome: string; regra: string; total: number; gastoCentavos: number }[];
+  publicos: {
+    id: Exclude<Publico, 'bairro' | 'aniversario' | 'produto'>;
+    nome: string;
+    regra: string;
+    total: number;
+    gastoCentavos: number;
+  }[];
   bairros: { bairro: string; total: number }[];
   /** Com as conversas ligadas, "Conversaram na última semana" faz sentido. */
   conversasLigadas?: boolean;

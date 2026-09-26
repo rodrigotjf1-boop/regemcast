@@ -21,6 +21,7 @@ import { EstadoErro } from '@/components/ui/estado-erro';
 import { Alerta } from '@/components/ui/alerta';
 import { mensagemDoErro } from '@/lib/api';
 import { diasDesde, formatarData, formatarNumero, formatarReais } from '@/lib/formato';
+import { QUANDO_PEDE } from '@/lib/periodos';
 import { contatos as servico } from '@/lib/servicos';
 import type {
   AlvoDePublico,
@@ -357,8 +358,9 @@ export default function PaginaContatos() {
             </p>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[60rem] text-left text-sm">
+          {/* `relative`: o texto escondido da tabela (sr-only, absoluto) fica preso aqui e não alarga a página (LIC-059). */}
+          <div className="relative overflow-x-auto">
+            <table className="w-full min-w-[64rem] text-left text-sm">
               <caption className="sr-only">Contatos da sua base, com a origem do consentimento</caption>
               <thead>
                 <tr className="bg-superficie-2/60 text-xs uppercase tracking-wide text-tinta-suave">
@@ -366,6 +368,7 @@ export default function PaginaContatos() {
                   <th scope="col" className="px-3 py-2.5 font-medium">Telefone</th>
                   <th scope="col" className="px-3 py-2.5 font-medium">Compras</th>
                   <th scope="col" className="px-3 py-2.5 font-medium">Última compra</th>
+                  <th scope="col" className="px-3 py-2.5 font-medium">Costuma pedir</th>
                   <th scope="col" className="px-3 py-2.5 font-medium">Perfil</th>
                   <th scope="col" className="px-3 py-2.5 font-medium">Autorização</th>
                   <th scope="col" className="px-5 py-2.5 font-medium">
@@ -419,6 +422,22 @@ export default function PaginaContatos() {
                         );
                       })()}
                     </td>
+                    <td className="px-3 py-3 text-tinta">
+                      {c.produtoFavorito || c.periodoPreferido ? (
+                        <>
+                          {c.produtoFavorito && (
+                            <span className="block max-w-[9rem] truncate" title={c.produtoFavorito}>
+                              {c.produtoFavorito}
+                            </span>
+                          )}
+                          {c.periodoPreferido && (
+                            <span className="block text-xs text-tinta-suave">{QUANDO_PEDE[c.periodoPreferido]}</span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-tinta-suave">—</span>
+                      )}
+                    </td>
                     <td className="whitespace-nowrap px-3 py-3">
                       {c.segmento && c.segmento !== 'sem_historico' && !c.optOut ? (
                         <span className={`inline-block rounded-full border px-2 py-0.5 text-xs text-tinta ${COR_PERFIL[c.segmento]}`}>
@@ -428,7 +447,7 @@ export default function PaginaContatos() {
                         <span className="text-tinta-suave">—</span>
                       )}
                     </td>
-                    <td className="px-3 py-3 text-tinta-suave">
+                    <td className="px-3 py-3 text-xs text-tinta-suave">
                       {c.optOut ? (
                         <Badge tom="erro" ponto>
                           Pediu para sair

@@ -22,6 +22,9 @@ import {
 // o env vira objeto vazio. O jest.mock sobe para antes dos imports.
 jest.mock('../../config/env', () => ({ env: {} }));
 
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
+
 import type { UsuarioAutenticado } from '../../common/auth.guard';
 import { ContaService } from './conta.service';
 
@@ -77,6 +80,7 @@ function montar() {
     update: jest.fn(() => consulta([])),
     insert: jest.fn(() => consulta([])),
     delete: jest.fn(() => consulta([])),
+    execute: jest.fn().mockResolvedValue({ rows: [] }),
   };
 
   const registrar = jest.fn().mockResolvedValue(undefined);
@@ -197,6 +201,23 @@ describe('ContaService', () => {
       expect(atualizada.timezone).toBe('America/Manaus');
       expect(registrar).toHaveBeenCalledTimes(1);
       expect(registrar.mock.calls[0][0]).toMatchObject({ acao: 'conta.atualizada' });
+      // Outro fuso, outra hora local das compras: o período de cada contato é refeito.
+      expect(db.execute).toHaveBeenCalledTimes(1);
+      const refeito = new PgDialect().sqlToQuery(db.execute.mock.calls[0][0] as SQL);
+      expect(refeito.sql).toContain('set periodo_preferido');
+      expect(refeito.params).toContain(CONTA);
+    });
+
+    it('sem troca de fuso, o período dos contatos fica como está', async () => {
+      const { service, db } = montar();
+      db.select.mockReturnValueOnce(consulta([{ nome: 'Padaria', cnpj: null, timezone: 'America/Sao_Paulo' }]));
+      db.update.mockReturnValueOnce(
+        consulta([{ id: CONTA, nome: 'Padaria Nova', cnpj: null, timezone: 'America/Sao_Paulo', status: 'ativa' }]),
+      );
+
+      await service.atualizar({ nome: 'Padaria Nova', timezone: 'America/Sao_Paulo' }, dono);
+
+      expect(db.execute).not.toHaveBeenCalled();
     });
 
     it('recusa CNPJ com dígito verificador errado', async () => {

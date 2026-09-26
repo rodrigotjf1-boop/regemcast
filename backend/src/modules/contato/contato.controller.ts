@@ -137,10 +137,16 @@ export class ContatoController {
 
   // ------------------------------------------------------------ públicos prontos (das compras)
 
-  /** VIP, faixas de ticket, marcos, jeito de comprar, bairros e aniversariantes — com quantos há em cada. */
+  /** VIP, faixas de ticket, marcos, jeito de comprar, período do dia, bairros e aniversariantes — com quantos há em cada. */
   @Get('publicos')
   resumoDosPublicos(@UsuarioAtual() usuario: UsuarioAutenticado) {
     return this.publicos.resumo(usuario.contaId);
+  }
+
+  /** Os produtos que mais gente já comprou — ou os que casam com `busca`. Cada um é o público "Já compraram…". */
+  @Get('publicos/produtos')
+  produtosDosPublicos(@UsuarioAtual() usuario: UsuarioAutenticado, @Query('busca') busca?: string) {
+    return this.publicos.produtos(usuario.contaId, typeof busca === 'string' ? busca : undefined);
   }
 
   /** Foto do público de hoje numa lista — como a dos perfis. */

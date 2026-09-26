@@ -92,6 +92,8 @@ Em **Contatos**, tudo conta só quem pode receber (sem descadastro), como o disp
   | Um pedido só | 1 pedido, comprado dentro do "ativo" dos perfis — chamar para o segundo |
   | Rumo ao 10º pedido | 9 pedidos |
   | Pedem entrega / Retiram na loja / Consomem no salão | o jeito de comprar mais frequente (empate: o mais recente) |
+  | Pedem no café da manhã / no almoço / à tarde / à noite / de madrugada | o período do dia mais frequente nas compras, no fuso da conta (empate: o da compra mais recente) |
+  | Já compraram… | comprou o produto pelo menos uma vez (pelo nome, sem ligar para maiúscula) |
   | Bairro | o bairro mais frequente nas entregas, sem ligar para maiúscula |
   | Aniversariantes | o mês da data de nascimento (o Cardápio Web manda) |
 
@@ -100,6 +102,50 @@ Em **Contatos**, tudo conta só quem pode receber (sem descadastro), como o disp
 - Bairro e jeito de comprar ficam guardados no contato (`contato.bairro`,
   `contato.tipo_preferido`, migration 030), refeitos a cada sincronização junto
   com os totais; o resto é calculado na consulta.
+
+### Hábitos de compra (Fase 4B, migration 032)
+
+Regras em `contato/habitos.ts`. A migration 032 preencheu quem já tinha compras
+com as mesmas regras.
+
+- **Período do dia:** a hora de cada compra é lida no fuso da CONTA
+  (`conta.timezone`), nunca no do servidor, que roda em UTC.
+  - Os períodos são: madrugada (0h às 6h), café da manhã (6h às 11h), almoço
+    (11h às 15h), tarde (15h às 18h) e noite (18h à meia-noite).
+  - Fica em `contato.periodo_preferido` o período que mais aparece; empate
+    fica com o da compra mais recente.
+  - É refeito a cada sincronização e quando a conta troca de fuso
+    (`recalcularPeriodosDaConta`, na mesma transação da troca).
+- **Produtos:** `contato_produto` guarda um registro por contato e produto.
+  - `chave` é o nome em minúsculas, feito pelo `lower()` do banco; `nome` é a
+    grafia que o contato mais usou.
+  - Também guarda em quantas compras o produto veio e quando foi a última.
+  - É refeita junto com os totais: apaga e grava de novo para os contatos
+    tocados.
+  - Motivo de ser guardada: consultar as compras a cada filtro custava 0,7 s
+    numa loja de 100 mil compras com a RLS ligada; pela tabela, 0,04 s.
+- **Grafias:** a grafia mostrada é a mais usada, com desempate explícito (a
+  mais recente, depois a com inicial maiúscula), nunca `min()` de texto
+  (ERR-011).
+- **Mais vendidos:** a lista (`GET /contatos/publicos/produtos`) conta quem
+  pode receber, exatamente como o público. Clicar numa ficha filtra esse mesmo
+  número.
+- **Busca de produto:** trata `%` e `_` como letras (`termoDoLike`) e faz a
+  minúscula no banco, com a mesma função que fez a `chave`.
+- **Favorito:** a linha do contato mostra o produto que veio em mais compras
+  (empate: o mais recente) e o período, na coluna "Costuma pedir".
+- **Sugestão de horário** (`GET /campanhas/horario?listaId=`), ao montar a
+  campanha:
+  - Em que período a lista costuma pedir, contando só quem pode receber.
+  - A janela de envio sugerida começa 1 h antes do período e dura 2 h, sem sair
+    das 8h às 21h: café 8h–10h, almoço 10h–12h, tarde 14h–16h, noite 17h–19h,
+    madrugada 19h–21h.
+  - Só há sugestão com pelo menos 20 pessoas com compra na lista e um período
+    que reúna 40% delas. Abaixo disso, uma porcentagem engana.
+  - "Usar das 17h às 19h" preenche o "Das / Até" da janela, que continua
+    editável.
+- **Anonimizar** apaga as compras, os produtos e o período. **Apagar o
+  contato** leva os produtos em cascata.
 - **Planilha não passa por cima das compras:** quem tem compras sincronizadas
   tem os totais calculados delas; a planilha só completa e-mail e aniversário.
 - Cada público vira lista ("Criar lista com estes contatos") ou blocos

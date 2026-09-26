@@ -14,10 +14,12 @@ import { AuditoriaService } from '../auditoria/auditoria.service';
 import {
   FRACAO_VIP,
   PUBLICOS_FIXOS,
+  TAMANHO_MAXIMO_PRODUTO,
   TICKET_SQL,
   descreverPublico,
   emReais,
   expressaoPublico,
+  termoDoLike,
   validarPublico,
   type LimitesDosPublicos,
   type Publico,
@@ -26,6 +28,14 @@ import { parametrosDaConta } from './segmentacao.service';
 
 /** Quantos bairros a tela mostra — os mais frequentes. */
 const MAX_BAIRROS = 40;
+/** Quantos produtos a tela mostra — os que mais gente comprou, ou os que casam com a busca. */
+export const MAX_PRODUTOS = 40;
+
+/** Um produto da base: o nome como é mais escrito e quantos (que podem receber) já compraram. */
+export interface ProdutoDaBase {
+  nome: string;
+  total: number;
+}
 
 export interface PublicoResumido {
   id: Publico;
@@ -187,6 +197,55 @@ export class PublicosService {
         conversasLigadas,
         mesAtual,
         aniversarios: Array.from({ length: 12 }, (_, i) => ({ mes: i + 1, total: porMes.get(i + 1) ?? 0 })),
+      };
+    });
+  }
+
+  /**
+   * Os produtos que mais gente já comprou (só quem pode receber, como o
+   * público) — ou, com `busca`, os que têm o termo no nome. O número de cada
+   * um é o do público "Já compraram…": clicar filtra exatamente essa gente.
+   * A grafia mostrada é a mais usada entre os contatos (empate: a mais
+   * recente, depois a com inicial maiúscula), não a que a ordenação do banco
+   * puser primeiro.
+   */
+  async produtos(contaId: string, busca?: string): Promise<{ produtos: ProdutoDaBase[] }> {
+    const termo = (busca ?? '').replace(/\s+/g, ' ').trim();
+    if (termo.length > TAMANHO_MAXIMO_PRODUTO) {
+      throw new BadRequestException(`Busque com até ${TAMANHO_MAXIMO_PRODUTO} letras.`);
+    }
+    // Minúscula pelo banco, a mesma função que fez a `chave`.
+    const filtro = termo ? sql`and p.chave like lower(${`%${termoDoLike(termo)}%`}) escape '\\'` : sql``;
+
+    return this.ctx.comConta(contaId, async (db) => {
+      const r = await db.execute(sql`
+        select n.nome, g.total
+          from (
+            select p.chave, count(*)::int as total
+              from contato_produto p
+              join contato on contato.id = p.contato_id
+             where p.conta_id = ${contaId}
+               and contato.opt_out = false and contato.sem_whatsapp_em is null
+               ${filtro}
+             group by p.chave
+             order by total desc, p.chave
+             limit ${MAX_PRODUTOS}
+          ) g
+          cross join lateral (
+            select p2.nome
+              from contato_produto p2
+             where p2.conta_id = ${contaId} and p2.chave = g.chave
+             group by p2.nome
+             order by count(*) desc, max(p2.ultima_em) desc, (p2.nome ~ '^[[:upper:]]') desc, p2.nome
+             limit 1
+          ) n
+         order by g.total desc, n.nome
+      `);
+      return {
+        produtos: (r.rows as { nome: string; total: number | string }[]).map((x) => ({
+          nome: x.nome,
+          total: Number(x.total),
+        })),
       };
     });
   }

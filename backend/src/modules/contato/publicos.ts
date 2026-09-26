@@ -1,11 +1,12 @@
 /**
  * Públicos prontos a partir das compras: VIP, faixas de ticket, "um pedido
- * só", "rumo ao 10º pedido", como compra (entrega, retirada, salão), bairro e
- * aniversariantes do mês.
+ * só", "rumo ao 10º pedido", como compra (entrega, retirada, salão), quando
+ * pede (período do dia), o que já comprou, bairro e aniversariantes do mês.
  *
  * Como os perfis, são CALCULADOS na consulta — nada disso é gravado por
- * contato, a não ser o bairro e o jeito de comprar (migration 030), que saem
- * de todas as compras e são refeitos a cada sincronização.
+ * contato, a não ser o que sai de TODAS as compras e é refeito a cada
+ * sincronização: o bairro e o jeito de comprar (migration 030), o período do
+ * dia e os produtos (migration 032, `habitos.ts`).
  *
  * VIP e faixas de ticket são RELATIVOS à loja: os 10% que mais gastam, e os
  * terços do ticket médio. Uma pizzaria e uma loja de açaí têm tickets
@@ -20,6 +21,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 
 import { gemeoEmSql } from '../../common/telefone-sql';
+import { HORAS_DO_PERIODO, type Periodo } from './habitos';
 
 export const PUBLICOS = [
   'vip',
@@ -31,6 +33,11 @@ export const PUBLICOS = [
   'entrega',
   'retirada',
   'salao',
+  'periodo_cafe',
+  'periodo_almoco',
+  'periodo_tarde',
+  'periodo_noite',
+  'periodo_madrugada',
   'leram_30d',
   'responderam_30d',
   'nao_leram_3',
@@ -38,14 +45,26 @@ export const PUBLICOS = [
   'conversaram_7d',
   'bairro',
   'aniversario',
+  'produto',
 ] as const;
 export type Publico = (typeof PUBLICOS)[number];
 
+/** Os que pedem um valor: o bairro, o mês, o produto. */
+type ComValor = 'bairro' | 'aniversario' | 'produto';
+
 /** Os fixos (sem valor), na ordem da tela. */
-export const PUBLICOS_FIXOS = PUBLICOS.filter((p) => p !== 'bairro' && p !== 'aniversario') as Exclude<
-  Publico,
-  'bairro' | 'aniversario'
->[];
+export const PUBLICOS_FIXOS = PUBLICOS.filter(
+  (p) => p !== 'bairro' && p !== 'aniversario' && p !== 'produto',
+) as Exclude<Publico, ComValor>[];
+
+/** O público de cada período do dia. */
+export const PUBLICO_DO_PERIODO: Record<Periodo, Publico> = {
+  cafe: 'periodo_cafe',
+  almoco: 'periodo_almoco',
+  tarde: 'periodo_tarde',
+  noite: 'periodo_noite',
+  madrugada: 'periodo_madrugada',
+};
 
 /** Os 10% que mais gastam. */
 export const FRACAO_VIP = 0.1;
@@ -53,6 +72,10 @@ export const FRACAO_VIP = 0.1;
 export const PEDIDO_MARCO = 10;
 /** Bairro com mais de 80 letras não é bairro. */
 export const TAMANHO_MAXIMO_BAIRRO = 80;
+/** O nome do item como a compra guarda (`cardapioweb.pedidos.regras.ts` corta em 80). */
+export const TAMANHO_MAXIMO_PRODUTO = 80;
+/** O maior valor que um público aceita — o dos DTOs. */
+export const TAMANHO_MAXIMO_VALOR = Math.max(TAMANHO_MAXIMO_BAIRRO, TAMANHO_MAXIMO_PRODUTO);
 
 export interface LimitesDosPublicos {
   /** Total gasto a partir do qual o contato é VIP. `null` = ninguém tem valor. */
@@ -86,6 +109,11 @@ export function emReais(centavos: number | null, modo: 'baixo' | 'perto'): numbe
   return Math.max(0, reais) * 100;
 }
 
+/** O termo da busca dentro de um `like`: `%`, `_` e `\` valem como letra, não como curinga. */
+export function termoDoLike(termo: string): string {
+  return termo.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
 /**
  * O público como condição sobre a tabela `contato` (sem alias, como a dos
  * perfis). Sem o limite de que depende (ninguém com valor gasto), é `false`.
@@ -115,6 +143,12 @@ export function expressaoPublico(publico: Publico, valor: string | null, l: Limi
     case 'retirada':
     case 'salao':
       return sql`(contato.tipo_preferido = ${publico})`;
+    case 'periodo_cafe':
+    case 'periodo_almoco':
+    case 'periodo_tarde':
+    case 'periodo_noite':
+    case 'periodo_madrugada':
+      return sql`(contato.periodo_preferido = ${publico.slice('periodo_'.length)})`;
     case 'leram_30d':
       return recebeu(sql`d.lida_em >= now() - interval '30 days'`);
     case 'responderam_30d':
@@ -145,6 +179,13 @@ export function expressaoPublico(publico: Publico, valor: string | null, l: Limi
       return sql`(lower(contato.bairro) = lower(${valor}))`;
     case 'aniversario':
       return sql`(extract(month from contato.data_nascimento) = ${Number(valor)})`;
+    case 'produto':
+      // Pelo nome sem maiúscula: a `chave` de `contato_produto` é o nome em minúsculas.
+      return sql`exists (
+        select 1 from contato_produto p
+         where p.contato_id = contato.id
+           and p.chave = lower(${valor})
+      )`;
   }
 }
 
@@ -180,8 +221,30 @@ export function validarPublico(
     if (!Number.isInteger(m) || m < 1 || m > 12) return { erro: 'Escolha o mês do aniversário.' };
     return { publico: p, valor: String(m) };
   }
+  if (p === 'produto') {
+    // Espaços como a compra guarda o nome: juntos e sem sobra nas pontas.
+    const n = (valor ?? '').replace(/\s+/g, ' ').trim();
+    if (!n || n.length > TAMANHO_MAXIMO_PRODUTO) return { erro: 'Escolha o produto.' };
+    return { publico: p, valor: n };
+  }
   return { publico: p, valor: null };
 }
+
+/** "das 18h à meia-noite", "da meia-noite às 6h", "das 6h às 11h". */
+function faixaDoPeriodo(periodo: Periodo): string {
+  const { de, ate } = HORAS_DO_PERIODO[periodo];
+  const inicio = de === 0 ? 'da meia-noite' : `das ${de}h`;
+  const fim = ate === 24 ? 'à meia-noite' : `às ${ate}h`;
+  return `${inicio} ${fim}`;
+}
+
+const NOME_DO_PERIODO: Record<Periodo, string> = {
+  cafe: 'Pedem no café da manhã',
+  almoco: 'Pedem no almoço',
+  tarde: 'Pedem à tarde',
+  noite: 'Pedem à noite',
+  madrugada: 'Pedem de madrugada',
+};
 
 const reais = (centavos: number) =>
   (centavos / 100).toLocaleString('pt-BR', {
@@ -238,6 +301,17 @@ export function descreverPublico(publico: Publico, valor: string | null, l: Limi
       return { nome: 'Retiram na loja', regra: 'A maior parte das compras foi retirada no balcão.' };
     case 'salao':
       return { nome: 'Consomem no salão', regra: 'A maior parte das compras foi no salão ou na mesa.' };
+    case 'periodo_cafe':
+    case 'periodo_almoco':
+    case 'periodo_tarde':
+    case 'periodo_noite':
+    case 'periodo_madrugada': {
+      const periodo = publico.slice('periodo_'.length) as Periodo;
+      return {
+        nome: NOME_DO_PERIODO[periodo],
+        regra: `A maior parte das compras foi ${faixaDoPeriodo(periodo)}, no horário da conta.`,
+      };
+    }
     case 'leram_30d':
       return { nome: 'Leram nos últimos 30 dias', regra: 'Leram pelo menos uma campanha nos últimos 30 dias.' };
     case 'responderam_30d':
@@ -257,5 +331,7 @@ export function descreverPublico(publico: Publico, valor: string | null, l: Limi
       const mes = MESES[Number(valor) - 1] ?? '';
       return { nome: `Aniversariantes de ${mes}`, regra: `Fazem aniversário em ${mes}.` };
     }
+    case 'produto':
+      return { nome: `Já compraram ${valor ?? ''}`.trim(), regra: 'Compraram este produto pelo menos uma vez.' };
   }
 }

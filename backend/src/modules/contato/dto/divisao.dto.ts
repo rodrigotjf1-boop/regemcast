@@ -9,7 +9,7 @@ import {
   type OrdemDosBlocos,
   type OrigemDaDivisao,
 } from '../blocos.regras';
-import { PUBLICOS, TAMANHO_MAXIMO_BAIRRO, type Publico } from '../publicos';
+import { PUBLICOS, TAMANHO_MAXIMO_VALOR, type Publico } from '../publicos';
 import { SEGMENTOS, type Segmento } from '../segmentacao';
 
 /** Dividir um conjunto de contatos em blocos (listas) do mesmo tamanho. */
@@ -38,10 +38,10 @@ export class DividirEmBlocosDto {
   @IsIn(PUBLICOS, { message: 'Escolha o público.' })
   publico?: Publico;
 
-  @ApiProperty({ required: false, description: 'O bairro ou o mês (1 a 12), quando o público pede.' })
+  @ApiProperty({ required: false, description: 'O bairro, o mês (1 a 12) ou o produto, quando o público pede.' })
   @IsOptional()
   @IsString()
-  @MaxLength(TAMANHO_MAXIMO_BAIRRO)
+  @MaxLength(TAMANHO_MAXIMO_VALOR)
   publicoValor?: string;
 
   @ApiProperty({ example: 250, description: 'Contatos por bloco. Acima do limite de envio da Meta é recusado.' })

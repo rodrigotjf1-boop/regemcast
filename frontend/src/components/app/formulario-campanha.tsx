@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { JANELA_VAZIA, JanelaEnvio, janelaParaEnvio, problemaDosTetos, type Janela } from '@/components/app/janela-envio';
 import { IconeMais } from '@/components/app/icones';
 import { useSessao } from '@/components/app/sessao';
+import { SugestaoHorario } from '@/components/app/sugestao-horario';
 import { Alerta } from '@/components/ui/alerta';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -590,6 +591,13 @@ export function FormularioCampanha({
                     </label>
                   )}
                 </div>
+              )}
+              {!editando && listaId && (
+                <SugestaoHorario
+                  listaId={listaId}
+                  janelaAtual={janela}
+                  aoUsar={(inicio, fim) => setJanela((j) => ({ ...j, ativa: true, inicio, fim }))}
+                />
               )}
             </div>
           ) : (

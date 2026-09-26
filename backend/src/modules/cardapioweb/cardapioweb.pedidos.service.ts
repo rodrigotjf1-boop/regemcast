@@ -33,6 +33,7 @@ import { gemeoDoCelular } from '../../common/telefone';
 import { ContextoDb, type Db } from '../../db/contexto';
 import { integracaoCardapioweb } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { periodoPreferidoSql, refazerProdutos } from '../contato/habitos';
 import { decifrarToken } from '../meta/cripto';
 import { CardapiowebCliente, ErroCardapioWeb, type Credencial } from './cardapioweb.cliente';
 import {
@@ -510,11 +511,11 @@ async function gravarClientesNovos(db: Db, contaId: string, l: Linha, clientes: 
 
 /**
  * Os totais do contato (pedidos, gasto, primeira e última compra), o bairro
- * mais frequente nas entregas e o jeito de comprar mais frequente (entrega,
- * retirada, salão; empate: o mais recente), refeitos das compras — para os
- * contatos tocados neste lote, num comando só. Quem ficou sem compra nenhuma
- * (o único pedido foi cancelado) volta a "sem histórico", se o histórico vinha
- * daqui.
+ * mais frequente nas entregas, o jeito de comprar mais frequente (entrega,
+ * retirada, salão; empate: o mais recente), o período do dia em que mais pede
+ * (no fuso da conta) e os produtos que já comprou, refeitos das compras — para
+ * os contatos tocados neste lote. Quem ficou sem compra nenhuma (o único
+ * pedido foi cancelado) volta a "sem histórico", se o histórico vinha daqui.
  */
 export async function recalcularTotais(db: Db, contaId: string, contatoIds: string[]): Promise<void> {
   for (const parte of emPartes([...new Set(contatoIds)], 500)) {
@@ -527,6 +528,7 @@ export async function recalcularTotais(db: Db, contaId: string, contatoIds: stri
              ultimo_pedido_em = a.ultimo,
              bairro = b.bairro,
              tipo_preferido = t.tipo,
+             periodo_preferido = ${periodoPreferidoSql(sql`a.contato_id`)},
              metricas_em = now(),
              metricas_origem = 'cardapioweb'
         from (
@@ -562,11 +564,12 @@ export async function recalcularTotais(db: Db, contaId: string, contatoIds: stri
     await db.execute(sql`
       update contato c
          set pedidos = null, total_gasto_centavos = null, primeiro_pedido_em = null, ultimo_pedido_em = null,
-             bairro = null, tipo_preferido = null, metricas_em = now()
+             bairro = null, tipo_preferido = null, periodo_preferido = null, metricas_em = now()
        where c.conta_id = ${contaId}
          and c.id in (${lista})
          and c.metricas_origem = 'cardapioweb'
          and not exists (select 1 from compra x where x.contato_id = c.id)
     `);
+    await refazerProdutos(db, contaId, lista);
   }
 }
