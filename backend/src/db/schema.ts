@@ -60,6 +60,8 @@ export const conta = pgTable('conta', {
   nome: text('nome').notNull(),
   cnpj: text('cnpj'),
   timezone: text('timezone').notNull().default('America/Sao_Paulo'),
+  /** Descanso entre campanhas de marketing, em dias; 0 desliga (migration 031). */
+  descansoMarketingDias: integer('descanso_marketing_dias').notNull().default(3),
   /** aprovada | ativa | suspensa | cancelada */
   status: text('status').notNull().default('aprovada'),
   planoId: uuid('plano_id').references(() => plano.id, { onDelete: 'set null' }),
@@ -417,6 +419,8 @@ export const campanha = pgTable('campanha', {
    * a campanha segue ativa e o worker só a pula até lá (migration 027).
    */
   retomarEm: timestamp('retomar_em', { withTimezone: true }),
+  /** Descanso desta campanha, copiado da conta ao criar; nulo = sem descanso (migration 031). */
+  descansoDias: integer('descanso_dias'),
   iniciadaEm: timestamp('iniciada_em', { withTimezone: true }),
   concluidaEm: timestamp('concluida_em', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
@@ -457,6 +461,8 @@ export const campanhaDestinatario = pgTable('campanha_destinatario', {
   tentativas: smallint('tentativas').notNull().default(0),
   /** Não reenviar antes disto. Nulo = pode sair já (migration 027). */
   proximaTentativaEm: timestamp('proxima_tentativa_em', { withTimezone: true }),
+  /** A pessoa respondeu a esta mensagem (migration 031). Só o fato; o texto não é guardado. */
+  respondidaEm: timestamp('respondida_em', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
@@ -577,6 +583,10 @@ export const contato = pgTable('contato', {
   bairro: text('bairro'),
   /** entrega | retirada | salao — o que mais faz nas compras (migration 030). */
   tipoPreferido: text('tipo_preferido'),
+  /** A Meta recusou o número (131026) em duas campanhas (migration 031). */
+  semWhatsappEm: timestamp('sem_whatsapp_em', { withTimezone: true }),
+  /** "Tentar de novo": só as falhas depois disto contam (migration 031). */
+  semWhatsappLiberadoEm: timestamp('sem_whatsapp_liberado_em', { withTimezone: true }),
   metricasEm: timestamp('metricas_em', { withTimezone: true }),
   metricasOrigem: text('metricas_origem'),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),

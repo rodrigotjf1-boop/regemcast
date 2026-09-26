@@ -135,7 +135,7 @@ export class DivisaoService {
                and d.telefone_e164 in (contato.telefone_e164, ${gemeoEmSql(sql`contato.telefone_e164`)})
           )`
         : sql``;
-      const filtro = sql`contato.conta_id = ${contaId} and contato.opt_out = false and ${origem.filtro} ${nunca}`;
+      const filtro = sql`contato.conta_id = ${contaId} and contato.opt_out = false and contato.sem_whatsapp_em is null and ${origem.filtro} ${nunca}`;
 
       // Contar antes: sem ninguém, ou com blocos demais, não se cria nada.
       const [{ qtd }] = (await db.execute(sql`select count(*)::int as qtd from contato where ${filtro}`)).rows as {
@@ -320,7 +320,7 @@ export class DivisaoService {
       const blocos = (
         await db.execute(sql`
           select l.id, l.divisao_id, l.bloco, l.nome,
-                 count(c.id) filter (where c.opt_out = false)::int as total
+                 count(c.id) filter (where c.opt_out = false and c.sem_whatsapp_em is null)::int as total
             from contato_lista l
             left join contato_lista_item i on i.lista_id = l.id
             left join contato c on c.id = i.contato_id
@@ -447,7 +447,7 @@ export class DivisaoService {
         await db.execute(sql`
           select case when telefone_e164 like '55%' then substr(telefone_e164, 3, 2) end as ddd, count(*)::int as total
             from contato
-           where conta_id = ${contaId} and opt_out = false
+           where conta_id = ${contaId} and opt_out = false and sem_whatsapp_em is null
            group by 1
         `)
       ).rows as { ddd: string | null; total: number }[];

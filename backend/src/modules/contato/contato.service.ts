@@ -13,7 +13,7 @@
  * colunas transformaria aquela frase em declaração falsa.
  */
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, count, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 
 import { dddsDaUf } from '../../common/ddd';
 import { mascararTelefone, paraCloudApi } from '../../common/telefone';
@@ -396,7 +396,7 @@ export class ContatoService {
           contato,
           and(eq(contato.id, contatoListaItem.contatoId), eq(contato.contaId, contatoListaItem.contaId)),
         )
-        .where(and(eq(contatoListaItem.contaId, contaId), eq(contato.optOut, false)))
+        .where(and(eq(contatoListaItem.contaId, contaId), eq(contato.optOut, false), isNull(contato.semWhatsappEm)))
         .groupBy(contatoListaItem.listaId);
 
       const porLista = new Map(totais.map((t) => [t.listaId, Number(t.total)]));
@@ -483,8 +483,8 @@ export class ContatoService {
     pagina = 1,
     porPagina = 50,
     segmento?: string,
-    /** `bloqueados` = quem pediu para sair; `ativos` = quem pode receber. */
-    situacao?: 'ativos' | 'bloqueados',
+    /** `bloqueados` = quem pediu para sair; `sem_whatsapp` = a Meta recusou o número; `ativos` = quem pode receber. */
+    situacao?: 'ativos' | 'bloqueados' | 'sem_whatsapp',
     /** Estado pelo DDD — só quem pode receber, como no filtro por perfil. */
     uf?: string,
     /** Público pronto (VIP, bairro…) — só quem pode receber, como no filtro por perfil. */
@@ -516,13 +516,18 @@ export class ContatoService {
         ? and(
             eq(contato.contaId, contaId),
             eq(contato.optOut, false),
+            isNull(contato.semWhatsappEm),
             segmento ? sql`${perfil} = ${segmento}` : undefined,
             porRegiao,
             porPublico,
           )
-        : situacao
-          ? and(eq(contato.contaId, contaId), eq(contato.optOut, situacao === 'bloqueados'))
-          : eq(contato.contaId, contaId);
+        : situacao === 'bloqueados'
+          ? and(eq(contato.contaId, contaId), eq(contato.optOut, true))
+          : situacao === 'sem_whatsapp'
+            ? and(eq(contato.contaId, contaId), isNotNull(contato.semWhatsappEm))
+            : situacao === 'ativos'
+              ? and(eq(contato.contaId, contaId), eq(contato.optOut, false), isNull(contato.semWhatsappEm))
+              : eq(contato.contaId, contaId);
 
       const [{ total }] = await db
         .select({ total: count(contato.id) })
@@ -547,6 +552,7 @@ export class ContatoService {
           tipoPreferido: contato.tipoPreferido,
           optOutEm: contato.optOutEm,
           optOutOrigem: contato.optOutOrigem,
+          semWhatsappEm: contato.semWhatsappEm,
           segmento: perfil,
         })
         .from(contato)
@@ -627,6 +633,34 @@ export class ContatoService {
         entidade: 'contato',
         entidadeId: contatoId,
         detalhe: { telefone: mascararTelefone(alterado.telefone), justificativa: motivo },
+      });
+      return { ok: true as const };
+    });
+  }
+
+  /**
+   * "Tentar de novo" o número que a Meta recusou em duas campanhas: tira a
+   * marca de sem WhatsApp (a pessoa atualizou o app, trocou de aparelho, o
+   * número foi corrigido). Só as recusas daqui em diante contam para marcar de
+   * novo (`sem_whatsapp_liberado_em`).
+   */
+  async tentarWhatsappDeNovo(contaId: string, usuarioId: string, contatoId: string) {
+    return this.ctx.comConta(contaId, async (db) => {
+      const [alterado] = await db
+        .update(contato)
+        .set({ semWhatsappEm: null, semWhatsappLiberadoEm: new Date() })
+        .where(and(eq(contato.contaId, contaId), eq(contato.id, contatoId), isNotNull(contato.semWhatsappEm)))
+        .returning({ id: contato.id, telefone: contato.telefoneE164 });
+      if (!alterado) throw new NotFoundException('Contato marcado como sem WhatsApp não encontrado.');
+
+      await this.auditoria.registrar({
+        contaId,
+        atorTipo: 'usuario',
+        atorUsuarioId: usuarioId,
+        acao: 'contato.whatsapp_liberado',
+        entidade: 'contato',
+        entidadeId: contatoId,
+        detalhe: { telefone: mascararTelefone(alterado.telefone) },
       });
       return { ok: true as const };
     });
@@ -854,6 +888,7 @@ export class ContatoService {
             eq(contatoListaItem.contaId, contaId),
             eq(contatoListaItem.listaId, listaId),
             eq(contato.optOut, false),
+            isNull(contato.semWhatsappEm),
           ),
         );
       return Number(linha?.total ?? 0);

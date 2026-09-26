@@ -13,6 +13,7 @@ import { EsqueletoLista } from '@/components/ui/esqueleto';
 import { EstadoErro } from '@/components/ui/estado-erro';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { NumerosSemWhatsapp } from '@/components/app/numeros-sem-whatsapp';
 import { mensagemDoErro } from '@/lib/api';
 import { formatarData, formatarNumero } from '@/lib/formato';
 import { contatos as servico } from '@/lib/servicos';
@@ -254,6 +255,7 @@ export default function PaginaBloqueios() {
           </div>
         </section>
       )}
+      <NumerosSemWhatsapp />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
@@ -186,4 +187,12 @@ export class CriarCampanhaDto {
   @IsInt()
   @Min(1)
   maxPorMes?: number;
+
+  @ApiProperty({
+    required: false,
+    description: 'Só o dono: enviar mesmo para quem está em descanso (recebeu marketing nos últimos dias da conta).',
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'Informe se a campanha ignora o descanso com sim ou não.' })
+  ignorarDescanso?: boolean;
 }

@@ -246,6 +246,7 @@ describe('rodada do worker', () => {
     m.db.execute
       .mockResolvedValueOnce({ rows: [{ dia: 0, semana: 0, mes: 0, ultimo: null }] }) // contagem
       .mockResolvedValueOnce({ rows: [] }) // tira da fila quem pediu para sair
+      .mockResolvedValueOnce({ rows: [] }) // tira da fila quem está sem WhatsApp
       .mockResolvedValueOnce({ rows: [] }) // trava do teto da conta
       .mockResolvedValueOnce({ rows: [] }) // bloqueio por inadimplência (sem assinatura: libera)
       .mockResolvedValueOnce({ rows: saldo === undefined ? [] : [{ teto: 100, usados: 100 - saldo, em_voo: 0 }] }) // saldo do plano
@@ -335,6 +336,7 @@ describe('rodada do worker', () => {
     m.db.execute
       .mockResolvedValueOnce({ rows: [{ dia: 0, semana: 0, mes: 0, ultimo: null }] })
       .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] }) // sem WhatsApp
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ teto: 5000, usados: 5000, em_voo: 0 }] })
@@ -354,6 +356,7 @@ describe('rodada do worker', () => {
     m.db.execute
       .mockResolvedValueOnce({ rows: [{ dia: 0, semana: 0, mes: 0, ultimo: null }] })
       .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] }) // sem WhatsApp
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ status: 'inadimplente', gratis_vencido: false, carencia_vencida: true }] })
       .mockResolvedValueOnce({ rows: [] });
@@ -420,6 +423,7 @@ describe('rodada do worker', () => {
     m.db.execute
       .mockResolvedValueOnce({ rows: [{ dia: 0, semana: 0, mes: 0, ultimo: null }] })
       .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] }) // sem WhatsApp
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
@@ -499,6 +503,7 @@ describe('rodada do worker', () => {
     m.db.execute
       .mockResolvedValueOnce({ rows: [{ dia: 0, semana: 0, mes: 0, ultimo: null }] })
       .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] }) // sem WhatsApp
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
@@ -547,6 +552,43 @@ describe('rodada do worker', () => {
 
     expect(reivindicacao(m)).toContain('as materialized');
     expect(reivindicacao(m)).not.toMatch(/where id in \(/);
+  });
+
+  it('descanso: com dias na campanha, quem recebeu marketing de OUTRA campanha vira "descanso" na própria reserva', async () => {
+    const m = montar();
+    prepararRodada(m, [{ id: 'd1', telefone_e164: '5521999998888', variaveis: [] }], { ...ATIVA, descansoDias: 3 });
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    const r = reivindicacao(m) ?? '';
+    expect(r).toContain('descanso as (');
+    expect(r).toContain("set status = 'descanso'");
+    expect(r).toContain('o.campanha_id <>');
+    expect(r).toContain('not in (select id from descanso)');
+    // O dia entra como parâmetro, e a mensagem diz quantos dias.
+    expect(r).toContain('Recebeu outra campanha de marketing há menos de 3 dias');
+  });
+
+  it('sem descanso na campanha (antigas, utilidade ou liberada pelo dono), a reserva é a de sempre', async () => {
+    const m = montar();
+    prepararRodada(m, [{ id: 'd1', telefone_e164: '5521999998888', variaveis: [] }]);
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(reivindicacao(m)).not.toContain('descanso');
+  });
+
+  it('antes de reivindicar, tira da fila quem está sem WhatsApp', async () => {
+    const m = montar();
+    prepararRodada(m, [{ id: 'd1', telefone_e164: '5521999998888', variaveis: [] }]);
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    const chamadas = m.db.execute.mock.calls.map((c) => JSON.stringify(c[0]));
+    const semWhatsapp = chamadas.findIndex((t) => t.includes('sem_whatsapp_em is not null'));
+    const reivindicacaoIdx = chamadas.findIndex((t) => t.includes('skip locked'));
+    expect(semWhatsapp).toBeGreaterThan(-1);
+    expect(semWhatsapp).toBeLessThan(reivindicacaoIdx);
   });
 
   it('a reivindicação pula quem tem nova tentativa marcada para depois', async () => {

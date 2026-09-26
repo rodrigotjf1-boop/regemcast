@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsOptional, IsString, Length, MaxLength } from 'class-validator';
+import { IsInt, IsOptional, IsString, Length, Max, MaxLength, Min } from 'class-validator';
 
 /** Corpo do PATCH /conta. Todo campo é opcional, mas pelo menos um é exigido. */
 export class AtualizarContaDto {
@@ -30,4 +30,14 @@ export class AtualizarContaDto {
   @IsString({ message: 'Informe o fuso horário em texto.' })
   @MaxLength(64, { message: 'Esse nome de fuso horário é longo demais.' })
   timezone?: string;
+
+  @ApiPropertyOptional({
+    example: 3,
+    description: 'Descanso entre campanhas de marketing, em dias (0 desliga). Vale para campanhas criadas daqui em diante.',
+  })
+  @IsOptional()
+  @IsInt({ message: 'Informe o descanso em dias, número inteiro.' })
+  @Min(0, { message: 'O descanso vai de 0 (desligado) a 30 dias.' })
+  @Max(30, { message: 'O descanso vai de 0 (desligado) a 30 dias.' })
+  descansoMarketingDias?: number;
 }
