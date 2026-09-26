@@ -71,7 +71,8 @@ export function NumerosSemWhatsapp() {
       {erro && <Alerta tom="erro">{erro}</Alerta>}
       {aviso && <Alerta tom="sucesso">{aviso}</Alerta>}
       <div className="overflow-hidden rounded-card border border-borda bg-superficie shadow-card">
-        <div className="overflow-x-auto">
+        {/* `relative`: o texto escondido da tabela (sr-only, absoluto) fica preso aqui e não alarga a página (LIC-059). */}
+        <div className="relative overflow-x-auto">
           <table className="w-full min-w-[36rem] text-left text-sm">
             <caption className="sr-only">Números sem WhatsApp, com a data em que saíram dos envios</caption>
             <thead>

@@ -583,6 +583,8 @@ export const contato = pgTable('contato', {
   bairro: text('bairro'),
   /** entrega | retirada | salao — o que mais faz nas compras (migration 030). */
   tipoPreferido: text('tipo_preferido'),
+  /** madrugada | cafe | almoco | tarde | noite — quando mais compra, no fuso da conta (migration 032). */
+  periodoPreferido: text('periodo_preferido'),
   /** A Meta recusou o número (131026) em duas campanhas (migration 031). */
   semWhatsappEm: timestamp('sem_whatsapp_em', { withTimezone: true }),
   /** "Tentar de novo": só as falhas depois disto contam (migration 031). */
@@ -794,6 +796,23 @@ export const compra = pgTable('compra', {
   externaUq: uniqueIndex('idx_compra_externa').on(t.contaId, t.fonte, t.idExterno),
   contatoIdx: index('idx_compra_contato').on(t.contatoId, t.feitaEm),
   dataIdx: index('idx_compra_conta_data').on(t.contaId, t.feitaEm),
+}));
+
+/**
+ * Os produtos que cada contato já comprou (migration 032), tirados das compras
+ * e refeitos junto com os totais (`contato/habitos.ts`). `chave` é o nome em
+ * minúsculas; `nome`, a grafia que o contato mais comprou. Só para segmentar.
+ */
+export const contatoProduto = pgTable('contato_produto', {
+  contaId: uuid('conta_id').notNull(),
+  contatoId: uuid('contato_id').notNull(),
+  chave: text('chave').notNull(),
+  nome: text('nome').notNull(),
+  compras: integer('compras').notNull(),
+  ultimaEm: timestamp('ultima_em', { withTimezone: true }).notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.contatoId, t.chave] }),
+  chaveIdx: index('idx_contato_produto_chave').on(t.contaId, t.chave),
 }));
 
 /**

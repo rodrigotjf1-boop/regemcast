@@ -40,6 +40,7 @@ import {
   usuario as tUsuario,
 } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { recalcularPeriodosDaConta } from '../contato/habitos';
 import { CnpjReceitaService } from '../seguranca/cnpj-receita.service';
 import { gerarHashSenha } from '../auth/argon2';
 import { cnpjValido, normalizarCnpj } from './cnpj';
@@ -316,6 +317,12 @@ export class ContaService {
 
     if (!depois) {
       throw new NotFoundException('Não encontramos esta conta. Entre de novo.');
+    }
+
+    // Outro fuso, outra hora local para cada compra: o período em que cada
+    // contato costuma pedir é refeito agora, na mesma transação.
+    if (patch.timezone !== undefined && patch.timezone !== antes.timezone) {
+      await recalcularPeriodosDaConta(this.ctx.db, contaId);
     }
 
     const anterior = antes as unknown as Record<string, unknown>;

@@ -38,6 +38,18 @@ export class CampanhaController {
     return this.servico.previaDoDescanso(usuario.contaId, listaId);
   }
 
+  /**
+   * Antes de criar: em que período do dia a lista costuma pedir e a janela de
+   * envio sugerida. Antes de `:id` — "horario" não é uuid.
+   */
+  @Get('horario')
+  sugestaoDeHorario(
+    @UsuarioAtual() usuario: UsuarioAutenticado,
+    @Query('listaId', ParseUUIDPipe) listaId: string,
+  ) {
+    return this.servico.sugestaoDeHorario(usuario.contaId, listaId);
+  }
+
   @Get(':id')
   detalhe(
     @UsuarioAtual() usuario: UsuarioAutenticado,

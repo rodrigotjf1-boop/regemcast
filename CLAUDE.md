@@ -143,6 +143,12 @@ Detalhe e o porquê em `docs/marca.md`; fonte da verdade em `kit/LEIA-ME.md`.
   guardada. Os limites da API de cada cardápio são conferidos na documentação
   oficial antes de codar (o Cardápio Web só devolve as alterações das últimas
   8 h, por exemplo). Detalhe em [`docs/integracoes.md`](docs/integracoes.md).
+- **O que sai das compras é refeito com elas.** Totais, bairro, jeito de
+  comprar, período do dia (no fuso da conta) e produtos (`contato_produto`)
+  são recalculados juntos em `recalcularTotais`. Todo caminho que grava, muda
+  ou apaga compra refaz esse conjunto — e anonimizar apaga tudo. A troca de
+  fuso da conta refaz o período. Detalhe em
+  [`docs/integracoes.md`](docs/integracoes.md).
 - **Auditoria append-only.** Toda mutação relevante registra quem, o quê, sobre
   qual entidade, de onde e quando. A tabela `auditoria` não aceita `update` nem
   `delete` — por trigger **e** por permissão.

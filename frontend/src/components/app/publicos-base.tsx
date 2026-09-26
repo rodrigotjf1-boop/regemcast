@@ -3,7 +3,9 @@
 import Link from 'next/link';
 import { useState } from 'react';
 
+import { Ficha } from '@/components/app/ficha-de-publico';
 import { IconeGrafico } from '@/components/app/icones';
+import { ProdutosDaBase } from '@/components/app/produtos-da-base';
 import { Alerta } from '@/components/ui/alerta';
 import { Button } from '@/components/ui/button';
 import { mensagemDoErro } from '@/lib/api';
@@ -14,7 +16,8 @@ import type { AlvoDePublico, Publico, ResumoPublicos } from '@/lib/tipos';
 
 /**
  * Públicos prontos a partir das compras: quanto gastam, em que momento estão,
- * como compram, onde moram e quando fazem aniversário.
+ * como compram, a que horas pedem, o que já compraram, onde moram e quando
+ * fazem aniversário.
  *
  * Clicar num público filtra a tabela; com um público escolhido, "Criar lista"
  * tira a foto que a campanha usa e "Dividir em blocos" separa o envio. VIP e
@@ -27,6 +30,11 @@ const GRUPOS: { titulo: string; ids: Fixo[]; colunas: string }[] = [
   { titulo: 'Quanto gastam', ids: ['vip', 'ticket_alto', 'ticket_medio', 'ticket_baixo'], colunas: 'sm:grid-cols-2 xl:grid-cols-4' },
   { titulo: 'Momento', ids: ['um_pedido', 'marco_10'], colunas: 'sm:grid-cols-2' },
   { titulo: 'Como compram', ids: ['entrega', 'retirada', 'salao'], colunas: 'sm:grid-cols-3' },
+  {
+    titulo: 'Quando pedem',
+    ids: ['periodo_cafe', 'periodo_almoco', 'periodo_tarde', 'periodo_noite', 'periodo_madrugada'],
+    colunas: 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5',
+  },
   {
     titulo: 'Engajamento',
     ids: ['leram_30d', 'responderam_30d', 'nao_leram_3', 'nunca_receberam', 'conversaram_7d'],
@@ -123,7 +131,8 @@ export function PublicosDaBase({
 
       {vazio || semCompras ? (
         <Alerta tom="informacao">
-          Para separar a base por valor gasto, bairro e jeito de comprar, traga as compras: conecte o cardápio em{' '}
+          Para separar a base por valor gasto, bairro, jeito de comprar, horário e produto, traga as compras: conecte
+          o cardápio em{' '}
           <Link href="/integracoes" className="font-semibold underline underline-offset-2">
             Integrações
           </Link>{' '}
@@ -166,6 +175,8 @@ export function PublicosDaBase({
               </ul>
             </div>
           ))}
+
+          <ProdutosDaBase selecionado={selecionado} aoEscolher={escolher} />
 
           {resumo.bairros.length > 0 && (
             <div className="space-y-2">
@@ -258,38 +269,5 @@ export function PublicosDaBase({
         </div>
       )}
     </section>
-  );
-}
-
-function Ficha({
-  ativa,
-  onClick,
-  rotulo,
-  total,
-  destaque = false,
-}: {
-  ativa: boolean;
-  onClick: () => void;
-  rotulo: string;
-  total: number;
-  destaque?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={ativa}
-      onClick={onClick}
-      className={cn(
-        'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento',
-        ativa
-          ? 'border-acento bg-acento/10 text-tinta ring-2 ring-acento'
-          : destaque
-            ? 'border-acento/60 bg-superficie text-tinta hover:border-acento'
-            : 'border-borda bg-superficie text-tinta hover:border-acento',
-      )}
-    >
-      <span className="font-semibold first-letter:uppercase">{rotulo}</span>
-      <span className="numerico text-tinta-suave">{formatarNumero(total)}</span>
-    </button>
   );
 }

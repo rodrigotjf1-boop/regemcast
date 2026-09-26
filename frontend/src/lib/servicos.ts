@@ -13,8 +13,10 @@
 import { api, enderecoDaApi } from './api';
 import type { SituacaoCardapioWeb, Segmento, ResumoSegmentos, ParametrosSegmentacao,
   AlvoDePublico,
+  ProdutoDaBase,
   Publico,
   ResumoPublicos,
+  SugestaoDeHorario,
   ResultadoContratacao,
   SituacaoCobranca,
   CnpjDoConvite,
@@ -235,6 +237,10 @@ export const campanhas = {
   previaDoDescanso: (listaId: string) =>
     api.get<{ dias: number; emDescanso: number }>(`/campanhas/descanso?listaId=${encodeURIComponent(listaId)}`),
 
+  /** `GET /campanhas/horario?listaId=` — em que período do dia a lista pede e a janela de envio sugerida. */
+  sugestaoDeHorario: (listaId: string) =>
+    api.get<SugestaoDeHorario>(`/campanhas/horario?listaId=${encodeURIComponent(listaId)}`),
+
   /** `GET /campanhas/:id` */
   detalhe: (id: string) => api.get<ResumoCampanha>(`/campanhas/${id}`),
 
@@ -323,8 +329,14 @@ export const contatos = {
       }`,
     ),
 
-  /** `GET /contatos/publicos` — VIP, ticket, marcos, jeito de comprar, bairros e aniversariantes. */
+  /** `GET /contatos/publicos` — VIP, ticket, marcos, jeito de comprar, período do dia, bairros e aniversariantes. */
   publicos: () => api.get<ResumoPublicos>('/contatos/publicos'),
+
+  /** `GET /contatos/publicos/produtos` — os produtos que mais gente comprou, ou os que casam com a busca. */
+  produtos: (busca?: string) =>
+    api.get<{ produtos: ProdutoDaBase[] }>(
+      `/contatos/publicos/produtos${busca ? `?busca=${encodeURIComponent(busca)}` : ''}`,
+    ),
 
   /** `POST /contatos/publicos/lista` — foto do público numa lista. */
   criarListaDoPublico: (publico: Publico, valor?: string | null, nome?: string) =>

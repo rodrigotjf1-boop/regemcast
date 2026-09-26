@@ -36,6 +36,7 @@ import { ContextoDb } from '../../db/contexto';
 import { assinatura, campanha, campanhaDestinatario, conta, contatoLista, waNumero } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { AvisoService } from '../aviso/aviso.service';
+import { PERIODOS, sugerirHorario, type Periodo, type SugestaoDeHorario } from '../contato/habitos';
 import { ERRO_SEM_WHATSAPP, marcarSemWhatsappNaFila, registrarFalhaSemWhatsapp } from '../contato/sem-whatsapp';
 import { ErroGraph, GraphService } from '../meta/graph.service';
 import { MetaService } from '../meta/meta.service';
@@ -1529,6 +1530,30 @@ export class CampanhaService {
            and ${recebeuMarketingRecente(sql`c.conta_id`, sql`c.telefone_e164`, dias)}
       `);
       return { dias, emDescanso: Number((r.rows[0] as { total?: number } | undefined)?.total ?? 0) };
+    });
+  }
+
+  /**
+   * Em que período do dia a lista costuma pedir (só quem pode receber, como o
+   * disparo) e a janela de envio sugerida — a mensagem chega pouco antes do
+   * pedido. Sem gente suficiente com compra, ou sem um período que se
+   * destaque, não há sugestão (`habitos.ts`).
+   */
+  async sugestaoDeHorario(contaId: string, listaId: string): Promise<SugestaoDeHorario> {
+    return this.ctx.comConta(contaId, async (db) => {
+      const colunas = PERIODOS.map(
+        (p) => sql`count(distinct c.id) filter (where c.periodo_preferido = ${p})::int as ${sql.identifier(p)}`,
+      );
+      const r = await db.execute(sql`
+        select count(distinct c.id)::int as total, ${sql.join(colunas, sql`, `)}
+          from contato_lista_item i
+          join contato c on c.id = i.contato_id and c.conta_id = i.conta_id
+         where i.conta_id = ${contaId} and i.lista_id = ${listaId}
+           and c.opt_out = false and c.sem_whatsapp_em is null
+      `);
+      const linha = (r.rows[0] ?? {}) as Record<string, number | string | null>;
+      const contagem = Object.fromEntries(PERIODOS.map((p) => [p, Number(linha[p] ?? 0)])) as Record<Periodo, number>;
+      return sugerirHorario(Number(linha.total ?? 0), contagem);
     });
   }
 

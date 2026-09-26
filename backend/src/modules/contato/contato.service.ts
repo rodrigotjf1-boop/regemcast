@@ -550,6 +550,14 @@ export class ContatoService {
           ultimoPedidoEm: contato.ultimoPedidoEm,
           bairro: contato.bairro,
           tipoPreferido: contato.tipoPreferido,
+          periodoPreferido: contato.periodoPreferido,
+          // O favorito: o produto que veio em mais compras (empate: o mais recente).
+          produtoFavorito: sql<string | null>`(
+            select p.nome from contato_produto p
+             where p.contato_id = ${contato.id}
+             order by p.compras desc, p.ultima_em desc, p.chave
+             limit 1
+          )`,
           optOutEm: contato.optOutEm,
           optOutOrigem: contato.optOutOrigem,
           semWhatsappEm: contato.semWhatsappEm,
@@ -689,6 +697,7 @@ export class ContatoService {
           ultimoPedidoEm: null,
           bairro: null,
           tipoPreferido: null,
+          periodoPreferido: null,
           metricasEm: null,
           metricasOrigem: null,
           consentimentoEvidencia: `Dados pessoais apagados a pedido da pessoa em ${quando}. Número mantido bloqueado.`,
@@ -701,8 +710,10 @@ export class ContatoService {
 
       if (!alterado) throw new NotFoundException('Contato não encontrado.');
 
-      // As compras dessa pessoa também são dado pessoal: saem junto.
+      // As compras dessa pessoa também são dado pessoal: saem junto, e o que
+      // saiu delas (os produtos que ela comprou).
       await db.execute(sql`delete from compra where conta_id = ${contaId} and contato_id = ${contatoId}`);
+      await db.execute(sql`delete from contato_produto where conta_id = ${contaId} and contato_id = ${contatoId}`);
 
       await this.auditoria.registrar({
         contaId,

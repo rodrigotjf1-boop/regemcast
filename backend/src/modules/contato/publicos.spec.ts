@@ -51,6 +51,21 @@ describe('validarPublico', () => {
     }
   });
 
+  it('produto: exige o nome, arruma os espaços como a compra guarda e recusa texto comprido', () => {
+    expect(validarPublico('produto', '  Pizza   Calabresa ')).toEqual({ publico: 'produto', valor: 'Pizza Calabresa' });
+    expect(validarPublico('produto', '')).toEqual({ erro: 'Escolha o produto.' });
+    expect(validarPublico('produto', undefined)).toEqual({ erro: 'Escolha o produto.' });
+    expect(validarPublico('produto', 'x'.repeat(81))).toEqual({ erro: 'Escolha o produto.' });
+    expect(validarPublico('produto', 'x'.repeat(80))).toEqual({ publico: 'produto', valor: 'x'.repeat(80) });
+  });
+
+  it('os fixos não incluem os que pedem valor', () => {
+    expect(PUBLICOS_FIXOS).not.toContain('produto');
+    expect(PUBLICOS_FIXOS).not.toContain('bairro');
+    expect(PUBLICOS_FIXOS).not.toContain('aniversario');
+    expect(PUBLICOS_FIXOS).toEqual(expect.arrayContaining(['periodo_cafe', 'periodo_noite', 'periodo_madrugada']));
+  });
+
   it('público que não existe é recusado', () => {
     expect(validarPublico('todos', null)).toEqual({ erro: 'Público desconhecido.' });
     expect(validarPublico(undefined, null)).toEqual({ erro: 'Público desconhecido.' });
@@ -91,6 +106,21 @@ describe('expressaoPublico', () => {
   it('toda definição de público tem uma expressão', () => {
     for (const p of PUBLICOS) expect(() => expressaoPublico(p, p === 'aniversario' ? '5' : 'X', L)).not.toThrow();
   });
+
+  it('período: compara o período guardado no contato, com o valor como parâmetro', () => {
+    const q = texto(expressaoPublico('periodo_noite', null, L));
+    expect(q.sql).toContain('contato.periodo_preferido = $1');
+    expect(q.params).toEqual(['noite']);
+    expect(texto(expressaoPublico('periodo_cafe', null, L)).params).toEqual(['cafe']);
+  });
+
+  it('produto: procura na tabela de produtos pelo nome em minúsculas, citando o contato de fora por extenso', () => {
+    const q = texto(expressaoPublico('produto', 'Pizza Calabresa', L));
+    expect(q.sql).toContain('from contato_produto p');
+    expect(q.sql).toContain('p.contato_id = contato.id');
+    expect(q.sql).toContain('p.chave = lower($1)');
+    expect(q.params).toEqual(['Pizza Calabresa']);
+  });
 });
 
 describe('descreverPublico', () => {
@@ -102,9 +132,24 @@ describe('descreverPublico', () => {
     expect(descreverPublico('um_pedido', null, L).regra).toContain('últimos 90 dias');
   });
 
-  it('bairro e aniversário levam o valor no nome', () => {
+  it('bairro, aniversário e produto levam o valor no nome', () => {
     expect(descreverPublico('bairro', 'Tijuca', L).nome).toBe('Bairro Tijuca');
     expect(descreverPublico('aniversario', '3', L).nome).toBe('Aniversariantes de março');
+    expect(descreverPublico('produto', 'Pizza Calabresa', L).nome).toBe('Já compraram Pizza Calabresa');
+  });
+
+  it('período: o nome e a faixa de horas, com a meia-noite escrita por extenso', () => {
+    expect(descreverPublico('periodo_noite', null, L)).toEqual({
+      nome: 'Pedem à noite',
+      regra: 'A maior parte das compras foi das 18h à meia-noite, no horário da conta.',
+    });
+    expect(descreverPublico('periodo_madrugada', null, L).regra).toBe(
+      'A maior parte das compras foi da meia-noite às 6h, no horário da conta.',
+    );
+    expect(descreverPublico('periodo_almoco', null, L).regra).toBe(
+      'A maior parte das compras foi das 11h às 15h, no horário da conta.',
+    );
+    expect(descreverPublico('periodo_cafe', null, L).nome).toBe('Pedem no café da manhã');
   });
 
   it('tickets todos parecidos: a faixa do meio diz que não existe, em vez de "de R$ 30 a R$ 30"', () => {
