@@ -325,6 +325,41 @@ para quem usa metade do limite em 7 dias com qualidade alta.
   (em qualquer número — não depende das conversas ligadas). Só o fato; o texto
   não é guardado. "Parar promoções" e os pedidos de saída não contam.
 
+## Quem recebe: lista, público da base ou números (migration 033)
+
+"Quem recebe" tem três caminhos, e a campanha aceita **um** deles:
+
+- **Uma lista:** as listas e os blocos, como antes.
+- **Da base:** toda a base, uma importação (arquivo ou Cardápio Web), um
+  perfil, um estado pelo DDD ou um público pronto (VIP, "Pedem à noite",
+  "Já compraram…", bairro, aniversário, engajamento).
+  - Existe porque os contatos importados sem escolher lista — as planilhas
+    exportadas do Cardápio Web, por exemplo — não apareciam em lugar nenhum da
+    campanha (pedido do dono, 26/09/2026).
+  - `GET /contatos/importacoes` lista as importações com quantos de cada uma
+    ainda podem receber.
+- **Digitar números:** até 500.
+
+Como funciona:
+
+- **Uma regra só:** quem entra em cada origem vem de `contato/origem-do-publico.ts`,
+  a mesma dos blocos. Por isso a lista de importações, a prévia, a campanha
+  montada e os blocos dão o mesmo número.
+- **Foto na montagem:** o público é uma foto tirada ao **montar**. Os
+  destinatários são copiados na hora, como com a lista. Quem entrar na base
+  depois não recebe aquela campanha. É o padrão do Klaviyo, que fecha o
+  público ao agendar.
+- **Prévia única:** `POST /campanhas/previa` recebe lista ou público da base e
+  devolve, numa consulta, quantos podem receber, quantos estão em descanso e
+  a sugestão de horário. Substitui as duas prévias da 4A e da 4B.
+- **Cartão da campanha:** a campanha guarda `publico_origem` e
+  `publico_rotulo` ("Toda a base", "Importação: clientes.xlsx", "Perfil: Em
+  risco", "Pedem à noite"). O cartão e o detalhe mostram o rótulo, e o tipo
+  do modelo (Marketing, Utilidade, Autenticação) ao lado do nome do modelo.
+- **Lista pelo caminho da base:** se chegar `daBase` com origem `lista`, ela
+  vira campanha de lista, com `lista_id`. Assim "já enviado em…" e o
+  resultado por bloco continuam valendo.
+
 ## Erros e retentativa
 
 O catálogo em [`erros-meta.ts`](../backend/src/modules/meta/erros-meta.ts)

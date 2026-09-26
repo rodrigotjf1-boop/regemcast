@@ -22,6 +22,7 @@ import { campanha, contato, contatoLista, contatoListaItem, importacao, listaDiv
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import type { ConfirmarImportacaoDto, PreviaImportacaoDto } from './dto/importacao.dto';
 import { gravarExtras } from './extras';
+import { nomeDaImportacao } from './origem-do-publico';
 import { expressaoPublico } from './publicos';
 import { limitesDosPublicos, publicoValido } from './publicos.service';
 import { SEGMENTOS, expressaoSegmento, type Segmento } from './segmentacao';
@@ -89,6 +90,19 @@ export interface ResultadoPrevia {
   /** Colunas extras que a planilha trouxe ("e-mail", "pedidos"…), para a prévia contar. */
   extras: string[];
   contatos: ContatoDaPrevia[];
+}
+
+/** Quantas importações a campanha oferece — as mais recentes. */
+const MAX_IMPORTACOES = 50;
+
+/** Uma importação, como "Quem recebe → Da base" mostra. */
+export interface ImportacaoDaBase {
+  id: string;
+  nome: string;
+  formato: string;
+  criadoEm: Date;
+  /** Quantos contatos dela ainda podem receber. */
+  total: number;
 }
 
 @Injectable()
@@ -401,6 +415,46 @@ export class ContatoService {
 
       const porLista = new Map(totais.map((t) => [t.listaId, Number(t.total)]));
       return linhas.map((l) => ({ ...l, total: porLista.get(l.id) ?? 0, usadaEm: usadaEm.get(l.id) ?? null }));
+    });
+  }
+
+  /**
+   * As importações da conta (as 50 mais recentes), com quantos contatos de
+   * cada uma ainda podem receber — é o "Quem recebe → Da base → Uma
+   * importação" da campanha. Quem é da importação segue a regra de
+   * `origem-do-publico.ts`: quem ela trouxe e, se foi para uma lista, quem
+   * entrou na lista. Uma consulta; cada contagem usa os índices da importação
+   * e da lista.
+   */
+  async importacoes(contaId: string): Promise<ImportacaoDaBase[]> {
+    return this.ctx.comConta(contaId, async (db) => {
+      const r = await db.execute(sql`
+        select i.id, i.formato, i.arquivo_nome, i.criado_em,
+               (select count(*)::int
+                  from contato
+                 where contato.conta_id = i.conta_id
+                   and contato.opt_out = false
+                   and contato.sem_whatsapp_em is null
+                   and contato.id in (
+                     select c2.id from contato c2 where c2.conta_id = i.conta_id and c2.importacao_id = i.id
+                     union
+                     select li.contato_id from contato_lista_item li
+                      where li.conta_id = i.conta_id and li.lista_id = i.lista_id
+                   )) as total
+          from importacao i
+         where i.conta_id = ${contaId}
+         order by i.criado_em desc
+         limit ${MAX_IMPORTACOES}
+      `);
+      return (r.rows as { id: string; formato: string; arquivo_nome: string | null; criado_em: string | Date; total: number | string }[]).map(
+        (x) => ({
+          id: x.id,
+          nome: nomeDaImportacao({ arquivoNome: x.arquivo_nome, formato: x.formato }),
+          formato: x.formato,
+          criadoEm: new Date(x.criado_em),
+          total: Number(x.total),
+        }),
+      );
     });
   }
 

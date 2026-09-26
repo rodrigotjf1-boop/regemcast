@@ -30,13 +30,14 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundEx
 import { and, count, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 
 import { paraCloudApi } from '../../common/telefone';
-import { gemeoEmSql } from '../../common/telefone-sql';
+import { formasDosContatos, gemeoEmSql } from '../../common/telefone-sql';
 import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
 import { assinatura, campanha, campanhaDestinatario, conta, contatoLista, waNumero } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { AvisoService } from '../aviso/aviso.service';
 import { PERIODOS, sugerirHorario, type Periodo, type SugestaoDeHorario } from '../contato/habitos';
+import { origemDoPublico, type PedidoDeOrigem } from '../contato/origem-do-publico';
 import { ERRO_SEM_WHATSAPP, marcarSemWhatsappNaFila, registrarFalhaSemWhatsapp } from '../contato/sem-whatsapp';
 import { ErroGraph, GraphService } from '../meta/graph.service';
 import { MetaService } from '../meta/meta.service';
@@ -44,6 +45,7 @@ import { TelemetriaService } from '../telemetria/telemetria.service';
 import type { CriarCampanhaDto } from './dto/criar-campanha.dto';
 import type { EditarCampanhaDto } from './dto/editar-campanha.dto';
 import { decidir, momentoNoFuso, type RegraDeEnvio } from './janela';
+import { rotuloDoPublico, type OrigemDaCampanha } from './rotulo-do-publico';
 
 type Executor = { execute: (q: SQL) => Promise<unknown> };
 
@@ -61,21 +63,23 @@ export const TITULO_DESCADASTRADO = 'Pediu para sair';
  *
  * Confere as DUAS formas do celular brasileiro (com e sem o 9º dígito): a
  * pessoa pode ter pedido para sair numa forma e estar na campanha na outra. É a
- * regra de `gemeoDoCelular` (common/telefone.ts), em SQL (`gemeoEmSql`).
+ * regra de `gemeoDoCelular` (common/telefone.ts), em SQL — e o cruzamento é por
+ * igualdade (`formasDosContatos`), que usa índice: roda a cada rodada do envio,
+ * sobre a fila inteira da campanha (ERR-018).
  */
-export async function marcarDescadastrados(db: Executor, filtro: SQL): Promise<void> {
+export async function marcarDescadastrados(db: Executor, contaId: string, filtro: SQL): Promise<void> {
   await db.execute(sql`
+    with m as materialized ${formasDosContatos(contaId, sql`c.opt_out = true`)}
     update campanha_destinatario d
        set status = 'falhou',
            erro_titulo = ${TITULO_DESCADASTRADO},
            erro_detalhe = 'Esta pessoa pediu para não receber mais mensagens da sua empresa. Nada foi enviado.',
            falhou_em = now()
-      from contato c
-     where ${filtro}
+      from m
+     where d.conta_id = ${contaId}
+       and ${filtro}
        and d.status = 'pendente'
-       and c.conta_id = d.conta_id
-       and c.telefone_e164 in (d.telefone_e164, ${gemeoEmSql(sql`d.telefone_e164`)})
-       and c.opt_out = true
+       and d.telefone_e164 = m.telefone
   `);
 }
 
@@ -318,6 +322,21 @@ const LIMITE_DESTINATARIOS_TELA = 500;
 /** Depois de quanto tempo um destinatário em "enviando" é considerado preso. */
 const MINUTOS_PRESO = 10;
 
+/** O público montado: quantos entraram, a lista (se foi lista) e o nome que o cartão mostra. */
+interface PublicoMontado {
+  total: number;
+  listaId: string | null;
+  origem: OrigemDaCampanha;
+  rotulo: string | null;
+}
+
+/** A prévia de "Quem recebe": quantos podem receber, quantos estão em descanso e em que período pedem. */
+export interface PreviaDoPublico {
+  total: number;
+  descanso: { dias: number; emDescanso: number };
+  horario: SugestaoDeHorario;
+}
+
 export interface ResumoCampanha {
   id: string;
   nome: string;
@@ -334,6 +353,11 @@ export interface ResumoCampanha {
   total: number;
   /** A lista de contatos de onde saiu o público; nulo quando os números foram digitados. */
   listaNome: string | null;
+  /** A categoria do modelo, traduzida: marketing, utilidade, autenticação. */
+  modeloCategoria: string | null;
+  /** De onde saiu o público (lista, números, base, importação, perfil, público) e o nome dele no cartão. */
+  publicoOrigem: string | null;
+  publicoRotulo: string | null;
   /** O que a tela de edição precisa para reabrir a campanha como ela está. */
   modeloId: string | null;
   listaId: string | null;
@@ -442,17 +466,15 @@ export class CampanhaService {
     const publico = await this.montarPublico(contaId, criada!.id, dto);
     const totalDestinatarios = publico.total;
 
-    if (publico.listaId) {
-      await this.ctx.db
-        .update(campanha)
-        .set({ listaId: publico.listaId })
-        .where(eq(campanha.id, criada!.id));
-    }
+    await this.ctx.db
+      .update(campanha)
+      .set({ listaId: publico.listaId, publicoOrigem: publico.origem, publicoRotulo: publico.rotulo })
+      .where(eq(campanha.id, criada!.id));
 
     // Já na montagem: a pessoa vê, antes de disparar, quem não vai receber e
     // por quê — em vez de descobrir no relatório depois.
-    await marcarDescadastrados(this.ctx.db, sql`d.campanha_id = ${criada!.id}`);
-    await marcarSemWhatsappNaFila(this.ctx.db, sql`d.campanha_id = ${criada!.id}`);
+    await marcarDescadastrados(this.ctx.db, contaId, sql`d.campanha_id = ${criada!.id}`);
+    await marcarSemWhatsappNaFila(this.ctx.db, contaId, sql`d.campanha_id = ${criada!.id}`);
 
     await this.auditoria.registrar({
       contaId,
@@ -466,6 +488,8 @@ export class CampanhaService {
         modelo: dto.modeloNome,
         destinatarios: totalDestinatarios,
         lista: publico.listaId,
+        publico: publico.origem,
+        publicoRotulo: publico.rotulo,
         descansoDias,
         descansoLiberadoPeloDono: Boolean(dto.ignorarDescanso && ehMarketing),
       },
@@ -521,41 +545,47 @@ export class CampanhaService {
     campanhaId: string,
     dto: {
       listaId?: string;
+      daBase?: PedidoDeOrigem;
       destinatarios?: { telefone: string; variaveis?: string[] }[];
       variaveisLista?: { origem: 'fixo' | 'nome' | 'primeiro_nome'; valor: string }[];
     },
-  ): Promise<{ total: number; listaId: string | null }> {
-    const porLista = Boolean(dto.listaId);
-    if (porLista === Boolean(dto.destinatarios?.length)) {
-      throw new BadRequestException('Escolha uma lista de contatos OU digite os números — um dos dois.');
+  ): Promise<PublicoMontado> {
+    // Uma lista escolhida pelo caminho "da base" é uma lista como outra qualquer.
+    const listaId = dto.listaId ?? (dto.daBase?.origem === 'lista' ? (dto.daBase.origemId ?? undefined) : undefined);
+    const daBase = dto.daBase && dto.daBase.origem !== 'lista' ? dto.daBase : undefined;
+    if ([Boolean(listaId), Boolean(daBase), Boolean(dto.destinatarios?.length)].filter(Boolean).length !== 1) {
+      throw new BadRequestException('Escolha quem recebe: uma lista, um público da base ou os números digitados — um só.');
     }
 
-    if (dto.listaId) {
+    // As variáveis "nome" e "primeiro nome" valem para todo público que sai da base.
+    const variaveis = (nome: SQL) => {
+      const v = (dto.variaveisLista ?? []).map((x) =>
+        x.origem === 'fixo'
+          ? sql`${x.valor}::text`
+          : x.origem === 'nome'
+            ? sql`coalesce(nullif(btrim(${nome}), ''), ${x.valor}::text)`
+            : sql`coalesce(nullif(split_part(btrim(${nome}), ' ', 1), ''), ${x.valor}::text)`,
+      );
+      return v.length ? sql`jsonb_build_array(${sql.join(v, sql`, `)})` : sql`'[]'::jsonb`;
+    };
+
+    if (listaId) {
       const [lista] = await this.ctx.db
         .select({ id: contatoLista.id, nome: contatoLista.nome })
         .from(contatoLista)
-        .where(and(eq(contatoLista.id, dto.listaId), eq(contatoLista.contaId, contaId)))
+        .where(and(eq(contatoLista.id, listaId), eq(contatoLista.contaId, contaId)))
         .limit(1);
       if (!lista) throw new NotFoundException('Lista de contatos não encontrada.');
 
       // Uma query só, dentro do banco: a lista pode ter dezenas de milhares de
       // contatos, e trazê-los para cá para devolver um por um seria o N+1 que
       // derruba a request. Quem pediu para sair já fica de fora aqui.
-      const valores = (dto.variaveisLista ?? []).map((v) =>
-        v.origem === 'fixo'
-          ? sql`${v.valor}::text`
-          : v.origem === 'nome'
-            ? sql`coalesce(nullif(btrim(c.nome), ''), ${v.valor}::text)`
-            : sql`coalesce(nullif(split_part(btrim(c.nome), ' ', 1), ''), ${v.valor}::text)`,
-      );
-
       // `count(*)` sobre o CTE, e não `returning id`: devolver 50 mil ids ao
       // Node só para contá-los custa segundos de rede e memória.
       const r = await this.ctx.db.execute(sql`
         with inseridos as (
         insert into campanha_destinatario (conta_id, campanha_id, telefone_e164, variaveis)
-        select ${contaId}, ${campanhaId}, c.telefone_e164,
-               ${valores.length ? sql`jsonb_build_array(${sql.join(valores, sql`, `)})` : sql`'[]'::jsonb`}
+        select ${contaId}, ${campanhaId}, c.telefone_e164, ${variaveis(sql`c.nome`)}
           from contato_lista_item i
           join contato c on c.id = i.contato_id and c.conta_id = i.conta_id
          where i.conta_id = ${contaId}
@@ -574,7 +604,33 @@ export class CampanhaService {
           `A lista "${lista.nome}" não tem ninguém que possa receber: está vazia ou todos pediram para sair.`,
         );
       }
-      return { total, listaId: lista.id };
+      return { total, listaId: lista.id, origem: 'lista', rotulo: null };
+    }
+
+    if (daBase) {
+      // Um público da base (toda a base, importação, perfil, estado, público
+      // pronto): a MESMA regra dos blocos e da prévia, copiada agora — a foto
+      // que a campanha manda, como a da lista.
+      const o = await origemDoPublico(this.ctx.db, contaId, daBase);
+      const rotulo = rotuloDoPublico(daBase.origem, o.nome);
+      const r = await this.ctx.db.execute(sql`
+        with inseridos as (
+        insert into campanha_destinatario (conta_id, campanha_id, telefone_e164, variaveis)
+        select ${contaId}, ${campanhaId}, contato.telefone_e164, ${variaveis(sql`contato.nome`)}
+          from contato
+         where contato.conta_id = ${contaId}
+           and contato.opt_out = false
+           and ${o.filtro}
+        on conflict (campanha_id, telefone_e164) do nothing
+        returning 1
+        )
+        select count(*)::int as total from inseridos
+      `);
+      const total = Number((r.rows[0] as { total: number } | undefined)?.total ?? 0);
+      if (total === 0) {
+        throw new BadRequestException(`"${rotulo}" não tem ninguém que possa receber agora.`);
+      }
+      return { total, listaId: null, origem: daBase.origem, rotulo };
     }
 
     const normalizados = this.conferirNumeros(dto.destinatarios ?? []);
@@ -588,7 +644,7 @@ export class CampanhaService {
       })),
     );
 
-    return { total: normalizados.length, listaId: null };
+    return { total: normalizados.length, listaId: null, origem: 'numeros', rotulo: null };
   }
 
   /**
@@ -660,7 +716,7 @@ export class CampanhaService {
     }
 
     const mexeNoConteudo = Boolean(
-      dto.modeloNome || dto.modeloId || dto.listaId || dto.destinatarios?.length || dto.variaveisLista,
+      dto.modeloNome || dto.modeloId || dto.listaId || dto.daBase || dto.destinatarios?.length || dto.variaveisLista,
     );
     if (mexeNoConteudo && alvo.status !== 'rascunho') {
       throw new BadRequestException(
@@ -706,7 +762,7 @@ export class CampanhaService {
         .where(and(eq(campanha.id, campanhaId), eq(campanha.contaId, contaId)));
     }
 
-    if (mexeNoConteudo && (dto.listaId || dto.destinatarios?.length)) {
+    if (mexeNoConteudo && (dto.listaId || dto.daBase || dto.destinatarios?.length)) {
       // Troca de público em rascunho: os antigos saem inteiros. Nada foi
       // enviado, então não há histórico a preservar.
       await this.ctx.db
@@ -715,17 +771,18 @@ export class CampanhaService {
           and(eq(campanhaDestinatario.campanhaId, campanhaId), eq(campanhaDestinatario.contaId, contaId)),
         );
 
-      const lista = await this.montarPublico(contaId, campanhaId, {
+      const publico = await this.montarPublico(contaId, campanhaId, {
         listaId: dto.listaId,
+        daBase: dto.daBase,
         destinatarios: dto.destinatarios,
         variaveisLista: dto.variaveisLista,
       });
       await this.ctx.db
         .update(campanha)
-        .set({ listaId: lista.listaId })
+        .set({ listaId: publico.listaId, publicoOrigem: publico.origem, publicoRotulo: publico.rotulo })
         .where(and(eq(campanha.id, campanhaId), eq(campanha.contaId, contaId)));
-      await marcarDescadastrados(this.ctx.db, sql`d.campanha_id = ${campanhaId}`);
-      await marcarSemWhatsappNaFila(this.ctx.db, sql`d.campanha_id = ${campanhaId}`);
+      await marcarDescadastrados(this.ctx.db, contaId, sql`d.campanha_id = ${campanhaId}`);
+      await marcarSemWhatsappNaFila(this.ctx.db, contaId, sql`d.campanha_id = ${campanhaId}`);
     }
 
     await this.auditoria.registrar({
@@ -1076,8 +1133,8 @@ export class CampanhaService {
       // conferência é feita aqui, na hora do envio, e não só na montagem: entre
       // montar e a janela abrir podem passar dias. Mandar para quem já pediu
       // para sair viola a política da Meta e derruba a qualidade do número.
-      await marcarDescadastrados(db, sql`d.campanha_id = ${campanhaId}`);
-      await marcarSemWhatsappNaFila(db, sql`d.campanha_id = ${campanhaId}`);
+      await marcarDescadastrados(db, c.contaId, sql`d.campanha_id = ${campanhaId}`);
+      await marcarSemWhatsappNaFila(db, c.contaId, sql`d.campanha_id = ${campanhaId}`);
 
       // Teto do PLANO (disparos por ciclo), somado de todas as campanhas da
       // conta. A trava por conta serializa as rodadas de campanhas diferentes da
@@ -1507,53 +1564,44 @@ export class CampanhaService {
   }
 
   /**
-   * Antes de criar: quantos da lista estão em descanso hoje (receberam
-   * marketing nos últimos N dias da conta) e vão ficar de fora. A regra é a
-   * mesma do envio (`recebeuMarketingRecente`), e o envio confere de novo na
-   * hora — isto é uma prévia.
+   * Antes de montar: quantos do público podem receber, quantos estão em
+   * descanso hoje e em que período do dia costumam pedir — uma consulta, com a
+   * MESMA regra que a montagem usa (`origem-do-publico.ts`), para lista ou
+   * público da base. O descanso só vale para modelo de marketing: a tela só o
+   * mostra nesse caso, e o envio confere de novo na hora de mandar.
    */
-  async previaDoDescanso(contaId: string, listaId: string): Promise<{ dias: number; emDescanso: number }> {
+  async previaDoPublico(contaId: string, pedido: PedidoDeOrigem): Promise<PreviaDoPublico> {
     return this.ctx.comConta(contaId, async (db) => {
+      const o = await origemDoPublico(db, contaId, pedido);
       const [config] = await db
         .select({ dias: conta.descansoMarketingDias })
         .from(conta)
         .where(eq(conta.id, contaId))
         .limit(1);
       const dias = config?.dias ?? 0;
-      if (dias <= 0) return { dias: 0, emDescanso: 0 };
-      const r = await db.execute(sql`
-        select count(distinct c.id)::int as total
-          from contato_lista_item i
-          join contato c on c.id = i.contato_id and c.conta_id = i.conta_id
-         where i.conta_id = ${contaId} and i.lista_id = ${listaId}
-           and c.opt_out = false and c.sem_whatsapp_em is null
-           and ${recebeuMarketingRecente(sql`c.conta_id`, sql`c.telefone_e164`, dias)}
-      `);
-      return { dias, emDescanso: Number((r.rows[0] as { total?: number } | undefined)?.total ?? 0) };
-    });
-  }
-
-  /**
-   * Em que período do dia a lista costuma pedir (só quem pode receber, como o
-   * disparo) e a janela de envio sugerida — a mensagem chega pouco antes do
-   * pedido. Sem gente suficiente com compra, ou sem um período que se
-   * destaque, não há sugestão (`habitos.ts`).
-   */
-  async sugestaoDeHorario(contaId: string, listaId: string): Promise<SugestaoDeHorario> {
-    return this.ctx.comConta(contaId, async (db) => {
-      const colunas = PERIODOS.map(
-        (p) => sql`count(distinct c.id) filter (where c.periodo_preferido = ${p})::int as ${sql.identifier(p)}`,
+      const emDescanso =
+        dias > 0
+          ? sql`count(*) filter (where ${recebeuMarketingRecente(sql`contato.conta_id`, sql`contato.telefone_e164`, dias)})::int`
+          : sql`0`;
+      const periodos = PERIODOS.map(
+        (p) => sql`count(*) filter (where contato.periodo_preferido = ${p})::int as ${sql.identifier(p)}`,
       );
       const r = await db.execute(sql`
-        select count(distinct c.id)::int as total, ${sql.join(colunas, sql`, `)}
-          from contato_lista_item i
-          join contato c on c.id = i.contato_id and c.conta_id = i.conta_id
-         where i.conta_id = ${contaId} and i.lista_id = ${listaId}
-           and c.opt_out = false and c.sem_whatsapp_em is null
+        select count(*)::int as total, ${emDescanso} as em_descanso, ${sql.join(periodos, sql`, `)}
+          from contato
+         where contato.conta_id = ${contaId}
+           and contato.opt_out = false
+           and contato.sem_whatsapp_em is null
+           and ${o.filtro}
       `);
       const linha = (r.rows[0] ?? {}) as Record<string, number | string | null>;
+      const total = Number(linha.total ?? 0);
       const contagem = Object.fromEntries(PERIODOS.map((p) => [p, Number(linha[p] ?? 0)])) as Record<Periodo, number>;
-      return sugerirHorario(Number(linha.total ?? 0), contagem);
+      return {
+        total,
+        descanso: { dias, emDescanso: Number(linha.em_descanso ?? 0) },
+        horario: sugerirHorario(total, contagem),
+      };
     });
   }
 
@@ -1703,6 +1751,9 @@ export class CampanhaService {
       porStatus,
       total,
       listaNome,
+      modeloCategoria: c.modeloCategoria ?? null,
+      publicoOrigem: c.publicoOrigem ?? null,
+      publicoRotulo: c.publicoRotulo ?? null,
       modeloId: c.modeloId,
       listaId: c.listaId,
       janelaDias: (c.janelaDias as number[] | null) ?? [],

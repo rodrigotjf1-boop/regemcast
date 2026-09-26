@@ -17,6 +17,7 @@ import {
 } from 'class-validator';
 
 import { DestinatarioDto, TETO_DESTINATARIOS, VariavelDeListaDto } from './criar-campanha.dto';
+import { PublicoDaCampanhaDto } from './publico-da-campanha.dto';
 
 const HORA = new RegExp('^([01][0-9]|2[0-3]):[0-5][0-9]$');
 
@@ -78,6 +79,12 @@ export class EditarCampanhaDto {
   @IsOptional()
   @IsUUID('4', { message: 'Lista inválida.' })
   listaId?: string;
+
+  @ApiProperty({ required: false, type: PublicoDaCampanhaDto, description: 'Um público da base, em vez de lista.' })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PublicoDaCampanhaDto)
+  daBase?: PublicoDaCampanhaDto;
 
   @ApiProperty({ required: false, type: [VariavelDeListaDto] })
   @IsOptional()

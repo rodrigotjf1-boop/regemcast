@@ -149,7 +149,8 @@ com as mesmas regras.
 - **Planilha não passa por cima das compras:** quem tem compras sincronizadas
   tem os totais calculados delas; a planilha só completa e-mail e aniversário.
 - Cada público vira lista ("Criar lista com estes contatos") ou blocos
-  (`lista_divisao.origem = 'publico'`), como os perfis.
+  (`lista_divisao.origem = 'publico'`), como os perfis — e vai direto para a
+  campanha em "Quem recebe → Da base" (migration 033, `docs/whatsapp.md`).
 
 ### Limites da API e o ritmo
 

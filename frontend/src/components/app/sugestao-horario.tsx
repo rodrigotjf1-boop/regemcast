@@ -1,46 +1,29 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-
 import { Button } from '@/components/ui/button';
 import { formatarNumero } from '@/lib/formato';
 import { NOME_DO_PERIODO, QUANDO_PEDE, horaCurta } from '@/lib/periodos';
-import { campanhas } from '@/lib/servicos';
 import type { SugestaoDeHorario } from '@/lib/tipos';
 
 /**
- * Em que período do dia a lista escolhida costuma pedir e a janela de envio
+ * Em que período do dia o público escolhido costuma pedir e a janela de envio
  * sugerida — a mensagem chega pouco antes do pedido. "Usar das 17h às 19h"
  * preenche o "Das / Até" da janela de envio, que continua editável.
  *
- * Sem gente suficiente com compra na lista, fica calada: uma porcentagem de
- * meia dúzia de pessoas engana mais do que ajuda.
+ * Os números vêm da prévia do público (`POST /campanhas/previa`). Sem gente
+ * suficiente com compra, fica calada: uma porcentagem de meia dúzia de
+ * pessoas engana mais do que ajuda.
  */
 export function SugestaoHorario({
-  listaId,
+  dados,
   janelaAtual,
   aoUsar,
 }: {
-  listaId: string;
+  dados: SugestaoDeHorario | null;
   /** O "Das / Até" de agora, para dizer quando a sugestão já está aplicada. */
   janelaAtual: { ativa: boolean; inicio: string; fim: string };
   aoUsar: (inicio: string, fim: string) => void;
 }) {
-  const [dados, setDados] = useState<SugestaoDeHorario | null>(null);
-
-  useEffect(() => {
-    let vivo = true;
-    setDados(null);
-    campanhas
-      .sugestaoDeHorario(listaId)
-      .then((r) => vivo && setDados(r))
-      // Sugestão é ajuda, não passo obrigatório: sem ela, a campanha segue igual.
-      .catch(() => vivo && setDados(null));
-    return () => {
-      vivo = false;
-    };
-  }, [listaId]);
-
   if (!dados || dados.comHabito === 0) return null;
   const { sugestao } = dados;
 
@@ -52,7 +35,7 @@ export function SugestaoHorario({
       .map((p) => `${NOME_DO_PERIODO[p.periodo]} ${Math.floor((p.total / dados.comHabito) * 100)}%`);
     return (
       <p className="rounded-lg border border-borda bg-superficie-2 p-3 text-xs leading-relaxed text-tinta">
-        Quem já comprou nesta lista pede em horários variados ({partes.join(', ')}). Nenhum período se destaca para
+        Quem já comprou neste público pede em horários variados ({partes.join(', ')}). Nenhum período se destaca para
         sugerir um horário de envio.
       </p>
     );
@@ -64,7 +47,7 @@ export function SugestaoHorario({
   return (
     <div className="space-y-2 rounded-lg border border-borda bg-superficie-2 p-3 text-xs leading-relaxed text-tinta">
       <p>
-        <strong className="numerico">{sugestao.percentual}%</strong> de quem já comprou nesta lista costuma pedir{' '}
+        <strong className="numerico">{sugestao.percentual}%</strong> de quem já comprou neste público costuma pedir{' '}
         <strong>{QUANDO_PEDE[sugestao.periodo]}</strong> (
         <span className="numerico">{formatarNumero(dados.comHabito)}</span> com compras de{' '}
         <span className="numerico">{formatarNumero(dados.total)}</span>). Para a mensagem chegar antes do pedido,

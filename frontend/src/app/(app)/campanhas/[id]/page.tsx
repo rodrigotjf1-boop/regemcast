@@ -24,6 +24,7 @@ import { Esqueleto, EsqueletoLista } from '@/components/ui/esqueleto';
 import { EstadoErro } from '@/components/ui/estado-erro';
 import { Estatistica } from '@/components/ui/estatistica';
 import { mensagemDoErro } from '@/lib/api';
+import { nomeDaCategoria } from '@/lib/categorias';
 import { formatarDataHora, formatarNumero } from '@/lib/formato';
 import { campanhas } from '@/lib/servicos';
 import type { DestinatarioCampanha, ResumoCampanha } from '@/lib/tipos';
@@ -265,10 +266,17 @@ export default function PaginaCampanha() {
         titulo={campanha.nome}
         descricao={
           <>
-            Modelo <span className="numerico text-tinta">{campanha.modeloNome}</span> ·{' '}
-            {campanha.modeloIdioma}
-            {campanha.listaNome ? <> · lista {campanha.listaNome}</> : null} · criada em{' '}
-            {formatarDataHora(campanha.criadoEm)}
+            Modelo <span className="numerico text-tinta">{campanha.modeloNome}</span>
+            {nomeDaCategoria(campanha.modeloCategoria) ? (
+              <>
+                {' '}
+                (<span className="font-medium text-tinta">{nomeDaCategoria(campanha.modeloCategoria)}</span>)
+              </>
+            ) : null}{' '}
+            · {campanha.modeloIdioma}
+            {campanha.listaNome ? <> · lista {campanha.listaNome}</> : null}
+            {!campanha.listaNome && campanha.publicoRotulo ? <> · público {campanha.publicoRotulo}</> : null} · criada
+            em {formatarDataHora(campanha.criadoEm)}
           </>
         }
         acao={

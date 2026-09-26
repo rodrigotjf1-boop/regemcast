@@ -249,6 +249,11 @@ export interface ResumoCampanha {
   total: number;
   /** Lista de contatos de onde saiu o público; nulo quando os números foram digitados. */
   listaNome: string | null;
+  /** A categoria do modelo, traduzida (marketing, utilidade, autenticação). */
+  modeloCategoria?: string | null;
+  /** De onde saiu o público e o nome dele no cartão ("Toda a base", "Pedem à noite"…). */
+  publicoOrigem?: OrigemDaCampanha | null;
+  publicoRotulo?: string | null;
   /** O que a tela de edição usa para reabrir a campanha como ela está. */
   modeloId: string | null;
   listaId: string | null;
@@ -326,7 +331,9 @@ export interface NovaCampanha {
   destinatarios?: Array<{ telefone: string; variaveis?: string[] }>;
   /** Lista de contatos que recebe a campanha. */
   listaId?: string;
-  /** Variáveis, em ordem, quando o público é uma lista. */
+  /** Um público da base (toda a base, importação, perfil, público pronto), em vez de lista. Use UM dos três. */
+  daBase?: PublicoDaCampanha;
+  /** Variáveis, em ordem, quando o público sai da base (lista ou público da base). */
   variaveisLista?: VariavelDeLista[];
   /** 0 = domingo … 6 = sábado. Vazio = qualquer dia. */
   janelaDias?: number[];
@@ -469,6 +476,37 @@ export type Publico =
   | 'bairro'
   | 'aniversario'
   | 'produto';
+
+/** De onde sai o público da campanha (`POST /campanhas/previa` e a montagem). */
+export type OrigemDoPublico = 'lista' | 'importacao' | 'base' | 'perfil' | 'regiao' | 'publico';
+export type OrigemDaCampanha = OrigemDoPublico | 'numeros';
+
+/** O público escolhido em "Quem recebe": uma lista, ou um público da base. */
+export interface PublicoDaCampanha {
+  origem: OrigemDoPublico;
+  /** A lista ou a importação. */
+  origemId?: string;
+  segmento?: Segmento;
+  uf?: string;
+  publico?: Publico;
+  publicoValor?: string;
+}
+
+/** `POST /campanhas/previa` — quantos podem receber, quantos estão em descanso e em que período pedem. */
+export interface PreviaDoPublico {
+  total: number;
+  descanso: { dias: number; emDescanso: number };
+  horario: SugestaoDeHorario;
+}
+
+/** `GET /contatos/importacoes` — uma importação e quantos dela ainda podem receber. */
+export interface ImportacaoDaBase {
+  id: string;
+  nome: string;
+  formato: string;
+  criadoEm: string;
+  total: number;
+}
 
 /** O período do dia em que o contato mais compra, no fuso da conta. */
 export type Periodo = 'cafe' | 'almoco' | 'tarde' | 'noite' | 'madrugada';
