@@ -1,7 +1,8 @@
 /**
  * Públicos prontos a partir das compras: VIP, faixas de ticket, "um pedido
  * só", "rumo ao 10º pedido", como compra (entrega, retirada, salão), quando
- * pede (período do dia), o que já comprou, bairro e aniversariantes do mês.
+ * pede (período do dia), o que já comprou, bairro, aniversariantes do mês e o
+ * cashback do Cardápio Web (migration 034, `cashback.ts`).
  *
  * Como os perfis, são CALCULADOS na consulta — nada disso é gravado por
  * contato, a não ser o que sai de TODAS as compras e é refeito a cada
@@ -21,6 +22,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 
 import { gemeoEmSql } from '../../common/telefone-sql';
+import { DIAS_CASHBACK_VENCENDO, cashbackValido, cashbackVencendo } from './cashback';
 import { HORAS_DO_PERIODO, type Periodo } from './habitos';
 
 export const PUBLICOS = [
@@ -43,6 +45,8 @@ export const PUBLICOS = [
   'nao_leram_3',
   'nunca_receberam',
   'conversaram_7d',
+  'cashback',
+  'cashback_vence_7d',
   'bairro',
   'aniversario',
   'produto',
@@ -86,6 +90,8 @@ export interface LimitesDosPublicos {
   ticketAltoAcimaCentavos: number | null;
   /** "Um pedido só": comprou nos últimos N dias — o "ativo" dos perfis. */
   ativoDias: number;
+  /** Hoje no fuso da conta (`AAAA-MM-DD`): o cashback vale até o dia do vencimento. */
+  hoje: string;
 }
 
 /** As duas formas do celular do contato — as campanhas e conversas podem estar em qualquer uma. */
@@ -175,6 +181,10 @@ export function expressaoPublico(publico: Publico, valor: string | null, l: Limi
            and v.telefone_e164 in ${FORMAS_DO_CONTATO}
            and v.ultima_entrada_em >= now() - interval '7 days'
       )`;
+    case 'cashback':
+      return cashbackValido('contato', sql`${l.hoje}::date`);
+    case 'cashback_vence_7d':
+      return cashbackVencendo('contato', sql`${l.hoje}::date`);
     case 'bairro':
       return sql`(lower(contato.bairro) = lower(${valor}))`;
     case 'aniversario':
@@ -325,6 +335,13 @@ export function descreverPublico(publico: Publico, valor: string | null, l: Limi
       return { nome: 'Nunca receberam campanha', regra: 'Ainda não receberam nenhuma campanha da sua loja.' };
     case 'conversaram_7d':
       return { nome: 'Conversaram na última semana', regra: 'Mandaram mensagem para a loja nos últimos 7 dias.' };
+    case 'cashback':
+      return { nome: 'Têm cashback', regra: 'Têm saldo de cashback no Cardápio Web que ainda não venceu.' };
+    case 'cashback_vence_7d':
+      return {
+        nome: `Cashback vence em até ${DIAS_CASHBACK_VENCENDO} dias`,
+        regra: `O saldo de cashback vence de hoje até daqui a ${DIAS_CASHBACK_VENCENDO} dias: lembre antes que se perca.`,
+      };
     case 'bairro':
       return { nome: `Bairro ${valor ?? ''}`.trim(), regra: 'O bairro mais frequente nas entregas.' };
     case 'aniversario': {

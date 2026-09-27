@@ -382,6 +382,34 @@ Como funciona:
   vira campanha de lista, com `lista_id`. Assim "já enviado em…" e o
   resultado por bloco continuam valendo.
 
+## Cashback na campanha (Fase 4C, migration 034)
+
+Duas variáveis saem do cashback do Cardápio Web (o saldo é lido como está em
+`docs/integracoes.md`):
+
+- **Saldo do cashback:** "R$ 1.234,50". Não tem texto reserva: quem recebe
+  sempre tem saldo.
+- **Validade do cashback:** "30/09", ou "30/09/2027" quando é de outro ano. O
+  texto reserva vale para quem tem saldo sem data para vencer.
+
+O formato é montado em SQL, porque a campanha é montada no banco. Não usa
+`to_char` de número, que segue o idioma do servidor.
+
+Mensagem com variável de cashback só vai para quem tem cashback válido:
+
+- **Na montagem:** só entra quem tem saldo que vale hoje, no fuso da conta —
+  vale para lista e para público da base. A prévia (`soComCashback`) conta do
+  mesmo jeito e diz de quantos do público.
+- **A cada rodada do envio** (`conferirCashbackDaFila`, junto com a marcação
+  de quem saiu):
+  - quem usou ou perdeu o saldo depois da montagem sai da fila como "Cashback
+    usado ou vencido" — nada é enviado e não conta no plano;
+  - quem ainda tem recebe o saldo e a validade DO DIA, não os da montagem.
+  - Para isso a campanha guarda de onde sai cada variável
+    (`campanha.variaveis_lista`).
+- **As opções só aparecem em conta com saldo lido** (a mesma marca que mostra o
+  cashback em Contatos).
+
 ## Erros e retentativa
 
 O catálogo em [`erros-meta.ts`](../backend/src/modules/meta/erros-meta.ts)

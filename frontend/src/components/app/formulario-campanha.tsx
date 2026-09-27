@@ -36,7 +36,31 @@ const ROTULO_ORIGEM: Record<VariavelDeLista['origem'], string> = {
   nome: 'Nome do contato',
   primeiro_nome: 'Primeiro nome do contato',
   fixo: 'Texto igual para todos',
+  cashback_saldo: 'Saldo do cashback',
+  cashback_validade: 'Validade do cashback',
 };
+
+/** As que saem do cashback do Cardápio Web: só aparecem em conta que tem saldo lido. */
+const DE_CASHBACK: VariavelDeLista['origem'][] = ['cashback_saldo', 'cashback_validade'];
+const ehDeCashback = (o: VariavelDeLista['origem']) => DE_CASHBACK.includes(o);
+
+/** O que o campo de cada variável pede, e o que a pessoa lê embaixo dele. */
+function ajudaDaOrigem(origem: VariavelDeLista['origem']): { placeholder: string; ajuda: string | null } {
+  switch (origem) {
+    case 'fixo':
+      return { placeholder: 'Texto', ajuda: null };
+    case 'nome':
+    case 'primeiro_nome':
+      return { placeholder: 'Se não tiver nome, ex.: cliente', ajuda: 'Usado quando o contato não tem nome cadastrado.' };
+    case 'cashback_saldo':
+      return { placeholder: '', ajuda: 'Sai como “R$ 12,50”: o saldo de cada cliente no dia do envio.' };
+    case 'cashback_validade':
+      return {
+        placeholder: 'Se não tiver data para vencer, ex.: sem prazo',
+        ajuda: 'Sai como “30/09”: o dia em que o cashback vence. O texto vale para quem não tem data.',
+      };
+  }
+}
 
 /**
  * Montagem e edição da campanha, no mesmo formulário.
@@ -124,6 +148,8 @@ export function FormularioCampanha({
   const { sessao } = useSessao();
   const ehDono = sessao.usuario.papel === 'dono';
   const [origens, setOrigens] = useState<VariavelDeLista['origem'][]>([]);
+  /** A conta tem saldo de cashback lido do Cardápio Web: as variáveis de cashback aparecem. */
+  const [cashbackNaConta, setCashbackNaConta] = useState(false);
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [janela, setJanela] = useState<Janela>(() => {
@@ -201,19 +227,35 @@ export function FormularioCampanha({
   const alvo: PublicoDaCampanha | null =
     publico === 'lista' && listaId ? { origem: 'lista', origemId: listaId } : publico === 'base' ? daBase : null;
   const chaveDoAlvo = alvo ? JSON.stringify(alvo) : '';
+  // Mensagem com variável de cashback só vai para quem tem cashback válido: a
+  // prévia conta do mesmo jeito que a montagem vai montar.
+  const nVarsEscolhido = modelos?.find((m) => m.id === modeloId)?.variaveis ?? 0;
+  const comCashback = publico !== 'numeros' && origens.slice(0, nVarsEscolhido).some(ehDeCashback);
   useEffect(() => {
     setPrevia(null);
     if (!chaveDoAlvo) return;
     let vivo = true;
     campanhas
-      .previa(JSON.parse(chaveDoAlvo) as PublicoDaCampanha)
+      .previa(JSON.parse(chaveDoAlvo) as PublicoDaCampanha, comCashback)
       .then((r) => vivo && setPrevia(r))
       .catch(() => vivo && setPrevia(null));
     return () => {
       vivo = false;
     };
-  }, [chaveDoAlvo]);
+  }, [chaveDoAlvo, comCashback]);
   const alcance = previa ? previa.total : null;
+
+  useEffect(() => {
+    let vivo = true;
+    // Uma linha só: o que importa é se a conta tem saldo de cashback lido.
+    contatos
+      .listar(1, 1)
+      .then((p) => vivo && setCashbackNaConta(Boolean(p.cashbackLido)))
+      .catch(() => undefined);
+    return () => {
+      vivo = false;
+    };
+  }, []);
 
   useEffect(() => {
     let vivo = true;
@@ -276,7 +318,11 @@ export function FormularioCampanha({
         return;
       }
       if (alcance === 0) {
-        setErro('Essa lista não tem ninguém que possa receber: está vazia ou todos pediram para sair.');
+        setErro(
+          comCashback
+            ? 'Ninguém desta lista tem cashback válido agora. Troque a lista ou tire a variável de cashback.'
+            : 'Essa lista não tem ninguém que possa receber: está vazia ou todos pediram para sair.',
+        );
         return;
       }
     } else if (publico === 'base') {
@@ -285,7 +331,11 @@ export function FormularioCampanha({
         return;
       }
       if (alcance === 0) {
-        setErro('Esse público não tem ninguém que possa receber agora.');
+        setErro(
+          comCashback
+            ? 'Ninguém deste público tem cashback válido agora. Troque o público ou tire a variável de cashback.'
+            : 'Esse público não tem ninguém que possa receber agora.',
+        );
         return;
       }
     } else {
@@ -301,11 +351,16 @@ export function FormularioCampanha({
       }
     }
     for (let i = 0; i < nVars; i++) {
+      const origem = publico !== 'numeros' ? (origens[i] ?? 'fixo') : 'fixo';
+      // O saldo sai sempre do contato: não tem texto reserva.
+      if (origem === 'cashback_saldo') continue;
       if (!(variaveis[i] ?? '').trim()) {
         setErro(
-          publico !== 'numeros' && (origens[i] ?? 'fixo') !== 'fixo'
-            ? `Preencha o que usar em {{${i + 1}}} quando o contato não tiver nome.`
-            : `Preencha o valor de {{${i + 1}}}.`,
+          origem === 'cashback_validade'
+            ? `Preencha o que usar em {{${i + 1}}} quando o cashback não tiver data para vencer.`
+            : origem !== 'fixo'
+              ? `Preencha o que usar em {{${i + 1}}} quando o contato não tiver nome.`
+              : `Preencha o valor de {{${i + 1}}}.`,
         );
         return;
       }
@@ -459,6 +514,11 @@ export function FormularioCampanha({
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {Array.from({ length: escolhido.variaveis }, (_, i) => {
                   const origem = publico !== 'numeros' ? (origens[i] ?? 'fixo') : 'fixo';
+                  const ajuda = ajudaDaOrigem(origem);
+                  // As de cashback só em conta com saldo lido (ou já escolhidas, na edição).
+                  const opcoes = (Object.keys(ROTULO_ORIGEM) as VariavelDeLista['origem'][]).filter(
+                    (o) => !ehDeCashback(o) || cashbackNaConta || o === origem,
+                  );
                   return (
                     <div key={i} className="space-y-1.5 rounded-lg border border-borda bg-superficie p-2.5">
                       <Label htmlFor={`var-${i}`}>{`Variável {{${i + 1}}}`}</Label>
@@ -472,26 +532,26 @@ export function FormularioCampanha({
                             setOrigens(novo);
                           }}
                         >
-                          {(Object.keys(ROTULO_ORIGEM) as VariavelDeLista['origem'][]).map((o) => (
+                          {opcoes.map((o) => (
                             <option key={o} value={o}>
                               {ROTULO_ORIGEM[o]}
                             </option>
                           ))}
                         </Select>
                       ) : null}
-                      <Input
-                        id={`var-${i}`}
-                        value={variaveis[i] ?? ''}
-                        placeholder={origem === 'fixo' ? 'Texto' : 'Se não tiver nome, ex.: cliente'}
-                        onChange={(e) => {
-                          const novo = [...variaveis];
-                          novo[i] = e.target.value;
-                          setVariaveis(novo);
-                        }}
-                      />
-                      {origem !== 'fixo' ? (
-                        <p className="text-xs text-tinta-suave">Usado quando o contato não tem nome cadastrado.</p>
-                      ) : null}
+                      {origem !== 'cashback_saldo' && (
+                        <Input
+                          id={`var-${i}`}
+                          value={variaveis[i] ?? ''}
+                          placeholder={ajuda.placeholder}
+                          onChange={(e) => {
+                            const novo = [...variaveis];
+                            novo[i] = e.target.value;
+                            setVariaveis(novo);
+                          }}
+                        />
+                      )}
+                      {ajuda.ajuda ? <p className="text-xs text-tinta-suave">{ajuda.ajuda}</p> : null}
                     </div>
                   );
                 })}
@@ -566,8 +626,8 @@ export function FormularioCampanha({
                 {listaId && alcance !== null ? (
                   <>
                     <strong className="numerico text-tinta">{formatarNumero(alcance)}</strong>{' '}
-                    {alcance === 1 ? 'pessoa vai receber' : 'pessoas vão receber'}. Quem pediu para sair fica de fora
-                    automaticamente.
+                    {alcance === 1 ? 'pessoa vai receber' : 'pessoas vão receber'}
+                    <SoComCashback previa={previa} />. Quem pediu para sair fica de fora automaticamente.
                   </>
                 ) : (
                   <>
@@ -597,8 +657,9 @@ export function FormularioCampanha({
                 {daBase && alcance !== null ? (
                   <>
                     <strong className="numerico text-tinta">{formatarNumero(alcance)}</strong>{' '}
-                    {alcance === 1 ? 'pessoa vai receber' : 'pessoas vão receber'}. O público é copiado ao montar a
-                    campanha: quem entrar na base depois não recebe esta.
+                    {alcance === 1 ? 'pessoa vai receber' : 'pessoas vão receber'}
+                    <SoComCashback previa={previa} />. O público é copiado ao montar a campanha: quem entrar na base
+                    depois não recebe esta.
                   </>
                 ) : (
                   'Toda a base, uma importação (os contatos importados sem lista estão aqui), um perfil ou um público pronto. Quem pediu para sair fica de fora automaticamente.'
@@ -679,5 +740,20 @@ export function FormularioCampanha({
         )}
       </div>
     </Card>
+  );
+}
+
+/**
+ * Com variável de cashback, o alcance é só de quem tem cashback válido: diz de
+ * quantos do público, e que quem usar o saldo antes do envio fica de fora.
+ */
+function SoComCashback({ previa }: { previa: PreviaDoPublico | null }) {
+  if (!previa?.cashback) return null;
+  return (
+    <>
+      {' '}
+      — só quem tem cashback válido, de <span className="numerico">{formatarNumero(previa.cashback.doPublico)}</span> no
+      público. Quem usar ou perder o saldo antes do envio não recebe
+    </>
   );
 }

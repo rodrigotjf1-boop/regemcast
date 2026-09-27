@@ -134,8 +134,8 @@ com as mesmas regras.
   minúscula no banco, com a mesma função que fez a `chave`.
 - **Favorito:** a linha do contato mostra o produto que veio em mais compras
   (empate: o mais recente) e o período, na coluna "Costuma pedir".
-- **Sugestão de horário** (`GET /campanhas/horario?listaId=`), ao montar a
-  campanha:
+- **Sugestão de horário** (na prévia da campanha, `POST /campanhas/previa`),
+  ao montar a campanha:
   - Em que período a lista costuma pedir, contando só quem pode receber.
   - A janela de envio sugerida começa 1 h antes do período e dura 2 h, sem sair
     das 8h às 21h: café 8h–10h, almoço 10h–12h, tarde 14h–16h, noite 17h–19h,
@@ -144,13 +144,81 @@ com as mesmas regras.
     que reúna 40% delas. Abaixo disso, uma porcentagem engana.
   - "Usar das 17h às 19h" preenche o "Das / Até" da janela, que continua
     editável.
-- **Anonimizar** apaga as compras, os produtos e o período. **Apagar o
-  contato** leva os produtos em cascata.
+- **Anonimizar** apaga as compras, os produtos, o período e o cashback.
+  **Apagar o contato** leva os produtos em cascata.
 - **Planilha não passa por cima das compras:** quem tem compras sincronizadas
   tem os totais calculados delas; a planilha só completa e-mail e aniversário.
 - Cada público vira lista ("Criar lista com estes contatos") ou blocos
   (`lista_divisao.origem = 'publico'`), como os perfis — e vai direto para a
   campanha em "Quem recebe → Da base" (migration 033, `docs/whatsapp.md`).
+
+### Cashback (Fase 4C, migration 034)
+
+Decisão do dono em 25/09/2026; plano aprovado em 27/09/2026. As regras ficam em:
+
+- `contato/cashback.ts` — o que é saldo válido, o "hoje" da conta e o formato;
+- `cardapioweb.regras.ts` — como ler o saldo do cliente;
+- `cardapioweb.saldos.ts` — como gravar;
+- `campanha/variaveis.ts` e `campanha/cashback-da-fila.ts` — a campanha.
+
+- **O dado:** `cashback_balance` (`number`) e `cashback_expires_at` (`date` ou
+  nulo) vêm na lista de clientes e no cliente por id (documentação conferida em
+  27/09/2026).
+  - A documentação não diz a unidade do saldo. Todo valor em dinheiro da API
+    vem em reais com centavos (`total: 103.8` é R$ 103,80, `multipleOf: 0.01`),
+    e o saldo é lido assim.
+  - Fica em `contato.cashback_centavos` (inteiro), com `cashback_vence_em` e
+    `cashback_em` (quando foi lido).
+  - **Conferir na primeira loja real com cashback:** o saldo de um cliente aqui
+    tem de bater com o painel do Cardápio Web.
+  - A página "Listar clientes" mostra, por engano, o exemplo de cupons. O
+    schema do cliente não dá exemplo do cashback.
+- **Saldo válido:** positivo e não vencido. O dia do vencimento vale inteiro,
+  no fuso da conta. É uma definição só (`cashbackValido`), usada pelos
+  públicos, pela tabela de Contatos, pelo cartão de Integrações, pela prévia,
+  pela montagem e pela conferência do envio.
+- **Quem tem o saldo gravado:** só quem pode receber (sem descadastro). Quem
+  pediu para sair, ou pediu para apagar os dados, não volta a ter o dado.
+- **Como o saldo fica em dia:**
+  - a importação grava o saldo de cada página (é a mesma lista);
+  - a **leitura diária** (`CardapiowebSaldosJob` + `SaldosCardapiowebService`)
+    relê a lista inteira às 4h, no fuso da conta, 50 clientes por consulta:
+    - até 5 páginas por passo, com 1,2 s entre elas (cerca de 50 consultas por
+      minuto, metade do limite);
+    - o ponto em que parou fica no banco (`saldos_pagina`);
+    - a próxima leitura fica a pelo menos 6 h (`proximaLeituraSql`);
+    - só roda em loja que já concluiu uma importação, e espera a importação e
+      a carga do histórico de pedidos (as três dividem o limite da loja);
+  - com a loja em dia, a busca de pedidos relê o cliente de cada pedido novo
+    (a compra pode ter usado ou gerado saldo);
+  - quem tem saldo tem `cashback_em` renovado a cada leitura; sem saldo, a
+    linha só é escrita quando o valor muda.
+- **Quem sumiu do Cardápio Web:** o saldo positivo que não aparece em duas
+  leituras seguidas (36 h antes do início da leitura) sai. A ordem da lista não
+  é documentada, e uma página pode "andar" durante a leitura.
+- **Cadastro repetido** (o mesmo número em dois clientes): na mesma página,
+  vale o maior saldo; empatado, o que vence depois. Em páginas diferentes, vale
+  o último lido — limitação conhecida.
+- **Quem desligou o WhatsApp no Cardápio Web** depois da importação: a leitura
+  diária descadastra (origem `cardapioweb`), como a importação. Só bloqueia,
+  nunca desbloqueia. Cliente novo não entra pela leitura — isso é da importação
+  e da busca de pedidos.
+- **Desconectar**, ou trocar para a chave de outra loja, apaga o cashback da
+  conta: sem a conexão, o saldo fica velho.
+- **Públicos:**
+  - "Têm cashback" — saldo válido;
+  - "Cashback vence em até 7 dias" — vence de hoje até hoje + 7.
+  - O cartão de Integrações conta do mesmo jeito: só quem pode receber.
+- **Campanha:** as variáveis "Saldo do cashback" ("R$ 1.234,50") e "Validade
+  do cashback" ("30/09", ou "30/09/2027" quando é de outro ano; sem data, o
+  texto reserva). Ver `docs/whatsapp.md`.
+- **Erros da leitura:**
+  - 429: tenta de novo em 1 min, do mesmo ponto;
+  - 5xx ou rede: em 2 min;
+  - token recusado ou sem permissão: recomeça na leitura das 4h, ou antes, se
+    o token for trocado;
+  - erro nosso: em 5 min.
+  - O motivo aparece no cartão.
 
 ### Limites da API e o ritmo
 
@@ -164,6 +232,8 @@ Conferidos na documentação oficial em 25/09/2026
 | `GET /orders/history` | 5 por minuto | Início até **3 anos** atrás; janela de até **6 meses**; 100 por página; só fechados e cancelados; sem o cliente. Fora disso: 400 "Parâmetros inválidos". |
 | `GET /orders?updated_since=` | 300 a cada 3 min | `updated_since` de até 24 h, mas devolve só os alterados nas **últimas 8 horas**, tudo de uma vez (sem paginação). |
 | `GET /orders/{id}` | 300 a cada 3 min | O pedido inteiro. |
+| `GET /merchant/customers` | 300 a cada 3 min | 50 por página, a base inteira; traz o cashback. Documentação conferida em 27/09/2026. |
+| `GET /merchant/customers/{id}` | 300 a cada 3 min | Um cliente, com o cashback. |
 
 Daí as regras do código:
 

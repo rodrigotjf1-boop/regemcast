@@ -15,10 +15,12 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
 import { EhTelefoneE164 } from '../../lista-espera/dto/telefone';
+import { ORIGENS_VARIAVEL } from '../variaveis';
 import { PublicoDaCampanhaDto } from './publico-da-campanha.dto';
 
 /** HH:MM de 00:00 a 23:59. */
@@ -34,19 +36,25 @@ const HORA = new RegExp('^([01][0-9]|2[0-3]):[0-5][0-9]$');
  */
 export const TETO_DESTINATARIOS = 500;
 
-/** De onde sai o valor de uma variável quando o público é uma lista. */
-export const ORIGENS_VARIAVEL = ['fixo', 'nome', 'primeiro_nome'] as const;
+/** De onde sai o valor de uma variável quando o público é uma lista ou sai da base (`variaveis.ts`). */
+export { ORIGENS_VARIAVEL };
 
 export class VariavelDeListaDto {
-  @ApiProperty({ enum: ORIGENS_VARIAVEL, description: 'fixo = o mesmo texto para todos; nome/primeiro_nome = do contato.' })
+  @ApiProperty({
+    enum: ORIGENS_VARIAVEL,
+    description:
+      'fixo = o mesmo texto para todos; nome/primeiro_nome = do contato; cashback_saldo/cashback_validade = o cashback do Cardápio Web (só vai para quem tem cashback válido).',
+  })
   @IsIn(ORIGENS_VARIAVEL, { message: 'Origem da variável inválida.' })
   origem!: (typeof ORIGENS_VARIAVEL)[number];
 
   /**
-   * O texto (quando `fixo`) ou o que usar quando o contato não tem nome — a
-   * Meta recusa variável vazia.
+   * O texto (quando `fixo`) ou o que usar quando o contato não tem o dado (sem
+   * nome, cashback sem data para vencer) — a Meta recusa variável vazia. O
+   * saldo do cashback não usa: quem recebe sempre tem saldo.
    */
-  @ApiProperty()
+  @ApiProperty({ required: false })
+  @ValidateIf((v: VariavelDeListaDto) => v.origem !== 'cashback_saldo')
   @IsString({ message: 'Preencha o valor da variável.' })
   @MinLength(1, { message: 'Preencha o valor da variável.' })
   @MaxLength(1024, { message: 'Cada variável precisa ter até 1024 caracteres.' })

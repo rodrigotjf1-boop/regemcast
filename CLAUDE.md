@@ -152,6 +152,14 @@ Detalhe e o porquê em `docs/marca.md`; fonte da verdade em `kit/LEIA-ME.md`.
   dos números digitados. Quem entra em cada origem é `contato/origem-do-publico.ts`,
   a MESMA regra dos blocos e da prévia (`POST /campanhas/previa`): o número que
   uma tela mostra é o que a outra entrega.
+- **Cashback do Cardápio Web (migration 034): uma regra de "válido" só**
+  (`contato/cashback.ts`, positivo e não vencido, o dia do vencimento vale
+  inteiro no fuso da conta) para públicos, Contatos, Integrações, prévia,
+  montagem e envio. O saldo vem em reais com centavos e fica em centavos; só é
+  gravado para quem pode receber; desconectar apaga. Mensagem com variável de
+  cashback só vai para quem tem saldo válido — na montagem **e** a cada rodada
+  do envio (`conferirCashbackDaFila`), com o saldo do dia. Detalhe em
+  [`docs/integracoes.md`](docs/integracoes.md) e [`docs/whatsapp.md`](docs/whatsapp.md).
 - **O que sai das compras é refeito com elas.** Totais, bairro, jeito de
   comprar, período do dia (no fuso da conta) e produtos (`contato_produto`)
   são recalculados juntos em `recalcularTotais`. Todo caminho que grava, muda

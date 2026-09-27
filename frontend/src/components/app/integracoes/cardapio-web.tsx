@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
+import { CashbackCardapioWeb } from '@/components/app/integracoes/cashback-cardapio-web';
 import { ClientesCardapioWeb } from '@/components/app/integracoes/clientes-cardapio-web';
 import { ComprasCardapioWeb } from '@/components/app/integracoes/compras-cardapio-web';
 import { ConectarCardapioWeb } from '@/components/app/integracoes/conectar-cardapio-web';
@@ -21,8 +22,8 @@ const RELEITURA_CLIENTES_MS = 2_000;
 const RELEITURA_PEDIDOS_MS = 8_000;
 
 /**
- * A loja do Cardápio Web inteira num cartão: conectar, os clientes e as
- * compras (o histórico de pedidos de cada cliente).
+ * A loja do Cardápio Web inteira num cartão: conectar, os clientes, as
+ * compras (o histórico de pedidos de cada cliente) e o cashback.
  *
  * Tudo roda no servidor — a pessoa pode fechar a tela no meio. Enquanto algo
  * está andando, a tela relê a situação sozinha.
@@ -93,7 +94,7 @@ export function IntegracaoCardapioWeb() {
     <Card>
       <CardCabecalho
         titulo="Cardápio Web"
-        descricao="A base de clientes da sua loja e o histórico de compras de cada um."
+        descricao="A base de clientes da sua loja, o histórico de compras e o cashback de cada um."
         acao={
           s ? (
             s.conectado ? (
@@ -163,11 +164,13 @@ export function IntegracaoCardapioWeb() {
                 aoTrocarToken={abrirTroca}
               />
             </div>
+            <CashbackCardapioWeb situacao={s} />
             {ehDono && (
               <div className="flex flex-col gap-3 border-t border-borda pt-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="max-w-prose text-xs leading-relaxed text-tinta-suave">
                   O Cardápio Web recusou o token? Troque por um novo: o que já veio continua, e a busca retoma de
-                  onde parou. Desconectar para de trazer clientes e compras; o que já está na sua base fica.
+                  onde parou. Desconectar para de trazer clientes e compras; o que já está na sua base fica — menos o
+                  saldo de cashback, que sem a conexão ficaria velho.
                 </p>
                 <div className="flex flex-wrap gap-2 sm:shrink-0">
                   <Button variante="secundario" tamanho="sm" onClick={abrirTroca} disabled={ocupado}>

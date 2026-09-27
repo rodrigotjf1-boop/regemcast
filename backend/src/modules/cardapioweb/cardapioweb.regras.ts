@@ -10,8 +10,11 @@
  *   volte por uma importação de arquivo futura.
  * - telefone inválido, fixo 0800 (número mascarado de marketplace) ou ausente
  *   → fica de fora e é contado como inválido.
+ *
+ * E o saldo de cashback de cada cliente (Fase 4C): `saldoDoCliente` e
+ * `saldosDaPagina`.
  */
-import { paraCloudApi } from '../../common/telefone';
+import { gemeoDoCelular, paraCloudApi } from '../../common/telefone';
 
 /** Cliente como `GET /api/partner/v1/merchant/customers` devolve. */
 export interface ClienteCardapioWeb {
@@ -23,6 +26,14 @@ export interface ClienteCardapioWeb {
   birth_date?: string | null;
   created_at?: string | null;
   notifications_enabled?: boolean | null;
+  /**
+   * "Saldo de cashback" (`type: number`, sem unidade na documentação, conferida
+   * em 27/09/2026). Todo valor em dinheiro da API vem em reais com centavos —
+   * `total: 103.8` é R$ 103,80 — e este é lido assim.
+   */
+  cashback_balance?: number | string | null;
+  /** "Data de expiração do saldo de cashback" (`format: date`), ou nulo. */
+  cashback_expires_at?: string | null;
 }
 
 export interface PaginaClientes {
@@ -75,6 +86,73 @@ export function decidir(c: ClienteCardapioWeb): Decisao {
     email: /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) && email.length <= 180 ? email : null,
     dataNascimento: nasc,
   };
+}
+
+/** O saldo de cashback de um cliente, como o contato guarda. */
+export interface SaldoDeCashback {
+  /** Centavos, nunca negativo. */
+  centavos: number;
+  /** `AAAA-MM-DD`; nulo quando não tem data (ou não tem saldo). */
+  venceEm: string | null;
+}
+
+/** O maior saldo que o `integer` do banco guarda (R$ 20 milhões) — acima disso, é lixo. */
+const MAIOR_SALDO_CENTAVOS = 2_000_000_000;
+
+/** `AAAA-MM-DD` que existe no calendário (e não "2026-02-31" nem "0000-00-00"). */
+function diaValido(texto: string | null | undefined): string | null {
+  const dia = String(texto ?? '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return null;
+  const ano = Number(dia.slice(0, 4));
+  if (ano < 2000 || ano > 2999) return null;
+  const d = new Date(`${dia}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === dia ? dia : null;
+}
+
+/**
+ * O saldo de cashback do cliente, em centavos, e o dia em que vence.
+ *
+ * `null` = não dá para saber (campo ausente ou ilegível): quem chama não mexe
+ * no que o contato já tem. Negativo vira zero. Sem saldo, a data não importa.
+ */
+export function saldoDoCliente(c: Pick<ClienteCardapioWeb, 'cashback_balance' | 'cashback_expires_at'>): SaldoDeCashback | null {
+  const bruto = c.cashback_balance;
+  if (bruto === undefined || bruto === null || (typeof bruto === 'string' && !bruto.trim())) return null;
+  const reais = typeof bruto === 'string' ? Number(bruto.trim().replace(',', '.')) : Number(bruto);
+  if (!Number.isFinite(reais)) return null;
+  // `Math.round`: 103.8 * 100 dá 10379,999…; o saldo é 10380.
+  const centavos = reais <= 0 ? 0 : Math.round(reais * 100);
+  if (centavos > MAIOR_SALDO_CENTAVOS) return null;
+  return { centavos, venceEm: centavos > 0 ? diaValido(c.cashback_expires_at) : null };
+}
+
+/** Vale o maior saldo; empatado, o que vence depois (sem data conta como o mais tarde). */
+function maior(a: SaldoDeCashback, b: SaldoDeCashback): boolean {
+  if (a.centavos !== b.centavos) return a.centavos > b.centavos;
+  if (a.venceEm === b.venceEm) return false;
+  if (a.venceEm === null) return true;
+  if (b.venceEm === null) return false;
+  return a.venceEm > b.venceEm;
+}
+
+/**
+ * Os saldos de uma página, por telefone — nas DUAS formas do celular, porque
+ * o contato pode estar na base com o 9 ou sem ele. O mesmo número em dois
+ * cadastros da mesma página fica com o maior saldo.
+ */
+export function saldosDaPagina(clientes: ClienteCardapioWeb[]): Map<string, SaldoDeCashback> {
+  const saldos = new Map<string, SaldoDeCashback>();
+  for (const c of clientes) {
+    const telefone = telefoneDoCliente(c);
+    const saldo = saldoDoCliente(c);
+    if (!telefone || !saldo) continue;
+    for (const forma of [telefone, gemeoDoCelular(telefone)]) {
+      if (!forma) continue;
+      const atual = saldos.get(forma);
+      if (!atual || maior(saldo, atual)) saldos.set(forma, saldo);
+    }
+  }
+  return saldos;
 }
 
 /** Separa uma página em quem entra, quem entra bloqueado e quantos não servem. */
