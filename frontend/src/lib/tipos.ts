@@ -316,8 +316,12 @@ export interface DestinatarioCampanha {
 /** Corpo de `POST /campanhas`. */
 /** De onde sai o valor de uma variável numa campanha por lista. */
 export interface VariavelDeLista {
-  origem: 'fixo' | 'nome' | 'primeiro_nome';
-  /** O texto (fixo) ou o que usar quando o contato não tem nome. */
+  /**
+   * `cashback_saldo` e `cashback_validade` vêm do Cardápio Web: a campanha que
+   * usa uma delas só vai para quem tem cashback válido.
+   */
+  origem: 'fixo' | 'nome' | 'primeiro_nome' | 'cashback_saldo' | 'cashback_validade';
+  /** O texto (fixo) ou o que usar quando o contato não tem o dado (nome, data de vencimento). */
   valor: string;
 }
 
@@ -417,6 +421,10 @@ export interface Contato {
   /** Quando e como a pessoa saiu (quando saiu). */
   optOutEm?: string | null;
   optOutOrigem?: string | null;
+  /** O cashback do Cardápio Web: saldo, o dia em que vence (`AAAA-MM-DD`) e se ainda vale hoje. */
+  cashbackCentavos?: number | null;
+  cashbackVenceEm?: string | null;
+  cashbackValido?: boolean;
 }
 
 /** Perfis da base, calculados da última compra e dos pedidos. */
@@ -473,6 +481,8 @@ export type Publico =
   | 'nao_leram_3'
   | 'nunca_receberam'
   | 'conversaram_7d'
+  | 'cashback'
+  | 'cashback_vence_7d'
   | 'bairro'
   | 'aniversario'
   | 'produto';
@@ -497,6 +507,8 @@ export interface PreviaDoPublico {
   total: number;
   descanso: { dias: number; emDescanso: number };
   horario: SugestaoDeHorario;
+  /** Com variável de cashback, `total` é só quem tem cashback válido — de quantos do público. */
+  cashback?: { doPublico: number } | null;
 }
 
 /** `GET /contatos/importacoes` — uma importação e quantos dela ainda podem receber. */
@@ -566,6 +578,8 @@ export interface PaginaDeContatos {
   total: number;
   pagina: number;
   porPagina: number;
+  /** A conta tem saldo de cashback lido do Cardápio Web: a coluna aparece. */
+  cashbackLido?: boolean;
   itens: Contato[];
 }
 
@@ -916,6 +930,21 @@ export interface SituacaoCardapioWeb {
     clientes: number;
     primeira: string | null;
     ultima: string | null;
+  };
+  /**
+   * O cashback dos clientes e a leitura diária (4h, no fuso da conta).
+   * Ausente só numa API mais antiga que a tela (a janela de um deploy).
+   */
+  saldos?: {
+    comCashback: number;
+    /** Vence de hoje até daqui a 7 dias. */
+    vencendo: number;
+    /** Soma do cashback que vale hoje. */
+    totalCentavos: number;
+    lendo: boolean;
+    ultimaLeitura: string | null;
+    proximaLeitura: string | null;
+    erro: string | null;
   };
 }
 

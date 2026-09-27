@@ -20,6 +20,7 @@ const L: LimitesDosPublicos = {
   ticketBaixoAteCentavos: 3500,
   ticketAltoAcimaCentavos: 6000,
   ativoDias: 90,
+  hoje: '2026-09-27',
 };
 
 const SEM_VALOR: LimitesDosPublicos = {
@@ -27,6 +28,7 @@ const SEM_VALOR: LimitesDosPublicos = {
   ticketBaixoAteCentavos: null,
   ticketAltoAcimaCentavos: null,
   ativoDias: 90,
+  hoje: '2026-09-27',
 };
 
 const texto = (q: ReturnType<typeof expressaoPublico>) => new PgDialect().sqlToQuery(q);
@@ -121,6 +123,17 @@ describe('expressaoPublico', () => {
     expect(q.sql).toContain('p.chave = lower($1)');
     expect(q.params).toEqual(['Pizza Calabresa']);
   });
+
+  it('cashback: saldo positivo que vale até o dia do vencimento, com o "hoje" da conta como parâmetro', () => {
+    const q = texto(expressaoPublico('cashback', null, L));
+    expect(q.sql).toContain('contato.cashback_centavos > 0');
+    expect(q.sql).toContain('contato.cashback_vence_em is null or contato.cashback_vence_em >= $1::date');
+    expect(q.params).toEqual(['2026-09-27']);
+    const v = texto(expressaoPublico('cashback_vence_7d', null, L));
+    expect(v.sql).toContain('contato.cashback_vence_em >= $1::date');
+    expect(v.sql).toContain('contato.cashback_vence_em <= $2::date + 7');
+    expect(v.params).toEqual(['2026-09-27', '2026-09-27']);
+  });
 });
 
 describe('descreverPublico', () => {
@@ -150,6 +163,11 @@ describe('descreverPublico', () => {
       'A maior parte das compras foi das 11h às 15h, no horário da conta.',
     );
     expect(descreverPublico('periodo_cafe', null, L).nome).toBe('Pedem no café da manhã');
+  });
+
+  it('cashback: o nome diz o prazo', () => {
+    expect(descreverPublico('cashback', null, L).nome).toBe('Têm cashback');
+    expect(descreverPublico('cashback_vence_7d', null, L).nome).toBe('Cashback vence em até 7 dias');
   });
 
   it('tickets todos parecidos: a faixa do meio diz que não existe, em vez de "de R$ 30 a R$ 30"', () => {

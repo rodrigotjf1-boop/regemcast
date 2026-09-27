@@ -160,7 +160,8 @@ export function ComprasCardapioWeb({
   );
 }
 
-function Numero({ rotulo, valor }: { rotulo: string; valor: string }) {
+/** Um número do cartão (rótulo e valor), como as compras e o cashback mostram. */
+export function Numero({ rotulo, valor }: { rotulo: string; valor: string }) {
   return (
     <div className="rounded-lg bg-superficie-2 px-3 py-2">
       <dt className="text-xs text-tinta-suave">{rotulo}</dt>

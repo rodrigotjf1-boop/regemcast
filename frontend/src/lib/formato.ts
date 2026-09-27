@@ -7,6 +7,16 @@ export function formatarReais(centavos: number): string {
   return (centavos / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+/**
+ * Um dia sem hora (`AAAA-MM-DD`) como "30/09" — com o ano quando não é o deste
+ * ano. Sem passar por `Date`: meia-noite em UTC já é o dia anterior no Brasil.
+ */
+export function formatarDiaCurto(dia?: string | null): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dia ?? '');
+  if (!m) return '—';
+  return Number(m[1]) === new Date().getFullYear() ? `${m[3]}/${m[2]}` : `${m[3]}/${m[2]}/${m[1]}`;
+}
+
 /** Dias inteiros desde a data (0 = hoje). */
 export function diasDesde(iso?: string | null): number | null {
   if (!iso) return null;

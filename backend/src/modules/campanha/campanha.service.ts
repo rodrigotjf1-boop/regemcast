@@ -36,6 +36,7 @@ import { ContextoDb } from '../../db/contexto';
 import { assinatura, campanha, campanhaDestinatario, conta, contatoLista, waNumero } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { AvisoService } from '../aviso/aviso.service';
+import { cashbackValido, hojeDaConta, hojeNoFuso } from '../contato/cashback';
 import { PERIODOS, sugerirHorario, type Periodo, type SugestaoDeHorario } from '../contato/habitos';
 import { origemDoPublico, type PedidoDeOrigem } from '../contato/origem-do-publico';
 import { ERRO_SEM_WHATSAPP, marcarSemWhatsappNaFila, registrarFalhaSemWhatsapp } from '../contato/sem-whatsapp';
@@ -44,8 +45,10 @@ import { MetaService } from '../meta/meta.service';
 import { TelemetriaService } from '../telemetria/telemetria.service';
 import type { CriarCampanhaDto } from './dto/criar-campanha.dto';
 import type { EditarCampanhaDto } from './dto/editar-campanha.dto';
+import { conferirCashbackDaFila } from './cashback-da-fila';
 import { decidir, momentoNoFuso, type RegraDeEnvio } from './janela';
 import { rotuloDoPublico, type OrigemDaCampanha } from './rotulo-do-publico';
+import { lerVariaveis, normalizarVariaveis, usaCashback, variaveisEmSql, type VariavelDaLista } from './variaveis';
 
 type Executor = { execute: (q: SQL) => Promise<unknown> };
 
@@ -328,6 +331,8 @@ interface PublicoMontado {
   listaId: string | null;
   origem: OrigemDaCampanha;
   rotulo: string | null;
+  /** De onde sai cada variável (lista e "Da base"); nulo para números digitados. */
+  variaveis: VariavelDaLista[] | null;
 }
 
 /** A prévia de "Quem recebe": quantos podem receber, quantos estão em descanso e em que período pedem. */
@@ -335,6 +340,11 @@ export interface PreviaDoPublico {
   total: number;
   descanso: { dias: number; emDescanso: number };
   horario: SugestaoDeHorario;
+  /**
+   * Com variável de cashback, `total` é só quem tem cashback válido; aqui, de
+   * quantos do público (quem pode receber). Nulo sem variável de cashback.
+   */
+  cashback: { doPublico: number } | null;
 }
 
 export interface ResumoCampanha {
@@ -468,7 +478,12 @@ export class CampanhaService {
 
     await this.ctx.db
       .update(campanha)
-      .set({ listaId: publico.listaId, publicoOrigem: publico.origem, publicoRotulo: publico.rotulo })
+      .set({
+        listaId: publico.listaId,
+        publicoOrigem: publico.origem,
+        publicoRotulo: publico.rotulo,
+        variaveisLista: publico.variaveis,
+      })
       .where(eq(campanha.id, criada!.id));
 
     // Já na montagem: a pessoa vê, antes de disparar, quem não vai receber e
@@ -547,7 +562,7 @@ export class CampanhaService {
       listaId?: string;
       daBase?: PedidoDeOrigem;
       destinatarios?: { telefone: string; variaveis?: string[] }[];
-      variaveisLista?: { origem: 'fixo' | 'nome' | 'primeiro_nome'; valor: string }[];
+      variaveisLista?: VariavelDaLista[];
     },
   ): Promise<PublicoMontado> {
     // Uma lista escolhida pelo caminho "da base" é uma lista como outra qualquer.
@@ -557,25 +572,21 @@ export class CampanhaService {
       throw new BadRequestException('Escolha quem recebe: uma lista, um público da base ou os números digitados — um só.');
     }
 
-    // As variáveis "nome" e "primeiro nome" valem para todo público que sai da base.
-    const variaveis = (nome: SQL) => {
-      const v = (dto.variaveisLista ?? []).map((x) =>
-        x.origem === 'fixo'
-          ? sql`${x.valor}::text`
-          : x.origem === 'nome'
-            ? sql`coalesce(nullif(btrim(${nome}), ''), ${x.valor}::text)`
-            : sql`coalesce(nullif(split_part(btrim(${nome}), ' ', 1), ''), ${x.valor}::text)`,
-      );
-      return v.length ? sql`jsonb_build_array(${sql.join(v, sql`, `)})` : sql`'[]'::jsonb`;
-    };
+    // As variáveis que saem do contato (nome, cashback…) valem para todo público
+    // que sai da base (`variaveis.ts`). Com variável de cashback, só entra quem
+    // tem cashback válido hoje, no fuso da conta — a mesma regra dos públicos.
+    const lista = normalizarVariaveis(dto.variaveisLista);
+    const hoje = hojeDaConta(contaId);
+    const comCashback = usaCashback(lista);
+    const soComCashback = (apelido: 'c' | 'contato') => (comCashback ? sql`and ${cashbackValido(apelido, hoje)}` : sql``);
 
     if (listaId) {
-      const [lista] = await this.ctx.db
+      const [escolhida] = await this.ctx.db
         .select({ id: contatoLista.id, nome: contatoLista.nome })
         .from(contatoLista)
         .where(and(eq(contatoLista.id, listaId), eq(contatoLista.contaId, contaId)))
         .limit(1);
-      if (!lista) throw new NotFoundException('Lista de contatos não encontrada.');
+      if (!escolhida) throw new NotFoundException('Lista de contatos não encontrada.');
 
       // Uma query só, dentro do banco: a lista pode ter dezenas de milhares de
       // contatos, e trazê-los para cá para devolver um por um seria o N+1 que
@@ -585,12 +596,13 @@ export class CampanhaService {
       const r = await this.ctx.db.execute(sql`
         with inseridos as (
         insert into campanha_destinatario (conta_id, campanha_id, telefone_e164, variaveis)
-        select ${contaId}, ${campanhaId}, c.telefone_e164, ${variaveis(sql`c.nome`)}
+        select ${contaId}, ${campanhaId}, c.telefone_e164, ${variaveisEmSql(lista, 'c', hoje)}
           from contato_lista_item i
           join contato c on c.id = i.contato_id and c.conta_id = i.conta_id
          where i.conta_id = ${contaId}
-           and i.lista_id = ${lista.id}
+           and i.lista_id = ${escolhida.id}
            and c.opt_out = false
+           ${soComCashback('c')}
         on conflict (campanha_id, telefone_e164) do nothing
         returning 1
         )
@@ -601,10 +613,12 @@ export class CampanhaService {
         // Desfaz a campanha junto (a request é uma transação): uma campanha
         // vazia só confundiria a lista.
         throw new BadRequestException(
-          `A lista "${lista.nome}" não tem ninguém que possa receber: está vazia ou todos pediram para sair.`,
+          comCashback
+            ? `A lista "${escolhida.nome}" não tem ninguém com cashback válido que possa receber.`
+            : `A lista "${escolhida.nome}" não tem ninguém que possa receber: está vazia ou todos pediram para sair.`,
         );
       }
-      return { total, listaId: lista.id, origem: 'lista', rotulo: null };
+      return { total, listaId: escolhida.id, origem: 'lista', rotulo: null, variaveis: lista };
     }
 
     if (daBase) {
@@ -616,11 +630,12 @@ export class CampanhaService {
       const r = await this.ctx.db.execute(sql`
         with inseridos as (
         insert into campanha_destinatario (conta_id, campanha_id, telefone_e164, variaveis)
-        select ${contaId}, ${campanhaId}, contato.telefone_e164, ${variaveis(sql`contato.nome`)}
+        select ${contaId}, ${campanhaId}, contato.telefone_e164, ${variaveisEmSql(lista, 'contato', hoje)}
           from contato
          where contato.conta_id = ${contaId}
            and contato.opt_out = false
            and ${o.filtro}
+           ${soComCashback('contato')}
         on conflict (campanha_id, telefone_e164) do nothing
         returning 1
         )
@@ -628,9 +643,13 @@ export class CampanhaService {
       `);
       const total = Number((r.rows[0] as { total: number } | undefined)?.total ?? 0);
       if (total === 0) {
-        throw new BadRequestException(`"${rotulo}" não tem ninguém que possa receber agora.`);
+        throw new BadRequestException(
+          comCashback
+            ? `"${rotulo}" não tem ninguém com cashback válido que possa receber agora.`
+            : `"${rotulo}" não tem ninguém que possa receber agora.`,
+        );
       }
-      return { total, listaId: null, origem: daBase.origem, rotulo };
+      return { total, listaId: null, origem: daBase.origem, rotulo, variaveis: lista };
     }
 
     const normalizados = this.conferirNumeros(dto.destinatarios ?? []);
@@ -644,7 +663,7 @@ export class CampanhaService {
       })),
     );
 
-    return { total: normalizados.length, listaId: null, origem: 'numeros', rotulo: null };
+    return { total: normalizados.length, listaId: null, origem: 'numeros', rotulo: null, variaveis: null };
   }
 
   /**
@@ -779,7 +798,12 @@ export class CampanhaService {
       });
       await this.ctx.db
         .update(campanha)
-        .set({ listaId: publico.listaId, publicoOrigem: publico.origem, publicoRotulo: publico.rotulo })
+        .set({
+          listaId: publico.listaId,
+          publicoOrigem: publico.origem,
+          publicoRotulo: publico.rotulo,
+          variaveisLista: publico.variaveis,
+        })
         .where(and(eq(campanha.id, campanhaId), eq(campanha.contaId, contaId)));
       await marcarDescadastrados(this.ctx.db, contaId, sql`d.campanha_id = ${campanhaId}`);
       await marcarSemWhatsappNaFila(this.ctx.db, contaId, sql`d.campanha_id = ${campanhaId}`);
@@ -1063,6 +1087,7 @@ export class CampanhaService {
           maxPorMes: campanha.maxPorMes,
           retomarEm: campanha.retomarEm,
           descansoDias: campanha.descansoDias,
+          variaveisLista: campanha.variaveisLista,
           fuso: conta.timezone,
           // O ciclo em que o disparo conta. É o MESMO campo que a tela de Conta
           // usa para ler o consumo — duas definições de ciclo divergiriam.
@@ -1135,6 +1160,12 @@ export class CampanhaService {
       // para sair viola a política da Meta e derruba a qualidade do número.
       await marcarDescadastrados(db, c.contaId, sql`d.campanha_id = ${campanhaId}`);
       await marcarSemWhatsappNaFila(db, c.contaId, sql`d.campanha_id = ${campanhaId}`);
+      // Campanha que fala do cashback: quem usou ou perdeu o saldo depois da
+      // montagem não recebe, e quem ainda tem recebe o valor de hoje.
+      const variaveis = lerVariaveis(c.variaveisLista);
+      if (variaveis && usaCashback(variaveis)) {
+        await conferirCashbackDaFila(db, c.contaId, campanhaId, variaveis, hojeNoFuso(c.fuso));
+      }
 
       // Teto do PLANO (disparos por ciclo), somado de todas as campanhas da
       // conta. A trava por conta serializa as rodadas de campanhas diferentes da
@@ -1570,9 +1601,19 @@ export class CampanhaService {
    * público da base. O descanso só vale para modelo de marketing: a tela só o
    * mostra nesse caso, e o envio confere de novo na hora de mandar.
    */
-  async previaDoPublico(contaId: string, pedido: PedidoDeOrigem): Promise<PreviaDoPublico> {
+  async previaDoPublico(
+    contaId: string,
+    pedido: PedidoDeOrigem & { soComCashback?: boolean },
+  ): Promise<PreviaDoPublico> {
     return this.ctx.comConta(contaId, async (db) => {
       const o = await origemDoPublico(db, contaId, pedido);
+      // Mensagem com variável de cashback só vai para quem tem cashback válido:
+      // a prévia conta como a montagem vai montar, e diz de quantos do público.
+      const comCashback = Boolean(pedido.soComCashback);
+      const quemPode = sql`contato.conta_id = ${contaId}
+           and contato.opt_out = false
+           and contato.sem_whatsapp_em is null
+           and ${o.filtro}`;
       const [config] = await db
         .select({ dias: conta.descansoMarketingDias })
         .from(conta)
@@ -1588,11 +1629,10 @@ export class CampanhaService {
       );
       const r = await db.execute(sql`
         select count(*)::int as total, ${emDescanso} as em_descanso, ${sql.join(periodos, sql`, `)}
+               ${comCashback ? sql`, (select count(*)::int from contato where ${quemPode}) as do_publico` : sql``}
           from contato
-         where contato.conta_id = ${contaId}
-           and contato.opt_out = false
-           and contato.sem_whatsapp_em is null
-           and ${o.filtro}
+         where ${quemPode}
+           ${comCashback ? sql`and ${cashbackValido('contato', hojeDaConta(contaId))}` : sql``}
       `);
       const linha = (r.rows[0] ?? {}) as Record<string, number | string | null>;
       const total = Number(linha.total ?? 0);
@@ -1601,6 +1641,7 @@ export class CampanhaService {
         total,
         descanso: { dias, emDescanso: Number(linha.em_descanso ?? 0) },
         horario: sugerirHorario(total, contagem),
+        cashback: comCashback ? { doPublico: Number(linha.do_publico ?? 0) } : null,
       };
     });
   }

@@ -104,6 +104,7 @@ caber em um deles:
 | `meta.limite.vencidos` / `meta.limite.gravar` | `limite.job.ts` | O job relê o limite de envio da Meta de todos os números, de 6 em 6 horas: um `select` entre contas para achar os vencidos (com o token cifrado de cada um) e um `update` por número, no id dele, depois da chamada à Meta — nunca durante. |
 | `cardapioweb.retomar` | `cardapioweb.service.ts` | A cada minuto, o job procura importações de clientes do Cardápio Web que ficaram órfãs (servidor reiniciou no meio), entre todas as contas. Dura o `select` e acaba — a importação roda em `comConta`, uma conta por vez. |
 | `cardapioweb.pedidos.fila` | `cardapioweb.pedidos.job.ts` | A cada 15 s, o job reserva até 8 lojas com a busca de pedidos pendente, entre todas as contas: um `update` com CTE materializada que só grava a trava (`pedidos_trava_ate`) e devolve o `conta_id`. O passo de cada loja — chamadas ao Cardápio Web, compras, totais — roda em `comConta`, e nenhuma transação fica aberta durante a chamada. |
+| `cardapioweb.saldos.fila` | `cardapioweb.saldos.job.ts` | A cada 10 s, o job reserva até 8 lojas com a leitura diária do cashback vencida (4h no fuso da conta), entre todas as contas: um `update` com CTE materializada que só grava a trava (`saldos_trava_ate`) e devolve o `conta_id`. O passo de cada loja — até 5 páginas de clientes, com os saldos e os bloqueios — roda em `comConta`, e nenhuma transação fica aberta durante a chamada ao Cardápio Web. |
 
 **(B) O registro precisa sobreviver ao rollback da operação.**
 

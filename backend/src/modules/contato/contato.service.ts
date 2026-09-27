@@ -20,6 +20,7 @@ import { mascararTelefone, paraCloudApi } from '../../common/telefone';
 import { ContextoDb } from '../../db/contexto';
 import { campanha, contato, contatoLista, contatoListaItem, importacao, listaDivisao } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { cashbackValido, hojeDaConta } from './cashback';
 import type { ConfirmarImportacaoDto, PreviaImportacaoDto } from './dto/importacao.dto';
 import { gravarExtras } from './extras';
 import { nomeDaImportacao } from './origem-do-publico';
@@ -616,6 +617,10 @@ export class ContatoService {
           optOutOrigem: contato.optOutOrigem,
           semWhatsappEm: contato.semWhatsappEm,
           segmento: perfil,
+          // O cashback do Cardápio Web (migration 034) e se ele vale hoje, no fuso da conta.
+          cashbackCentavos: contato.cashbackCentavos,
+          cashbackVenceEm: contato.cashbackVenceEm,
+          cashbackValido: sql<boolean>`${cashbackValido('contato', hojeDaConta(contaId))}`,
         })
         .from(contato)
         .where(filtro)
@@ -623,7 +628,21 @@ export class ContatoService {
         .limit(limite)
         .offset(salto);
 
-      return { total: Number(total), pagina: Math.max(pagina, 1), porPagina: limite, itens };
+      // A coluna do cashback só aparece em conta que tem saldo lido (índice
+      // parcial: sem saldo, a resposta é imediata).
+      const [lido] = (
+        await db.execute(sql`
+          select exists (select 1 from contato where conta_id = ${contaId} and cashback_centavos > 0) as sim
+        `)
+      ).rows as { sim: boolean }[];
+
+      return {
+        total: Number(total),
+        pagina: Math.max(pagina, 1),
+        porPagina: limite,
+        cashbackLido: Boolean(lido?.sim),
+        itens,
+      };
     });
   }
 
@@ -752,6 +771,9 @@ export class ContatoService {
           bairro: null,
           tipoPreferido: null,
           periodoPreferido: null,
+          cashbackCentavos: null,
+          cashbackVenceEm: null,
+          cashbackEm: null,
           metricasEm: null,
           metricasOrigem: null,
           consentimentoEvidencia: `Dados pessoais apagados a pedido da pessoa em ${quando}. Número mantido bloqueado.`,

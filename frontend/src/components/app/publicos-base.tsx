@@ -16,8 +16,8 @@ import type { AlvoDePublico, Publico, ResumoPublicos } from '@/lib/tipos';
 
 /**
  * Públicos prontos a partir das compras: quanto gastam, em que momento estão,
- * como compram, a que horas pedem, o que já compraram, onde moram e quando
- * fazem aniversário.
+ * como compram, a que horas pedem, o que já compraram, onde moram, quando
+ * fazem aniversário e quem tem cashback (Cardápio Web).
  *
  * Clicar num público filtra a tabela; com um público escolhido, "Criar lista"
  * tira a foto que a campanha usa e "Dividir em blocos" separa o envio. VIP e
@@ -41,6 +41,8 @@ export const GRUPOS: { titulo: string; ids: Fixo[]; colunas: string }[] = [
     ids: ['leram_30d', 'responderam_30d', 'nao_leram_3', 'nunca_receberam', 'conversaram_7d'],
     colunas: 'sm:grid-cols-2 xl:grid-cols-3',
   },
+  // O cashback do Cardápio Web: o grupo só aparece com alguém com saldo (os vazios somem).
+  { titulo: 'Cashback', ids: ['cashback', 'cashback_vence_7d'], colunas: 'sm:grid-cols-2' },
 ];
 
 const MESES = [
@@ -164,7 +166,7 @@ export function PublicosDaBase({
                           <span className="block text-xs leading-snug text-tinta-suave">{p.regra}</span>
                           {p.gastoCentavos > 0 && (
                             <span className="numerico mt-1 block text-xs text-tinta">
-                              {formatarReais(p.gastoCentavos)} no total
+                              {formatarReais(p.gastoCentavos)} em compras
                             </span>
                           )}
                         </span>

@@ -13,6 +13,8 @@
  *    seguinte à última gravada.
  * 5. Iniciar a importação engatilha a busca das compras (os pedidos de cada
  *    cliente, `cardapioweb.pedidos.service.ts`), que começa quando ela termina.
+ * 6. Cada página grava também o saldo de cashback de quem já está na base; a
+ *    leitura diária (`cardapioweb.saldos.service.ts`) o mantém em dia.
  *
  * Nunca sobrescreve: um contato que já existe mantém o consentimento que tinha
  * (pode ser mais antigo e mais forte) e um descadastro nunca é desfeito.
@@ -26,15 +28,17 @@ import {
 import { and, eq, ne, sql } from 'drizzle-orm';
 
 import { env } from '../../config/env';
-import { ContextoDb } from '../../db/contexto';
+import { ContextoDb, type Db } from '../../db/contexto';
 import { contato, contatoLista, importacao, integracaoCardapioweb } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { gravarExtras } from '../contato/extras';
+import { cashbackValido, cashbackVencendo, hojeDaConta } from '../contato/cashback';
 import { cifrarToken, decifrarToken } from '../meta/cripto';
 import { CardapiowebCliente, ErroCardapioWeb, type Credencial } from './cardapioweb.cliente';
 import { prepararCargaDePedidos } from './cardapioweb.pedidos.service';
 import { progressoDaCarga } from './cardapioweb.pedidos.regras';
-import { separarPagina } from './cardapioweb.regras';
+import { saldosDaPagina, separarPagina } from './cardapioweb.regras';
+import { bloquearClientes, gravarSaldos, proximaLeituraSql } from './cardapioweb.saldos';
 
 const NOME_LISTA = 'Clientes Cardápio Web';
 /** 300 req a cada 3 min por loja = 1 a cada 0,6 s. Folga para não bater no teto. */
@@ -76,6 +80,22 @@ export interface SituacaoCardapioWeb {
     clientes: number;
     primeira: Date | null;
     ultima: Date | null;
+  };
+  /**
+   * O cashback dos clientes: quantos têm saldo que vale hoje e a leitura diária
+   * (4h). Conta só quem pode receber, como os públicos — o número daqui é o de lá.
+   */
+  saldos: {
+    comCashback: number;
+    /** Vence de hoje até daqui a 7 dias. */
+    vencendo: number;
+    /** Soma do cashback que vale hoje, em centavos. */
+    totalCentavos: number;
+    /** A leitura diária está no meio da lista agora. */
+    lendo: boolean;
+    ultimaLeitura: Date | null;
+    proximaLeitura: Date | null;
+    erro: string | null;
   };
 }
 
@@ -128,6 +148,17 @@ export class CardapiowebService {
             from compra where conta_id = ${contaId} and fonte = 'cardapioweb'
         `)
       ).rows as { compras: number; clientes: number; primeira: string | null; ultima: string | null }[];
+      const hoje = hojeDaConta(contaId);
+      const [cashback] = (
+        await db.execute(sql`
+          select count(*) filter (where ${cashbackValido('contato', hoje)})::int as com_cashback,
+                 count(*) filter (where ${cashbackVencendo('contato', hoje)})::int as vencendo,
+                 coalesce(sum(cashback_centavos) filter (where ${cashbackValido('contato', hoje)}), 0)::bigint as total
+            from contato
+           where conta_id = ${contaId} and cashback_centavos > 0
+             and opt_out = false and sem_whatsapp_em is null
+        `)
+      ).rows as { com_cashback: number; vencendo: number; total: string | number }[];
       const status = (l?.pedidosStatus ?? 'parado') as SituacaoCardapioWeb['pedidos']['status'];
       return {
         conectado: Boolean(l?.credencialCifrada),
@@ -165,6 +196,15 @@ export class CardapiowebService {
           primeira: guardado?.primeira ? new Date(guardado.primeira) : null,
           ultima: guardado?.ultima ? new Date(guardado.ultima) : null,
         },
+        saldos: {
+          comCashback: Number(cashback?.com_cashback ?? 0),
+          vencendo: Number(cashback?.vencendo ?? 0),
+          totalCentavos: Number(cashback?.total ?? 0),
+          lendo: (l?.saldosPagina ?? 0) > 0,
+          ultimaLeitura: l?.saldosConcluidaEm ?? null,
+          proximaLeitura: l?.saldosProximaEm ?? null,
+          erro: l?.saldosErro ?? null,
+        },
       };
     });
   }
@@ -186,13 +226,15 @@ export class CardapiowebService {
 
     await this.ctx.comConta(contaId, async (db) => {
       const [atual] = await db
-        .select({ status: integracaoCardapioweb.sincStatus })
+        .select({ status: integracaoCardapioweb.sincStatus, lojaId: integracaoCardapioweb.lojaId })
         .from(integracaoCardapioweb)
         .where(eq(integracaoCardapioweb.contaId, contaId))
         .limit(1);
       if (atual?.status === 'rodando') {
         throw new BadRequestException('Há uma importação em andamento. Espere terminar para trocar a conexão.');
       }
+      // Chave de OUTRA loja: o cashback que veio da antiga não vale nesta.
+      if (atual?.lojaId && atual.lojaId !== loja.id) await apagarSaldos(db, contaId);
 
       await db
         .insert(integracaoCardapioweb)
@@ -222,6 +264,10 @@ export class CardapiowebService {
               else 'parado' end`,
             pedidosErro: null,
             pedidosProximoEm: null,
+            // Token novo: a leitura do cashback recomeça assim que der.
+            saldosPagina: 0,
+            saldosErro: null,
+            saldosProximaEm: null,
           },
         });
 
@@ -238,10 +284,15 @@ export class CardapiowebService {
     return { lojaNome: loja.nome };
   }
 
-  /** Apaga a credencial. Os contatos já importados continuam na base. */
+  /**
+   * Apaga a credencial. Os contatos já importados continuam na base — menos o
+   * saldo de cashback: sem a conexão ele não se atualiza, e a campanha falaria
+   * de um saldo que pode nem existir mais.
+   */
   async desconectar(contaId: string, usuarioId: string): Promise<void> {
     await this.ctx.comConta(contaId, async (db) => {
       await db.delete(integracaoCardapioweb).where(eq(integracaoCardapioweb.contaId, contaId));
+      await apagarSaldos(db, contaId);
       await this.auditoria.registrar({
         contaId,
         atorTipo: 'usuario',
@@ -482,28 +533,12 @@ export class CardapiowebService {
         }
       }
 
-      if (bloqueados.length) {
-        // Pediu para sair no Cardápio Web: entra (ou passa a estar) descadastrado.
-        // Um descadastro que já existia não é tocado.
-        await db
-          .insert(contato)
-          .values(
-            bloqueados.map((b) => ({
-              contaId,
-              telefoneE164: b.telefone,
-              nome: b.nome,
-              optOut: true,
-              optOutEm: agora,
-              optOutOrigem: 'cardapioweb',
-              importacaoId: l.importacaoId,
-            })),
-          )
-          .onConflictDoUpdate({
-            target: [contato.contaId, contato.telefoneE164],
-            set: { optOut: true, optOutEm: agora, optOutOrigem: 'cardapioweb' },
-            setWhere: sql`${contato.optOut} = false`,
-          });
-      }
+      // Pediu para sair no Cardápio Web: entra (ou passa a estar) descadastrado.
+      // Um descadastro que já existia não é tocado.
+      await bloquearClientes(db, contaId, bloqueados, l.importacaoId, agora);
+
+      // O cashback de quem está na base (inclusive quem acabou de entrar).
+      await gravarSaldos(db, contaId, saldosDaPagina(dados.customers), agora);
 
       await db
         .update(integracaoCardapioweb)
@@ -514,7 +549,17 @@ export class CardapiowebService {
           sincNovos: sql`${integracaoCardapioweb.sincNovos} + ${novos}`,
           sincBloqueados: sql`${integracaoCardapioweb.sincBloqueados} + ${bloqueados.length}`,
           sincInvalidos: sql`${integracaoCardapioweb.sincInvalidos} + ${invalidos}`,
-          ...(terminou ? { sincStatus: 'concluida', sincConcluidaEm: agora } : {}),
+          // A importação leu o cashback de todos: a próxima leitura é a das 4h.
+          ...(terminou
+            ? {
+                sincStatus: 'concluida',
+                sincConcluidaEm: agora,
+                saldosPagina: 0,
+                saldosConcluidaEm: agora,
+                saldosErro: null,
+                saldosProximaEm: proximaLeituraSql(contaId),
+              }
+            : {}),
         })
         .where(and(eq(integracaoCardapioweb.contaId, contaId), eq(integracaoCardapioweb.sincStatus, 'rodando')));
 
@@ -544,4 +589,12 @@ export class CardapiowebService {
       });
     }
   }
+}
+
+/** Tira o cashback de todos os contatos da conta (desconectou, ou trocou de loja). */
+async function apagarSaldos(db: Db, contaId: string): Promise<void> {
+  await db.execute(sql`
+    update contato set cashback_centavos = null, cashback_vence_em = null, cashback_em = null
+     where conta_id = ${contaId} and cashback_em is not null
+  `);
 }

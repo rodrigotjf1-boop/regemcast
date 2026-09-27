@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength, ValidateIf } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength, ValidateIf } from 'class-validator';
 
 import { ORIGENS_DO_PUBLICO, type OrigemDoPublico } from '../../contato/origem-do-publico';
 import { PUBLICOS, TAMANHO_MAXIMO_VALOR, type Publico } from '../../contato/publicos';
@@ -40,4 +40,15 @@ export class PublicoDaCampanhaDto {
   @IsString()
   @MaxLength(TAMANHO_MAXIMO_VALOR)
   publicoValor?: string;
+}
+
+/** A prévia de "Quem recebe": o público e, com variável de cashback, só quem tem cashback válido. */
+export class PreviaDoPublicoDto extends PublicoDaCampanhaDto {
+  @ApiProperty({
+    required: false,
+    description: 'A mensagem usa variável de cashback: conta só quem tem cashback válido, como a montagem.',
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'soComCashback precisa ser verdadeiro ou falso.' })
+  soComCashback?: boolean;
 }

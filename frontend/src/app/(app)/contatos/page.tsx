@@ -20,11 +20,12 @@ import { EsqueletoLista } from '@/components/ui/esqueleto';
 import { EstadoErro } from '@/components/ui/estado-erro';
 import { Alerta } from '@/components/ui/alerta';
 import { mensagemDoErro } from '@/lib/api';
-import { diasDesde, formatarData, formatarNumero, formatarReais } from '@/lib/formato';
+import { diasDesde, formatarData, formatarDiaCurto, formatarNumero, formatarReais } from '@/lib/formato';
 import { QUANDO_PEDE } from '@/lib/periodos';
 import { contatos as servico } from '@/lib/servicos';
 import type {
   AlvoDePublico,
+  Contato,
   DivisaoDeBlocos,
   ListaDeContatos,
   PaginaDeContatos,
@@ -406,9 +407,10 @@ export default function PaginaContatos() {
                         </>
                       ) : c.totalGastoCentavos != null ? (
                         formatarReais(c.totalGastoCentavos)
-                      ) : (
+                      ) : temCashback(c) ? null : (
                         <span className="text-tinta-suave">—</span>
                       )}
+                      <CashbackDoContato contato={c} />
                     </td>
                     <td className="whitespace-nowrap px-3 py-3 text-tinta">
                       {(() => {
@@ -506,5 +508,35 @@ export default function PaginaContatos() {
         </section>
       )}
     </div>
+  );
+}
+
+/** Tem saldo de cashback lido do Cardápio Web (e pode receber). */
+const temCashback = (c: Contato) => !c.optOut && (c.cashbackCentavos ?? 0) > 0;
+
+/**
+ * O cashback do Cardápio Web, dentro da célula de Compras: o saldo e até quando
+ * vale. Vencido, o valor aparece riscado. Uma coluna a mais faria a tabela
+ * rolar para o lado em 1440 px.
+ */
+function CashbackDoContato({ contato: c }: { contato: Contato }) {
+  if (!temCashback(c)) return null;
+  const valido = Boolean(c.cashbackValido);
+  // A célula é `nowrap`; esta parte quebra quando falta espaço (o valor não se
+  // parte: a moeda vem com espaço inseparável) — a tabela não rola em 1440 px.
+  return (
+    <span className="mt-1 block whitespace-normal text-xs">
+      <span className="text-tinta-suave">Cashback </span>
+      <span className={valido ? 'font-semibold text-tinta' : 'text-tinta-suave line-through'}>
+        {formatarReais(c.cashbackCentavos ?? 0)}
+      </span>
+      <span className={`block ${valido ? 'text-tinta-suave' : 'text-erro'}`}>
+        {!c.cashbackVenceEm
+          ? 'sem\u00a0prazo'
+          : valido
+            ? `vence\u00a0${formatarDiaCurto(c.cashbackVenceEm)}`
+            : `venceu\u00a0${formatarDiaCurto(c.cashbackVenceEm)}`}
+      </span>
+    </span>
   );
 }

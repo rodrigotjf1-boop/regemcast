@@ -63,7 +63,8 @@ export interface ResumoPublicos {
 
 /**
  * Os limites da loja: o corte do VIP (percentil 90 do total gasto) e os terços
- * do ticket médio, arredondados para reais inteiros. Uma consulta.
+ * do ticket médio, arredondados para reais inteiros, e o dia de hoje no fuso
+ * da conta (o cashback vale até o dia do vencimento). Uma consulta.
  */
 export async function limitesDosPublicos(db: Db, contaId: string): Promise<LimitesDosPublicos> {
   const p = await parametrosDaConta(db, contaId);
@@ -72,7 +73,8 @@ export async function limitesDosPublicos(db: Db, contaId: string): Promise<Limit
       (select percentile_disc(${1 - FRACAO_VIP}) within group (order by contato.total_gasto_centavos)
          from contato
         where contato.conta_id = ${contaId} and contato.opt_out = false and contato.sem_whatsapp_em is null and contato.total_gasto_centavos > 0) as vip,
-      t.baixo, t.alto
+      t.baixo, t.alto,
+      (select (now() at time zone c.timezone)::date::text from conta c where c.id = ${contaId}) as hoje
       from (
         select percentile_disc(${1 / 3}) within group (order by ${TICKET_SQL}) as baixo,
                percentile_disc(${2 / 3}) within group (order by ${TICKET_SQL}) as alto
@@ -80,7 +82,9 @@ export async function limitesDosPublicos(db: Db, contaId: string): Promise<Limit
          where contato.conta_id = ${contaId} and contato.opt_out = false and contato.sem_whatsapp_em is null and ${TICKET_SQL} > 0
       ) t
   `);
-  const x = r.rows[0] as { vip: string | number | null; baixo: string | number | null; alto: string | number | null } | undefined;
+  const x = r.rows[0] as
+    | { vip: string | number | null; baixo: string | number | null; alto: string | number | null; hoje: string | null }
+    | undefined;
   const num = (v: string | number | null | undefined) => (v == null ? null : Number(v));
   const baixo = emReais(num(x?.baixo), 'perto');
   const alto = emReais(num(x?.alto), 'perto');
@@ -90,6 +94,8 @@ export async function limitesDosPublicos(db: Db, contaId: string): Promise<Limit
     // Com os tickets todos parecidos, o terço de cima começa onde o de baixo acaba.
     ticketAltoAcimaCentavos: alto == null || baixo == null ? alto : Math.max(alto, baixo),
     ativoDias: p.ativoDias,
+    // Sem a conta (não acontece: a consulta roda dentro dela), o dia do servidor.
+    hoje: x?.hoje ?? new Date().toISOString().slice(0, 10),
   };
 }
 

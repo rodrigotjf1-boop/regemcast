@@ -23,6 +23,10 @@
  * que ainda não está na base é buscado no Cardápio Web e entra pelas MESMAS
  * regras da importação de clientes — e só se o dono já fez a declaração de
  * consentimento da loja. Compra de quem pediu para sair não é guardada.
+ *
+ * Cashback (Fase 4C): com a loja em dia, o cliente de cada pedido novo é
+ * relido no Cardápio Web — a compra pode ter usado ou gerado saldo, e a
+ * campanha da noite não pode dizer "você tem R$ 20" a quem gastou à tarde.
  */
 import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { eq, sql, type SQL } from 'drizzle-orm';
@@ -46,7 +50,8 @@ import {
   type PedidoDetalhe,
   type PedidoResumo,
 } from './cardapioweb.pedidos.regras';
-import { decidir, type ClienteCardapioWeb } from './cardapioweb.regras';
+import { decidir, saldosDaPagina, type ClienteCardapioWeb } from './cardapioweb.regras';
+import { bloquearClientes, gravarSaldos } from './cardapioweb.saldos';
 
 const PAUSA_ENTRE_PEDIDOS_MS = 650;
 /** Entre dois passos da mesma loja: a consulta de histórico é 5 por minuto. */
@@ -252,7 +257,7 @@ export class PedidosCardapiowebService {
 
     const desde = new Date(Math.max(ultima.getTime() - 5 * 60_000, agora.getTime() - HORAS_MAXIMAS_DE_CONSULTA * 3_600_000));
     const alterados = await this.cliente.pedidosAlterados(cred, desde);
-    const r = await this.processar(contaId, l, cred, alterados.filter((o) => o.status === 'closed'));
+    const r = await this.processar(contaId, l, cred, alterados.filter((o) => o.status === 'closed'), true);
     await this.desfazerCancelados(contaId, alterados);
 
     await this.atualizarEstado(contaId, {
@@ -287,12 +292,17 @@ export class PedidosCardapiowebService {
   /**
    * Abre os pedidos que faltam, liga cada um a um contato e grava as compras.
    * Três etapas: ler (transação curta) → Cardápio Web (sem transação) → gravar.
+   *
+   * @param relerCashback  loja em dia: o cliente de cada pedido é relido, para
+   *                       o saldo de cashback (na carga do histórico, não — o
+   *                       saldo de hoje veio com a importação)
    */
   private async processar(
     contaId: string,
     l: Linha,
     cred: Credencial,
     pedidos: PedidoResumo[],
+    relerCashback = false,
   ): Promise<{ gravadas: number; ignorados: number }> {
     // Marketplace fica de fora sem nem abrir o pedido: o histórico já diz o canal.
     const proprios = pedidos.filter((p) => !ehMarketplace(p));
@@ -331,22 +341,27 @@ export class PedidosCardapiowebService {
     }
     if (!compras.length) return { gravadas: 0, ignorados };
 
-    // 3. Quem ainda não é contato: buscar no Cardápio Web (sem transação).
+    // 3. Os clientes no Cardápio Web (sem transação). Quem ainda não é contato
+    //    entra pelas regras da importação — e só com a declaração do dono. Com
+    //    a loja em dia, quem comprou é relido também: o saldo de cashback.
     const conhecidos = await this.ctx.comConta(contaId, (db) => contatosPorTelefone(db, contaId, compras.map((c) => c.telefone)));
-    const semContato = [...new Set(compras.filter((c) => !acharContato(conhecidos, c.telefone) && c.clienteId).map((c) => c.clienteId!))];
-    const clientesNovos: ClienteCardapioWeb[] = [];
-    // Sem a declaração do dono, cliente novo não entra pela sincronização de pedidos.
-    if (semContato.length && l.consentimentoEm) {
-      for (let i = 0; i < semContato.length; i++) {
-        if (i > 0 || abrir.length) await esperar(PAUSA_ENTRE_PEDIDOS_MS);
-        const c = await this.cliente.cliente(cred, semContato[i]!);
-        if (c) clientesNovos.push(c);
-      }
+    const semContato = new Set(compras.filter((c) => !acharContato(conhecidos, c.telefone) && c.clienteId).map((c) => c.clienteId!));
+    const buscar = new Set<string>(l.consentimentoEm ? semContato : []);
+    if (relerCashback) for (const c of compras) if (c.clienteId) buscar.add(c.clienteId);
+    const lidos: ClienteCardapioWeb[] = [];
+    let consultas = 0;
+    for (const id of buscar) {
+      if (consultas++ > 0 || abrir.length) await esperar(PAUSA_ENTRE_PEDIDOS_MS);
+      const c = await this.cliente.cliente(cred, id);
+      if (c) lidos.push(c);
     }
+    // Sem a declaração do dono, cliente novo não entra pela sincronização de pedidos.
+    const clientesNovos = l.consentimentoEm ? lidos.filter((c) => semContato.has(String(c.id))) : [];
 
-    // 4. Gravar: clientes novos, compras de quem pode receber, totais.
+    // 4. Gravar: clientes novos, o cashback de quem foi lido, compras de quem pode receber, totais.
     const gravadas = await this.ctx.comConta(contaId, async (db) => {
       if (clientesNovos.length) await gravarClientesNovos(db, contaId, l, clientesNovos);
+      if (lidos.length) await gravarSaldos(db, contaId, saldosDaPagina(lidos), new Date());
       const contatos = await contatosPorTelefone(db, contaId, compras.map((c) => c.telefone));
 
       const linhas: { compra: CompraNormalizada; contatoId: string }[] = [];
@@ -495,18 +510,7 @@ async function gravarClientesNovos(db: Db, contaId: string, l: Linha, clientes: 
       `);
     }
   }
-  if (bloqueados.length) {
-    await db.execute(sql`
-      insert into contato (conta_id, telefone_e164, nome, opt_out, opt_out_em, opt_out_origem, importacao_id)
-      values ${sql.join(
-        bloqueados.map((b) => sql`(${contaId}, ${b.telefone}, ${b.nome}, true, ${agora}, 'cardapioweb', ${l.importacaoId})`),
-        sql`, `,
-      )}
-      on conflict (conta_id, telefone_e164) do update
-         set opt_out = true, opt_out_em = excluded.opt_out_em, opt_out_origem = excluded.opt_out_origem
-       where contato.opt_out = false
-    `);
-  }
+  await bloquearClientes(db, contaId, bloqueados, l.importacaoId, agora);
 }
 
 /**

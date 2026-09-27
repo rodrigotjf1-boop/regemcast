@@ -7,7 +7,7 @@ import { UsuarioAtual } from '../../common/usuario-atual.decorator';
 import { CampanhaService } from './campanha.service';
 import { CriarCampanhaDto } from './dto/criar-campanha.dto';
 import { EditarCampanhaDto } from './dto/editar-campanha.dto';
-import { PublicoDaCampanhaDto } from './dto/publico-da-campanha.dto';
+import { PreviaDoPublicoDto } from './dto/publico-da-campanha.dto';
 
 /**
  * Criar e disparar são rotas separadas de propósito.
@@ -34,7 +34,7 @@ export class CampanhaController {
    */
   @Post('previa')
   @HttpCode(HttpStatus.OK)
-  previaDoPublico(@UsuarioAtual() usuario: UsuarioAutenticado, @Body() dto: PublicoDaCampanhaDto) {
+  previaDoPublico(@UsuarioAtual() usuario: UsuarioAutenticado, @Body() dto: PreviaDoPublicoDto) {
     return this.servico.previaDoPublico(usuario.contaId, dto);
   }
 

@@ -17,6 +17,7 @@ import {
   time,
   bigserial,
   boolean,
+  date,
   inet,
   index,
   integer,
@@ -425,6 +426,12 @@ export const campanha = pgTable('campanha', {
   publicoOrigem: text('publico_origem'),
   /** O nome do público no cartão ("Toda a base", "Pedem à noite"…); nulo para lista e números. */
   publicoRotulo: text('publico_rotulo'),
+  /**
+   * De onde sai cada variável, em ordem (migration 034): `[{ origem, valor }]`.
+   * A conferência do cashback na hora do envio usa. Nulo = números digitados
+   * ou campanha anterior à 034.
+   */
+  variaveisLista: jsonb('variaveis_lista'),
   iniciadaEm: timestamp('iniciada_em', { withTimezone: true }),
   concluidaEm: timestamp('concluida_em', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
@@ -593,6 +600,12 @@ export const contato = pgTable('contato', {
   semWhatsappEm: timestamp('sem_whatsapp_em', { withTimezone: true }),
   /** "Tentar de novo": só as falhas depois disto contam (migration 031). */
   semWhatsappLiberadoEm: timestamp('sem_whatsapp_liberado_em', { withTimezone: true }),
+  /** Saldo de cashback no Cardápio Web, em centavos; nulo = nunca lido (migration 034). */
+  cashbackCentavos: integer('cashback_centavos'),
+  /** Dia em que o cashback vence (`AAAA-MM-DD`); nulo = sem data (migration 034). */
+  cashbackVenceEm: date('cashback_vence_em'),
+  /** Quando o saldo foi lido do Cardápio Web (migration 034). */
+  cashbackEm: timestamp('cashback_em', { withTimezone: true }),
   metricasEm: timestamp('metricas_em', { withTimezone: true }),
   metricasOrigem: text('metricas_origem'),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
@@ -601,6 +614,8 @@ export const contato = pgTable('contato', {
   unicoUq: uniqueIndex('idx_contato_unico').on(t.contaId, t.telefoneE164),
   contaIdx: index('idx_contato_conta').on(t.contaId, t.criadoEm),
   elegivelIdx: index('idx_contato_elegivel').on(t.contaId).where(sql`opt_out = false`),
+  /** Só quem tem saldo de cashback (migration 034): os públicos de cashback e a coluna da tela. */
+  cashbackIdx: index('idx_contato_cashback').on(t.contaId, t.cashbackVenceEm).where(sql`cashback_centavos > 0`),
 }));
 
 /** Quem está em qual lista. `contaId` próprio para a RLS não precisar de junção. */
@@ -769,6 +784,16 @@ export const integracaoCardapioweb = pgTable('integracao_cardapioweb', {
   pedidosProximoEm: timestamp('pedidos_proximo_em', { withTimezone: true }),
   pedidosErro: text('pedidos_erro'),
   pedidosAtualizadoEm: timestamp('pedidos_atualizado_em', { withTimezone: true }),
+  // ---- leitura diária do cashback (migration 034)
+  /** A última página lida; 0 = parada (a próxima leitura começa do início). */
+  saldosPagina: integer('saldos_pagina').notNull().default(0),
+  saldosIniciadaEm: timestamp('saldos_iniciada_em', { withTimezone: true }),
+  /** Quando a próxima leitura pode sair (4h no fuso da conta, ou a nova tentativa); nulo = assim que der. */
+  saldosProximaEm: timestamp('saldos_proxima_em', { withTimezone: true }),
+  saldosTravaAte: timestamp('saldos_trava_ate', { withTimezone: true }),
+  saldosConcluidaEm: timestamp('saldos_concluida_em', { withTimezone: true }),
+  saldosErro: text('saldos_erro'),
+  saldosAtualizadoEm: timestamp('saldos_atualizado_em', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
 });
