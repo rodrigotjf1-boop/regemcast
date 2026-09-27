@@ -104,6 +104,10 @@ Detalhe e o porquê em `docs/marca.md`; fonte da verdade em `kit/LEIA-ME.md`.
   livre só dentro da janela de 24h aberta pelo contato. A categoria declarada
   (marketing / utilidade / autenticação) precisa corresponder ao conteúdo —
   marketing disfarçado de utilidade derruba a qualidade da WABA do cliente.
+- **Parou o marketing pelo próprio WhatsApp** (aviso `user_preferences`, ou a
+  falha `131050`): a pessoa sai dos envios como no "Parar promoções" (bloqueio
+  com origem `preferencia_whatsapp`); voltar (`resume`) desfaz SÓ esse bloqueio
+  e só de quem tem autorização registrada. Detalhe em `docs/whatsapp.md`.
 - **Descanso entre campanhas e número sem WhatsApp** (Fase 4A): quem recebeu
   marketing nos últimos N dias da conta fica de fora (`descanso`, sem custo no
   plano); número recusado com 131026 em duas campanhas sai sozinho dos envios e

@@ -11,6 +11,7 @@ describe('traduzirErroMeta', () => {
     expect(traduzirErroMeta(132000).titulo).toMatch(/variáve/i);
     expect(traduzirErroMeta(131049).titulo).toMatch(/segurou/i);
     expect(traduzirErroMeta(131026).titulo).toMatch(/não recebe/i);
+    expect(traduzirErroMeta(131050).titulo).toBe('Parou o marketing pelo WhatsApp');
   });
 
   it('escreve para quem opera, não para quem programa', () => {
@@ -59,7 +60,7 @@ describe('deveRetentar — a decisão que custa dinheiro', () => {
   });
 
   it('NÃO retenta erro permanente — repetir queima destinatário e cobra de novo', () => {
-    for (const c of [131026, 132000, 132001, 132007, 132012, 132015, 132016, 133010, 133005]) {
+    for (const c of [131026, 131050, 132000, 132001, 132007, 132012, 132015, 132016, 133010, 133005]) {
       expect(deveRetentar(traduzirErroMeta(c))).toBe(false);
     }
   });

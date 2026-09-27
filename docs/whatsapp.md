@@ -325,6 +325,27 @@ para quem usa metade do limite em 7 dias com qualidade alta.
   (em qualquer número — não depende das conversas ligadas). Só o fato; o texto
   não é guardado. "Parar promoções" e os pedidos de saída não contam.
 
+## Parou ou voltou a aceitar marketing pelo WhatsApp
+
+A pessoa pode, no próprio WhatsApp, parar de receber marketing da empresa — e
+voltar depois. A Meta avisa pelo `user_preferences` (formato conferido na
+documentação oficial em 26/09/2026, em `meta/preferencias.regras.ts`) e, se
+mesmo assim alguém mandar marketing, recusa com o erro `131050` no aviso de
+entrega (só lá, nunca no envio; a Meta manda não reenviar).
+
+- **Parou** (`stop`, ou a falha `131050`): a pessoa entra nos bloqueios com a
+  origem `preferencia_whatsapp` ("Parou o marketing pelo WhatsApp" em Contatos
+  → Bloqueios), nas duas formas do celular, e o que ainda não saiu para ela
+  vira falha "Pediu para sair" — como o botão "Parar promoções".
+- **Voltou** (`resume`): desfaz SÓ o bloqueio que veio daqui, e só de quem tem
+  autorização registrada na base. Quem também pediu para sair pelo botão ou
+  por mensagem continua de fora — o pedido direto à empresa vale mais; o dono
+  reativa em Bloqueios, se for o caso.
+- **Assinatura do aviso:** o campo `user_preferences` precisa estar ligado nos
+  webhooks do app na Meta (Conectar no WhatsApp → Etapa 2. Configuração de
+  produção → Configurar webhooks). Sem ele, o `131050` ainda pega quem parou —
+  mas só depois de uma tentativa.
+
 ## Quem recebe: lista, público da base ou números (migration 033)
 
 "Quem recebe" tem três caminhos, e a campanha aceita **um** deles:
@@ -333,9 +354,10 @@ para quem usa metade do limite em 7 dias com qualidade alta.
 - **Da base:** toda a base, uma importação (arquivo ou Cardápio Web), um
   perfil, um estado pelo DDD ou um público pronto (VIP, "Pedem à noite",
   "Já compraram…", bairro, aniversário, engajamento).
-  - Existe porque os contatos importados sem escolher lista — as planilhas
-    exportadas do Cardápio Web, por exemplo — não apareciam em lugar nenhum da
-    campanha (pedido do dono, 26/09/2026).
+  - Existe porque os contatos importados sem escolher lista — as planilhas de
+    clientes exportadas do Anota Aí (ativos, em potencial, inativos), por
+    exemplo — não apareciam em lugar nenhum da campanha (pedido do dono,
+    26/09/2026).
   - `GET /contatos/importacoes` lista as importações com quantos de cada uma
     ainda podem receber.
 - **Digitar números:** até 500.

@@ -99,6 +99,12 @@ const CATALOGO: Record<number, Omit<ErroMetaTraduzido, 'codigo'>> = {
     explicacao:
       'Este número não tem WhatsApp, não aceitou os termos do aplicativo ou está numa versão antiga. Não adianta reenviar — confira o número com o contato.',
   },
+  131050: {
+    classe: 'destinatario',
+    titulo: 'Parou o marketing pelo WhatsApp',
+    explicacao:
+      'A pessoa escolheu, no próprio WhatsApp, não receber mais mensagens de marketing da sua empresa. Ela sai dos envios sozinha e aparece em Contatos → Bloqueios; se voltar a aceitar pelo WhatsApp, volta sozinha também. Não adianta reenviar.',
+  },
   131021: {
     classe: 'destinatario',
     titulo: 'Remetente e destinatário são o mesmo número',
