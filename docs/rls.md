@@ -72,36 +72,56 @@ Esquecer o contexto é erro barulhento, não silencioso.
 
 `comEscopoSistema(motivo, fn)` liga `app.escopo = 'sistema'`, e nesse escopo as
 policies deixam passar tudo. É a chave mestra. Ela existe porque há caminhos que
-precisam enxergar **antes de saber qual é a conta**.
+precisam enxergar **antes de saber qual é a conta** — e porque a distribuição,
+quem opera o Regemcast, não é uma conta.
 
-Só existem **dois motivos** que autorizam a chave mestra, e todo uso precisa
-caber em um deles:
+Só existem **três motivos** que autorizam a chave mestra, e todo uso precisa
+caber em um deles. O terceiro, (C), foi escrito em 27/09/2026 para dar nome ao
+que o console da distribuição já fazia; um motivo novo continua sendo decisão de
+arquitetura.
 
-**(A) A conta ainda não é conhecida — ou ainda não existe.**
+**(A) A conta ainda não é conhecida — ou ainda não existe.** O request, o job ou
+o aviso de fora chega sem conta; a chave mestra serve para achar de quem é o
+trabalho.
 
 | Uso | Onde | Por quê |
 |---|---|---|
 | `auth.login` | `auth.service.ts` | Chega e-mail e senha; achar o usuário exige procurar entre todas as contas. Assim que acha, o fluxo passa para `comConta`. |
 | `auth.revalidar` | `auth.guard.ts` | O guard revalida o usuário a cada request — e roda **antes** do interceptor que abre o contexto da conta. |
-| `auth.convite.previa` | `auth.service.ts` | O convite é lido por token, antes de existir conta. |
+| `auth.login.segunda_etapa` | `auth.service.ts` | Depois do código da segunda etapa, a sessão nasce da pré-sessão, que não abre conta no request: lê o usuário pelo id dela e a conta dele, e confere que os dois estão ativos. Duas leituras e acaba. |
+| `segunda-etapa.buscar`, `segunda-etapa.passo`, `segunda-etapa.falha`, `segunda-etapa.zerar` | `segunda-etapa.service.ts` | O código da segunda etapa chega com a pré-sessão, sem conta no request: lê o usuário pelo id dela, grava o passo do código aceito (uso único, atômico), conta a falha (trava depois do teto) e zera as falhas no acerto. Cada comando é no id do usuário. |
+| `auth.recuperar.buscar` | `auth.service.ts` | "Esqueci a senha" chega só com o e-mail, sem sessão: acha o usuário entre todas as contas para emitir o código. A resposta é a mesma exista ou não o e-mail. |
+| `auth.recuperar.redefinir` | `auth.service.ts` | Com o código conferido, troca a senha do usuário ativo daquele e-mail, derruba as sessões (versão do token) e destrava. Um `update` e acaba. |
+| `codigo.emitir.*`, `codigo.conferir.*` | `codigo-verificacao.service.ts` | Os códigos por e-mail (`*` = a finalidade: recuperar a senha, confirmar o convite…) vivem em `codigo_verificacao` (policy `rc_sistema`), antes de haver sessão, e são achados pelo e-mail. Emitir serializa por e-mail e finalidade (espaço entre envios); conferir trava a linha e conta o erro na própria transação. |
+| `auth.convite.previa`, `auth.convite.codigo`, `auth.convite.cnpj`, `auth.convite.conferir` | `auth.service.ts` | O convite é lido pelo hash do token, antes de existir conta (`lista_espera`, policy `rc_sistema`): para mostrar a tela, mandar o código, consultar o CNPJ e conferir tudo antes de gastar o código. |
+| `auth.convite.cnpj_repetido` | `auth.service.ts` | Uma conta por CNPJ: saber se o CNPJ já tem conta exige olhar todas. Devolve só sim ou não. |
 | `auth.convite.aceitar` | `auth.service.ts` | É a transação que **cria** a conta. |
-| `lista-espera.*` (5 usos) | `lista-espera.service.ts` | `lista_espera` vive antes da conta e tem policy `rc_sistema`: nenhuma linha dela pertence a uma conta. |
-| `meta.webhook.*` (7 usos) | `webhook.service.ts` | O webhook da Meta chega identificado por `phone_number_id`, não por conta — e chega sem sessão, autenticado só pela assinatura HMAC. Descobrir de quem é aquele número exige enxergar entre contas. |
-| `coexistencia.expirar` | `coexistencia.job.ts` | Varredura entre contas: o job acorda sem sessão para carimbar quem passou das 24 horas da coexistência sem sinal da cópia. Só carimba o estado — regra de negócio nenhuma acontece aqui. |
-| `coexistencia.concluir` | `coexistencia.job.ts` | Mesma varredura, antes de expirar: conclui quem já tem, no registro de eventos (tabela `rc_sistema`), um lote de histórico com 100%. Só carimba o estado. |
-| `conversas.retencao.contas` | `conversa.retencao.ts` | O job de prazo de guarda acorda sem conta: lê quais contas têm prazo definido. Dura o `select` e acaba — o apagamento roda em `comConta`, uma conta por vez. |
+| `lista-espera.cadastro`, `lista-espera.listar`, `lista-espera.capacidade`, `lista-espera.convite`, `lista-espera.recusa` | `lista-espera.service.ts` | `lista_espera` vive antes da conta e tem policy `rc_sistema`: nenhuma linha dela pertence a uma conta. |
+| `aviso.registrar_dispositivo` | `aviso.service.ts` | O token do aparelho (FCM) é único na base, e o mesmo celular pode ter sido de outra pessoa ou de outra conta: registrar move a linha daquele token para quem entrou agora (e volta as preferências ao padrão se a pessoa mudou). Um `upsert` na linha do token. |
+| `meta.webhook.registrar` | `webhook.service.ts` | O aviso da Meta chega sem sessão, autenticado só pela assinatura HMAC: cada mudança vira uma linha em `wa_evento` (policy `rc_sistema`), com chave de idempotência — reentrega da Meta não duplica. |
+| `meta.webhook.ler`, `meta.webhook.concluir`, `meta.webhook.falha` | `webhook.service.ts` | O processamento acorda sem conta: lê o lote pendente de `wa_evento` e, depois de aplicar cada evento (cada aplicação acha a própria conta), marca concluído ou conta a falha. Um comando em `wa_evento` por vez. |
 | `meta.webhook.status` | `webhook.service.ts` | O status de entrega chega identificado por `wamid`, não por conta. Encontrar o destinatário exige enxergar entre contas — e a guarda de ordem vai no próprio `where`, então o escopo dura o `update` e acaba. |
 | `meta.webhook.resposta` | `webhook.service.ts` | A resposta da pessoa à mensagem da campanha chega com o `context.id` = o `wamid` da nossa mensagem, pelo número, sem conta. O `update` de `respondida_em` é pelo `wamid` (único), dura o comando e acaba. A falha 131026 que marca o contato "sem WhatsApp" roda dentro do escopo `meta.webhook.status`, com a conta do destinatário que o próprio `update` achou. |
 | `meta.webhook.saida.conta` | `webhook.service.ts` | O pedido de saída (botão "Parar promoções", mensagem "sair") e a preferência de marketing do WhatsApp (`user_preferences`) chegam pelo número, sem conta: acha a conta dona do `phone_number_id`. Dura o `select` e acaba. |
 | `meta.webhook.saida.bloquear` | `webhook.service.ts` | Com a conta achada, bloqueia a pessoa nas duas formas do celular (cria a linha só se não existir), tira da fila o que ainda não saiu. Todo comando leva o `conta_id` achado. Também para a falha 131050 ("parou o marketing"), com a conta que o `update` do status achou. |
 | `meta.webhook.preferencia.liberar` | `webhook.service.ts` | A pessoa voltou a aceitar marketing pelo WhatsApp (`user_preferences` = `resume`): desfaz só o bloqueio de origem `preferencia_whatsapp`, só de quem tem autorização registrada, na conta achada pelo número. Um `update` e acaba. |
-| `whatsapp.conectar-manual` | `meta.service.ts` | A rota é da distribuição e não tem sessão: o operador informa qual conta está conectando, e antes de qualquer chamada à Meta é preciso confirmar que ela existe. Dura o `select` e acaba — a gravação acontece em `comConta`. |
-| `coexistencia.fila` | `coexistencia.job.ts` | Lê a fila de números com sincronização pendente, de todas as contas. A ação em cima de cada um acontece em `comConta`, dentro do `MetaService`, que é onde o token daquele cliente pode ser lido. |
+| `meta.webhook.modelo` | `webhook.service.ts` | A mudança de status do modelo chega pelo id dele na Meta, sem conta: o `update` acha o modelo por esse id e devolve a conta dona, para o aviso ao dono. |
+| `meta.webhook.qualidade`, `meta.webhook.sincronizacao` | `webhook.service.ts` | A qualidade do número e o fim (ou a falha) da cópia do histórico da coexistência chegam pelo `phone_number_id`: um `update` no número. |
+| `meta.webhook.limite` | `webhook.service.ts` | O limite de envio (`business_capability_update`) chega pelo número ou só pela WABA: um `update` nos números achados. |
 | `meta.agenda.lote` | `agenda.service.ts` | Um lote da agenda do celular (`smb_app_state_sync`) chega identificado pelo número. A transação acha o número, trava a linha e grava os contatos **daquela** conta — todo `insert`/`update` leva o `conta_id` do número achado. |
-| `meta.conversas.historico` / `.ecos` / `.recebidas` | `conversas.service.ts` | Histórico, ecos do celular e mensagens ao vivo chegam pelo número. A transação acha o número, trava a linha e grava conversas e mensagens **daquela** conta — todo `insert`/`update` leva o `conta_id` do número achado. |
 | `meta.agenda.reenfileirar` | `agenda.service.ts` | A retomada devolve à fila os lotes de agenda e histórico guardados de números que já têm resposta. É um `update` em `wa_evento` (tabela `rc_sistema`) cruzado com `wa_numero` de todas as contas — a cada minuto só números com resposta dos últimos 7 dias; na subida do servidor, sem janela. |
-| `campanha.worker.*` (8 usos) | `campanha.service.ts` | O worker do disparo acorda sem sessão e roda as campanhas ativas de todas as contas. Cada escopo dura um passo curto — listar, ler, reservar (com a trava por conta), marcar início, pausar, desacelerar, concluir, soltar presos — e todo comando leva o `id` da campanha ou o `conta_id` dela; nenhuma transação fica aberta durante a chamada à Meta. |
-| `meta.limite.vencidos` / `meta.limite.gravar` | `limite.job.ts` | O job relê o limite de envio da Meta de todos os números, de 6 em 6 horas: um `select` entre contas para achar os vencidos (com o token cifrado de cada um) e um `update` por número, no id dele, depois da chamada à Meta — nunca durante. |
+| `meta.conversas.historico`, `meta.conversas.ecos`, `meta.conversas.recebidas` | `conversas.service.ts` | Histórico, ecos do celular e mensagens ao vivo chegam pelo número. A transação acha o número, trava a linha e grava conversas e mensagens **daquela** conta — todo `insert`/`update` leva o `conta_id` do número achado. |
+| `coexistencia.expirar` | `coexistencia.job.ts` | Varredura entre contas: o job acorda sem sessão para carimbar quem passou das 24 horas da coexistência sem sinal da cópia. Só carimba o estado — regra de negócio nenhuma acontece aqui. |
+| `coexistencia.concluir` | `coexistencia.job.ts` | Mesma varredura, antes de expirar: conclui quem já tem, no registro de eventos (tabela `rc_sistema`), um lote de histórico com 100%. Só carimba o estado. |
+| `coexistencia.fila` | `coexistencia.job.ts` | Lê a fila de números com sincronização pendente, de todas as contas. A ação em cima de cada um acontece em `comConta`, dentro do `MetaService`, que é onde o token daquele cliente pode ser lido. |
+| `conversas.retencao.contas` | `conversa.retencao.ts` | O job de prazo de guarda acorda sem conta: lê quais contas têm prazo definido. Dura o `select` e acaba — o apagamento roda em `comConta`, uma conta por vez. |
+| `meta.limite.vencidos`, `meta.limite.gravar` | `limite.job.ts` | O job relê o limite de envio da Meta de todos os números, de 6 em 6 horas: um `select` entre contas para achar os vencidos (com o token cifrado de cada um) e um `update` por número, no id dele, depois da chamada à Meta — nunca durante. |
+| `campanha.worker.listar`, `campanha.worker.ler`, `campanha.worker.reivindicar`, `campanha.worker.iniciar`, `campanha.worker.pausar`, `campanha.worker.desacelerar`, `campanha.worker.concluir`, `campanha.worker.presos` | `campanha.service.ts` | O worker do disparo acorda sem sessão e roda as campanhas ativas de todas as contas. Cada escopo dura um passo curto — listar, ler, reservar (com a trava por conta e as marcações da fila: quem saiu, sem WhatsApp, cashback usado), marcar início, pausar, desacelerar, concluir, soltar presos — e todo comando leva o `id` da campanha ou o `conta_id` dela; nenhuma transação fica aberta durante a chamada à Meta. |
+| `assinatura.virar_ciclo` | `assinatura.job.ts` | O job vira o ciclo das assinaturas vencidas de todas as contas (a redução de plano agendada entra, a renovação cancelada encerra) e devolve à fila as campanhas daquelas contas pausadas por falta de saldo. Um `update` pela data, em lotes. |
+| `cobranca.aviso.*` | `cobranca.job.ts` | O job dos avisos de fim do grátis acorda sem conta: marca e devolve, numa tacada, as assinaturas da janela (`*` = a marca do aviso) e lê o e-mail dos donos delas para mandar. Outra réplica no mesmo instante não pega as mesmas. |
+| `cobranca.inadimplentes` | `cobranca.job.ts` | O job marca inadimplente quem passou do grátis sem pagar, entre todas as contas: um `update` pela data. |
+| `cobranca.aviso.registrar`, `cobranca.aviso.marcar` | `cobranca.service.ts` | O aviso do Mercado Pago chega sem sessão, conferido pela assinatura secreta: vira uma linha em `evento_mercadopago` (policy `rc_sistema`, idempotente pelo `x-request-id`) e depois é marcado processado, ou com o erro. |
+| `cobranca.sincronizar_assinatura`, `cobranca.sincronizar_fatura` | `cobranca.service.ts` | Depois de reler no Mercado Pago (fora da transação), a assinatura ou a fatura é achada pelo id dela lá ou pela nossa referência externa — o aviso não traz conta — e aplicada ali: todo comando leva o id da assinatura e a conta achados. |
 | `cardapioweb.retomar` | `cardapioweb.service.ts` | A cada minuto, o job procura importações de clientes do Cardápio Web que ficaram órfãs (servidor reiniciou no meio), entre todas as contas. Dura o `select` e acaba — a importação roda em `comConta`, uma conta por vez. |
 | `cardapioweb.pedidos.fila` | `cardapioweb.pedidos.job.ts` | A cada 15 s, o job reserva até 8 lojas com a busca de pedidos pendente, entre todas as contas: um `update` com CTE materializada que só grava a trava (`pedidos_trava_ate`) e devolve o `conta_id`. O passo de cada loja — chamadas ao Cardápio Web, compras, totais — roda em `comConta`, e nenhuma transação fica aberta durante a chamada. |
 | `cardapioweb.saldos.fila` | `cardapioweb.saldos.job.ts` | A cada 10 s, o job reserva até 8 lojas com a leitura diária do cashback vencida (4h no fuso da conta), entre todas as contas: um `update` com CTE materializada que só grava a trava (`saldos_trava_ate`) e devolve o `conta_id`. O passo de cada loja — até 5 páginas de clientes, com os saldos e os bloqueios — roda em `comConta`, e nenhuma transação fica aberta durante a chamada ao Cardápio Web. |
@@ -111,15 +131,47 @@ caber em um deles:
 | Uso | Onde | Por quê |
 |---|---|---|
 | `auditoria` | `auditoria.service.ts` | Só em `registrarForaDeContexto`. Uma tentativa de login recusada precisa ficar registrada justamente quando a transação do request não vinga. |
+| `telemetria.registrar` | `telemetria.service.ts` | O erro vai para `evento_erro` numa transação própria: precisa ficar justamente quando o request falha e a transação dele volta. A tabela é da distribuição (policy `rc_sistema`): nenhuma conta a lê. |
+
+**(C) O ator é a distribuição, não uma conta.** O console da distribuição é de
+quem opera o Regemcast. O operador entra com senha e código do aplicativo
+autenticador (segredo próprio, fora do login dos clientes), e cada ação dele
+fica em `acesso_distribuicao`. As tabelas da distribuição têm a policy
+`rc_sistema`: nenhuma conta as lê, nem as próprias linhas. O que o console lê
+das contas é agregado — uso, envios, situação, erros —, sem conteúdo de
+mensagem nem contato. O que ele escreve numa conta são duas ações de suporte,
+numa conta nomeada, que ficam também na auditoria da própria conta.
+
+| Uso | Onde | Por quê |
+|---|---|---|
+| `distribuicao.criar_operador` | `distribuicao-auth.service.ts` | Faz nascer um operador (`operador_distribuicao`). A rota não tem sessão: é protegida pela chave da distribuição (`x-dist-token`), e é a única coisa que essa chave ainda faz no console. |
+| `distribuicao.entrar`, `distribuicao.buscar_operador`, `distribuicao.totp_iniciar`, `distribuicao.totp_ativar`, `distribuicao.totp_passo`, `distribuicao.falha`, `distribuicao.sessao` | `distribuicao-auth.service.ts` | O login do operador (senha e código do aplicativo): lê e atualiza só a linha dele em `operador_distribuicao`. |
+| `distribuicao.registrar_acesso` | `distribuicao-auth.service.ts` | Cada ação do console grava quem fez o quê em `acesso_distribuicao` — também o login recusado. |
+| `distribuicao.contas`, `distribuicao.resumo` | `distribuicao-leitura.service.ts` | O painel das contas: consulta agregada sobre todas (uso do ciclo, envios, último login, situação), até 500 linhas. Só leitura. |
+| `distribuicao.acessos` | `distribuicao-leitura.service.ts` | Quem tem acesso a uma conta nomeada, com o método das duas etapas — nunca segredo nem hash. |
+| `distribuicao.telemetria` | `distribuicao-leitura.service.ts` | Os erros de todas as contas, agrupados pelo código (`evento_erro`). |
+| `distribuicao.zerar_duas_etapas` | `distribuicao-leitura.service.ts` | Suporte, depois de conferir a identidade por fora: desliga as duas etapas de um usuário nomeado, destrava e derruba as sessões. Fica também na auditoria da conta, visível ao cliente. |
+| `distribuicao.estender_gratis` | `distribuicao-leitura.service.ts` | Estende o grátis de uma conta nomeada (negociação, conta interna) e devolve à fila as campanhas dela paradas por falta de pagamento. Não mexe em quem já paga. |
+| `distribuicao.planos.listar`, `distribuicao.planos.criar`, `distribuicao.planos.atualizar` | `distribuicao-planos.service.ts` | O catálogo de planos (`plano`, policy `rc_sistema`) é da distribuição; a listagem conta quantas contas há em cada plano. |
+| `whatsapp.conectar-manual` | `meta.service.ts` | A rota é da distribuição e não tem sessão: o operador informa qual conta está conectando, e antes de qualquer chamada à Meta é preciso confirmar que ela existe. Dura o `select` e acaba — a gravação acontece em `comConta`. |
+
+**Fora dos três motivos — a corrigir.** Estes usos não vazam dado entre contas
+(filtram pela conta ou pela pessoa), mas abrem a chave mestra sem precisar: a
+conta já é conhecida. A correção é trocar por `comConta`; até lá, ficam aqui
+para ninguém copiar o padrão.
+
+| Uso | Onde | Por que está errado |
+|---|---|---|
+| `auth.renovar` | `auth.service.ts` | A rota é autenticada: o request já roda em `comConta` (interceptor). Lê só a versão do token do próprio usuário. |
+| `aviso.remover_dispositivo` | `aviso.service.ts` | Rota autenticada: apaga o aparelho só da própria pessoa. |
+| `aviso.alvos`, `aviso.limpar_tokens` | `aviso.service.ts` | A conta vem no parâmetro: os aparelhos dela podem ser lidos e limpos em `comConta(contaId)`. O aviso sai solto (`void`), mas `comConta` também abre transação própria. |
 
 Quando um caminho novo aparecer, a pergunta não é "posso usar?", e sim **em qual
-dos dois motivos ele cabe**. Se não couber em nenhum, o caminho está errado —
-não a regra. Os jobs da fila, quando existirem, cabem em (A) pelo mesmo motivo
-do `coexistencia.job`: o worker acorda sem sessão, descobre a conta e
-**imediatamente** entra em `comConta`.
+dos três motivos ele cabe**. Se não couber em nenhum, o caminho está errado —
+não a regra.
 
-Repare no padrão que os dois usos do `coexistencia.job` seguem, porque ele é a
-forma certa de um job de fundo usar a chave mestra: escopo de sistema **só para
+Repare no padrão que os usos do `coexistencia.job` seguem, porque ele é a forma
+certa de um job de fundo usar a chave mestra: escopo de sistema **só para
 descobrir de quem é o trabalho**, e a partir daí `comConta`. O que o job faz em
 escopo de sistema é carimbar estado; o que exige token, decisão ou dado do
 cliente acontece dentro da conta.
@@ -128,13 +180,15 @@ Regras de uso:
 
 - O `motivo` é obrigatório e vira o GUC `app.motivo_sistema` — dá para lê-lo em
   trigger, log e depuração para saber **por que** aquela transação abriu a chave
-  mestra.
+  mestra. É texto fixo; a parte variável (a finalidade do código, a marca do
+  aviso) vai no fim, e aqui aparece como `*`.
 - O escopo de sistema dura o **menor** trecho possível: descobre a conta, sai.
   Nunca envolva regra de negócio inteira em `comEscopoSistema`.
-- Um uso novo que não caiba em (A) nem em (B) é decisão de arquitetura, não
-  detalhe de implementação — discuta antes. Cada porta a mais na chave mestra é
-  uma a mais para alguém errar depois.
-- Auditoria de operação em escopo de sistema grava `ator_tipo = 'sistema'`.
+- Um uso novo que não caiba em nenhum dos três motivos é decisão de
+  arquitetura, não detalhe de implementação — discuta antes. Cada porta a mais
+  na chave mestra é uma a mais para alguém errar depois.
+- Auditoria de operação em escopo de sistema grava `ator_tipo = 'sistema'` (ou
+  `distribuicao`, quando é o console).
 
 Para revisar todos os usos de uma vez:
 
@@ -142,14 +196,10 @@ Para revisar todos os usos de uma vez:
 grep -rn "comEscopoSistema" backend/src --include=*.ts | grep -v spec
 ```
 
-**A tabela está atrás do código.** Conferido em 26/09/2026: o código usa 86
-nomes de escopo de sistema e a tabela explica pouco mais de 20 — o disparo
-(`campanha.worker.*`), a cobrança, a distribuição, a lista de espera, o login
-em duas etapas e boa parte dos avisos da Meta ainda não têm a linha aqui.
-Completar é pendência: cada escopo que falta precisa da sua linha, com o motivo
-(A ou B). Até lá, todo escopo NOVO entra na tabela no mesmo PR — se o número
-subir sem a tabela crescer junto, o isolamento está sendo corroído por dentro,
-e a tabela, não o código, é o lugar de discutir isso.
+**A tabela anda com o código.** `backend/src/db/escopos-sistema.spec.ts` lê
+todos os `comEscopoSistema` do código e esta seção, e falha se um nome do
+código não tiver linha aqui, se uma linha citar nome que não existe mais, ou se
+o nome não for texto à vista. Completada em 27/09/2026: 90 nomes.
 
 ## Teste manual: provar que a RLS pega
 

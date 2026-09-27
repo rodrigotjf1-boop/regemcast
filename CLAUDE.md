@@ -127,13 +127,16 @@ Detalhe e o porquê em `docs/marca.md`; fonte da verdade em `kit/LEIA-ME.md`.
   `regemcast_app`, sem `bypassrls`. Detalhes em [`docs/rls.md`](docs/rls.md).
 - **Toda consulta roda dentro de um contexto** (`comConta` ou
   `comEscopoSistema`). Fora de contexto, `ContextoDb.db` estoura de propósito.
-- **`comEscopoSistema` só é autorizado por dois motivos:** (A) a conta ainda não
-  é conhecida ou ainda não existe — login, revalidação de sessão no guard,
-  convite, lista de espera, e depois webhook da Meta e jobs da fila; (B) o
-  registro precisa sobreviver ao rollback da operação — hoje só a auditoria fora
-  de contexto. Um uso que não caiba em (A) nem em (B) é decisão de arquitetura:
-  discuta antes. A tabela com os usos atuais está em
-  [`docs/rls.md`](docs/rls.md) e precisa crescer junto com o código.
+- **`comEscopoSistema` só é autorizado por três motivos:** (A) a conta ainda
+  não é conhecida ou ainda não existe — login, segunda etapa, recuperação de
+  senha, convite, lista de espera, avisos da Meta e do Mercado Pago, jobs; (B) o
+  registro precisa sobreviver ao rollback da operação — a auditoria fora de
+  contexto e a telemetria; (C) o ator é a distribuição, não uma conta — o
+  console da distribuição, com login próprio e cada acesso registrado. Um uso
+  que não caiba em nenhum dos três é decisão de arquitetura: discuta antes.
+  Cada nome tem a sua linha em [`docs/rls.md`](docs/rls.md), e
+  `backend/src/db/escopos-sistema.spec.ts` falha se o código e a tabela se
+  separarem.
 - **Token da Meta é por conta, cifrado em repouso** (AES-256-GCM, chave em
   `META_TOKEN_CHAVE`). Nunca em log, nunca no front, nunca em resposta de API,
   nem parcialmente.
