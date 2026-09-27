@@ -36,6 +36,7 @@ const POR_PAGINA = 50;
 
 const ORIGEM: Record<string, string> = {
   botao_modelo: 'Tocou em "Parar promoções"',
+  preferencia_whatsapp: 'Parou o marketing pelo WhatsApp',
   mensagem: 'Respondeu pedindo para sair',
   painel: 'Descadastrado no painel',
   cardapioweb: 'Desligou o WhatsApp no Cardápio Web',

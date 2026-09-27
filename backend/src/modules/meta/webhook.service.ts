@@ -30,6 +30,7 @@ import { ConversasService } from './conversas.service';
 import { historicoRecusado, sincronizacaoConcluida } from './coexistencia.regras';
 import { codigoDoErro, mensagemDoErroMeta, traduzirErroMeta } from './erros-meta';
 import { limiteInformado } from './limite.regras';
+import { ERRO_MARKETING_PARADO, ORIGEM_PREFERENCIA, preferenciasDoAviso } from './preferencias.regras';
 
 /** Quantos eventos processar por passada. */
 const LOTE = 50;
@@ -241,6 +242,8 @@ export class WebhookService {
         return this.ecoDeMensagem(mudanca);
       case 'message_template_status_update':
         return this.statusDoModelo(mudanca);
+      case 'user_preferences':
+        return this.preferenciasDeMarketing(mudanca);
       default:
         this.log.debug(`Evento "${tipo}" recebido e guardado, sem tratamento próprio.`);
     }
@@ -495,8 +498,80 @@ export class WebhookService {
     );
   }
 
+  /**
+   * A pessoa parou ou voltou a aceitar marketing da empresa pelo próprio
+   * WhatsApp (`user_preferences`, formato em `preferencias.regras.ts`).
+   *
+   * Parar = sai dos envios, como o "Parar promoções": bloqueio com a origem
+   * `preferencia_whatsapp`. Voltar = desfaz SÓ o bloqueio que veio daqui —
+   * quem também pediu para sair pelo botão ou por mensagem continua de fora
+   * (o pedido direto à empresa vale mais; o dono reativa em Bloqueios).
+   */
+  private async preferenciasDeMarketing(m: Mudanca): Promise<void> {
+    const phoneNumberId = this.phoneNumberIdDe(m);
+    if (!phoneNumberId) return;
+    for (const p of preferenciasDoAviso(m.value ?? {})) {
+      if (p.acao === 'parar') await this.bloquearContato(phoneNumberId, p.telefone, ORIGEM_PREFERENCIA);
+      else await this.liberarPreferencia(phoneNumberId, p.telefone);
+    }
+  }
+
+  /**
+   * Voltou a aceitar marketing pelo WhatsApp: tira o bloqueio que a própria
+   * preferência tinha posto. Só de quem tem autorização registrada na base —
+   * a linha criada só para guardar o bloqueio (número que não estava na base)
+   * não vira contato que recebe campanha.
+   */
+  private async liberarPreferencia(phoneNumberId: string, telefone: string): Promise<void> {
+    const contaId = await this.contaDoNumero(phoneNumberId);
+    if (!contaId) return;
+
+    const pessoa = doWhatsapp(telefone);
+    const formas = [...new Set([telefone, pessoa, gemeoDoCelular(pessoa)].filter((f): f is string => Boolean(f)))];
+    const lista = sql.join(
+      formas.map((f) => sql`${f}::text`),
+      sql`, `,
+    );
+
+    const liberados = await this.ctx.comEscopoSistema('meta.webhook.preferencia.liberar', async (db) => {
+      const r = await db.execute(sql`
+        update contato
+           set opt_out = false,
+               opt_out_em = null,
+               opt_out_origem = null
+         where conta_id = ${contaId}
+           and telefone_e164 in (${lista})
+           and opt_out = true
+           and opt_out_origem = ${ORIGEM_PREFERENCIA}
+           and consentimento_origem is not null
+        returning id
+      `);
+      return r.rows.length;
+    });
+    if (!liberados) return;
+
+    this.log.log(`Contato ${this.mascarar(pessoa)} voltou a aceitar marketing pelo WhatsApp.`);
+    await this.auditoria.registrarForaDeContexto({
+      contaId,
+      atorTipo: 'sistema',
+      acao: 'contato.opt_in',
+      entidade: 'contato',
+      detalhe: { origem: ORIGEM_PREFERENCIA, telefone: this.mascarar(pessoa) },
+    });
+  }
+
   private async bloquearContato(phoneNumberId: string, telefone: string, origem: string): Promise<void> {
-    const contaId = await this.ctx.comEscopoSistema('meta.webhook.saida.conta', async (db) => {
+    const contaId = await this.contaDoNumero(phoneNumberId);
+    if (!contaId) {
+      this.log.warn(`Pedido de saída de um número que não é de nenhuma conta (${this.mascarar(phoneNumberId)}).`);
+      return;
+    }
+    await this.bloquearNaConta(contaId, telefone, origem);
+  }
+
+  /** A conta dona do número: o aviso chega pelo número, sem conta (motivo A de `docs/rls.md`). */
+  private async contaDoNumero(phoneNumberId: string): Promise<string | null> {
+    return this.ctx.comEscopoSistema('meta.webhook.saida.conta', async (db) => {
       const [linha] = await db
         .select({ contaId: waNumero.contaId })
         .from(waNumero)
@@ -504,11 +579,10 @@ export class WebhookService {
         .limit(1);
       return linha?.contaId ?? null;
     });
-    if (!contaId) {
-      this.log.warn(`Pedido de saída de um número que não é de nenhuma conta (${this.mascarar(phoneNumberId)}).`);
-      return;
-    }
+  }
 
+  /** Bloqueia a pessoa na conta, nas duas formas do celular; tira da fila o que ainda não saiu; audita. */
+  private async bloquearNaConta(contaId: string, telefone: string, origem: string): Promise<void> {
     // A pessoa no formato da base (com o 9) e a outra forma do mesmo celular.
     const pessoa = doWhatsapp(telefone);
     const gemeo = gemeoDoCelular(pessoa);
@@ -595,8 +669,8 @@ export class WebhookService {
       falhou: agora,
     };
 
-    await this.ctx.comEscopoSistema('meta.webhook.status', async (db) => {
-      const alterados = await db
+    const alterados = await this.ctx.comEscopoSistema('meta.webhook.status', async (db) => {
+      const mudados = await db
         .update(campanhaDestinatario)
         .set({
           status: novo,
@@ -623,9 +697,17 @@ export class WebhookService {
       // Número sem WhatsApp (131026) em duas campanhas: sai sozinho dos
       // próximos envios. O `update` acima já achou a conta do destinatário.
       if (novo === 'falhou' && erro.erroCodigo === ERRO_SEM_WHATSAPP) {
-        for (const a of alterados) await registrarFalhaSemWhatsapp(db, a.contaId, a.telefone);
+        for (const a of mudados) await registrarFalhaSemWhatsapp(db, a.contaId, a.telefone);
       }
+      return mudados;
     });
+
+    // Parou o marketing pelo WhatsApp (131050): a Meta não entrega mais marketing
+    // a esta pessoa e manda não reenviar — ela sai dos envios, como pelo aviso
+    // `user_preferences` (que pode não estar assinado, ou ter chegado antes).
+    if (novo === 'falhou' && erro.erroCodigo === ERRO_MARKETING_PARADO) {
+      for (const a of alterados) await this.bloquearNaConta(a.contaId, a.telefone, ORIGEM_PREFERENCIA);
+    }
   }
 
   /**

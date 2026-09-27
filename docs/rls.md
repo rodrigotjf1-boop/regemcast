@@ -92,6 +92,9 @@ caber em um deles:
 | `conversas.retencao.contas` | `conversa.retencao.ts` | O job de prazo de guarda acorda sem conta: lê quais contas têm prazo definido. Dura o `select` e acaba — o apagamento roda em `comConta`, uma conta por vez. |
 | `meta.webhook.status` | `webhook.service.ts` | O status de entrega chega identificado por `wamid`, não por conta. Encontrar o destinatário exige enxergar entre contas — e a guarda de ordem vai no próprio `where`, então o escopo dura o `update` e acaba. |
 | `meta.webhook.resposta` | `webhook.service.ts` | A resposta da pessoa à mensagem da campanha chega com o `context.id` = o `wamid` da nossa mensagem, pelo número, sem conta. O `update` de `respondida_em` é pelo `wamid` (único), dura o comando e acaba. A falha 131026 que marca o contato "sem WhatsApp" roda dentro do escopo `meta.webhook.status`, com a conta do destinatário que o próprio `update` achou. |
+| `meta.webhook.saida.conta` | `webhook.service.ts` | O pedido de saída (botão "Parar promoções", mensagem "sair") e a preferência de marketing do WhatsApp (`user_preferences`) chegam pelo número, sem conta: acha a conta dona do `phone_number_id`. Dura o `select` e acaba. |
+| `meta.webhook.saida.bloquear` | `webhook.service.ts` | Com a conta achada, bloqueia a pessoa nas duas formas do celular (cria a linha só se não existir), tira da fila o que ainda não saiu. Todo comando leva o `conta_id` achado. Também para a falha 131050 ("parou o marketing"), com a conta que o `update` do status achou. |
+| `meta.webhook.preferencia.liberar` | `webhook.service.ts` | A pessoa voltou a aceitar marketing pelo WhatsApp (`user_preferences` = `resume`): desfaz só o bloqueio de origem `preferencia_whatsapp`, só de quem tem autorização registrada, na conta achada pelo número. Um `update` e acaba. |
 | `whatsapp.conectar-manual` | `meta.service.ts` | A rota é da distribuição e não tem sessão: o operador informa qual conta está conectando, e antes de qualquer chamada à Meta é preciso confirmar que ela existe. Dura o `select` e acaba — a gravação acontece em `comConta`. |
 | `coexistencia.fila` | `coexistencia.job.ts` | Lê a fila de números com sincronização pendente, de todas as contas. A ação em cima de cada um acontece em `comConta`, dentro do `MetaService`, que é onde o token daquele cliente pode ser lido. |
 | `meta.agenda.lote` | `agenda.service.ts` | Um lote da agenda do celular (`smb_app_state_sync`) chega identificado pelo número. A transação acha o número, trava a linha e grava os contatos **daquela** conta — todo `insert`/`update` leva o `conta_id` do número achado. |
@@ -138,9 +141,14 @@ Para revisar todos os usos de uma vez:
 grep -rn "comEscopoSistema" backend/src --include=*.ts | grep -v spec
 ```
 
-Hoje são **21** chamadas, todas classificadas na tabela acima. Se o número subir
-sem que a tabela tenha crescido junto, o isolamento está sendo corroído por
-dentro — e a tabela, não o código, é o lugar de discutir isso.
+**A tabela está atrás do código.** Conferido em 26/09/2026: o código usa 86
+nomes de escopo de sistema e a tabela explica pouco mais de 20 — o disparo
+(`campanha.worker.*`), a cobrança, a distribuição, a lista de espera, o login
+em duas etapas e boa parte dos avisos da Meta ainda não têm a linha aqui.
+Completar é pendência: cada escopo que falta precisa da sua linha, com o motivo
+(A ou B). Até lá, todo escopo NOVO entra na tabela no mesmo PR — se o número
+subir sem a tabela crescer junto, o isolamento está sendo corroído por dentro,
+e a tabela, não o código, é o lugar de discutir isso.
 
 ## Teste manual: provar que a RLS pega
 
