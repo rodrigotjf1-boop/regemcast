@@ -7,11 +7,10 @@
  * divergiriam — foi assim que um telefone sem o código do país passou na tela e
  * foi recusado pela Meta.
  */
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
 import type { UsuarioAutenticado } from '../../common/auth.guard';
-import { SomenteWebGuard } from '../../common/somente-web.guard';
 import { UsuarioAtual } from '../../common/usuario-atual.decorator';
 import { SalvarModeloDto } from './dto/salvar-modelo.dto';
 import { ModeloService } from './modelo.service';
@@ -39,9 +38,13 @@ export class ModeloController {
     return { problemas: await this.servico.conferir(usuario.contaId, dto, id) };
   }
 
-  /** Criar modelo é do navegador: formulário longo, prévia e regras da Meta. */
+  /**
+   * Grava o rascunho — do navegador ou do aplicativo. Até 29/09/2026 era só do
+   * navegador; o dono decidiu que o app tem os mesmos recursos do site. As
+   * regras da Meta continuam num lugar só: o `conferir` acima, que as duas
+   * telas chamam antes de enviar.
+   */
   @Post()
-  @UseGuards(SomenteWebGuard)
   criar(@UsuarioAtual() usuario: UsuarioAutenticado, @Body() dto: SalvarModeloDto) {
     return this.servico.salvarRascunho(usuario.contaId, usuario.id, dto);
   }

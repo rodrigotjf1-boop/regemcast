@@ -1,9 +1,14 @@
 # RegemCast — app Android
 
-O RegemCast no celular: acompanhar campanhas, disparar, pausar e editar o que já
-existe. Criar modelo e montar campanha continuam na web — por decisão de produto,
-e a regra vive no servidor (sessão do app tem escopo `app`, e as duas rotas de
-criação recusam esse escopo).
+O RegemCast no celular, com os mesmos recursos do site (decisão do dono em
+29/09/2026). Já no app: acompanhar, disparar, pausar e editar campanhas, e
+**criar e editar modelos** — o mesmo editor do site, com imagem, vídeo e
+documento no cabeçalho, carrossel, oferta por tempo limitado e a prévia clara e
+escura. As regras da Meta continuam num lugar só: o `POST /modelos/conferir` do
+servidor, que o app chama antes de enviar.
+
+Montar campanha ainda é só no navegador até a próxima etapa: a sessão do app tem
+escopo `app`, e a rota de criação recusa esse escopo (`SomenteWebGuard`).
 
 Flutter 3.44 · Android 7.0+ (minSdk 24) · pacote `com.dmsregem.regemcast`.
 
@@ -15,9 +20,11 @@ lib/
   api/                 cliente HTTP, erros legíveis, modelos de dados, leituras
   sessao/              cofre (Keystore) e o controle da sessão
   tema/                cores e tema — as MESMAS da web (frontend/src/app/globals.css)
-  componentes/         marca, cartão, pílula, anel de consumo, estados
-  telas/               entrar, portas (abrindo/biometria/sem conexão), casca, painel
-test/                  cliente da API, dados, tela de entrada; capturas das telas
+  componentes/         marca, cartão, pílula, anel de consumo, estados, prévia do WhatsApp
+  telas/               entrar, portas (abrindo/biometria/sem conexão), casca, painel,
+                       modelos (lista, detalhe e o editor)
+test/                  cliente da API, dados, telas (entrada, campanhas, editor de
+                       modelo); capturas das telas
 ```
 
 ## Sessão e segurança
@@ -31,6 +38,16 @@ test/                  cliente da API, dados, tela de entrada; capturas das tela
   de `/auth/login`.
 - Biometria opcional para reabrir, oferecida uma vez após o primeiro login.
 - Trocar a senha ou suspender o acesso derruba a sessão do app na hora.
+
+## Mídia dos modelos
+
+O arquivo escolhido no celular sobe para `POST /midia` (multipart, com o tipo
+declarado na parte — o servidor aceita pelo tipo e pelos primeiros bytes) e o
+modelo guarda a referência `midia:<uuid>`. O seletor do Android já filtra o que
+a Meta aceita (JPG/PNG até 5 MB, MP4 até 16 MB, PDF até 16 MB), e o tamanho é
+conferido antes de subir pelos dados móveis. O seletor fica atrás de
+`escolherMidiaProvider` para o teste trocá-lo por um falso (o canal nativo não
+existe no `flutter test`).
 
 ## Rodar
 

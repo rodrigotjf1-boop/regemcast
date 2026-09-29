@@ -112,6 +112,13 @@ export function EditorModelo({
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
   const [ocupado, setOcupado] = useState(false);
+  /**
+   * O id do modelo no servidor: o do rascunho reaberto, ou o que o primeiro
+   * salvar desta tela criou. Sem isto, um envio que falhava DEPOIS de gravar
+   * (número desconectado) fazia o segundo clique criar de novo — e o nome
+   * repetido voltava como "algo deu errado" (500).
+   */
+  const idSalvo = useRef<string | undefined>(inicial?.id);
 
   const ehCarrossel = dados.tipo === 'carrossel';
   const variaveis = useMemo(() => variaveisDoCorpo(dados.corpo), [dados.corpo]);
@@ -154,7 +161,7 @@ export function EditorModelo({
     setAviso('');
     setOcupado(true);
     try {
-      const { problemas: achados } = await modelos.conferir(dados, inicial?.id);
+      const { problemas: achados } = await modelos.conferir(dados, idSalvo.current);
       setProblemas(achados);
       if (!achados.length) {
         setAviso('Passou em todas as regras que dá para conferir antes de enviar. A Meta ainda revisa o conteúdo.');
@@ -170,13 +177,14 @@ export function EditorModelo({
     setErro('');
     setAviso('');
     setOcupado(true);
+    let gravou = false;
     try {
       // Tudo que vai para a Meta passa ANTES pela análise das regras dela (e
       // pela duplicata). Com problema, nada é enviado: a tela diz o que corrigir,
       // em cada seção, e a pessoa corrige antes de tentar de novo. Uma recusa da
       // Meta chega horas depois, com um código só; aqui chega na hora, completa.
       if (enviar || naMeta) {
-        const { problemas: achados } = await modelos.conferir(dados, inicial?.id);
+        const { problemas: achados } = await modelos.conferir(dados, idSalvo.current);
         setProblemas(achados);
         if (achados.length) {
           setErro(
@@ -189,16 +197,20 @@ export function EditorModelo({
         }
       }
 
-      const { id } = inicial
-        ? await modelos.atualizar(inicial.id, dados)
+      const { id } = idSalvo.current
+        ? await modelos.atualizar(idSalvo.current, dados)
         : await modelos.criar(dados);
+      idSalvo.current = id;
+      gravou = true;
       // Modelo que já existe na Meta não passa por "enviar": o próprio salvar
       // mandou a alteração para lá, e chamar o envio criaria outro com o mesmo
       // nome — que ela recusa.
       if (enviar && !naMeta) await modelos.enviar(id);
       aoSalvar();
     } catch (e) {
-      setErro(mensagemDoErro(e));
+      // Gravou e só o envio falhou: o trabalho não se perdeu, e a tela diz.
+      setErro(gravou && !naMeta ? `${mensagemDoErro(e)} O rascunho ficou salvo.` : mensagemDoErro(e));
+      topo.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } finally {
       setOcupado(false);
     }
@@ -318,12 +330,13 @@ export function EditorModelo({
                           f.valor === 'NENHUM' ? undefined : f.valor,
                         );
                         // Limpa o que a outra forma não usa. Mandar para a Meta
-                        // um campo que sobrou da escolha anterior é recusa certa.
+                        // um campo que sobrou da escolha anterior é recusa certa
+                        // — e a imagem escolhida não serve de vídeo.
                         if (f.valor !== 'TEXT') {
                           mudar('cabecalhoTexto', undefined);
                           mudar('cabecalhoExemplo', undefined);
                         }
-                        if (f.valor === 'TEXT' || f.valor === 'NENHUM') {
+                        if (f.valor !== (dados.cabecalhoFormato ?? 'NENHUM')) {
                           mudar('cabecalhoMidia', undefined);
                         }
                       }}
@@ -343,6 +356,9 @@ export function EditorModelo({
 
               {dados.cabecalhoFormato && dados.cabecalhoFormato !== 'TEXT' && (
                 <SeletorDeMidia
+                  // Um seletor por formato: o nome do arquivo escolhido para a
+                  // imagem não pode aparecer no seletor do vídeo.
+                  key={dados.cabecalhoFormato}
                   formato={dados.cabecalhoFormato}
                   valor={dados.cabecalhoMidia ?? ''}
                   aoMudar={(v) => mudar('cabecalhoMidia', v)}
@@ -874,6 +890,10 @@ function SeletorDeMidia({
   const campo = useRef<HTMLInputElement>(null);
 
   const rotulo = formato === 'IMAGE' ? 'imagem' : formato === 'VIDEO' ? 'vídeo' : 'documento';
+  // "Vídeo" e "documento" são masculinos: "Nenhuma vídeo" e "Vídeo escolhida"
+  // apareciam na tela.
+  const escolhido = formato === 'IMAGE' ? 'Imagem escolhida' : formato === 'VIDEO' ? 'Vídeo escolhido' : 'Documento escolhido';
+  const nenhum = formato === 'IMAGE' ? 'Nenhuma imagem' : formato === 'VIDEO' ? 'Nenhum vídeo' : 'Nenhum documento';
   const aceita =
     formato === 'IMAGE' ? 'image/jpeg,image/png' : formato === 'VIDEO' ? 'video/mp4,video/3gpp' : 'application/pdf';
   const limite = formato === 'IMAGE' ? '5 MB' : '16 MB';
@@ -916,7 +936,7 @@ function SeletorDeMidia({
 
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-tinta">
-              {valor ? nome || `${rotulo[0].toUpperCase()}${rotulo.slice(1)} escolhida` : `Nenhum${formato === 'DOCUMENT' ? '' : 'a'} ${rotulo}`}
+              {valor ? nome || escolhido : nenhum}
             </p>
             {!compacto && (
               <p className="text-xs text-tinta-suave">

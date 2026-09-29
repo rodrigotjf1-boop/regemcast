@@ -204,6 +204,19 @@ export function variaveisDe(texto: string): number[] {
 }
 
 /**
+ * Os exemplos que vão para a Meta: um por variável distinta do texto, na ordem.
+ *
+ * A tela guarda os exemplos por posição. Quem preenche dois e depois apaga o
+ * `{{2}}` do texto fica com um sobrando — e exemplo a mais é recusa da Meta
+ * (132000, "number of parameters does not match").
+ */
+export function exemplosDoCorpo(corpo: string | null | undefined, exemplos: string[] | null | undefined): string[] {
+  return (exemplos ?? [])
+    .slice(0, quantasVariaveis(corpo ?? ''))
+    .filter((e) => (e ?? '').trim().length > 0);
+}
+
+/**
  * Quantas variáveis DISTINTAS o texto usa.
  *
  * Distintas, e não ocorrências: `{{1}}` repetido duas vezes ainda é uma
@@ -403,8 +416,12 @@ function conferirVariaveis(corpo: string, exemplos: string[]): ProblemaNoModelo[
   }
 
   // Um exemplo por variável distinta. Contar ocorrências em vez de distintas é
-  // o erro 132000 da Meta — foi o que a auditoria do Regem encontrou.
-  const informados = exemplos.filter((e) => (e ?? '').trim().length > 0).length;
+  // o erro 132000 da Meta — foi o que a auditoria do Regem encontrou. Conta
+  // só as primeiras posições: o exemplo de uma variável que saiu do texto não
+  // vale por outra (e nem vai para a Meta — `exemplosDoCorpo`).
+  const informados = exemplos
+    .slice(0, distintas.length)
+    .filter((e) => (e ?? '').trim().length > 0).length;
   if (informados < distintas.length) {
     p(
       `Preencha um exemplo para cada variável: são ${distintas.length}, e você informou ${informados}. A Meta recusa o modelo sem eles.`,

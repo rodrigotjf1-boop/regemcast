@@ -184,4 +184,86 @@ void main() {
       );
     });
   });
+
+  group('arquivos', () {
+    test(
+      'o arquivo sobe com o tipo declarado na parte (a mídia é aceita por ele)',
+      () async {
+        String? parte;
+        String? sessao;
+        final api = ClienteApi(
+          base: 'https://api.teste',
+          http: MockClient((req) async {
+            parte = latin1.decode(req.bodyBytes);
+            sessao = req.headers['Authorization'];
+            return _json({'referencia': 'midia:1'}, 201);
+          }),
+        )..token = 'abc';
+
+        await api.enviarArquivo(
+          '/midia',
+          campo: 'arquivo',
+          bytes: [0xFF, 0xD8, 0xFF, 0xE0],
+          nomeArquivo: 'foto.jpg',
+          tipoMime: 'image/jpeg',
+        );
+        expect(parte, contains('content-type: image/jpeg'));
+        expect(parte, contains('name="arquivo"; filename="foto.jpg"'));
+        expect(sessao, 'Bearer abc');
+      },
+    );
+
+    test(
+      'sem tipo declarado, a parte sai genérica (como na importação de contatos)',
+      () async {
+        String? parte;
+        final api = ClienteApi(
+          base: 'https://api.teste',
+          http: MockClient((req) async {
+            parte = latin1.decode(req.bodyBytes);
+            return _json({}, 201);
+          }),
+        );
+        await api.enviarArquivo(
+          '/contatos/importar/previa',
+          campo: 'arquivo',
+          bytes: utf8.encode('a,b'),
+          nomeArquivo: 'lista.csv',
+        );
+        expect(parte, contains('content-type: application/octet-stream'));
+      },
+    );
+
+    test('baixar devolve os bytes, com a sessão', () async {
+      String? sessao;
+      final api = ClienteApi(
+        base: 'https://api.teste',
+        http: MockClient((req) async {
+          sessao = req.headers['Authorization'];
+          return http.Response.bytes([1, 2, 3], 200);
+        }),
+      )..token = 'abc';
+      expect(await api.baixar('/midia/1'), [1, 2, 3]);
+      expect(sessao, 'Bearer abc');
+    });
+
+    test('baixar o que não existe vira erro com a frase da API', () async {
+      final api = ClienteApi(
+        base: 'https://api.teste',
+        http: MockClient(
+          (_) async => _json({'mensagem': 'Arquivo não encontrado.'}, 404),
+        ),
+      );
+      await expectLater(
+        api.baixar('/midia/x'),
+        throwsA(
+          isA<ErroApi>().having(
+            (e) => e.mensagem,
+            'mensagem',
+            'Arquivo não encontrado.',
+          ),
+        ),
+      );
+    });
+  });
 }

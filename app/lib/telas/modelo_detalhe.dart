@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../api/erro_api.dart';
 import '../api/modelos.dart';
 import '../componentes/basicos.dart';
+import '../componentes/dialogos.dart';
 import '../componentes/previa_mensagem.dart';
-import '../config.dart';
+import '../componentes/previa_modelo.dart';
 import '../tema/cores.dart';
-import 'modelo_editar.dart';
+import 'modelo_editor.dart';
 import 'modelos.dart' show rotuloCategoria, situacaoDoModelo;
 
 /// Um modelo: como a mensagem chega, em que pé está na Meta e o que dá para
@@ -32,10 +32,6 @@ class _TelaModeloDetalheState extends ConsumerState<TelaModeloDetalhe> {
   late ModeloSalvo? _local = widget.local;
   bool _agindo = false;
 
-  void _avisar(String texto) => ScaffoldMessenger.of(
-    context,
-  ).showSnackBar(SnackBar(content: Text(texto)));
-
   String get _nome => _local?.nome ?? widget.meta!.nome;
   String get _status => widget.meta?.status ?? _local!.status;
 
@@ -53,61 +49,20 @@ class _TelaModeloDetalheState extends ConsumerState<TelaModeloDetalhe> {
     });
   }
 
-  Future<bool> _confirmar({
-    required String titulo,
-    required String texto,
-    required String botao,
-    bool perigo = false,
-  }) async {
-    final c = Cores.de(context);
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: c.superficie,
-        title: Text(titulo),
-        content: Text(
-          texto,
-          style: TextStyle(color: c.tintaSuave, height: 1.45),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Voltar'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(0, 44),
-              backgroundColor: perigo ? c.erro : null,
-              foregroundColor: perigo
-                  ? (Theme.of(ctx).brightness == Brightness.dark
-                        ? const Color(0xFF231632)
-                        : Colors.white)
-                  : null,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(botao),
-          ),
-        ],
-      ),
-    );
-    return ok == true;
-  }
-
   Future<void> _editar(ModeloSalvo m) async {
-    final status = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) => TelaEditarModelo(modelo: m)),
+    final r = await Navigator.of(context).push<ResultadoEditor>(
+      MaterialPageRoute(builder: (_) => TelaEditorModelo(inicial: m)),
     );
-    if (status == null || !mounted) return;
-    _avisar(
-      m.naMeta
-          ? 'Edição enviada. A Meta analisa o texto novo antes de liberar.'
-          : 'Rascunho salvo.',
-    );
+    if (!mounted) return;
+    // Mesmo sem resultado (saiu depois de uma falha no envio), o rascunho
+    // pode ter mudado: relê.
+    if (r != null) avisar(context, r.mensagem);
     await _reler();
   }
 
   Future<void> _enviar(ModeloSalvo m) async {
-    final ok = await _confirmar(
+    final ok = await confirmar(
+      context,
       titulo: 'Enviar para a Meta?',
       texto:
           'A Meta analisa o modelo antes de liberar para campanha — costuma levar de minutos a algumas horas. '
@@ -117,25 +72,33 @@ class _TelaModeloDetalheState extends ConsumerState<TelaModeloDetalhe> {
     if (!ok || !mounted) return;
     setState(() => _agindo = true);
     try {
-      await ref.read(servicoModelosProvider).enviarParaAprovacao(m.id);
+      final status = await ref
+          .read(servicoModelosProvider)
+          .enviarParaAprovacao(m.id);
       if (!mounted) return;
-      _avisar('Enviado. Avisamos na lista quando a Meta responder.');
+      avisar(
+        context,
+        ResultadoEditor(FimDoEditor.enviado, status: status).mensagem,
+      );
       await _reler();
     } catch (e) {
-      if (mounted) _avisar(mensagemDoErro(e));
+      // A recusa na hora (a Meta disse não) grava o motivo: relê para mostrar.
+      if (mounted) avisar(context, mensagemDoErro(e));
+      await _reler();
     } finally {
       if (mounted) setState(() => _agindo = false);
     }
   }
 
   Future<void> _excluir(ModeloSalvo m) async {
-    final ok = await _confirmar(
+    final ok = await confirmar(
+      context,
       titulo: m.naMeta ? 'Excluir da Meta?' : 'Excluir o rascunho?',
       texto: m.naMeta
-          ? 'O modelo sai daqui e da Meta, e não pode mais ser usado em campanha. '
-                'A Meta segura o nome "${m.nome}" por 30 dias: nesse período não dá para criar outro com o mesmo nome.'
+          ? 'Excluir apaga o modelo aqui e na Meta, e ele não pode mais ser usado em campanha. Duas coisas que não dá para desfazer: '
+                'o nome "${m.nome}" fica bloqueado por 30 dias, e as mensagens que já saíram continuam sendo entregues — excluir não cancela envio.'
           : 'O rascunho some. Não dá para desfazer.',
-      botao: 'Excluir',
+      botao: m.naMeta ? 'Excluir na Meta' : 'Excluir',
       perigo: true,
     );
     if (!ok || !mounted) return;
@@ -143,12 +106,15 @@ class _TelaModeloDetalheState extends ConsumerState<TelaModeloDetalhe> {
     try {
       final naMeta = await ref.read(servicoModelosProvider).excluir(m.id);
       if (!mounted) return;
-      _avisar(
-        naMeta ? 'Modelo excluído aqui e na Meta.' : 'Rascunho excluído.',
+      avisar(
+        context,
+        naMeta
+            ? 'Modelo excluído aqui e na Meta. O nome só volta a ficar livre em 30 dias, e as mensagens que já saíram continuam sendo entregues.'
+            : 'Rascunho excluído.',
       );
       Navigator.of(context).pop();
     } catch (e) {
-      if (mounted) _avisar(mensagemDoErro(e));
+      if (mounted) avisar(context, mensagemDoErro(e));
     } finally {
       if (mounted) setState(() => _agindo = false);
     }
@@ -166,7 +132,7 @@ class _TelaModeloDetalheState extends ConsumerState<TelaModeloDetalhe> {
     final recusado =
         tom == TomPilula.erro && motivo != null && motivo.isNotEmpty;
 
-    final podeEditar = m != null && m.editavelNoApp;
+    final podeEditar = m != null && m.podeEditar;
     final podeExcluir = m != null && !m.emAnalise;
 
     return Scaffold(
@@ -216,15 +182,27 @@ class _TelaModeloDetalheState extends ConsumerState<TelaModeloDetalhe> {
               Pilula(rotulo, tom: tom),
               Pilula(rotuloCategoria(categoria)),
               Pilula(idioma),
-              if (m?.tipo == 'carrossel') const Pilula('Carrossel'),
+              if (m?.ehCarrossel ?? false) const Pilula('Carrossel'),
             ],
           ),
           const SizedBox(height: 14),
           if (recusado) ...[
+            // Recusado se corrige e reenvia com o MESMO nome (a Meta aceita
+            // edição de modelo recusado). Criar outro com nome novo levava a
+            // pessoa a repetir o mesmo erro com outro nome.
             Aviso(
               tom: TomPilula.erro,
               icone: Icons.report_gmailerrorred_rounded,
-              texto: 'Motivo da Meta: $motivo',
+              texto: m != null && m.podeEditar
+                  ? 'A Meta recusou: $motivo Toque em Editar, corrija e salve — a correção volta para a Meta com o mesmo nome.'
+                  : 'A Meta recusou: $motivo',
+              acao: m != null && m.podeEditar
+                  ? TextButton.icon(
+                      onPressed: _agindo ? null : () => _editar(m),
+                      icon: const Icon(Icons.edit_outlined),
+                      label: const Text('Editar'),
+                    )
+                  : null,
             ),
             const SizedBox(height: 14),
           ],
@@ -233,20 +211,6 @@ class _TelaModeloDetalheState extends ConsumerState<TelaModeloDetalhe> {
               icone: Icons.info_outline_rounded,
               texto:
                   'Este modelo foi criado fora do Regemcast, direto na Meta. Dá para usar em campanha, mas editar e excluir só pelo painel da Meta.',
-            ),
-            const SizedBox(height: 14),
-          ] else if (m.tipo == 'carrossel') ...[
-            Aviso(
-              icone: Icons.view_carousel_outlined,
-              texto:
-                  'Carrossel tem imagem por cartão: a edição é pelo site. Daqui dá para ver e excluir.',
-              acao: TextButton(
-                onPressed: () => launchUrl(
-                  Uri.parse('$urlWeb/modelos'),
-                  mode: LaunchMode.externalApplication,
-                ),
-                child: const Text('Abrir no site'),
-              ),
             ),
             const SizedBox(height: 14),
           ] else if (m.emAnalise) ...[
@@ -265,10 +229,26 @@ class _TelaModeloDetalheState extends ConsumerState<TelaModeloDetalhe> {
             ),
             const SizedBox(height: 14),
           ],
-          _Previa(meta: meta, local: m),
+          if (m != null)
+            PreviaDoModelo(dados: DadosModelo.deSalvo(m), comExemplos: false)
+          else
+            PreviaMensagem(
+              corpo: meta!.corpo,
+              cabecalho: meta.cabecalho,
+              rodape: meta.rodape,
+              botoes: [for (final b in meta.botoes) (null, b)],
+            ),
           if (m != null && m.variaveis > 0) ...[
             const SizedBox(height: 14),
             _Exemplos(modelo: m),
+          ] else if (m == null && meta!.variaveis > 0) ...[
+            const SizedBox(height: 10),
+            Text(
+              meta.variaveis == 1
+                  ? '1 variável a preencher na campanha.'
+                  : '${meta.variaveis} variáveis a preencher na campanha.',
+              style: TextStyle(color: c.tintaSuave, fontSize: 12.5),
+            ),
           ],
           if (m != null && levaBotaoDeSaida(m.categoria, m.tipo)) ...[
             const SizedBox(height: 14),
@@ -283,7 +263,7 @@ class _TelaModeloDetalheState extends ConsumerState<TelaModeloDetalhe> {
           ],
         ],
       ),
-      bottomNavigationBar: m != null && m.status == 'rascunho'
+      bottomNavigationBar: m != null && m.podeEnviar
           ? SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
@@ -301,42 +281,6 @@ class _TelaModeloDetalheState extends ConsumerState<TelaModeloDetalhe> {
               ),
             )
           : null,
-    );
-  }
-}
-
-class _Previa extends StatelessWidget {
-  const _Previa({required this.meta, required this.local});
-
-  final ModeloNaMeta? meta;
-  final ModeloSalvo? local;
-
-  @override
-  Widget build(BuildContext context) {
-    final m = local;
-    // O nosso registro sabe o tipo de cada botão e o formato do cabeçalho;
-    // a Meta, na listagem, só devolve os textos.
-    if (m != null) {
-      final midia = m.cabecalhoFormato != null && m.cabecalhoFormato != 'TEXT'
-          ? m.cabecalhoFormato
-          : null;
-      return PreviaMensagem(
-        corpo: m.corpo,
-        cabecalho: m.cabecalhoFormato == 'TEXT' ? m.cabecalhoTexto : null,
-        cabecalhoMidia: midia,
-        rodape: m.rodape,
-        botoes: [
-          for (final b in botoesComSaida(m.categoria, m.tipo, m.botoes))
-            (b.tipo, b.texto),
-        ],
-      );
-    }
-    final n = meta!;
-    return PreviaMensagem(
-      corpo: n.corpo,
-      cabecalho: n.cabecalho,
-      rodape: n.rodape,
-      botoes: [for (final b in n.botoes) (null, b)],
     );
   }
 }

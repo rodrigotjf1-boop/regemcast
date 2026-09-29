@@ -14,7 +14,7 @@
  * Nos dois casos quem sobe para a Meta somos nós, e o que volta é um handle.
  */
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 
 import { baixarPublico, DownloadFalhou, EnderecoRecusado, type ArquivoBaixado } from '../../common/baixar-publico';
 import { ContextoDb } from '../../db/contexto';
@@ -131,6 +131,24 @@ export class MidiaService {
       if (!achada?.conteudo) throw new NotFoundException('Arquivo não encontrado.');
       return { conteudo: achada.conteudo, tipoMime: achada.tipoMime };
     });
+  }
+
+  /**
+   * O formato (`IMAGE`, `VIDEO`, `DOCUMENT`) de cada mídia guardada, pelo id.
+   *
+   * Serve para conferir, antes de ir à Meta, se o arquivo combina com o
+   * cabeçalho: uma imagem escolhida para um cabeçalho que depois virou vídeo
+   * seria enviada como vídeo — e recusada.
+   */
+  async formatosDe(contaId: string, ids: string[]): Promise<Map<string, string>> {
+    if (!ids.length) return new Map();
+    const linhas = await this.ctx.comConta(contaId, (db) =>
+      db
+        .select({ id: midia.id, tipoMime: midia.tipoMime })
+        .from(midia)
+        .where(and(eq(midia.contaId, contaId), inArray(midia.id, ids))),
+    );
+    return new Map(linhas.map((l) => [l.id, TIPOS_ACEITOS[l.tipoMime]?.formato ?? '']));
   }
 
   /** As mídias da conta, sem os bytes. */

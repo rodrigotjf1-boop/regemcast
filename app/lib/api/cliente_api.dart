@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../config.dart';
 import 'erro_api.dart';
@@ -54,12 +56,18 @@ class ClienteApi {
   void limparPreSessao() => _cookiePre = null;
 
   /// Envia um arquivo (multipart), como o formulário da web faz. Usado na
-  /// importação de contatos: o servidor lê o arquivo e devolve a prévia.
+  /// importação de contatos e na mídia dos modelos.
+  ///
+  /// `tipoMime` vai no cabeçalho da parte: a mídia do modelo é aceita ou
+  /// recusada pelo servidor por ele (e pelos primeiros bytes). Sem ele, a
+  /// parte sai como `application/octet-stream` — que o navegador nunca manda
+  /// e o servidor recusa.
   Future<dynamic> enviarArquivo(
     String caminho, {
     required String campo,
     required List<int> bytes,
     required String nomeArquivo,
+    String? tipoMime,
   }) {
     final pedido = http.MultipartRequest('POST', Uri.parse('$_base$caminho'))
       ..headers.addAll({
@@ -67,9 +75,48 @@ class ClienteApi {
         if (_token != null) 'Authorization': 'Bearer $_token',
       })
       ..files.add(
-        http.MultipartFile.fromBytes(campo, bytes, filename: nomeArquivo),
+        http.MultipartFile.fromBytes(
+          campo,
+          bytes,
+          filename: nomeArquivo,
+          contentType: tipoMime == null ? null : MediaType.parse(tipoMime),
+        ),
       );
     return _responder(caminho, pedido);
+  }
+
+  /// Baixa bytes com a sessão (a miniatura da mídia de um modelo, que só
+  /// existe no nosso banco e passa pela autenticação). Falha vira `ErroApi`,
+  /// como nas outras rotas.
+  Future<Uint8List> baixar(String caminho) async {
+    final pedido = http.Request('GET', Uri.parse('$_base$caminho'))
+      ..headers.addAll({if (_token != null) 'Authorization': 'Bearer $_token'});
+    http.Response resposta;
+    try {
+      final enviado = await _http.send(pedido).timeout(tempoLimiteApi);
+      resposta = await http.Response.fromStream(
+        enviado,
+      ).timeout(tempoLimiteApi);
+    } on TimeoutException {
+      throw ErroApi.tempoEsgotado;
+    } on SocketException {
+      throw ErroApi.semRede;
+    } on http.ClientException {
+      throw ErroApi.semRede;
+    } on HandshakeException {
+      throw ErroApi.semRede;
+    }
+    if (resposta.statusCode >= 200 && resposta.statusCode < 300) {
+      return resposta.bodyBytes;
+    }
+    final dados = _lerCorpo(resposta);
+    if (resposta.statusCode == 401 && _token != null) aoPerderSessao?.call();
+    throw ErroApi(
+      (dados is Map && dados['mensagem'] is String)
+          ? dados['mensagem'] as String
+          : 'O servidor respondeu com erro (${resposta.statusCode}). Tente de novo.',
+      status: resposta.statusCode,
+    );
   }
 
   Future<dynamic> _pedir(String metodo, String caminho, [Object? corpo]) {

@@ -12,8 +12,8 @@ const String urlApi = String.fromEnvironment(
   defaultValue: 'https://castapi.dmsregem.com/api/v1',
 );
 
-/// O site, para o que o app manda fazer no navegador (criar modelo, montar
-/// campanha): as duas telas longas ficam lá por decisão de produto.
+/// O site, para o que o app ainda manda fazer no navegador (montar campanha,
+/// conectar o número pela Meta) e para as páginas públicas.
 const String urlWeb = String.fromEnvironment(
   'WEB_URL',
   defaultValue: 'https://cast.dmsregem.com',

@@ -7,6 +7,7 @@
 //   CAPTURAS=1 flutter test test/capturas_test.dart --update-goldens
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -30,7 +31,7 @@ import 'package:regemcast/telas/contatos.dart';
 import 'package:regemcast/telas/entrar.dart';
 import 'package:regemcast/telas/importar_contatos.dart';
 import 'package:regemcast/telas/modelo_detalhe.dart';
-import 'package:regemcast/telas/modelo_editar.dart';
+import 'package:regemcast/telas/modelo_editor.dart';
 import 'package:regemcast/telas/modelos.dart';
 import 'package:regemcast/telas/plano.dart';
 import 'package:regemcast/telas/regras.dart';
@@ -231,6 +232,36 @@ final _api = ClienteApi(
         return _json(_modelosMeta);
       case '/modelos':
         return _json(_modelosSalvos);
+      case '/modelos/conferir':
+        final nome =
+            (jsonDecode(utf8.decode(req.bodyBytes)) as Map)['nome'] as String?;
+        return _json({
+          'problemas': nome == 'cupom_boas_vindas'
+              ? [
+                  {
+                    'campo': 'corpo',
+                    'mensagem':
+                        'A mensagem não pode terminar com uma variável. Escreva algo depois dela.',
+                  },
+                  {
+                    'campo': 'corpo',
+                    'mensagem':
+                        'Preencha um exemplo para cada variável: são 1, e você informou 0. A Meta recusa o modelo sem eles.',
+                  },
+                  {
+                    'campo': 'botoes',
+                    'mensagem':
+                        'O botão de link precisa de um endereço https completo.',
+                  },
+                ]
+              : <Object>[],
+        }, 201);
+      case '/midia/foto1':
+        return http.Response.bytes(_fotos[0], 200);
+      case '/midia/foto2':
+        return http.Response.bytes(_fotos[1], 200);
+      case '/midia/foto3':
+        return http.Response.bytes(_fotos[2], 200);
       case '/contatos/listas':
         return _json([
           {'id': 'l1', 'nome': 'Clientes 2026', 'total': 4820},
@@ -463,7 +494,227 @@ final _modelosSalvos = [
     'metaTemplateId': 't3',
     'variaveis': 1,
   },
+  {
+    'id': 'm4',
+    'tipo': 'simples',
+    'nome': 'smash_da_semana',
+    'idioma': 'pt_BR',
+    'categoria': 'MARKETING',
+    'status': 'rejeitado',
+    'motivo':
+        'A Meta entendeu o texto como promessa de preço sem prazo. Diga até quando vale.',
+    'cabecalhoFormato': 'IMAGE',
+    'cabecalhoMidia': 'midia:foto1',
+    'corpo':
+        'Oi, {{1}}! O Smash da semana chegou: blend de 160 g, cheddar duplo e bacon crocante. Só R\$ {{2}} no app.',
+    'corpoExemplos': ['Ana', '32,90'],
+    'botoes': [
+      {
+        'tipo': 'URL',
+        'texto': 'Pedir agora',
+        'url': 'https://misterburgers.com.br/pedir',
+      },
+    ],
+    'variaveis': 2,
+  },
+  {
+    'id': 'm5',
+    'tipo': 'carrossel',
+    'nome': 'vitrine_burgers',
+    'idioma': 'pt_BR',
+    'categoria': 'MARKETING',
+    'status': 'rascunho',
+    'corpo':
+        'Oi, {{1}}! Escolha o seu burger de sexta — tem opção para todo mundo.',
+    'corpoExemplos': ['Ana'],
+    'cartoes': [
+      {
+        'imagem': 'midia:foto1',
+        'corpo': 'Smash duplo com cheddar e cebola caramelizada',
+        'botoes': [
+          {
+            'tipo': 'URL',
+            'texto': 'Pedir',
+            'url': 'https://misterburgers.com.br/smash',
+          },
+          {'tipo': 'QUICK_REPLY', 'texto': 'Quero este'},
+        ],
+      },
+      {
+        'imagem': 'midia:foto2',
+        'corpo': 'Chicken crispy com maionese de ervas',
+        'botoes': [
+          {
+            'tipo': 'URL',
+            'texto': 'Pedir',
+            'url': 'https://misterburgers.com.br/chicken',
+          },
+          {'tipo': 'QUICK_REPLY', 'texto': 'Quero este'},
+        ],
+      },
+      {
+        'imagem': 'midia:foto3',
+        'corpo': 'Veggie de grão-de-bico com molho da casa',
+        'botoes': [
+          {
+            'tipo': 'URL',
+            'texto': 'Pedir',
+            'url': 'https://misterburgers.com.br/veggie',
+          },
+          {'tipo': 'QUICK_REPLY', 'texto': 'Quero este'},
+        ],
+      },
+    ],
+    'botoes': [],
+    'variaveis': 1,
+  },
 ];
+
+/// Um rascunho com problemas, para a captura do editor barrando o envio.
+final _rascunhoComProblema = ModeloSalvo.deJson({
+  'id': 'm6',
+  'tipo': 'simples',
+  'nome': 'cupom_boas_vindas',
+  'idioma': 'pt_BR',
+  'categoria': 'MARKETING',
+  'status': 'rascunho',
+  'corpo': 'Bem-vindo ao clube Mister Burgers! Seu cupom de estreia é {{1}}',
+  'botoes': [
+    {'tipo': 'URL', 'texto': 'Usar cupom', 'url': 'misterburgers'},
+  ],
+});
+
+/// As "fotos" dos produtos, desenhadas no próprio teste (sem arquivo no Git).
+late final List<Uint8List> _fotos;
+
+Future<Uint8List> _desenharBurger(
+  Color fundoA,
+  Color fundoB,
+  Color recheio,
+) async {
+  const w = 480.0;
+  const h = 360.0;
+  final gravador = ui.PictureRecorder();
+  final tela = Canvas(gravador, const Rect.fromLTWH(0, 0, w, h));
+  tela.drawRect(
+    const Rect.fromLTWH(0, 0, w, h),
+    Paint()
+      ..shader = ui.Gradient.linear(Offset.zero, const Offset(w, h), [
+        fundoA,
+        fundoB,
+      ]),
+  );
+  tela.drawRect(
+    const Rect.fromLTWH(0, h * 0.74, w, h * 0.26),
+    Paint()..color = const Color(0x2E000000),
+  );
+  tela.drawOval(
+    Rect.fromCenter(
+      center: const Offset(w / 2, h * 0.78),
+      width: 300,
+      height: 46,
+    ),
+    Paint()..color = const Color(0x40000000),
+  );
+  final pao = Paint()..color = const Color(0xFFDB9A45);
+  // pão de baixo
+  tela.drawRRect(
+    RRect.fromRectAndRadius(
+      Rect.fromCenter(
+        center: const Offset(w / 2, h * 0.70),
+        width: 250,
+        height: 40,
+      ),
+      const Radius.circular(18),
+    ),
+    pao,
+  );
+  // recheio (carne, frango, grão-de-bico)
+  tela.drawRRect(
+    RRect.fromRectAndRadius(
+      Rect.fromCenter(
+        center: const Offset(w / 2, h * 0.60),
+        width: 262,
+        height: 40,
+      ),
+      const Radius.circular(20),
+    ),
+    Paint()..color = recheio,
+  );
+  // queijo
+  final queijo = Path()
+    ..moveTo(w / 2 - 128, h * 0.52)
+    ..lineTo(w / 2 + 128, h * 0.52)
+    ..lineTo(w / 2 + 96, h * 0.60)
+    ..lineTo(w / 2 + 40, h * 0.555)
+    ..lineTo(w / 2 - 20, h * 0.61)
+    ..lineTo(w / 2 - 80, h * 0.56)
+    ..close();
+  tela.drawPath(queijo, Paint()..color = const Color(0xFFF7C531));
+  // alface
+  tela.drawRRect(
+    RRect.fromRectAndRadius(
+      Rect.fromCenter(
+        center: const Offset(w / 2, h * 0.505),
+        width: 270,
+        height: 16,
+      ),
+      const Radius.circular(8),
+    ),
+    Paint()..color = const Color(0xFF6BB445),
+  );
+  // pão de cima
+  tela.drawArc(
+    Rect.fromCenter(
+      center: const Offset(w / 2, h * 0.50),
+      width: 256,
+      height: 190,
+    ),
+    3.1416,
+    3.1416,
+    true,
+    pao,
+  );
+  final gergelim = Paint()..color = const Color(0xFFFFF4DC);
+  for (final (dx, dy) in [
+    (-70.0, -52.0),
+    (-20.0, -70.0),
+    (34.0, -60.0),
+    (78.0, -36.0),
+    (-96.0, -22.0),
+    (8.0, -38.0),
+  ]) {
+    tela.drawOval(
+      Rect.fromCenter(
+        center: Offset(w / 2 + dx, h * 0.50 + dy),
+        width: 12,
+        height: 6,
+      ),
+      gergelim,
+    );
+  }
+  final imagem = await gravador.endRecording().toImage(w.toInt(), h.toInt());
+  final dados = await imagem.toByteData(format: ui.ImageByteFormat.png);
+  return dados!.buffer.asUint8List();
+}
+
+/// Carrega de verdade as imagens que estão na tela: a decodificação roda fora
+/// do relógio falso do teste, e sem isto a captura sai com o espaço vazio.
+Future<void> _carregarImagens(WidgetTester tester) async {
+  final provedores = <ImageProvider>{};
+  for (final e in find.byType(DecoratedBox).evaluate()) {
+    final d = (e.widget as DecoratedBox).decoration;
+    if (d is BoxDecoration && d.image != null) provedores.add(d.image!.image);
+  }
+  if (provedores.isEmpty) return;
+  final contexto = tester.element(find.byType(Scaffold).last);
+  await tester.runAsync(
+    () => Future.wait([for (final p in provedores) precacheImage(p, contexto)]),
+  );
+  for (var i = 0; i < 5; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+}
 
 final _modelosMeta = [
   {
@@ -509,6 +760,7 @@ Future<void> _capturar(
   Widget tela,
   String nome, {
   Brightness brilho = Brightness.light,
+  Future<void> Function(WidgetTester tester)? antes,
 }) async {
   // LOJA=1: 1080×1920, a proporção que a Play aceita (lado maior ≤ 2× o menor).
   tester.view.physicalSize = _paraLoja
@@ -547,6 +799,13 @@ Future<void> _capturar(
   for (var i = 0; i < 20; i++) {
     await tester.pump(const Duration(milliseconds: 100));
   }
+  if (antes != null) {
+    await antes(tester);
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+  }
+  await _carregarImagens(tester);
   await expectLater(
     find.byType(MaterialApp),
     matchesGoldenFile('${_paraLoja ? '_loja' : '_capturas'}/$nome.png'),
@@ -558,8 +817,26 @@ void main() {
 
   setUpAll(() async {
     if (!ativo) return;
+    TestWidgetsFlutterBinding.ensureInitialized();
     await initializeDateFormatting('pt_BR');
     await _carregarFontes();
+    _fotos = [
+      await _desenharBurger(
+        const Color(0xFFF26B38),
+        const Color(0xFFB8322A),
+        const Color(0xFF5B3321),
+      ),
+      await _desenharBurger(
+        const Color(0xFF2E8B8B),
+        const Color(0xFF1C4E63),
+        const Color(0xFFD08B3E),
+      ),
+      await _desenharBurger(
+        const Color(0xFF7CA24B),
+        const Color(0xFF3F6B34),
+        const Color(0xFFB9853A),
+      ),
+    ];
   });
 
   testWidgets(
@@ -634,8 +911,101 @@ void main() {
   testWidgets('modelo — editar', (t) async {
     await _capturar(
       t,
-      TelaEditarModelo(modelo: ModeloSalvo.deJson(_modelosSalvos[0])),
+      TelaEditorModelo(inicial: ModeloSalvo.deJson(_modelosSalvos[0])),
       '11-modelo-editar',
+    );
+  }, skip: !ativo);
+
+  testWidgets('modelo — novo', (t) async {
+    await _capturar(t, const TelaEditorModelo(), '22-modelo-novo');
+  }, skip: !ativo);
+
+  testWidgets('modelo — imagem no cabeçalho', (t) async {
+    await _capturar(
+      t,
+      TelaEditorModelo(inicial: ModeloSalvo.deJson(_modelosSalvos[3])),
+      '23-modelo-imagem',
+      antes: (t) => t.scrollUntilVisible(
+        find.text('Cabeçalho'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      ),
+    );
+  }, skip: !ativo);
+
+  testWidgets('modelo — carrossel', (t) async {
+    await _capturar(
+      t,
+      TelaEditorModelo(inicial: ModeloSalvo.deJson(_modelosSalvos[4])),
+      '24-modelo-carrossel',
+      antes: (t) => t.scrollUntilVisible(
+        find.text('Cartão 1'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      ),
+    );
+  }, skip: !ativo);
+
+  testWidgets('modelo — prévia', (t) async {
+    await _capturar(
+      t,
+      TelaEditorModelo(inicial: ModeloSalvo.deJson(_modelosSalvos[3])),
+      '25-modelo-previa',
+      antes: (t) => t.tap(find.text('Prévia')),
+    );
+  }, skip: !ativo);
+
+  testWidgets('modelo — prévia escura', (t) async {
+    await _capturar(
+      t,
+      TelaEditorModelo(inicial: ModeloSalvo.deJson(_modelosSalvos[3])),
+      '26-modelo-previa-escuro',
+      brilho: Brightness.dark,
+      antes: (t) => t.tap(find.text('Prévia')),
+    );
+  }, skip: !ativo);
+
+  testWidgets('modelo — prévia do carrossel', (t) async {
+    await _capturar(
+      t,
+      TelaEditorModelo(inicial: ModeloSalvo.deJson(_modelosSalvos[4])),
+      '27-modelo-previa-carrossel',
+      antes: (t) => t.tap(find.text('Prévia')),
+    );
+  }, skip: !ativo);
+
+  testWidgets('modelo — problemas antes de enviar', (t) async {
+    await _capturar(
+      t,
+      TelaEditorModelo(inicial: _rascunhoComProblema),
+      '28-modelo-problemas',
+      antes: (t) async {
+        await t.tap(find.text('Enviar para aprovação'));
+        for (var i = 0; i < 10; i++) {
+          await t.pump(const Duration(milliseconds: 100));
+        }
+        await t.scrollUntilVisible(
+          find.text('Mensagem'),
+          300,
+          scrollable: find.byType(Scrollable).first,
+        );
+      },
+    );
+  }, skip: !ativo);
+
+  testWidgets('modelo — detalhe do carrossel', (t) async {
+    await _capturar(
+      t,
+      TelaModeloDetalhe(local: ModeloSalvo.deJson(_modelosSalvos[4])),
+      '29-modelo-detalhe-carrossel',
+    );
+  }, skip: !ativo);
+
+  testWidgets('modelo — recusado com imagem', (t) async {
+    await _capturar(
+      t,
+      TelaModeloDetalhe(local: ModeloSalvo.deJson(_modelosSalvos[3])),
+      '30-modelo-recusado',
     );
   }, skip: !ativo);
 
