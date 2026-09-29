@@ -51,6 +51,36 @@ String diaCurto(String? aaaaMmDd, {DateTime? agora}) {
       : '${m.group(3)}/${m.group(2)}/$ano';
 }
 
+/// "14:32".
+String horaDe(DateTime? d) =>
+    d == null ? '' : DateFormat('HH:mm', 'pt_BR').format(d);
+
+/// A mesma data de calendário (no fuso do aparelho).
+bool mesmoDia(DateTime a, DateTime b) =>
+    a.year == b.year && a.month == b.month && a.day == b.day;
+
+/// Separador de dia na conversa: "Hoje", "Ontem", "segunda-feira" (até 6
+/// dias) ou "12/03/2026" — o `rotuloDoDia` do site.
+String rotuloDoDia(DateTime d, {DateTime? agora}) {
+  final hoje = agora ?? DateTime.now();
+  if (mesmoDia(d, hoje)) return 'Hoje';
+  if (mesmoDia(d, hoje.subtract(const Duration(days: 1)))) return 'Ontem';
+  if (hoje.difference(d) < const Duration(days: 6)) {
+    return DateFormat('EEEE', 'pt_BR').format(d);
+  }
+  return data(d);
+}
+
+/// Na lista de conversas: a hora se foi hoje; senão "Ontem", o dia da semana
+/// ou a data curta ("12/03/26").
+String quandoNaLista(DateTime? d, {DateTime? agora}) {
+  if (d == null) return '';
+  final rotulo = rotuloDoDia(d, agora: agora);
+  if (rotulo == 'Hoje') return horaDe(d);
+  if (rotulo.contains('/')) return DateFormat('dd/MM/yy', 'pt_BR').format(d);
+  return rotulo;
+}
+
 /// "1 campanha", "3 campanhas".
 String plural(int n, String um, String varios) =>
     '${numero(n)} ${n == 1 ? um : varios}';

@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
+import 'api/repeticao.dart';
 import 'push/push.dart';
 import 'sessao/sessao.dart';
 import 'telas/casca.dart';
@@ -17,7 +18,7 @@ Future<void> main() async {
   await initializeDateFormatting('pt_BR');
   // Retrato: as listas e o anel de consumo foram desenhados para ele.
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  runApp(const ProviderScope(child: AppRegemCast()));
+  runApp(const ProviderScope(retry: semRepeticao, child: AppRegemCast()));
 }
 
 class AppRegemCast extends StatelessWidget {

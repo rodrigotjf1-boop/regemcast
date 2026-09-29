@@ -91,12 +91,16 @@ class Pilula extends StatelessWidget {
             vivo ? _PontoVivo(cor: frente) : _Ponto(cor: frente),
             const SizedBox(width: 6),
           ],
-          Text(
-            texto,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: frente,
+          Flexible(
+            child: Text(
+              texto,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: frente,
+              ),
             ),
           ),
         ],

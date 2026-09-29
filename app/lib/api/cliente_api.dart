@@ -41,6 +41,14 @@ class ClienteApi {
   set token(String? valor) => _token = valor;
   bool get temToken => _token != null;
 
+  /// Para quem busca um arquivo por fora deste cliente — o reprodutor de
+  /// áudio e vídeo das conversas, que lê o arquivo aos poucos: o endereço
+  /// completo e o cabeçalho da sessão (a rota é autenticada).
+  Uri endereco(String caminho) => Uri.parse('$_base$caminho');
+  Map<String, String> get cabecalhoDaSessao => {
+    if (_token != null) 'Authorization': 'Bearer $_token',
+  };
+
   static http.Client _clientePadrao() => http.Client();
 
   Future<dynamic> get(String caminho) => _pedir('GET', caminho);

@@ -17,6 +17,7 @@ import 'campanha_detalhe.dart';
 import 'campanhas.dart';
 import 'conta.dart';
 import 'contatos.dart';
+import 'conversas.dart';
 import 'modelos.dart';
 import 'painel.dart';
 import 'plano.dart';
@@ -24,25 +25,42 @@ import 'regras.dart';
 import 'usuarios.dart';
 import 'whatsapp.dart';
 
-/// A casca do app: cinco abas na barra de baixo, na ordem do menu do site,
-/// onde o polegar alcança.
+/// As telas que podem estar na barra de baixo.
+enum Aba { painel, conversas, modelos, contatos, campanhas, mais }
+
+/// As cinco abas, na ordem do menu do site. Com as conversas ligadas,
+/// Conversas entra no lugar de Modelos (que vai para "Mais") — decisão do
+/// dono em 29/09/2026: conversa é uso diário, modelo se cria de vez em quando.
+List<Aba> abasDaBarra({required bool conversas}) => [
+  Aba.painel,
+  conversas ? Aba.conversas : Aba.modelos,
+  Aba.contatos,
+  Aba.campanhas,
+  Aba.mais,
+];
+
+/// A casca do app: cinco abas na barra de baixo, onde o polegar alcança.
 ///
 /// `IndexedStack` e não trocar de tela: voltar para uma aba mantém a rolagem
 /// e o que já foi carregado. Quem conferiu uma campanha e foi ao Painel volta
-/// para a mesma posição da lista.
+/// para a mesma posição da lista. As abas são guardadas pelo nome, não pela
+/// posição: ligar as conversas troca a 2ª aba sem perder as outras.
 class Casca extends ConsumerStatefulWidget {
-  const Casca({super.key, this.abaInicial = 0});
+  const Casca({super.key, this.abaInicial = Aba.painel});
 
-  /// Aba aberta ao montar: 0 Painel, 1 Modelos, 2 Contatos, 3 Campanhas, 4 Mais.
-  final int abaInicial;
+  /// Aba aberta ao montar.
+  final Aba abaInicial;
 
   @override
   ConsumerState<Casca> createState() => _CascaState();
 }
 
 class _CascaState extends ConsumerState<Casca> {
-  late int _aba = widget.abaInicial;
+  late Aba _aba = widget.abaInicial;
   bool _ofertaMostrada = false;
+
+  bool get _comConversas =>
+      ref.read(resumoContaProvider).value?.conversasHabilitadas ?? false;
 
   @override
   void initState() {
@@ -81,7 +99,7 @@ class _CascaState extends ConsumerState<Casca> {
     if (!mounted) return;
     final campanhaId = dados['campanhaId'];
     if (campanhaId is String && campanhaId.isNotEmpty) {
-      setState(() => _aba = 3);
+      setState(() => _aba = Aba.campanhas);
       ref.invalidate(campanhasProvider);
       Navigator.of(context).push(
         MaterialPageRoute<void>(
@@ -94,7 +112,14 @@ class _CascaState extends ConsumerState<Casca> {
       ref
         ..invalidate(modelosSalvosProvider)
         ..invalidate(modelosNaMetaProvider);
-      setState(() => _aba = 1);
+      if (_comConversas) {
+        // Modelos está dentro de "Mais": abre por cima.
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const TelaModelosAvulsa()),
+        );
+      } else {
+        setState(() => _aba = Aba.modelos);
+      }
       return;
     }
     if (dados['tipo'] == 'cobranca' || dados['tela'] == 'plano') {
@@ -112,50 +137,75 @@ class _CascaState extends ConsumerState<Casca> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _oferecerBiometria());
     }
 
+    final conversas =
+        ref.watch(resumoContaProvider).value?.conversasHabilitadas ?? false;
+    final abas = abasDaBarra(conversas: conversas);
+    // A aba escolhida saiu da barra (as conversas foram desligadas): Painel.
+    final atual = abas.contains(_aba) ? _aba : Aba.painel;
+
     return Scaffold(
       body: IndexedStack(
-        index: _aba,
-        children: const [
-          TelaPainel(),
-          TelaModelos(),
-          TelaContatos(),
-          TelaCampanhas(),
-          _TelaMais(),
+        index: abas.indexOf(atual),
+        children: [
+          for (final a in abas)
+            KeyedSubtree(
+              key: ValueKey(a),
+              child: _tela(a, ativa: a == atual, conversas: conversas),
+            ),
         ],
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _aba,
-        onDestinationSelected: (i) => setState(() => _aba = i),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.space_dashboard_outlined),
-            selectedIcon: Icon(Icons.space_dashboard_rounded),
-            label: 'Painel',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.description_outlined),
-            selectedIcon: Icon(Icons.description_rounded),
-            label: 'Modelos',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.people_outline_rounded),
-            selectedIcon: Icon(Icons.people_rounded),
-            label: 'Contatos',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.send_outlined),
-            selectedIcon: Icon(Icons.send_rounded),
-            label: 'Campanhas',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.menu_rounded),
-            selectedIcon: Icon(Icons.menu_open_rounded),
-            label: 'Mais',
-          ),
-        ],
+        selectedIndex: abas.indexOf(atual),
+        onDestinationSelected: (i) => setState(() => _aba = abas[i]),
+        destinations: [for (final a in abas) _destino(a)],
       ),
     );
   }
+
+  Widget _tela(Aba a, {required bool ativa, required bool conversas}) =>
+      switch (a) {
+        Aba.painel => const TelaPainel(),
+        Aba.conversas => TelaConversas(ativa: ativa),
+        Aba.modelos => const TelaModelos(),
+        Aba.contatos => const TelaContatos(),
+        Aba.campanhas => const TelaCampanhas(),
+        Aba.mais => _TelaMais(comModelos: conversas),
+      };
+
+  NavigationDestination _destino(Aba a) => switch (a) {
+    Aba.painel => const NavigationDestination(
+      icon: Icon(Icons.space_dashboard_outlined),
+      selectedIcon: Icon(Icons.space_dashboard_rounded),
+      label: 'Painel',
+    ),
+    Aba.conversas => const NavigationDestination(
+      key: ValueKey('aba-conversas'),
+      icon: Icon(Icons.forum_outlined),
+      selectedIcon: Icon(Icons.forum_rounded),
+      label: 'Conversas',
+    ),
+    Aba.modelos => const NavigationDestination(
+      key: ValueKey('aba-modelos'),
+      icon: Icon(Icons.description_outlined),
+      selectedIcon: Icon(Icons.description_rounded),
+      label: 'Modelos',
+    ),
+    Aba.contatos => const NavigationDestination(
+      icon: Icon(Icons.people_outline_rounded),
+      selectedIcon: Icon(Icons.people_rounded),
+      label: 'Contatos',
+    ),
+    Aba.campanhas => const NavigationDestination(
+      icon: Icon(Icons.send_outlined),
+      selectedIcon: Icon(Icons.send_rounded),
+      label: 'Campanhas',
+    ),
+    Aba.mais => const NavigationDestination(
+      icon: Icon(Icons.menu_rounded),
+      selectedIcon: Icon(Icons.menu_open_rounded),
+      label: 'Mais',
+    ),
+  };
 
   /// Uma vez só, na primeira entrada: quer abrir o app com a digital?
   Future<void> _oferecerBiometria() async {
@@ -208,10 +258,23 @@ class _CascaState extends ConsumerState<Casca> {
   }
 }
 
+/// Modelos fora da barra (com as conversas ligadas, ele mora em "Mais"): a
+/// mesma tela, com a seta de voltar.
+class TelaModelosAvulsa extends StatelessWidget {
+  const TelaModelosAvulsa({super.key});
+
+  @override
+  Widget build(BuildContext context) =>
+      Scaffold(appBar: AppBar(), body: const TelaModelos());
+}
+
 /// Mais: quem está logado, plano, conta, usuários, WhatsApp, regras,
-/// a biometria e sair.
+/// a biometria e sair — e Modelos, quando as conversas tomam o lugar dele na
+/// barra.
 class _TelaMais extends ConsumerStatefulWidget {
-  const _TelaMais();
+  const _TelaMais({this.comModelos = false});
+
+  final bool comModelos;
 
   @override
   ConsumerState<_TelaMais> createState() => _TelaMaisState();
@@ -361,6 +424,18 @@ class _TelaMaisState extends ConsumerState<_TelaMais> {
               ),
             ),
           const SizedBox(height: 14),
+          if (widget.comModelos) ...[
+            Cartao(
+              padding: EdgeInsets.zero,
+              child: _LinhaTela(
+                key: const ValueKey('mais-modelos'),
+                icone: Icons.description_outlined,
+                texto: 'Modelos',
+                tela: const TelaModelosAvulsa(),
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
           Cartao(
             padding: EdgeInsets.zero,
             child: Column(
@@ -445,6 +520,7 @@ class _TelaMaisState extends ConsumerState<_TelaMais> {
 /// Linha que abre uma tela do próprio app.
 class _LinhaTela extends StatelessWidget {
   const _LinhaTela({
+    super.key,
     required this.icone,
     required this.texto,
     required this.tela,
