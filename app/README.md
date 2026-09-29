@@ -11,7 +11,15 @@ O RegemCast no celular, com os mesmos recursos do site (decisão do dono em
   uma, "Quem recebe" por lista/bloco, da base ou números digitados, a prévia de
   quantos recebem, o descanso, a sugestão de horário e a janela de envio),
   editar, disparar, pausar e acompanhar — com a espera pelo limite da Meta e
-  quem respondeu.
+  quem respondeu;
+- **contatos** — a base com as compras de cada pessoa (pedidos, gasto, última
+  compra, o que costuma pedir, cashback), o perfil e como ela autorizou; os
+  perfis (com as regras do dono), os públicos pelas compras, produtos, bairros,
+  aniversariantes e regiões pelo DDD para filtrar e virar lista; dividir em
+  blocos com o resultado de cada bloco; os bloqueios (voltar à base com o
+  pedido registrado, apagar dados, apagar tudo) e os números sem WhatsApp; e a
+  importação com as colunas extras da planilha (e-mail, aniversário, pedidos,
+  total gasto e última compra), igual à do site.
 
 Nenhuma rota do servidor recusa a sessão do app (`escopo: app`); ele decide só
 a validade e a renovação da sessão.
@@ -28,9 +36,11 @@ lib/
   tema/                cores e tema — as MESMAS da web (frontend/src/app/globals.css)
   componentes/         marca, cartão, pílula, anel de consumo, estados, prévia do WhatsApp
   telas/               entrar, portas (abrindo/biometria/sem conexão), casca, painel,
-                       modelos (lista, detalhe e o editor)
+                       modelos (lista, detalhe e o editor), campanhas, contatos
+                       (lista, públicos, blocos e listas), dividir em blocos,
+                       bloqueios e importar
 test/                  cliente da API, dados, telas (entrada, campanhas, editor de
-                       modelo); capturas das telas
+                       modelo, contatos); capturas das telas
 ```
 
 ## Sessão e segurança

@@ -27,6 +27,30 @@ String quando(DateTime? d, {DateTime? agora}) {
   return DateFormat('dd/MM', 'pt_BR').format(d);
 }
 
+/// Dias inteiros desde a data (0 = hoje). Nulo sem data.
+int? diasDesde(DateTime? d, {DateTime? agora}) {
+  if (d == null) return null;
+  final dias = (agora ?? DateTime.now()).difference(d).inHours ~/ 24;
+  return dias < 0 ? 0 : dias;
+}
+
+/// "hoje", "ontem", "há 9 dias".
+String haQuantosDias(int dias) => dias == 0
+    ? 'hoje'
+    : dias == 1
+    ? 'ontem'
+    : 'há ${numero(dias)} dias';
+
+/// `2026-10-14` → "14/10" (no ano corrente) ou "14/10/2027".
+String diaCurto(String? aaaaMmDd, {DateTime? agora}) {
+  final m = RegExp(r'^(\d{4})-(\d{2})-(\d{2})').firstMatch(aaaaMmDd ?? '');
+  if (m == null) return '—';
+  final ano = int.parse(m.group(1)!);
+  return ano == (agora ?? DateTime.now()).year
+      ? '${m.group(3)}/${m.group(2)}'
+      : '${m.group(3)}/${m.group(2)}/$ano';
+}
+
 /// "1 campanha", "3 campanhas".
 String plural(int n, String um, String varios) =>
     '${numero(n)} ${n == 1 ? um : varios}';

@@ -1,21 +1,26 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api/contatos.dart';
 import '../api/erro_api.dart';
 import '../componentes/basicos.dart';
+import '../config.dart';
 import '../tema/cores.dart';
 import '../util/formato.dart' as f;
+import 'dividir_em_blocos.dart';
 
 /// Importar contatos em três passos: de onde vêm, o que o servidor leu, e o
 /// resultado.
 ///
 /// Nada é gravado antes do último toque. A prévia existe para a pessoa ver o
 /// que o arquivo realmente tinha (quantos números valem, quantos já estavam na
-/// base) antes de assumir o compromisso do consentimento.
+/// base, quantos ganharam o 55) antes de assumir o compromisso do
+/// consentimento.
 ///
-/// Devolve (pop) `true` quando gravou.
+/// Devolve (pop) `true` quando gravou — ou a [DivisaoDeBlocos], quando a
+/// pessoa já dividiu o que entrou em blocos.
 class TelaImportarContatos extends ConsumerStatefulWidget {
   const TelaImportarContatos({super.key});
 
@@ -39,10 +44,17 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
 
   PreviaImportacao? _previa;
   ResultadoImportacao? _resultado;
+
+  /// Já gravou nesta visita (mesmo que depois tenha tocado em "Importar
+  /// mais"): sair por qualquer caminho avisa a lista para reler.
+  bool _importou = false;
   String _destino = _semLista;
   bool _consentimento = false;
   bool _ocupado = false;
   String? _erro;
+
+  /// Arquivo grande vai em partes: quantos já foram gravados.
+  ({int feitos, int total})? _progresso;
 
   @override
   void dispose() {
@@ -131,21 +143,69 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
         if (mounted) setState(() => _destino = listaId!);
         ref.invalidate(listasContatosProvider);
       }
+      final emPartes = previa.contatos.length > previa.porEnvio;
       final r = await servico.importar(
         previa: previa,
         consentimento: _consentimento,
         evidencia: _evidencia.text,
         listaId: listaId,
+        aoAndar: emPartes
+            ? (feitos, total) {
+                if (mounted) {
+                  setState(() => _progresso = (feitos: feitos, total: total));
+                }
+              }
+            : null,
       );
       if (!mounted) return;
       ref.invalidate(listasContatosProvider);
-      setState(() => _resultado = r);
+      setState(() {
+        _resultado = r;
+        _importou = true;
+      });
     } catch (e) {
       if (mounted) setState(() => _erro = mensagemDoErro(e));
     } finally {
-      if (mounted) setState(() => _ocupado = false);
+      if (mounted) {
+        setState(() {
+          _ocupado = false;
+          _progresso = null;
+        });
+      }
     }
   }
+
+  /// Começa outra importação, do zero.
+  void _importarMais() => setState(() {
+    _previa = null;
+    _resultado = null;
+    _erro = null;
+    _consentimento = false;
+    _destino = _semLista;
+    _texto.clear();
+    _nomeLista.clear();
+    _evidencia.clear();
+  });
+
+  Future<void> _dividir(PreviaImportacao previa, String importacaoId) async {
+    final d = await Navigator.of(context).push<DivisaoDeBlocos>(
+      MaterialPageRoute(
+        builder: (_) => TelaDividirEmBlocos(
+          alvo: AlvoDaDivisao(
+            origem: 'importacao',
+            origemId: importacaoId,
+            rotulo: _rotulo(previa),
+            soNomeENumero: previa.soNomeENumero,
+          ),
+        ),
+      ),
+    );
+    if (d != null && mounted) Navigator.of(context).pop(d);
+  }
+
+  static String _rotulo(PreviaImportacao p) =>
+      p.arquivoNome ??
+      (p.formato == 'texto' ? 'Números colados' : 'Importação');
 
   @override
   Widget build(BuildContext context) {
@@ -155,7 +215,7 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
         ? 'Conferir e importar'
         : 'Importar contatos';
     return PopScope(
-      canPop: _resultado == null,
+      canPop: !_importou,
       onPopInvokedWithResult: (saiu, _) {
         if (!saiu) Navigator.of(context).pop(true);
       },
@@ -176,7 +236,12 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
               : null,
         ),
         body: _resultado != null
-            ? _Resultado(resultado: _resultado!)
+            ? _Resultado(
+                resultado: _resultado!,
+                previa: _previa!,
+                aoDividir: _dividir,
+                aoImportarMais: _importarMais,
+              )
             : _previa != null
             ? _passoPrevia(context, _previa!)
             : _passoOrigem(context),
@@ -192,15 +257,11 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
         child: botao,
       ),
     );
-    const girando = SizedBox(
-      width: 18,
-      height: 18,
-      child: CircularProgressIndicator(strokeWidth: 2),
-    );
 
     if (_resultado != null) {
       return embrulhar(
         FilledButton(
+          key: const ValueKey('concluir'),
           onPressed: () => Navigator.of(context).pop(true),
           child: const Text('Concluir'),
         ),
@@ -208,19 +269,33 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
     }
     final p = _previa;
     if (p == null || p.validos == 0) return null;
-    final n = p.contatos.length;
+    final progresso = _progresso;
     return embrulhar(
       FilledButton(
+        key: const ValueKey('importar-confirmar'),
         onPressed: _ocupado || !_consentimento ? null : _gravar,
-        child: _ocupado
-            ? girando
-            : Text('Importar ${f.plural(n, 'contato', 'contatos')}'),
+        child: progresso != null
+            ? Text(
+                'Gravando ${f.numero(progresso.feitos)} de ${f.numero(progresso.total)}…',
+              )
+            : _ocupado
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Text(
+                p.novos == 0 && p.extras.isNotEmpty
+                    ? 'Atualizar os dados dos contatos'
+                    : 'Importar ${f.plural(p.novos, 'contato', 'contatos')}',
+              ),
       ),
     );
   }
 
   Widget _passoOrigem(BuildContext context) {
     final c = Cores.de(context);
+    final ajuda = TextStyle(color: c.tintaSuave, fontSize: 13, height: 1.45);
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
       children: [
@@ -262,6 +337,16 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
             ],
           ),
         ),
+        const SizedBox(height: 10),
+        Text(
+          'Numa planilha, dê à coluna dos números o título "telefone" ou "celular". Se a planilha tiver, também trazemos e-mail, aniversário, pedidos, total gasto e última compra (ou dias sem comprar).',
+          style: ajuda,
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Usa a Anota Aí? Em Relatórios → Clientes, exporte em Excel ou CSV e envie o arquivo aqui.',
+          style: ajuda,
+        ),
         const SizedBox(height: 20),
         Text(
           'Ou cole os números',
@@ -298,6 +383,32 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
             texto: _erro!,
           ),
         ],
+        const SizedBox(height: 24),
+        Cartao(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Cardápio Web',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'A loja do Cardápio Web se conecta em Integrações: além dos clientes, traz o histórico de compras de cada um e continua trazendo os pedidos novos.',
+                style: ajuda,
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: () => launchUrl(
+                  Uri.parse('$urlWeb/integracoes'),
+                  mode: LaunchMode.externalApplication,
+                ),
+                icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                label: const Text('Abrir Integrações no site'),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -329,16 +440,12 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
           spacing: 10,
           runSpacing: 10,
           children: [
-            _Numero(
-              rotulo: 'válidos',
-              valor: p.validos,
-              tom: TomPilula.sucesso,
-            ),
-            _Numero(rotulo: 'novos', valor: p.novos),
-            _Numero(rotulo: 'já na base', valor: p.jaExistem),
+            _Numero(rotulo: 'entram', valor: p.novos, tom: TomPilula.sucesso),
+            if (p.jaExistem > 0)
+              _Numero(rotulo: 'já estão na base', valor: p.jaExistem),
             if (p.invalidos > 0)
               _Numero(
-                rotulo: 'inválidos',
+                rotulo: 'sem telefone válido',
                 valor: p.invalidos,
                 tom: TomPilula.erro,
               ),
@@ -353,13 +460,32 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
                 'Nenhum número válido. Confira se o arquivo tem uma coluna de telefone com DDD.',
           )
         else ...[
-          if (p.truncado)
+          if (p.extras.isNotEmpty)
             Padding(
+              key: const ValueKey('extras'),
               padding: const EdgeInsets.only(bottom: 10),
-              child: Aviso(
-                icone: Icons.content_cut_rounded,
-                texto:
-                    'Cada importação aceita até ${f.numero(p.limite)} contatos. Entram os primeiros ${f.numero(p.limite)}; importe o resto em outra vez.',
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    const TextSpan(text: 'Também vêm da planilha: '),
+                    TextSpan(
+                      text: p.extras.join(', '),
+                      style: TextStyle(
+                        color: c.tinta,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const TextSpan(
+                      text:
+                          '. Quem já está na base ganha o histórico de compra novo; e-mail e aniversário só preenchem o que estiver vazio.',
+                    ),
+                  ],
+                ),
+                style: TextStyle(
+                  color: c.tintaSuave,
+                  fontSize: 13,
+                  height: 1.45,
+                ),
               ),
             ),
           if (p.assumiramPais > 0)
@@ -368,7 +494,26 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
               child: Aviso(
                 icone: Icons.flag_outlined,
                 texto:
-                    '${f.plural(p.assumiramPais, 'número veio', 'números vieram')} sem o código do país. Consideramos Brasil (+55).',
+                    '${p.assumiramPais == 1 ? '1 número estava' : '${f.numero(p.assumiramPais)} números estavam'} sem o código do país. Acrescentamos o 55 (Brasil). Confira na lista abaixo — se algum for de fora, corrija no arquivo e importe de novo.',
+              ),
+            ),
+          if (p.truncado)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Aviso(
+                icone: Icons.content_cut_rounded,
+                texto:
+                    'O arquivo tem mais de ${f.numero(p.limite)} contatos. Vamos importar os primeiros ${f.numero(p.limite)}; para o resto, divida o arquivo e importe de novo.',
+              ),
+            ),
+          if (p.contatos.length > p.porEnvio)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Aviso(
+                tom: TomPilula.acento,
+                icone: Icons.hourglass_top_rounded,
+                texto:
+                    'São ${f.numero(p.contatos.length)} contatos: vamos gravar em partes de ${f.numero(p.porEnvio)}, num registro só de importação. Mantenha esta tela aberta até terminar.',
               ),
             ),
           if (p.jaExistem > 0)
@@ -397,20 +542,42 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
                     child: Row(
                       children: [
                         Expanded(
-                          child: Text(
-                            amostra[i].nome.trim().isEmpty
-                                ? f.telefone(amostra[i].telefone)
-                                : '${amostra[i].nome} · ${f.telefone(amostra[i].telefone)}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 13.5),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (amostra[i].nome.trim().isNotEmpty)
+                                Text(
+                                  amostra[i].nome,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 13.5),
+                                ),
+                              // O número inteiro: é aqui que a pessoa confere
+                              // o 55 acrescentado.
+                              Text(
+                                f.telefone(amostra[i].telefone),
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: amostra[i].nome.trim().isEmpty
+                                      ? c.tinta
+                                      : c.tintaSuave,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        if (!amostra[i].novo)
-                          Text(
-                            'já na base',
-                            style: TextStyle(color: c.tintaSuave, fontSize: 12),
-                          ),
+                        const SizedBox(width: 8),
+                        Text(
+                          !amostra[i].novo
+                              ? 'já está na base'
+                              : amostra[i].assumiuPais
+                              ? '55 acrescentado'
+                              : 'entra',
+                          style: TextStyle(color: c.tintaSuave, fontSize: 12),
+                        ),
                       ],
                     ),
                   ),
@@ -476,6 +643,7 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 CheckboxListTile(
+                  key: const ValueKey('consentimento'),
                   value: _consentimento,
                   onChanged: _ocupado
                       ? null
@@ -483,7 +651,7 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
                   controlAffinity: ListTileControlAffinity.leading,
                   contentPadding: EdgeInsets.zero,
                   title: const Text(
-                    'Estas pessoas autorizaram receber mensagens da minha empresa pelo WhatsApp.',
+                    'Declaro que estas pessoas autorizaram receber mensagens desta empresa no WhatsApp.',
                     style: TextStyle(fontSize: 14, height: 1.4),
                   ),
                 ),
@@ -506,7 +674,11 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
                     maxLength: 500,
                     decoration: const InputDecoration(
                       labelText: 'Como autorizaram? (opcional)',
-                      hintText: 'Ex.: cadastro na loja, formulário do site',
+                      hintText:
+                          'Cadastro na loja, formulário do site, aceite no atendimento…',
+                      helperText:
+                          'Fica gravado junto de cada contato. É o que sustenta a campanha se a Meta perguntar — e ela pergunta.',
+                      helperMaxLines: 3,
                     ),
                   ),
                 ),
@@ -564,41 +736,82 @@ class _Numero extends StatelessWidget {
   }
 }
 
+/// O que entrou — e o próximo passo: dividir em blocos (o caminho de quem
+/// importou a agenda do celular, só com nome e número) ou importar mais.
 class _Resultado extends StatelessWidget {
-  const _Resultado({required this.resultado});
+  const _Resultado({
+    required this.resultado,
+    required this.previa,
+    required this.aoDividir,
+    required this.aoImportarMais,
+  });
 
   final ResultadoImportacao resultado;
+  final PreviaImportacao previa;
+  final void Function(PreviaImportacao previa, String importacaoId) aoDividir;
+  final VoidCallback aoImportarMais;
 
   @override
   Widget build(BuildContext context) {
     final c = Cores.de(context);
+    final r = resultado;
+    final importacaoId = r.importacaoId;
+    final podeDividir = importacaoId != null && r.gravados + r.jaExistiam > 0;
+    final soNomeENumero = previa.soNomeENumero;
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
       children: [
         Icon(Icons.check_circle_rounded, color: c.sucesso, size: 56),
         const SizedBox(height: 14),
         Text(
-          f.plural(
-            resultado.gravados,
-            'contato novo na base',
-            'contatos novos na base',
-          ),
+          r.gravados == 1
+              ? '1 contato entrou na sua base'
+              : '${f.numero(r.gravados)} contatos entraram na sua base',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.titleLarge,
         ),
-        if (resultado.jaExistiam > 0) ...[
+        if (r.jaExistiam > 0) ...[
           const SizedBox(height: 6),
           Text(
-            '${f.plural(resultado.jaExistiam, 'já estava', 'já estavam')} na base e não ${resultado.jaExistiam == 1 ? 'foi duplicado' : 'foram duplicados'}.',
+            '${f.plural(r.jaExistiam, 'já estava', 'já estavam')} lá e não ${r.jaExistiam == 1 ? 'foi duplicado' : 'foram duplicados'}.',
             textAlign: TextAlign.center,
             style: TextStyle(color: c.tintaSuave),
           ),
         ],
+        if (podeDividir && soNomeENumero) ...[
+          const SizedBox(height: 18),
+          Text(
+            'Lista só com nome e número — como a agenda exportada do celular? Divida em blocos para enviar aos poucos, dentro do limite do seu número, e acompanhar o resultado de cada bloco.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: c.tintaSuave, height: 1.45),
+          ),
+        ],
+        const SizedBox(height: 20),
+        if (podeDividir)
+          soNomeENumero
+              ? FilledButton.icon(
+                  key: const ValueKey('dividir-importacao'),
+                  onPressed: () => aoDividir(previa, importacaoId),
+                  icon: const Icon(Icons.view_module_outlined),
+                  label: const Text('Dividir em blocos'),
+                )
+              : OutlinedButton.icon(
+                  key: const ValueKey('dividir-importacao'),
+                  onPressed: () => aoDividir(previa, importacaoId),
+                  icon: const Icon(Icons.view_module_outlined),
+                  label: const Text('Dividir em blocos'),
+                ),
+        const SizedBox(height: 8),
+        OutlinedButton(
+          key: const ValueKey('importar-mais'),
+          onPressed: aoImportarMais,
+          child: const Text('Importar mais'),
+        ),
         const SizedBox(height: 18),
         Text(
-          'Para mandar uma campanha a eles, monte-a pelo site escolhendo a lista.',
+          'Para mandar uma campanha a eles, monte-a em Campanhas e escolha a lista — ou um dos blocos.',
           textAlign: TextAlign.center,
-          style: TextStyle(color: c.tintaSuave, height: 1.45),
+          style: TextStyle(color: c.tintaSuave, fontSize: 13, height: 1.45),
         ),
       ],
     );
