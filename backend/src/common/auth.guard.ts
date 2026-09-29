@@ -38,9 +38,11 @@ export interface UsuarioAutenticado {
   /**
    * Onde esta sessão nasceu. `app` é o aplicativo Android; `web`, o navegador.
    *
-   * Não é enfeite de telemetria: o app NÃO monta campanha, e essa regra vive
-   * no servidor (`SomenteWebGuard`). Deixá-la só na tela significaria que um
-   * token extraído do aparelho poderia criar o que o app não mostra.
+   * Decide a validade da sessão (30 dias no app, renovação automática) e quem
+   * pode renovar por `POST /auth/renovar`. Desde 29/09/2026 o app faz tudo que
+   * o site faz: nenhuma rota recusa o escopo `app`. Se uma voltar a recusar, a
+   * regra mora aqui no servidor — restrição só na tela não é restrição, porque
+   * o token do aparelho fala direto com a API.
    */
   escopo: 'web' | 'app';
 }

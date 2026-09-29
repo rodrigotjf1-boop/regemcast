@@ -1,8 +1,7 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
 import type { UsuarioAutenticado } from '../../common/auth.guard';
-import { SomenteWebGuard } from '../../common/somente-web.guard';
 import { UsuarioAtual } from '../../common/usuario-atual.decorator';
 import { CampanhaService } from './campanha.service';
 import { CriarCampanhaDto } from './dto/criar-campanha.dto';
@@ -58,11 +57,12 @@ export class CampanhaController {
   /**
    * Monta a campanha. Nenhuma mensagem sai aqui.
    *
-   * Só pelo navegador: montar envolve escolher público, conferir quem fica de
-   * fora e revisar o que vai ser cobrado — e o celular é onde esse erro sai caro.
+   * Do navegador ou do aplicativo: até 29/09/2026 era só do navegador; o dono
+   * decidiu que o app tem os mesmos recursos do site. A conferência que importa
+   * — quem pode receber, descanso, cashback, teto de números digitados — é
+   * deste serviço, igual para as duas telas.
    */
   @Post()
-  @UseGuards(SomenteWebGuard)
   criar(@UsuarioAtual() usuario: UsuarioAutenticado, @Body() dto: CriarCampanhaDto) {
     return this.servico.criar(usuario.contaId, usuario.id, dto, usuario.papel);
   }

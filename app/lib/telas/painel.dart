@@ -12,6 +12,7 @@ import '../sessao/sessao.dart';
 import '../tema/cores.dart';
 import '../util/formato.dart' as f;
 import 'campanha_detalhe.dart';
+import 'campanha_formulario.dart';
 
 /// O Painel: o que precisa de atenção agora, em uma olhada.
 ///
@@ -452,8 +453,25 @@ class _BlocoCampanhas extends ConsumerWidget {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'As campanhas são montadas pelo site. Assim que a primeira existir, você acompanha por aqui.',
+                      'Escolha um modelo aprovado e quem recebe. Montar não envia nada: você confere e dispara na tela seguinte.',
                       style: TextStyle(color: c.tintaSuave, height: 1.4),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 42),
+                      ),
+                      onPressed: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const TelaFormularioCampanha(),
+                          ),
+                        );
+                        ref.invalidate(campanhasProvider);
+                        ref.invalidate(resumoContaProvider);
+                      },
+                      icon: const Icon(Icons.add_rounded, size: 18),
+                      label: const Text('Montar a primeira'),
                     ),
                   ],
                 ),
