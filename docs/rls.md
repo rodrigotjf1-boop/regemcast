@@ -155,17 +155,6 @@ numa conta nomeada, que ficam também na auditoria da própria conta.
 | `distribuicao.planos.listar`, `distribuicao.planos.criar`, `distribuicao.planos.atualizar` | `distribuicao-planos.service.ts` | O catálogo de planos (`plano`, policy `rc_sistema`) é da distribuição; a listagem conta quantas contas há em cada plano. |
 | `whatsapp.conectar-manual` | `meta.service.ts` | A rota é da distribuição e não tem sessão: o operador informa qual conta está conectando, e antes de qualquer chamada à Meta é preciso confirmar que ela existe. Dura o `select` e acaba — a gravação acontece em `comConta`. |
 
-**Fora dos três motivos — a corrigir.** Estes usos não vazam dado entre contas
-(filtram pela conta ou pela pessoa), mas abrem a chave mestra sem precisar: a
-conta já é conhecida. A correção é trocar por `comConta`; até lá, ficam aqui
-para ninguém copiar o padrão.
-
-| Uso | Onde | Por que está errado |
-|---|---|---|
-| `auth.renovar` | `auth.service.ts` | A rota é autenticada: o request já roda em `comConta` (interceptor). Lê só a versão do token do próprio usuário. |
-| `aviso.remover_dispositivo` | `aviso.service.ts` | Rota autenticada: apaga o aparelho só da própria pessoa. |
-| `aviso.alvos`, `aviso.limpar_tokens` | `aviso.service.ts` | A conta vem no parâmetro: os aparelhos dela podem ser lidos e limpos em `comConta(contaId)`. O aviso sai solto (`void`), mas `comConta` também abre transação própria. |
-
 Quando um caminho novo aparecer, a pergunta não é "posso usar?", e sim **em qual
 dos três motivos ele cabe**. Se não couber em nenhum, o caminho está errado —
 não a regra.
@@ -199,7 +188,11 @@ grep -rn "comEscopoSistema" backend/src --include=*.ts | grep -v spec
 **A tabela anda com o código.** `backend/src/db/escopos-sistema.spec.ts` lê
 todos os `comEscopoSistema` do código e esta seção, e falha se um nome do
 código não tiver linha aqui, se uma linha citar nome que não existe mais, ou se
-o nome não for texto à vista. Completada em 27/09/2026: 90 nomes.
+o nome não for texto à vista. Completada em 27/09/2026 com 90 nomes; em
+29/09/2026 os 4 que abriam a chave mestra com a conta já conhecida
+(`auth.renovar`, `aviso.remover_dispositivo`, `aviso.alvos`,
+`aviso.limpar_tokens`) passaram para `comConta` — ficam 86, todos em um dos três
+motivos.
 
 ## Teste manual: provar que a RLS pega
 

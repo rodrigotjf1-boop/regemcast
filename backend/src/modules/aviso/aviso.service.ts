@@ -9,6 +9,9 @@
  * `avisar` NUNCA lança e nunca espera o Firebase dentro de uma transação: quem
  * chama faz `void this.avisos.avisar(...)` depois de gravar. Aviso atrasado ou
  * perdido é incômodo; campanha que trava porque o Firebase caiu é defeito.
+ *
+ * Tudo aqui roda na conta (`comConta`), menos registrar o aparelho: o token do
+ * celular é único na base e pode estar em outra conta (`docs/rls.md`, motivo A).
  */
 import { Injectable, Logger } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
@@ -80,12 +83,14 @@ export class AvisoService {
     });
   }
 
-  /** Sair do app: o aparelho para de receber. Só apaga o que é da própria pessoa. */
-  async remover(u: { id: string }, token: string): Promise<void> {
-    await this.ctx.comEscopoSistema('aviso.remover_dispositivo', (db) =>
+  /** Sair do app: o aparelho para de receber. Só apaga o que é da própria pessoa, na conta dela. */
+  async remover(u: { id: string; contaId: string }, token: string): Promise<void> {
+    await this.ctx.comConta(u.contaId, (db) =>
       db
         .delete(dispositivo)
-        .where(and(eq(dispositivo.tokenFcm, token), eq(dispositivo.usuarioId, u.id))),
+        .where(
+          and(eq(dispositivo.contaId, u.contaId), eq(dispositivo.tokenFcm, token), eq(dispositivo.usuarioId, u.id)),
+        ),
     );
   }
 
@@ -133,7 +138,9 @@ export class AvisoService {
   ): Promise<void> {
     if (!this.fcm.ligado) return;
     try {
-      const alvos = await this.ctx.comEscopoSistema('aviso.alvos', async (db) => {
+      // Na conta: `comConta` abre transação própria, então vale também para o
+      // aviso que sai solto, depois que a transação de quem chamou terminou.
+      const alvos = await this.ctx.comConta(contaId, async (db) => {
         const r = await db.execute(sql`
           select d.id, d.token_fcm
             from dispositivo d
@@ -154,8 +161,8 @@ export class AvisoService {
       );
       const mortos = alvos.filter((_, i) => resultados[i] === 'invalido').map((a) => a.id);
       if (mortos.length) {
-        await this.ctx.comEscopoSistema('aviso.limpar_tokens', (db) =>
-          db.delete(dispositivo).where(inArray(dispositivo.id, mortos)),
+        await this.ctx.comConta(contaId, (db) =>
+          db.delete(dispositivo).where(and(eq(dispositivo.contaId, contaId), inArray(dispositivo.id, mortos))),
         );
       }
     } catch (erro) {
