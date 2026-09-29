@@ -198,6 +198,9 @@ export default function PaginaModelos() {
             aoCancelar={() => {
               setCriando(false);
               setEditando(null);
+              // O editor pode ter gravado o rascunho antes de um envio que
+              // falhou: a lista relê para ele aparecer.
+              void carregar();
             }}
             aoSalvar={() => {
               setCriando(false);

@@ -6,9 +6,11 @@ import '../api/erro_api.dart';
 import '../api/leituras.dart';
 import '../api/modelos.dart';
 import '../componentes/basicos.dart';
+import '../componentes/dialogos.dart';
 import '../config.dart';
 import '../tema/cores.dart';
 import 'modelo_detalhe.dart';
+import 'modelo_editor.dart';
 
 /// Rótulo e tom do status — o da Meta já vem em português; o nosso, não.
 (String, TomPilula) situacaoDoModelo(String status) => switch (status) {
@@ -46,8 +48,10 @@ ModeloSalvo? localDe(ModeloNaMeta m, List<ModeloSalvo> meus) {
 
 /// Os modelos da conta: o que está na Meta e o que ainda é rascunho.
 ///
-/// Criar modelo novo é no site (o editor completo, com mídia e carrossel).
-/// Aqui se vê como a mensagem chega, se edita o texto e se exclui.
+/// No WhatsApp oficial, toda conversa que a empresa começa precisa de um modelo
+/// aprovado pela Meta — sem ele não existe disparo. Por isso o status aparece
+/// com destaque, e criar um modelo novo fica a um toque, com o mesmo editor do
+/// site (mídia e carrossel incluídos).
 class TelaModelos extends ConsumerWidget {
   const TelaModelos({super.key});
 
@@ -61,6 +65,15 @@ class TelaModelos extends ConsumerWidget {
           .read(modelosNaMetaProvider.future)
           .catchError((_) => <ModeloNaMeta>[]),
     ]);
+  }
+
+  Future<void> _criar(BuildContext context, WidgetRef ref) async {
+    final r = await Navigator.of(context).push<ResultadoEditor>(
+      MaterialPageRoute(builder: (_) => const TelaEditorModelo()),
+    );
+    ref.invalidate(modelosNaMetaProvider);
+    ref.invalidate(modelosSalvosProvider);
+    if (r != null && context.mounted) avisar(context, r.mensagem);
   }
 
   Future<void> _abrir(
@@ -103,6 +116,7 @@ class TelaModelos extends ConsumerWidget {
         )
         .toList();
     final emAnalise = meus.where((m) => m.emAnalise).length;
+    final aprovados = naMeta.value?.where((m) => m.status == 'aprovado').length;
 
     return RefreshIndicator(
       color: c.acentoContraste,
@@ -119,18 +133,40 @@ class TelaModelos extends ConsumerWidget {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        'Modelos',
-                        style: Theme.of(context).textTheme.headlineSmall,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Modelos',
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                          if (aprovados != null)
+                            Text(
+                              aprovados == 1
+                                  ? '1 aprovado pela Meta'
+                                  : '$aprovados aprovados pela Meta',
+                              style: TextStyle(
+                                color: c.tintaSuave,
+                                fontSize: 13,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                    IconButton(
-                      tooltip: 'Criar modelo no site',
-                      onPressed: () => launchUrl(
-                        Uri.parse('$urlWeb/modelos'),
-                        mode: LaunchMode.externalApplication,
+                    FilledButton.icon(
+                      key: const ValueKey('novo-modelo'),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(0, 42),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        textStyle: const TextStyle(
+                          fontFamily: 'Poppins',
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
                       ),
-                      icon: const Icon(Icons.add_circle_outline_rounded),
+                      onPressed: () => _criar(context, ref),
+                      icon: const Icon(Icons.add_rounded, size: 20),
+                      label: const Text('Novo modelo'),
                     ),
                   ],
                 ),
@@ -142,12 +178,19 @@ class TelaModelos extends ConsumerWidget {
             sliver: SliverList.list(
               children: [
                 if (!conectado)
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 14),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
                     child: Aviso(
                       icone: Icons.chat_bubble_outline_rounded,
                       texto:
-                          'Conecte o número pelo site para ver os modelos aprovados. Os rascunhos continuam aqui.',
+                          'Conecte o número para ver os modelos aprovados. Você já pode escrever e salvar rascunhos aqui; para enviar à aprovação, conecte o número primeiro.',
+                      acao: TextButton(
+                        onPressed: () => launchUrl(
+                          Uri.parse('$urlWeb/whatsapp'),
+                          mode: LaunchMode.externalApplication,
+                        ),
+                        child: const Text('Conectar pelo site'),
+                      ),
                     ),
                   ),
                 if (emAnalise > 0)
@@ -172,6 +215,7 @@ class TelaModelos extends ConsumerWidget {
                         idioma: m.idioma,
                         status: m.status,
                         corpo: m.corpo,
+                        motivo: m.motivo,
                         pontilhado: true,
                         aoTocar: () => _abrir(context, ref, local: m),
                       ),
@@ -196,7 +240,7 @@ class TelaModelos extends ConsumerWidget {
                     data: (lista) => lista.isEmpty
                         ? Cartao(
                             child: Text(
-                              'Nenhum modelo na Meta ainda. Crie o primeiro pelo site — a Meta analisa cada um antes de liberar.',
+                              'Nenhum modelo na Meta ainda. Crie o primeiro em "Novo modelo" — a Meta analisa cada um antes de liberar, o que costuma levar de alguns minutos a algumas horas.',
                               style: TextStyle(
                                 color: c.tintaSuave,
                                 height: 1.45,
@@ -214,6 +258,7 @@ class TelaModelos extends ConsumerWidget {
                                     idioma: m.idioma,
                                     status: m.status,
                                     corpo: m.corpo,
+                                    motivo: m.motivo,
                                     foraDoRegemCast: localDe(m, meus) == null,
                                     aoTocar: () => _abrir(
                                       context,
@@ -255,6 +300,7 @@ class _CartaoModelo extends StatelessWidget {
     required this.status,
     required this.corpo,
     required this.aoTocar,
+    this.motivo,
     this.pontilhado = false,
     this.foraDoRegemCast = false,
   });
@@ -264,6 +310,10 @@ class _CartaoModelo extends StatelessWidget {
   final String idioma;
   final String status;
   final String corpo;
+
+  /// Por que a Meta recusou. Ela diz uma vez só: sem isto, a pessoa tentaria
+  /// de novo às cegas.
+  final String? motivo;
   final VoidCallback aoTocar;
   final bool pontilhado;
   final bool foraDoRegemCast;
@@ -311,6 +361,15 @@ class _CartaoModelo extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(color: c.tintaSuave, height: 1.4, fontSize: 13.5),
           ),
+          if (tom == TomPilula.erro && (motivo ?? '').trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'A Meta recusou: ${motivo!.trim()}',
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: c.erro, height: 1.4, fontSize: 13),
+            ),
+          ],
         ],
       ),
     );

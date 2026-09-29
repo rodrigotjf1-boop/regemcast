@@ -17,7 +17,7 @@ import { Logotipo } from '@/components/marca/logotipo';
  * com `new Date()` faria a página anunciar revisão que não houve.
  */
 
-const ATUALIZADO_EM = '18 de setembro de 2026';
+const ATUALIZADO_EM = '29 de setembro de 2026';
 const CONTROLADOR = 'DMS Tecnologias';
 const EMAIL = 'suporte@dmsregem.com';
 
@@ -302,6 +302,13 @@ export default function PoliticaDePrivacidade() {
               <strong className="text-tinta">Arquivos de contatos</strong> — o arquivo que você
               escolhe para importar é enviado ao servidor só para ler os números. Ele não é
               guardado; ficam apenas os contatos que você confirmar.
+            </li>
+            <li>
+              <strong className="text-tinta">Imagens, vídeos e documentos dos modelos</strong> — o
+              arquivo que você escolhe no celular para o cabeçalho de um modelo, ou para um cartão
+              do carrossel, é enviado ao servidor e guardado na sua conta, como acontece no painel.
+              Ele segue para a Meta quando o modelo vai para aprovação. O aplicativo só abre a
+              galeria ou os arquivos quando você toca em escolher, e não lê mais nada do aparelho.
             </li>
           </ul>
           <p>

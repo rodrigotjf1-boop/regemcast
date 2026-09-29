@@ -38,9 +38,9 @@ export interface UsuarioAutenticado {
   /**
    * Onde esta sessão nasceu. `app` é o aplicativo Android; `web`, o navegador.
    *
-   * Não é enfeite de telemetria: o app NÃO cria modelo nem campanha, e essa
-   * regra vive no servidor (`@SomenteWeb`). Deixá-la só na tela significaria
-   * que um token extraído do aparelho poderia criar o que o app não mostra.
+   * Não é enfeite de telemetria: o app NÃO monta campanha, e essa regra vive
+   * no servidor (`SomenteWebGuard`). Deixá-la só na tela significaria que um
+   * token extraído do aparelho poderia criar o que o app não mostra.
    */
   escopo: 'web' | 'app';
 }

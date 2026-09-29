@@ -9,7 +9,7 @@
  *   órfão na Meta ocupando o nome por 30 dias, sem tela nenhuma onde apareça;
  * - a categoria nunca vai junto na edição: mandá-la faz a Meta recusar tudo.
  */
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 
 // O serviço lê env na importação; o teste não precisa de banco nenhum.
 jest.mock('../../config/env', () => ({ env: { meta: { graphVersao: 'v21.0' } } }));
@@ -77,7 +77,10 @@ function montar(parcial: Partial<typeof MODELO_BASE> = {}) {
     excluirModelo: jest.fn().mockResolvedValue(undefined),
   };
   const auditoria = { registrar: jest.fn().mockResolvedValue(undefined) };
-  const midia = { handleParaModelo: jest.fn() };
+  const midia = {
+    handleParaModelo: jest.fn(),
+    formatosDe: jest.fn().mockResolvedValue(new Map<string, string>()),
+  };
 
   const service = new ModeloService(
     ctx as never,
@@ -87,7 +90,7 @@ function montar(parcial: Partial<typeof MODELO_BASE> = {}) {
     midia as never,
   );
 
-  return { service, graph, meta, auditoria, gravado, linha };
+  return { service, graph, meta, auditoria, gravado, linha, db, midia };
 }
 
 describe('editar modelo que está na Meta', () => {
@@ -207,5 +210,170 @@ describe('cópia de outro modelo (a Meta recusa corpo e rodapé iguais aos de um
     Object.assign(m.meta, { modelos: jest.fn().mockRejectedValue(new Error('fora do ar')) });
     const problemas = await m.service.conferir('c1', { ...DTO, nome: 'promo_nova' });
     expect(problemas).toEqual([]);
+  });
+});
+
+describe('exemplos das variáveis (a Meta recusa exemplo a mais: erro 132000)', () => {
+  // A tela guarda os exemplos por posição. Quem preenche dois e depois apaga o
+  // {{2}} do texto fica com um exemplo sobrando — e ele não pode ir junto.
+  const CORPO_UMA = 'Olá {{1}}, seu pedido saiu hoje da cozinha para entrega.';
+
+  function exemplosDoCorpo(componentes: unknown): unknown {
+    const lista = componentes as { type: string; example?: { body_text?: unknown } }[];
+    return lista.find((c) => c.type === 'BODY')?.example?.body_text;
+  }
+
+  it('envio para aprovação: só um exemplo por variável do texto', async () => {
+    const m = montar({ status: 'rascunho', metaTemplateId: null, corpo: CORPO_UMA, corpoExemplos: ['Ana', '4521'] as never });
+    const criarModelo = jest.fn().mockResolvedValue({ id: '777', status: 'PENDING' });
+    Object.assign(m.graph, { criarModelo });
+
+    await m.service.enviarParaAprovacao('c1', 'u1', 'm1');
+
+    const corpo = criarModelo.mock.calls[0][2] as { components: unknown };
+    expect(exemplosDoCorpo(corpo.components)).toEqual([['Ana']]);
+  });
+
+  it('edição na Meta: o exemplo que sobrou não vai', async () => {
+    const m = montar();
+    await m.service.editarNaMeta('c1', 'u1', 'm1', { ...DTO, corpo: CORPO_UMA, corpoExemplos: ['Ana', '4521'] });
+
+    const componentes = m.graph.editarModelo.mock.calls[0][2];
+    expect(exemplosDoCorpo(componentes)).toEqual([['Ana']]);
+  });
+});
+
+describe('nome repetido (o nome, com o idioma, é a chave do modelo aqui e na Meta)', () => {
+  const OUTRO_TEXTO = 'Chegou o combo de domingo com batata e refrigerante para a família.';
+
+  it('conferir aponta, na seção do nome, um modelo nosso com o mesmo nome', async () => {
+    const m = montar();
+    const problemas = await m.service.conferir('c1', { ...DTO, corpo: OUTRO_TEXTO });
+    expect(problemas).toEqual([
+      expect.objectContaining({ campo: 'nome', mensagem: expect.stringContaining('Já existe um modelo "promo_sexta"') }),
+    ]);
+  });
+
+  it('o próprio modelo, sendo editado, não repete o nome de si mesmo', async () => {
+    const m = montar();
+    const problemas = await m.service.conferir('c1', { ...DTO, corpo: OUTRO_TEXTO }, 'm1');
+    expect(problemas).toEqual([]);
+  });
+
+  it('conferir aponta o nome que a Meta já tem (modelo criado direto no painel dela)', async () => {
+    const m = montar();
+    Object.assign(m.meta, {
+      modelos: jest.fn().mockResolvedValue([
+        { id: '555', nome: 'feito_na_meta', idioma: 'pt_BR', corpo: 'outro texto qualquer', rodape: null },
+      ]),
+    });
+    const problemas = await m.service.conferir('c1', { ...DTO, nome: 'feito_na_meta', corpo: OUTRO_TEXTO });
+    expect(problemas).toEqual([
+      expect.objectContaining({ campo: 'nome', mensagem: expect.stringContaining('A Meta já tem um modelo "feito_na_meta"') }),
+    ]);
+  });
+
+  it('salvar com nome repetido responde 409 com a frase — e não "algo deu errado" (500)', async () => {
+    const m = montar();
+    const duplicado = Object.assign(new Error('duplicar valor da chave viola a restrição de unicidade "idx_modelo_unico"'), {
+      code: '23505',
+    });
+    Object.assign(m.db, {
+      insert: () => ({ values: () => ({ returning: () => Promise.reject(duplicado) }) }),
+    });
+    const tentativa = m.service.salvarRascunho('c1', 'u1', { ...DTO, corpo: OUTRO_TEXTO });
+    await expect(tentativa).rejects.toBeInstanceOf(ConflictException);
+    await expect(m.service.salvarRascunho('c1', 'u1', { ...DTO, corpo: OUTRO_TEXTO })).rejects.toThrow(
+      'Já existe um modelo "promo_sexta" nesta conta.',
+    );
+  });
+
+  it('o erro 23505 embrulhado (cause) também vira 409', async () => {
+    const m = montar();
+    const embrulhado = Object.assign(new Error('Failed query'), { cause: { code: '23505' } });
+    Object.assign(m.db, {
+      insert: () => ({ values: () => ({ returning: () => Promise.reject(embrulhado) }) }),
+    });
+    await expect(m.service.salvarRascunho('c1', 'u1', { ...DTO, corpo: OUTRO_TEXTO })).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+});
+
+describe('mídia que não combina com o formato (imagem no cabeçalho que virou vídeo)', () => {
+  const FOTO = '11111111-2222-4333-8444-555555555555';
+  const VIDEO = '66666666-7777-4888-8999-000000000000';
+  const TEXTO = 'Olha o smash novo que chegou na loja hoje, só para quem pede pelo app.';
+
+  it('conferir aponta, no cabeçalho, a imagem guardada como vídeo', async () => {
+    const m = montar();
+    m.midia.formatosDe.mockResolvedValue(new Map([[FOTO, 'IMAGE']]));
+    const problemas = await m.service.conferir(
+      'c1',
+      { ...DTO, nome: 'promo_video', corpo: TEXTO, cabecalhoFormato: 'VIDEO', cabecalhoMidia: `midia:${FOTO}` },
+    );
+    expect(m.midia.formatosDe).toHaveBeenCalledWith('c1', [FOTO]);
+    expect(problemas).toEqual([
+      expect.objectContaining({
+        campo: 'cabecalho',
+        mensagem: 'O cabeçalho pede um vídeo, mas o arquivo escolhido é uma imagem. Escolha um vídeo, ou troque o formato.',
+      }),
+    ]);
+  });
+
+  it('a mídia do formato certo passa', async () => {
+    const m = montar();
+    m.midia.formatosDe.mockResolvedValue(new Map([[FOTO, 'IMAGE']]));
+    const problemas = await m.service.conferir(
+      'c1',
+      { ...DTO, nome: 'promo_foto', corpo: TEXTO, cabecalhoFormato: 'IMAGE', cabecalhoMidia: `midia:${FOTO}` },
+    );
+    expect(problemas).toEqual([]);
+  });
+
+  it('carrossel: cartão com vídeo no lugar da imagem', async () => {
+    const m = montar();
+    m.midia.formatosDe.mockResolvedValue(new Map([[FOTO, 'IMAGE'], [VIDEO, 'VIDEO']]));
+    const problemas = await m.service.conferir('c1', {
+      ...DTO,
+      nome: 'vitrine',
+      corpo: 'Escolha o seu burger da semana entre as opções da casa.',
+      tipo: 'carrossel',
+      cartoes: [
+        { imagem: `midia:${FOTO}`, corpo: 'Smash', botoes: [{ tipo: 'QUICK_REPLY', texto: 'Quero' }] },
+        { imagem: `midia:${VIDEO}`, corpo: 'Duplo', botoes: [{ tipo: 'QUICK_REPLY', texto: 'Quero' }] },
+      ],
+    });
+    expect(problemas.filter((p) => p.campo === 'cartoes').map((p) => p.mensagem)).toContain(
+      'O cartão 2 pede uma imagem, mas o arquivo escolhido é um vídeo. Escolha uma imagem, ou troque o formato.',
+    );
+  });
+
+  it('referência que não é uuid nem chega à consulta', async () => {
+    const m = montar();
+    await m.service.conferir('c1', {
+      ...DTO,
+      nome: 'promo_x',
+      corpo: TEXTO,
+      cabecalhoFormato: 'IMAGE',
+      cabecalhoMidia: "midia:1' or 1=1 --",
+    });
+    expect(m.midia.formatosDe).not.toHaveBeenCalled();
+  });
+
+  it('envio para aprovação: a mídia trocada é barrada ANTES de ir à Meta', async () => {
+    const m = montar({
+      status: 'rascunho',
+      metaTemplateId: null,
+      corpo: TEXTO,
+      cabecalhoFormato: 'VIDEO' as never,
+      cabecalhoMidia: `midia:${FOTO}` as never,
+    });
+    m.midia.formatosDe.mockResolvedValue(new Map([[FOTO, 'IMAGE']]));
+    const criarModelo = jest.fn();
+    Object.assign(m.graph, { criarModelo });
+    await expect(m.service.enviarParaAprovacao('c1', 'u1', 'm1')).rejects.toBeInstanceOf(BadRequestException);
+    expect(criarModelo).not.toHaveBeenCalled();
+    expect(m.midia.handleParaModelo).not.toHaveBeenCalled();
   });
 });

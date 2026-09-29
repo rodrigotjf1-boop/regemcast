@@ -11,7 +11,7 @@
  * moram em `regras-modelo.ts` e rodam aqui, devolvendo o que corrigir em
  * português, antes de qualquer coisa sair daqui.
  */
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, desc, eq } from 'drizzle-orm';
 
 import { ContextoDb } from '../../db/contexto';
@@ -19,11 +19,12 @@ import { modelo } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { ErroGraph, GraphService } from '../meta/graph.service';
 import { MetaService } from '../meta/meta.service';
-import { MidiaService } from '../midia/midia.service';
+import { MidiaService, PREFIXO_MIDIA } from '../midia/midia.service';
 import type { SalvarModeloDto } from './dto/salvar-modelo.dto';
 import {
   botoesComSaida,
   conferirModelo,
+  exemplosDoCorpo,
   quantasVariaveis,
   type BotaoDoModelo,
   type CartaoDoModelo,
@@ -85,17 +86,91 @@ export class ModeloService {
    * `id` é o modelo sendo editado (ele não é duplicata de si mesmo).
    */
   async conferir(contaId: string, dto: SalvarModeloDto, id?: string): Promise<ProblemaNoModelo[]> {
-    const problemas = conferirModelo(this.paraValidacao(dto));
     const proprio = id ? await this.ctx.comConta(contaId, (db) => this.buscar(db, contaId, id)) : null;
-    return [...problemas, ...(await this.duplicado(contaId, dto, proprio))];
+    return this.problemasDe(contaId, dto, proprio);
   }
 
   /**
-   * Cópia de outro modelo: a Meta recusa modelo com o MESMO texto de corpo e
-   * rodapé de um que já existe (motivo da revisão dela, conferido em
-   * 25/09/2026). Confere contra os nossos e contra a lista da Meta — modelo
-   * criado direto no painel dela também conta. Sem a lista da Meta (fora do
-   * ar), confere só os nossos: melhor meia conferência que nenhuma.
+   * Tudo que barra o envio, num lugar só — o `conferir` da tela, o envio para
+   * aprovação e a edição na Meta chamam o mesmo: as regras da Meta, a cópia ou
+   * o nome repetido, e a mídia que não combina com o formato.
+   */
+  private async problemasDe(
+    contaId: string,
+    dto: SalvarModeloDto,
+    proprio: { id: string; nome: string; metaTemplateId: string | null } | null,
+  ): Promise<ProblemaNoModelo[]> {
+    return [
+      ...conferirModelo(this.paraValidacao(dto)),
+      ...(await this.duplicado(contaId, dto, proprio)),
+      ...(await this.midiaNoFormato(contaId, dto)),
+    ];
+  }
+
+  /**
+   * A mídia guardada precisa ser do formato do cabeçalho (e imagem, no cartão
+   * do carrossel). Trocar o cabeçalho de imagem para vídeo sem trocar o
+   * arquivo mandaria a foto como vídeo — a Meta recusa, horas depois. O
+   * endereço `https://` é conferido no envio, quando é baixado.
+   */
+  private async midiaNoFormato(contaId: string, dto: SalvarModeloDto): Promise<ProblemaNoModelo[]> {
+    const artigo: Record<string, string> = { IMAGE: 'uma imagem', VIDEO: 'um vídeo', DOCUMENT: 'um documento' };
+    const esperados: { id: string; formato: string; campo: 'cabecalho' | 'cartoes'; onde: string }[] = [];
+    const midia = dto.cabecalhoMidia ?? '';
+    if (
+      dto.tipo !== 'carrossel' &&
+      dto.cabecalhoFormato &&
+      dto.cabecalhoFormato !== 'TEXT' &&
+      midia.startsWith(PREFIXO_MIDIA)
+    ) {
+      esperados.push({
+        id: midia.slice(PREFIXO_MIDIA.length),
+        formato: dto.cabecalhoFormato,
+        campo: 'cabecalho',
+        onde: 'O cabeçalho',
+      });
+    }
+    if (dto.tipo === 'carrossel') {
+      (dto.cartoes ?? []).forEach((c, i) => {
+        if (c.imagem?.startsWith(PREFIXO_MIDIA)) {
+          esperados.push({
+            id: c.imagem.slice(PREFIXO_MIDIA.length),
+            formato: 'IMAGE',
+            campo: 'cartoes',
+            onde: `O cartão ${i + 1}`,
+          });
+        }
+      });
+    }
+    // O id vem do cliente: só uuid vai para a consulta.
+    const validos = esperados.filter((e) => /^[0-9a-f-]{36}$/i.test(e.id));
+    if (!validos.length) return [];
+
+    const formatos = await this.midia.formatosDe(contaId, [...new Set(validos.map((e) => e.id))]);
+    const problemas: ProblemaNoModelo[] = [];
+    for (const e of validos) {
+      const real = formatos.get(e.id);
+      if (real && real !== e.formato) {
+        problemas.push({
+          campo: e.campo,
+          mensagem: `${e.onde} pede ${artigo[e.formato]}, mas o arquivo escolhido é ${artigo[real] ?? 'de outro tipo'}. Escolha ${artigo[e.formato]}, ou troque o formato.`,
+        });
+      }
+    }
+    return problemas;
+  }
+
+  /**
+   * Cópia de outro modelo, ou nome repetido.
+   *
+   * - A Meta recusa modelo com o MESMO texto de corpo e rodapé de um que já
+   *   existe (motivo da revisão dela, conferido em 25/09/2026).
+   * - O nome (com o idioma) é a chave do modelo, aqui e na Meta: repetido
+   *   aqui, o banco recusa o salvar; repetido lá, a Meta recusa o envio.
+   *
+   * Confere contra os nossos e contra a lista da Meta — modelo criado direto no
+   * painel dela também conta. Sem a lista da Meta (fora do ar), confere só os
+   * nossos: melhor meia conferência que nenhuma.
    */
   private async duplicado(
     contaId: string,
@@ -103,37 +178,70 @@ export class ModeloService {
     proprio: { id: string; nome: string; metaTemplateId: string | null } | null,
   ): Promise<ProblemaNoModelo[]> {
     const normal = (t?: string | null) => (t ?? '').replace(/\s+/g, ' ').trim();
-    if (!normal(dto.corpo)) return [];
     const chave = (corpo?: string | null, rodape?: string | null) => `${normal(corpo)}\u0000${normal(rodape)}`;
     const alvo = chave(dto.corpo, dto.rodape);
-    const problema = (nome: string): ProblemaNoModelo[] => [
+    const comTexto = normal(dto.corpo).length > 0;
+    const copia = (nome: string): ProblemaNoModelo[] => [
       {
         campo: 'corpo',
         mensagem: `O modelo "${nome}" já tem este mesmo texto (mensagem e rodapé), e a Meta recusa cópia de modelo. Mude o texto — ou, se é para corrigir o "${nome}", edite ele.`,
       },
     ];
+    const nome = (dto.nome ?? '').trim();
+    const idioma = dto.idioma ?? 'pt_BR';
 
     const nossos = await this.ctx.comConta(contaId, (db) =>
       db
-        .select({ id: modelo.id, nome: modelo.nome, corpo: modelo.corpo, rodape: modelo.rodape, status: modelo.status })
+        .select({
+          id: modelo.id,
+          nome: modelo.nome,
+          idioma: modelo.idioma,
+          corpo: modelo.corpo,
+          rodape: modelo.rodape,
+          status: modelo.status,
+        })
         .from(modelo)
         .where(eq(modelo.contaId, contaId)),
     );
-    // Rascunho não existe na Meta: não é duplicata de nada lá.
-    const igualAqui = nossos.find(
-      (n) => n.id !== proprio?.id && n.status !== 'rascunho' && chave(n.corpo, n.rodape) === alvo,
-    );
-    if (igualAqui) return problema(igualAqui.nome);
+
+    const mesmoNome = nome
+      ? nossos.find((n) => n.id !== proprio?.id && n.nome === nome && n.idioma === idioma)
+      : undefined;
+    if (mesmoNome) {
+      return [
+        {
+          campo: 'nome',
+          mensagem: `Já existe um modelo "${nome}" nesta conta${mesmoNome.status === 'rascunho' ? ' (um rascunho)' : ''}. Abra ele na lista para editar, ou dê outro nome a este.`,
+        },
+      ];
+    }
+
+    // Rascunho não existe na Meta: não é cópia de nada lá.
+    const igualAqui = comTexto
+      ? nossos.find((n) => n.id !== proprio?.id && n.status !== 'rascunho' && chave(n.corpo, n.rodape) === alvo)
+      : undefined;
+    if (igualAqui) return copia(igualAqui.nome);
 
     try {
       const naMeta = await this.meta.modelos(contaId);
-      const igualLa = naMeta.find(
-        (m) =>
-          m.id !== proprio?.metaTemplateId &&
-          m.nome !== proprio?.nome &&
-          chave(m.corpo, m.rodape) === alvo,
-      );
-      if (igualLa) return problema(igualLa.nome);
+      // O próprio modelo, quando já está lá, tem o id dela: não conta.
+      const nomeLa = nome
+        ? naMeta.find((m) => m.id !== proprio?.metaTemplateId && m.nome === nome && m.idioma === idioma)
+        : undefined;
+      if (nomeLa) {
+        return [
+          {
+            campo: 'nome',
+            mensagem: `A Meta já tem um modelo "${nome}" nesta conta. Dê outro nome a este.`,
+          },
+        ];
+      }
+      const igualLa = comTexto
+        ? naMeta.find(
+            (m) => m.id !== proprio?.metaTemplateId && m.nome !== proprio?.nome && chave(m.corpo, m.rodape) === alvo,
+          )
+        : undefined;
+      if (igualLa) return copia(igualLa.nome);
     } catch (erro) {
       this.log.warn(`Sem a lista da Meta para conferir duplicata: ${String(erro)}`);
     }
@@ -193,6 +301,29 @@ export class ModeloService {
     const nome = (dto.nome ?? '').trim();
     if (!nome) throw new BadRequestException('Dê um nome técnico ao modelo.');
 
+    try {
+      return await this.gravarRascunho(contaId, usuarioId, dto, nome, id);
+    } catch (erro) {
+      // O nome (com o idioma) é único na conta. Sem isto, salvar com o nome de
+      // um rascunho que já existe — ou tentar de novo um envio que falhou
+      // depois de gravar — virava "algo deu errado do nosso lado" (500).
+      const e = erro as { code?: string; cause?: { code?: string } } | null;
+      if (e?.code === '23505' || e?.cause?.code === '23505') {
+        throw new ConflictException(
+          `Já existe um modelo "${nome}" nesta conta. Abra ele na lista para editar, ou dê outro nome a este.`,
+        );
+      }
+      throw erro;
+    }
+  }
+
+  private async gravarRascunho(
+    contaId: string,
+    usuarioId: string,
+    dto: SalvarModeloDto,
+    nome: string,
+    id?: string,
+  ): Promise<{ id: string }> {
     return this.ctx.comConta(contaId, async (db) => {
       const valores = {
         contaId,
@@ -304,10 +435,7 @@ export class ModeloService {
       );
     }
 
-    const problemas = [
-      ...conferirModelo(this.paraValidacao(atual as unknown as SalvarModeloDto)),
-      ...(await this.duplicado(contaId, atual as unknown as SalvarModeloDto, atual)),
-    ];
+    const problemas = await this.problemasDe(contaId, atual as unknown as SalvarModeloDto, atual);
     if (problemas.length) {
       throw new BadRequestException({
         mensagem: 'O modelo precisa de ajustes antes de ir para a Meta.',
@@ -491,10 +619,7 @@ export class ModeloService {
 
     // A categoria é a que já está lá: muda-la é modelo novo, não edição.
     const paraValidar = { ...dto, categoria: atual.categoria as SalvarModeloDto['categoria'] };
-    const problemas = [
-      ...conferirModelo(this.paraValidacao(paraValidar)),
-      ...(await this.duplicado(contaId, paraValidar, atual)),
-    ];
+    const problemas = await this.problemasDe(contaId, paraValidar, atual);
     if (problemas.length) {
       throw new BadRequestException({
         mensagem: 'O modelo tem pontos a corrigir antes de ir para a Meta.',
@@ -660,7 +785,7 @@ export class ModeloService {
     // condicionais no caminho do modelo simples.
     if (dto.tipo === 'carrossel') {
       const corpoCarrossel: Record<string, unknown> = { type: 'BODY', text: dto.corpo };
-      const exemplosCarrossel = (dto.corpoExemplos ?? []).filter((e) => (e ?? '').trim().length > 0);
+      const exemplosCarrossel = exemplosDoCorpo(dto.corpo, dto.corpoExemplos);
       if (exemplosCarrossel.length) {
         corpoCarrossel.example = { body_text: [exemplosCarrossel] };
       }
@@ -719,7 +844,7 @@ export class ModeloService {
     }
 
     const corpo: Record<string, unknown> = { type: 'BODY', text: dto.corpo };
-    const exemplos = (dto.corpoExemplos ?? []).filter((e) => (e ?? '').trim().length > 0);
+    const exemplos = exemplosDoCorpo(dto.corpo, dto.corpoExemplos);
     if (exemplos.length) {
       // Array ANINHADO. É o formato que a Meta espera para o corpo.
       corpo.example = { body_text: [exemplos] };

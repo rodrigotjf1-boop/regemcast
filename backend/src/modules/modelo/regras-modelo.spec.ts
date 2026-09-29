@@ -10,6 +10,7 @@ import {
   botoesComSaida,
   conferirModelo,
   ehBotaoDeSaida,
+  exemplosDoCorpo,
   quantasVariaveis,
   variaveisDe,
   type ModeloParaValidar,
@@ -102,6 +103,20 @@ describe('variáveis do corpo', () => {
 
   it('aceita variável com espaço dentro das chaves', () => {
     expect(variaveisDe('Olá {{ 1 }}')).toEqual([1]);
+  });
+
+  it('o exemplo de uma variável que saiu do texto não conta por outra', () => {
+    // Preencheu dois, apagou o {{2}}, esvaziou o primeiro: sobra um exemplo
+    // na posição errada — e ele não vale pelo {{1}}.
+    const m = { ...modeloValido(), corpo: 'Olá {{1}}, hoje o frete é por nossa conta.', corpoExemplos: ['', 'Maria'] };
+    expect(problemasDe(m, 'corpo').join(' ')).toContain('exemplo');
+  });
+
+  it('só vão para a Meta os exemplos das variáveis que estão no texto', () => {
+    expect(exemplosDoCorpo('Olá {{1}}, tudo bem?', ['Maria', '4521'])).toEqual(['Maria']);
+    expect(exemplosDoCorpo('Olá {{1}}, pedido {{2}} saiu.', ['Maria', '4521'])).toEqual(['Maria', '4521']);
+    expect(exemplosDoCorpo('Sem variável nenhuma.', ['Maria'])).toEqual([]);
+    expect(exemplosDoCorpo('Olá {{1}}', undefined)).toEqual([]);
   });
 });
 
