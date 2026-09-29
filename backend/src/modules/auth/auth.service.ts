@@ -977,14 +977,15 @@ export class AuthService {
       throw new BadRequestException('Só a sessão do aplicativo é renovada por aqui.');
     }
 
-    const versao = await this.ctx.comEscopoSistema('auth.renovar', async (db) => {
-      const [u] = await db
-        .select({ tokenVersao: tUsuario.tokenVersao })
-        .from(tUsuario)
-        .where(eq(tUsuario.id, usuario.id))
-        .limit(1);
-      return u?.tokenVersao ?? null;
-    });
+    // A rota é autenticada: o request já roda na transação da conta (o
+    // interceptor abriu). A leitura é dela — o conta_id repete o que a RLS
+    // garante, como no `sair`.
+    const [u] = await this.ctx.db
+      .select({ tokenVersao: tUsuario.tokenVersao })
+      .from(tUsuario)
+      .where(and(eq(tUsuario.id, usuario.id), eq(tUsuario.contaId, usuario.contaId)))
+      .limit(1);
+    const versao = u?.tokenVersao ?? null;
     if (versao === null) throw new UnauthorizedException(SESSAO_EXPIRADA);
 
     return this.assinarToken(usuario.id, usuario.contaId, versao, 'app');
