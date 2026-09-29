@@ -41,5 +41,9 @@ Future<bool> confirmar(
   return ok == true;
 }
 
-void avisar(BuildContext context, String texto) =>
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(texto)));
+/// Mostra o resultado de uma ação. O aviso novo toma o lugar do que estiver
+/// na tela — como no site, onde o aviso é um só: em fila, quem faz duas ações
+/// seguidas leria por segundos o resultado da anterior.
+void avisar(BuildContext context, String texto) => ScaffoldMessenger.of(context)
+  ..hideCurrentSnackBar()
+  ..showSnackBar(SnackBar(content: Text(texto)));

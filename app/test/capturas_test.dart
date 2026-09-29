@@ -18,6 +18,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:regemcast/api/cliente_api.dart';
+import 'package:regemcast/api/contatos.dart';
 import 'package:regemcast/api/dados.dart';
 import 'package:regemcast/api/modelos.dart';
 import 'package:regemcast/push/push.dart';
@@ -28,7 +29,9 @@ import 'package:regemcast/telas/campanha_formulario.dart';
 import 'package:regemcast/telas/campanhas.dart';
 import 'package:regemcast/telas/casca.dart';
 import 'package:regemcast/telas/conta.dart';
+import 'package:regemcast/telas/bloqueios.dart';
 import 'package:regemcast/telas/contatos.dart';
+import 'package:regemcast/telas/dividir_em_blocos.dart';
 import 'package:regemcast/telas/entrar.dart';
 import 'package:regemcast/telas/importar_contatos.dart';
 import 'package:regemcast/telas/modelo_detalhe.dart';
@@ -314,69 +317,262 @@ final _api = ClienteApi(
         ]);
       case '/contatos/segmentos':
         return _json({
+          'parametros': {
+            'recenteDias': 30,
+            'ativoDias': 90,
+            'riscoDias': 180,
+            'fielPedidos': 5,
+          },
           'segmentos': [
-            {'id': 'campeoes', 'nome': 'Campeões', 'regra': '', 'total': 412},
-            {'id': 'em_risco', 'nome': 'Em risco', 'regra': '', 'total': 690},
+            {
+              'id': 'campeoes',
+              'nome': 'Campeões',
+              'regra': 'Compraram nos últimos 30 dias e têm 5 pedidos ou mais.',
+              'total': 412,
+              'gastoCentavos': 8420000,
+              'ticketMedioCentavos': 5200,
+            },
+            {
+              'id': 'fieis',
+              'nome': 'Fiéis',
+              'regra': 'Têm 5 pedidos ou mais e compraram nos últimos 90 dias.',
+              'total': 386,
+              'gastoCentavos': 5130000,
+              'ticketMedioCentavos': 4700,
+            },
+            {
+              'id': 'novos',
+              'nome': 'Novos',
+              'regra': 'Primeira compra nos últimos 30 dias.',
+              'total': 244,
+              'gastoCentavos': 1120000,
+              'ticketMedioCentavos': 4600,
+            },
+            {
+              'id': 'em_risco',
+              'nome': 'Em risco',
+              'regra': 'Compravam bem e sumiram há mais de 90 dias.',
+              'total': 690,
+              'gastoCentavos': 3980000,
+              'ticketMedioCentavos': 4100,
+            },
+            {
+              'id': 'perdidos',
+              'nome': 'Perdidos',
+              'regra': 'A última compra foi há mais de 180 dias.',
+              'total': 1310,
+              'gastoCentavos': 2210000,
+              'ticketMedioCentavos': 3800,
+            },
+            {
+              'id': 'sem_historico',
+              'nome': 'Sem histórico',
+              'regra': 'Ainda sem pedido registrado.',
+              'total': 3442,
+            },
           ],
         });
       case '/contatos/publicos':
         return _json({
+          'comValor': 3000,
+          'comCompras': 3042,
           'publicos': [
-            {'id': 'vip', 'nome': 'VIP', 'regra': '', 'total': 240},
+            {
+              'id': 'vip',
+              'nome': 'VIP',
+              'regra': r'Os 5% que mais gastaram: R$ 620 ou mais.',
+              'total': 240,
+              'gastoCentavos': 2980000,
+            },
             {
               'id': 'ticket_alto',
               'nome': 'Ticket alto',
-              'regra': '',
+              'regra': r'Pedido médio acima de R$ 70.',
               'total': 980,
+              'gastoCentavos': 6120000,
             },
             {
               'id': 'um_pedido',
               'nome': 'Um pedido só',
-              'regra': '',
+              'regra': 'Compraram uma vez e não voltaram.',
               'total': 1310,
+              'gastoCentavos': 540000,
             },
             {
               'id': 'entrega',
               'nome': 'Pedem entrega',
-              'regra': '',
+              'regra': 'O jeito mais frequente é a entrega.',
               'total': 3100,
+              'gastoCentavos': 0,
             },
             {
               'id': 'retirada',
               'nome': 'Retiram na loja',
-              'regra': '',
+              'regra': 'O jeito mais frequente é retirar.',
               'total': 870,
+              'gastoCentavos': 0,
             },
             {
               'id': 'periodo_noite',
               'nome': 'Pedem à noite',
-              'regra': '',
+              'regra': 'Das 18h às 23h59.',
               'total': 1147,
+              'gastoCentavos': 0,
             },
             {
               'id': 'periodo_almoco',
               'nome': 'Pedem no almoço',
-              'regra': '',
+              'regra': 'Das 11h às 14h59.',
               'total': 490,
+              'gastoCentavos': 0,
             },
             {
               'id': 'nunca_receberam',
               'nome': 'Nunca receberam',
-              'regra': '',
+              'regra': 'Nenhuma campanha chegou a eles ainda.',
               'total': 2210,
+              'gastoCentavos': 0,
             },
           ],
           'bairros': [
             {'bairro': 'Centro', 'total': 820},
             {'bairro': 'Tijuca', 'total': 540},
+            {'bairro': 'Méier', 'total': 312},
+            {'bairro': 'Vila Isabel', 'total': 208},
           ],
           'aniversarios': [
             {'mes': 9, 'total': 374},
             {'mes': 10, 'total': 402},
+            {'mes': 11, 'total': 355},
           ],
           'mesAtual': 9,
           'conversasLigadas': true,
         });
+      case '/contatos/regioes':
+        return _json({
+          'regioes': [
+            {
+              'uf': 'RJ',
+              'estado': 'Rio de Janeiro',
+              'total': 5480,
+              'ddds': [
+                {'ddd': '21', 'cidade': 'Rio de Janeiro', 'total': 5210},
+                {'ddd': '24', 'cidade': 'Volta Redonda', 'total': 270},
+              ],
+            },
+            {
+              'uf': 'SP',
+              'estado': 'São Paulo',
+              'total': 640,
+              'ddds': [
+                {'ddd': '11', 'cidade': 'São Paulo', 'total': 640},
+              ],
+            },
+            {
+              'uf': 'MG',
+              'estado': 'Minas Gerais',
+              'total': 190,
+              'ddds': [
+                {'ddd': '32', 'cidade': 'Juiz de Fora', 'total': 190},
+              ],
+            },
+          ],
+          'semRegiao': 18,
+        });
+      case '/contatos/divisoes':
+        return _json([
+          {
+            'id': 'd1',
+            'nome': 'Base Anota Aí (ativos)',
+            'tamanho': 500,
+            'ordem': 'importacao',
+            'soNuncaReceberam': false,
+            'totalContatos': 2000,
+            'totalBlocos': 4,
+            'blocos': [
+              {
+                'id': 'b1',
+                'bloco': 1,
+                'total': 500,
+                'usos': [
+                  {
+                    'campanhaId': '1',
+                    'campanhaNome': 'Sexta do Smash',
+                    'em': '2026-09-21T15:00:00Z',
+                    'total': 500,
+                    'entregues': 489,
+                    'lidas': 301,
+                    'falhas': 11,
+                    'sairam': 4,
+                  },
+                ],
+              },
+              {'id': 'b2', 'bloco': 2, 'total': 500, 'usos': <Object>[]},
+              {'id': 'b3', 'bloco': 3, 'total': 500, 'usos': <Object>[]},
+              {'id': 'b4', 'bloco': 4, 'total': 500, 'usos': <Object>[]},
+            ],
+          },
+        ]);
+      case '/contatos/divisoes/opcoes':
+        return _json({
+          'limite': 1000,
+          'limiteConhecido': true,
+          'maximo': 1000,
+          'tamanhos': [
+            {'valor': 250, 'disponivel': true},
+            {'valor': 500, 'disponivel': true},
+            {'valor': 750, 'disponivel': true},
+            {'valor': 1000, 'disponivel': true},
+            {'valor': 2000, 'disponivel': false},
+          ],
+          'sugerido': 500,
+        });
+      case '/contatos/importacao/texto':
+        return _json({
+          'formato': 'xlsx',
+          'arquivoNome': 'clientes-anotaai.xlsx',
+          'totalLidos': 1542,
+          'validos': 1539,
+          'invalidos': 3,
+          'novos': 1212,
+          'jaExistem': 327,
+          'assumiramPais': 1539,
+          'limite': 50000,
+          'porEnvio': 5000,
+          'truncado': false,
+          'extras': [
+            'e-mail',
+            'aniversário',
+            'pedidos',
+            'total gasto',
+            'última compra',
+          ],
+          'contatos': [
+            for (final (i, n) in [
+              'Ana Beatriz Souza',
+              'Carlos Menezes',
+              'Fernanda Lima',
+              'João Pedro Alves',
+              'Marina Costa',
+              'Rafael Nunes',
+              'Bruna Tavares',
+              'Diego Ramos',
+            ].indexed)
+              {
+                'nome': n,
+                'telefone':
+                    '552199${(1112222 + i * 1371).toString().padLeft(7, '0')}',
+                'novo': i != 2,
+                'assumiuPais': true,
+              },
+          ],
+        }, 201);
+      case '/contatos/importacao':
+        return _json({
+          'importacaoId': 'i1',
+          'gravados': 1212,
+          'jaExistiam': 327,
+        }, 201);
       case '/contatos/publicos/produtos':
         return _json({
           'produtos': [
@@ -385,52 +581,137 @@ final _api = ClienteApi(
           ],
         });
       case '/contatos':
+        final q = req.url.queryParameters;
+        final agora = DateTime.now().toUtc();
+        String atras(int dias) =>
+            agora.subtract(Duration(days: dias, hours: 3)).toIso8601String();
+        if (q['situacao'] == 'bloqueados') {
+          return _json({
+            'total': 3,
+            'pagina': 1,
+            'porPagina': 50,
+            'itens': [
+              {
+                'id': 'x1',
+                'nome': 'Paula Reis',
+                'telefone': '5521955554444',
+                'optOut': true,
+                'optOutEm': '2026-09-20T15:00:00Z',
+                'optOutOrigem': 'botao_modelo',
+              },
+              {
+                'id': 'x2',
+                'nome': null,
+                'telefone': '5521933332222',
+                'optOut': true,
+                'optOutEm': '2026-09-12T19:30:00Z',
+                'optOutOrigem': 'mensagem',
+              },
+              {
+                'id': 'x3',
+                'nome': 'Otávio Lins',
+                'telefone': '5511922221111',
+                'optOut': true,
+                'optOutEm': '2026-08-30T11:10:00Z',
+                'optOutOrigem': 'cardapioweb',
+              },
+            ],
+          });
+        }
+        if (q['situacao'] == 'sem_whatsapp') {
+          return _json({
+            'total': 2,
+            'pagina': 1,
+            'porPagina': 100,
+            'itens': [
+              {
+                'id': 'w1',
+                'nome': 'Lúcia Prado',
+                'telefone': '5521944443333',
+                'optOut': false,
+                'semWhatsappEm': '2026-09-18T15:00:00Z',
+              },
+              {
+                'id': 'w2',
+                'nome': null,
+                'telefone': '5524911110000',
+                'optOut': false,
+                'semWhatsappEm': '2026-09-02T15:00:00Z',
+              },
+            ],
+          });
+        }
         return _json({
-          'total': 6484,
+          'total': q['segmento'] == 'campeoes' ? 412 : 6484,
           'pagina': 1,
           'porPagina': 50,
+          'cashbackLido': true,
           'itens': [
             {
               'id': 'k1',
               'nome': 'Ana Beatriz Souza',
+              'email': 'ana.souza@gmail.com',
               'telefone': '5521991112222',
               'optOut': false,
+              'consentimentoOrigem': 'declarado',
+              'pedidos': 23,
+              'totalGastoCentavos': 128740,
+              'ultimoPedidoEm': atras(2),
+              'produtoFavorito': 'Smash duplo',
+              'periodoPreferido': 'noite',
+              'segmento': 'campeoes',
+              'cashbackCentavos': 1850,
+              'cashbackVenceEm': '${DateTime.now().year}-10-14',
+              'cashbackValido': true,
             },
             {
               'id': 'k2',
               'nome': 'Carlos Menezes',
               'telefone': '5521983334444',
               'optOut': false,
+              'consentimentoOrigem': 'conversa',
+              'pedidos': 6,
+              'totalGastoCentavos': 31260,
+              'ultimoPedidoEm': atras(118),
+              'produtoFavorito': 'Batata com cheddar',
+              'periodoPreferido': 'almoco',
+              'segmento': 'em_risco',
             },
             {
               'id': 'k3',
               'nome': null,
               'telefone': '5511975556666',
               'optOut': false,
+              'consentimentoOrigem': 'declarado',
             },
             {
               'id': 'k4',
               'nome': 'Fernanda Lima',
               'telefone': '5521967778888',
               'optOut': true,
+              'consentimentoOrigem': 'declarado',
             },
             {
               'id': 'k5',
               'nome': 'João Pedro Alves',
               'telefone': '5521959990000',
               'optOut': false,
+              'consentimentoOrigem': 'formulario',
+              'pedidos': 1,
+              'totalGastoCentavos': 4590,
+              'ultimoPedidoEm': atras(12),
+              'segmento': 'novos',
+              'cashbackCentavos': 700,
+              'cashbackVenceEm': '${DateTime.now().year}-09-01',
+              'cashbackValido': false,
             },
             {
               'id': 'k6',
               'nome': 'Marina Costa',
               'telefone': '5521941213141',
               'optOut': false,
-            },
-            {
-              'id': 'k7',
-              'nome': 'Rafael Nunes',
-              'telefone': '5524988776655',
-              'optOut': false,
+              'consentimentoOrigem': 'declarado',
+              'semWhatsappEm': '2026-09-18T15:00:00Z',
             },
           ],
         });
@@ -1355,6 +1636,125 @@ void main() {
 
   testWidgets('importar', (t) async {
     await _capturar(t, const TelaImportarContatos(), '14-importar');
+  }, skip: !ativo);
+
+  Future<void> assentarContatos(WidgetTester t) async {
+    for (var i = 0; i < 10; i++) {
+      await t.pump(const Duration(milliseconds: 100));
+    }
+  }
+
+  Future<void> vista(WidgetTester t, String nome) async {
+    await t.tap(find.byKey(ValueKey('vista-$nome')));
+    await assentarContatos(t);
+  }
+
+  testWidgets('contatos — públicos', (t) async {
+    await _capturar(
+      t,
+      const Scaffold(body: TelaContatos()),
+      '37-contatos-publicos',
+      antes: (t) => vista(t, 'publicos'),
+    );
+  }, skip: !ativo);
+
+  testWidgets('contatos — públicos, mais abaixo', (t) async {
+    await _capturar(
+      t,
+      const Scaffold(body: TelaContatos()),
+      '38-contatos-publicos-2',
+      antes: (t) async {
+        await vista(t, 'publicos');
+        await t.drag(find.byType(Scrollable).first, const Offset(0, -1500));
+        await assentarContatos(t);
+      },
+    );
+  }, skip: !ativo);
+
+  testWidgets('contatos — filtro de perfil', (t) async {
+    await _capturar(
+      t,
+      const Scaffold(body: TelaContatos()),
+      '39-contatos-filtro',
+      antes: (t) async {
+        await vista(t, 'publicos');
+        await t.tap(find.byKey(const ValueKey('perfil-campeoes')));
+        await assentarContatos(t);
+      },
+    );
+  }, skip: !ativo);
+
+  testWidgets('contatos — blocos e listas', (t) async {
+    await _capturar(
+      t,
+      const Scaffold(body: TelaContatos()),
+      '40-contatos-blocos',
+      antes: (t) => vista(t, 'blocos'),
+    );
+  }, skip: !ativo);
+
+  testWidgets('contatos — blocos, escuro', (t) async {
+    await _capturar(
+      t,
+      const Scaffold(body: TelaContatos()),
+      '41-contatos-blocos-escuro',
+      brilho: Brightness.dark,
+      antes: (t) => vista(t, 'blocos'),
+    );
+  }, skip: !ativo);
+
+  testWidgets('dividir em blocos', (t) async {
+    await _capturar(
+      t,
+      const TelaDividirEmBlocos(
+        alvo: AlvoDaDivisao(
+          origem: 'lista',
+          origemId: 'l1',
+          rotulo: 'Clientes 2026',
+          total: 4820,
+        ),
+      ),
+      '42-dividir-em-blocos',
+    );
+  }, skip: !ativo);
+
+  testWidgets('bloqueios', (t) async {
+    await _capturar(t, const TelaBloqueios(), '43-bloqueios');
+  }, skip: !ativo);
+
+  testWidgets('importar — prévia com colunas extras', (t) async {
+    await _capturar(
+      t,
+      const TelaImportarContatos(),
+      '44-importar-previa',
+      antes: (t) async {
+        await t.enterText(find.byType(TextField).first, '21 99111-2222');
+        await t.tap(find.text('Ler números'));
+        await assentarContatos(t);
+      },
+    );
+  }, skip: !ativo);
+
+  testWidgets('importar — concluída', (t) async {
+    await _capturar(
+      t,
+      const TelaImportarContatos(),
+      '45-importar-concluida',
+      antes: (t) async {
+        await t.enterText(find.byType(TextField).first, '21 99111-2222');
+        await t.tap(find.text('Ler números'));
+        await assentarContatos(t);
+        await t.scrollUntilVisible(
+          find.byKey(const ValueKey('consentimento')),
+          300,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await t.tap(find.byKey(const ValueKey('consentimento')));
+        await assentarContatos(t);
+        await t.tap(find.byKey(const ValueKey('importar-confirmar')));
+        await assentarContatos(t);
+      },
+    );
   }, skip: !ativo);
 
   testWidgets('mais', (t) async {

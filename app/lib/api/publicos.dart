@@ -176,6 +176,8 @@ class PublicoResumido {
     required this.nome,
     required this.regra,
     required this.total,
+    this.gastoCentavos,
+    this.ticketMedioCentavos,
   });
 
   final String id;
@@ -183,11 +185,89 @@ class PublicoResumido {
   final String regra;
   final int total;
 
+  /// Quanto o grupo já gastou (o "M" do RFM). Nulo sem valor gasto.
+  final int? gastoCentavos;
+
+  /// Só nos perfis: o ticket médio de quem está nele.
+  final int? ticketMedioCentavos;
+
   factory PublicoResumido.deJson(Map<String, dynamic> j) => PublicoResumido(
     id: _txt(j['id']),
     nome: _txt(j['nome']),
     regra: _txt(j['regra']),
     total: _int(j['total']),
+    gastoCentavos: j['gastoCentavos'] is num
+        ? (j['gastoCentavos'] as num).toInt()
+        : null,
+    ticketMedioCentavos: j['ticketMedioCentavos'] is num
+        ? (j['ticketMedioCentavos'] as num).toInt()
+        : null,
+  );
+}
+
+/// Os quatro números da classificação da base.
+class ParametrosSegmentacao {
+  const ParametrosSegmentacao({
+    required this.recenteDias,
+    required this.ativoDias,
+    required this.riscoDias,
+    required this.fielPedidos,
+  });
+
+  /// O padrão do servidor (migration 022).
+  static const padrao = ParametrosSegmentacao(
+    recenteDias: 30,
+    ativoDias: 90,
+    riscoDias: 180,
+    fielPedidos: 5,
+  );
+
+  final int recenteDias;
+  final int ativoDias;
+  final int riscoDias;
+  final int fielPedidos;
+
+  Map<String, Object?> paraJson() => {
+    'recenteDias': recenteDias,
+    'ativoDias': ativoDias,
+    'riscoDias': riscoDias,
+    'fielPedidos': fielPedidos,
+  };
+
+  factory ParametrosSegmentacao.deJson(Map<String, dynamic> j) =>
+      ParametrosSegmentacao(
+        recenteDias: _int(j['recenteDias']),
+        ativoDias: _int(j['ativoDias']),
+        riscoDias: _int(j['riscoDias']),
+        fielPedidos: _int(j['fielPedidos']),
+      );
+}
+
+/// `GET /contatos/segmentos`: os perfis com a regra de cada um.
+class ResumoSegmentos {
+  const ResumoSegmentos({required this.parametros, required this.segmentos});
+
+  final ParametrosSegmentacao parametros;
+  final List<PublicoResumido> segmentos;
+
+  /// Alguém com histórico de compra: sem isso, todo mundo é "sem histórico".
+  bool get comHistorico =>
+      segmentos.any((s) => s.id != 'sem_historico' && s.total > 0);
+
+  String? nomeDe(String? id) {
+    for (final s in segmentos) {
+      if (s.id == id) return s.nome;
+    }
+    return null;
+  }
+
+  factory ResumoSegmentos.deJson(Map<String, dynamic> j) => ResumoSegmentos(
+    parametros: ParametrosSegmentacao.deJson(
+      j['parametros'] is Map<String, dynamic>
+          ? j['parametros'] as Map<String, dynamic>
+          : const <String, dynamic>{},
+    ),
+    segmentos: _lista(j['segmentos']).map(PublicoResumido.deJson).toList(),
   );
 }
 
@@ -199,9 +279,16 @@ class ResumoPublicos {
     required this.aniversarios,
     required this.mesAtual,
     this.conversasLigadas = false,
+    this.comValor = 0,
+    this.comCompras = 0,
   });
 
   final List<PublicoResumido> publicos;
+
+  /// Quantos têm valor gasto e quantos têm compras: sem nenhum dos dois, a
+  /// tela pede para trazer as compras.
+  final int comValor;
+  final int comCompras;
   final List<({String bairro, int total})> bairros;
   final List<({int mes, int total})> aniversarios;
 
@@ -223,6 +310,8 @@ class ResumoPublicos {
     ],
     mesAtual: _int(j['mesAtual']),
     conversasLigadas: j['conversasLigadas'] == true,
+    comValor: _int(j['comValor']),
+    comCompras: _int(j['comCompras']),
   );
 }
 
@@ -282,13 +371,18 @@ final importacoesProvider = FutureProvider.autoDispose<List<ImportacaoDaBase>>((
   return _lista(dados).map(ImportacaoDaBase.deJson).toList();
 });
 
-final segmentosProvider = FutureProvider.autoDispose<List<PublicoResumido>>((
+final resumoSegmentosProvider = FutureProvider.autoDispose<ResumoSegmentos>((
   ref,
 ) async {
   final dados = await ref.read(clienteApiProvider).get('/contatos/segmentos');
-  final mapa = dados is Map<String, dynamic> ? dados : <String, dynamic>{};
-  return _lista(mapa['segmentos']).map(PublicoResumido.deJson).toList();
+  return ResumoSegmentos.deJson(
+    dados is Map<String, dynamic> ? dados : <String, dynamic>{},
+  );
 });
+
+final segmentosProvider = FutureProvider.autoDispose<List<PublicoResumido>>(
+  (ref) async => (await ref.watch(resumoSegmentosProvider.future)).segmentos,
+);
 
 final publicosProntosProvider = FutureProvider.autoDispose<ResumoPublicos>((
   ref,
@@ -301,10 +395,19 @@ final publicosProntosProvider = FutureProvider.autoDispose<ResumoPublicos>((
 
 /// "Já compraram…": os produtos da base, com quantas pessoas compraram.
 final produtosDaBaseProvider =
-    FutureProvider.autoDispose<List<({String nome, int total})>>((ref) async {
+    FutureProvider.autoDispose<List<({String nome, int total})>>(
+      (ref) => ref.watch(produtosDaBuscaProvider('').future),
+    );
+
+/// Os produtos que casam com a busca (vazia = os que mais gente comprou). Um
+/// por termo: a resposta de uma tecla antiga não passa por cima da atual.
+final produtosDaBuscaProvider = FutureProvider.autoDispose
+    .family<List<({String nome, int total})>, String>((ref, termo) async {
       final dados = await ref
           .read(clienteApiProvider)
-          .get('/contatos/publicos/produtos');
+          .get(
+            '/contatos/publicos/produtos${termo.isEmpty ? '' : '?busca=${Uri.encodeQueryComponent(termo)}'}',
+          );
       final mapa = dados is Map<String, dynamic> ? dados : <String, dynamic>{};
       return [
         for (final p in _lista(mapa['produtos']))
