@@ -11,7 +11,7 @@ import 'package:regemcast/api/cliente_api.dart';
 import 'package:regemcast/api/dados.dart';
 import 'package:regemcast/sessao/sessao.dart';
 import 'package:regemcast/telas/campanha_detalhe.dart';
-import 'package:regemcast/telas/campanha_editar.dart';
+import 'package:regemcast/telas/campanha_formulario.dart';
 import 'package:regemcast/tema/tema.dart';
 import 'package:regemcast/util/formato.dart' as f;
 
@@ -41,9 +41,10 @@ Map<String, dynamic> _campanha(
 
 /// Um servidor falso que responde à campanha e anota o que foi pedido.
 class _Servidor {
-  _Servidor(this.campanha);
+  _Servidor(this.campanha, {this.destinatarios});
 
   Map<String, dynamic> campanha;
+  List<Map<String, dynamic>>? destinatarios;
   final pedidos = <String>[];
   Map<String, dynamic>? ultimoCorpo;
 
@@ -55,6 +56,9 @@ class _Servidor {
         ultimoCorpo = jsonDecode(req.body) as Map<String, dynamic>;
       }
       final p = req.url.path;
+      if (p == '/campanhas/c1/destinatarios' && destinatarios != null) {
+        return _json(destinatarios!);
+      }
       if (p == '/campanhas/c1/destinatarios') {
         return _json([
           {
@@ -241,6 +245,111 @@ void main() {
     });
   });
 
+  group('o que o detalhe explica (como o site)', () {
+    testWidgets('esperando o limite da Meta: quantas pessoas e até quando', (
+      t,
+    ) async {
+      _telaAlta(t);
+      final s = _Servidor({
+        ..._campanha('enviando', porStatus: {'entregue': 400, 'pendente': 600}),
+        'espera': {
+          'motivo': 'limite_meta',
+          'ate': '2026-09-30T13:00:00Z',
+          'limite': 1000,
+        },
+      });
+      await t.pumpWidget(_app(s.api, const TelaCampanhaDetalhe(id: 'c1')));
+      await _assentar(t);
+
+      expect(
+        find.textContaining(
+          'Aguardando o limite da Meta: sua conta já falou com 1.000 pessoas diferentes',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('A campanha continua sozinha a partir de'),
+        findsOneWidget,
+      );
+      expect(find.text('Ver o limite do número'), findsOneWidget);
+      expect(find.text('Atualizando sozinha'), findsOneWidget);
+    });
+
+    testWidgets('a Meta pediu calma: explica que ninguém perde a mensagem', (
+      t,
+    ) async {
+      _telaAlta(t);
+      final s = _Servidor({
+        ..._campanha('agendada'),
+        'espera': {'motivo': 'ritmo', 'ate': null, 'limite': null},
+      });
+      await t.pumpWidget(_app(s.api, const TelaCampanhaDetalhe(id: 'c1')));
+      await _assentar(t);
+
+      expect(
+        find.textContaining('A Meta pediu para desacelerar'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('começam a sair na próxima abertura'),
+        findsNothing,
+        reason: 'esperando não é "aguardando a janela"',
+      );
+    });
+
+    testWidgets('lidas com quem respondeu, descanso e o público no cabeçalho', (
+      t,
+    ) async {
+      _telaAlta(t);
+      final s = _Servidor(
+        {
+          ..._campanha(
+            'concluida',
+            porStatus: {'lida': 30, 'entregue': 50, 'descanso': 20},
+          ),
+          'total': 100,
+          'modeloCategoria': 'marketing',
+          'modeloIdioma': 'pt_BR',
+          'listaNome': null,
+          'publicoOrigem': 'publico',
+          'publicoRotulo': 'Pedem à noite',
+          'respondidas': 5,
+          'descansoDias': 3,
+        },
+        destinatarios: [
+          {
+            'id': 'd1',
+            'telefone': '5521977776666',
+            'status': 'descanso',
+            'erroDetalhe':
+                'Recebeu "Sexta do Smash" em 27/09. Descanso de 3 dias.',
+          },
+          {'id': 'd2', 'telefone': '5521966665555', 'status': 'lida'},
+        ],
+      );
+      await t.pumpWidget(_app(s.api, const TelaCampanhaDetalhe(id: 'c1')));
+      await _assentar(t);
+
+      expect(find.text('promo_sexta (Marketing) · pt_BR'), findsOneWidget);
+      expect(find.text('Público Pedem à noite'), findsOneWidget);
+      expect(find.textContaining('5 responderam'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'Descanso de 3 dias: quem recebeu outra campanha de marketing nesse prazo fica de fora, sem contar no plano — 20 pessoas ficaram de fora até agora.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Em descanso'), findsOneWidget);
+      expect(
+        find.textContaining('Recebeu "Sexta do Smash" em 27/09'),
+        findsOneWidget,
+      );
+      expect(find.text('A pessoa abriu.'), findsOneWidget);
+      // O funil conta o descanso na legenda, sem virar falha.
+      expect(find.text('20 em descanso'), findsOneWidget);
+    });
+  });
+
   group('editar', () {
     testWidgets('desligar a janela manda os campos vazios, e não "nada"', (
       t,
@@ -257,7 +366,7 @@ void main() {
       await t.pumpWidget(
         _app(
           s.api,
-          TelaEditarCampanha(campanha: ResumoCampanha.deJson(comJanela)),
+          TelaFormularioCampanha(campanha: ResumoCampanha.deJson(comJanela)),
         ),
       );
       await _assentar(t);
@@ -280,7 +389,7 @@ void main() {
       await t.pumpWidget(
         _app(
           s.api,
-          TelaEditarCampanha(
+          TelaFormularioCampanha(
             campanha: ResumoCampanha.deJson(_campanha('pausada')),
           ),
         ),
@@ -289,12 +398,16 @@ void main() {
 
       await t.tap(find.byType(Switch));
       await _assentar(t);
-      await t.enterText(find.widgetWithText(TextField, 'Por dia'), '100');
-      await t.enterText(find.widgetWithText(TextField, 'Por semana'), '10');
+      await t.enterText(find.widgetWithText(TextField, 'Máx. por dia'), '100');
+      await t.enterText(
+        find.widgetWithText(TextField, 'Máx. por semana'),
+        '10',
+      );
       await t.tap(find.text('Salvar alterações'));
       await _assentar(t);
 
-      expect(find.textContaining('precisam ser crescentes'), findsOneWidget);
+      // Embaixo da janela (como no site) e no topo, ao tentar salvar.
+      expect(find.textContaining('precisam ser crescentes'), findsWidgets);
       expect(s.pedidos, isNot(contains('PATCH /campanhas/c1')));
     });
   });

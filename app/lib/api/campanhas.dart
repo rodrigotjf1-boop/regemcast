@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../sessao/sessao.dart';
 import 'cliente_api.dart';
 import 'dados.dart';
+import 'publicos.dart';
 
 /// Uma campanha, relida do servidor. `family` por id: cada tela de detalhe tem
 /// a sua, e a lista não precisa ser recarregada para abrir uma.
@@ -27,14 +28,45 @@ final servicoCampanhasProvider = Provider<ServicoCampanhas>(
   (ref) => ServicoCampanhas(ref.read(clienteApiProvider)),
 );
 
+/// A prévia do público escolhido: uma por público (e por "só com cashback"),
+/// relida quando a escolha muda. Falha vira "sem prévia" na tela — o servidor
+/// confere de novo ao montar.
+final previaDoPublicoProvider = FutureProvider.autoDispose
+    .family<PreviaDoPublico, (PublicoDaCampanha, bool)>(
+      (ref, alvo) => ref
+          .read(servicoCampanhasProvider)
+          .previa(alvo.$1, soComCashback: alvo.$2),
+    );
+
 /// O que acontece com a campanha quando se pede para excluir.
 enum ResultadoExclusao { apagada, cancelada, arquivada }
 
-/// As ações sobre uma campanha que já existe. Montar campanha é da web.
+/// Montar campanha e as ações sobre as que existem — as mesmas do site.
 class ServicoCampanhas {
   ServicoCampanhas(this._api);
 
   final ClienteApi _api;
+
+  /// Monta a campanha (`POST /campanhas`). Nenhuma mensagem sai aqui: o
+  /// disparo é outro passo, na tela da campanha. Devolve o id.
+  Future<String> criar(Map<String, Object?> corpo) async {
+    final r = await _api.post('/campanhas', corpo) as Map<String, dynamic>;
+    return '${r['id']}';
+  }
+
+  /// Quantos do público podem receber, quantos estão em descanso e em que
+  /// horário pedem — com a mesma regra da montagem. `soComCashback`: a
+  /// mensagem usa variável de cashback, e só conta quem tem cashback válido.
+  Future<PreviaDoPublico> previa(
+    PublicoDaCampanha publico, {
+    bool soComCashback = false,
+  }) async => PreviaDoPublico.deJson(
+    await _api.post('/campanhas/previa', {
+          ...publico.paraJson(),
+          if (soComCashback) 'soComCashback': true,
+        })
+        as Map<String, dynamic>,
+  );
 
   Future<ResumoCampanha> disparar(String id) async => ResumoCampanha.deJson(
     await _api.post('/campanhas/$id/disparar') as Map<String, dynamic>,

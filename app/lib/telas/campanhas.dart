@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../api/dados.dart';
 import '../api/erro_api.dart';
 import '../api/leituras.dart';
 import '../componentes/basicos.dart';
 import '../componentes/campanha.dart';
-import '../config.dart';
 import '../tema/cores.dart';
+import '../util/formato.dart' as f;
 import 'campanha_detalhe.dart';
+import 'campanha_formulario.dart';
 
 /// Os filtros da lista — pelo que a pessoa quer olhar, não pelo nome técnico.
 enum FiltroCampanhas {
@@ -32,8 +32,8 @@ enum FiltroCampanhas {
   };
 }
 
-/// Todas as campanhas da conta. Montar uma nova é na web; aqui se acompanha e
-/// se age sobre as que existem.
+/// Todas as campanhas da conta: montar uma nova, acompanhar e agir sobre as
+/// que existem — como no site.
 class TelaCampanhas extends ConsumerStatefulWidget {
   const TelaCampanhas({super.key});
 
@@ -49,6 +49,14 @@ class _TelaCampanhasState extends ConsumerState<TelaCampanhas> {
     await ref
         .read(campanhasProvider.future)
         .catchError((_) => <ResumoCampanha>[]);
+  }
+
+  /// Montar leva direto para a campanha montada; na volta, a lista relê.
+  Future<void> _montar() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const TelaFormularioCampanha()));
+    ref.invalidate(campanhasProvider);
   }
 
   Future<void> _abrir(ResumoCampanha c) async {
@@ -82,18 +90,38 @@ class _TelaCampanhasState extends ConsumerState<TelaCampanhas> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        'Campanhas',
-                        style: Theme.of(context).textTheme.headlineSmall,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Campanhas',
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                          if (carga.hasValue)
+                            Text(
+                              '${f.plural(todas.length, 'campanha', 'campanhas')} · ${f.numero(todas.where((x) => x.emAndamento).length)} saindo agora',
+                              style: TextStyle(
+                                color: c.tintaSuave,
+                                fontSize: 13,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                    IconButton(
-                      tooltip: 'Montar campanha no site',
-                      onPressed: () => launchUrl(
-                        Uri.parse('$urlWeb/campanhas'),
-                        mode: LaunchMode.externalApplication,
+                    FilledButton.icon(
+                      key: const ValueKey('nova-campanha'),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(0, 42),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        textStyle: const TextStyle(
+                          fontFamily: 'Poppins',
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
                       ),
-                      icon: const Icon(Icons.add_circle_outline_rounded),
+                      onPressed: _montar,
+                      icon: const Icon(Icons.add_rounded, size: 20),
+                      label: const Text('Nova campanha'),
                     ),
                   ],
                 ),
@@ -163,7 +191,11 @@ class _TelaCampanhasState extends ConsumerState<TelaCampanhas> {
                   );
                 if (filtradas.isEmpty) {
                   return SliverToBoxAdapter(
-                    child: _Vazio(filtro: _filtro, semNenhuma: lista.isEmpty),
+                    child: _Vazio(
+                      filtro: _filtro,
+                      semNenhuma: lista.isEmpty,
+                      aoMontar: _montar,
+                    ),
                   );
                 }
                 return SliverList.separated(
@@ -190,10 +222,15 @@ class _TelaCampanhasState extends ConsumerState<TelaCampanhas> {
 }
 
 class _Vazio extends StatelessWidget {
-  const _Vazio({required this.filtro, required this.semNenhuma});
+  const _Vazio({
+    required this.filtro,
+    required this.semNenhuma,
+    required this.aoMontar,
+  });
 
   final FiltroCampanhas filtro;
   final bool semNenhuma;
+  final VoidCallback aoMontar;
 
   @override
   Widget build(BuildContext context) {
@@ -201,7 +238,7 @@ class _Vazio extends StatelessWidget {
     final (titulo, texto) = semNenhuma
         ? (
             'Nenhuma campanha ainda',
-            'As campanhas são montadas pelo site, onde dá para escolher o público e conferir tudo antes. Assim que a primeira existir, ela aparece aqui.',
+            'Escolha um modelo aprovado e quem recebe. Montar não envia nada: você confere a campanha e dispara na tela seguinte.',
           )
         : (
             'Nada por aqui',
@@ -221,12 +258,10 @@ class _Vazio extends StatelessWidget {
           if (semNenhuma) ...[
             const SizedBox(height: 16),
             OutlinedButton.icon(
-              onPressed: () => launchUrl(
-                Uri.parse('$urlWeb/campanhas'),
-                mode: LaunchMode.externalApplication,
-              ),
-              icon: const Icon(Icons.open_in_new_rounded, size: 18),
-              label: const Text('Montar no site'),
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
+              onPressed: aoMontar,
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('Nova campanha'),
             ),
           ],
         ],

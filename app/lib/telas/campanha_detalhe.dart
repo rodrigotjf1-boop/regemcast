@@ -9,10 +9,12 @@ import '../api/dados.dart';
 import '../api/erro_api.dart';
 import '../componentes/basicos.dart';
 import '../componentes/campanha.dart';
+import '../componentes/categoria.dart';
 import '../config.dart';
 import '../tema/cores.dart';
 import '../util/formato.dart' as f;
-import 'campanha_editar.dart';
+import 'campanha_formulario.dart';
+import 'whatsapp.dart';
 
 /// Uma campanha: o que aconteceu, com quem, e o que dá para fazer agora.
 ///
@@ -147,7 +149,7 @@ class _TelaCampanhaDetalheState extends ConsumerState<TelaCampanhaDetalhe> {
     if (!ok) return;
     await _agir(
       () => ref.read(servicoCampanhasProvider).disparar(camp.id),
-      'Campanha agendada. As mensagens saem pelo servidor — pode fechar o app.',
+      'Campanha agendada. As mensagens saem pelo servidor, respeitando a janela e o ritmo que você definiu — esta tela se atualiza sozinha.',
     );
   }
 
@@ -163,7 +165,7 @@ class _TelaCampanhaDetalheState extends ConsumerState<TelaCampanhaDetalhe> {
 
   Future<void> _editar(ResumoCampanha camp) async {
     final salvou = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => TelaEditarCampanha(campanha: camp)),
+      MaterialPageRoute(builder: (_) => TelaFormularioCampanha(campanha: camp)),
     );
     if (salvou == true && mounted) {
       _avisar('Campanha atualizada.');
@@ -332,18 +334,29 @@ class _TelaCampanhaDetalheState extends ConsumerState<TelaCampanhaDetalhe> {
     Widget embrulhar(Widget w) =>
         Padding(padding: const EdgeInsets.only(bottom: 14), child: w);
     final lista = <Widget>[];
+    final espera = camp.espera;
 
+    if (camp.status == 'enviando') {
+      lista.add(
+        const Aviso(
+          tom: TomPilula.acento,
+          icone: Icons.send_rounded,
+          texto:
+              'Enviando. As mensagens saem pelo servidor — você pode fechar o app.',
+        ),
+      );
+    }
     if (camp.status == 'rascunho') {
       lista.add(
         const Aviso(
           tom: TomPilula.acento,
           icone: Icons.info_outline_rounded,
           texto:
-              'Esta campanha ainda não saiu. Confira o público abaixo antes de disparar — depois não dá para desfazer.',
+              'Esta campanha ainda não saiu. Confira os números abaixo antes de disparar — depois não dá para desfazer.',
         ),
       );
     }
-    if (camp.status == 'agendada') {
+    if (camp.status == 'agendada' && espera == null) {
       lista.add(
         const Aviso(
           tom: TomPilula.acento,
@@ -353,11 +366,50 @@ class _TelaCampanhaDetalheState extends ConsumerState<TelaCampanhaDetalhe> {
         ),
       );
     }
+    if (espera?.motivo == 'limite_meta') {
+      final quantas = espera!.limite != null
+          ? f.numero(espera.limite!)
+          : 'o máximo de';
+      final quando = espera.ate != null
+          ? 'A campanha continua sozinha a partir de ${f.dataHora(espera.ate)}'
+          : 'A campanha continua sozinha assim que abrir vaga';
+      lista.add(
+        Aviso(
+          tom: TomPilula.acento,
+          icone: Icons.hourglass_top_rounded,
+          texto:
+              'Aguardando o limite da Meta: sua conta já falou com $quantas pessoas diferentes nas últimas 24 horas, o teto do seu número hoje. $quando — ninguém fica de fora nem é marcado como falha.',
+          acao: Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
+              onPressed: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const TelaWhatsapp())),
+              child: const Text('Ver o limite do número'),
+            ),
+          ),
+        ),
+      );
+    }
+    if (espera?.motivo == 'ritmo') {
+      final quando = espera!.ate != null
+          ? 'A campanha continua sozinha a partir de ${f.dataHora(espera.ate)}'
+          : 'A campanha continua sozinha em instantes';
+      lista.add(
+        Aviso(
+          tom: TomPilula.acento,
+          icone: Icons.speed_rounded,
+          texto:
+              'A Meta pediu para desacelerar: muitas mensagens em pouco tempo. $quando — quem ficou na fila sai depois, sem perder a mensagem.',
+        ),
+      );
+    }
     if (camp.status == 'cancelada') {
       lista.add(
         const Aviso(
           texto:
-              'Campanha cancelada. Quem não tinha recebido não recebeu — o que saiu antes continua no histórico.',
+              'Campanha cancelada. Quem não tinha recebido não recebeu — o que saiu antes continua no histórico abaixo.',
         ),
       );
     }
@@ -378,7 +430,7 @@ class _TelaCampanhaDetalheState extends ConsumerState<TelaCampanhaDetalhe> {
               tom: TomPilula.erro,
               icone: Icons.link_off_rounded,
               texto:
-                  'Pausada: a conexão com o WhatsApp caiu antes de terminar. Ninguém foi marcado como falha. Reconecte pelo site e retome.',
+                  'Pausada: a conexão com o WhatsApp caiu antes de terminar. Ninguém foi marcado como falha — quem faltava continua na fila. Reconecte o WhatsApp e retome.',
               acao: _BotaoSite(
                 rotulo: 'Reconectar no site',
                 caminho: '/whatsapp',
@@ -390,7 +442,7 @@ class _TelaCampanhaDetalheState extends ConsumerState<TelaCampanhaDetalhe> {
             const Aviso(
               icone: Icons.speed_rounded,
               texto:
-                  'Pausada: os disparos do seu plano acabaram neste ciclo. Quem faltava continua na fila e a campanha volta sozinha quando o ciclo virar ou com um plano maior.',
+                  'Pausada: os disparos do seu plano acabaram neste ciclo. Ninguém foi marcado como falha — quem faltava continua na fila e a campanha volta a sair sozinha quando o ciclo virar ou quando o plano tiver mais disparos.',
             ),
           );
         case 'inadimplencia':
@@ -399,7 +451,7 @@ class _TelaCampanhaDetalheState extends ConsumerState<TelaCampanhaDetalhe> {
               tom: TomPilula.erro,
               icone: Icons.credit_card_off_rounded,
               texto:
-                  'Pausada por falta de pagamento do plano. Ela volta sozinha assim que o pagamento for confirmado.',
+                  'Pausada: os disparos da conta estão parados por falta de pagamento do plano. Quem faltava continua na fila e a campanha volta sozinha assim que o pagamento for confirmado.',
               acao: _BotaoSite(
                 rotulo: 'Ver plano e pagamento',
                 caminho: '/plano',
@@ -422,13 +474,24 @@ class _Cabecalho extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = Cores.de(context);
     final (rotulo, tom, vivo) = situacaoDaCampanha(campanha);
+    final categoria = nomeDaCategoria(campanha.modeloCategoria);
     final linhas = <(IconData, String)>[
-      (Icons.description_outlined, campanha.modeloNome),
+      (
+        Icons.description_outlined,
+        [
+          categoria == null
+              ? campanha.modeloNome
+              : '${campanha.modeloNome} ($categoria)',
+          ?campanha.modeloIdioma,
+        ].join(' · '),
+      ),
       (
         Icons.groups_outlined,
-        campanha.listaNome == null
-            ? 'Números digitados'
-            : 'Lista ${campanha.listaNome}',
+        campanha.listaNome != null
+            ? 'Lista ${campanha.listaNome}'
+            : campanha.publicoRotulo != null
+            ? 'Público ${campanha.publicoRotulo}'
+            : publicoDaCampanha(campanha),
       ),
       (Icons.event_outlined, 'Criada em ${f.dataHora(campanha.criadoEm)}'),
       if (campanha.iniciadaEm != null)
@@ -478,11 +541,38 @@ class _Metricas extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = Cores.de(context);
     final t = campanha.total;
+    final r = campanha.respondidas;
     final itens = [
-      ('Saíram', campanha.sairam, c.tintaSuave, Icons.north_east_rounded),
-      ('Entregues', campanha.entregues, c.acento, Icons.done_all_rounded),
-      ('Lidas', campanha.lidas, c.realce, Icons.visibility_outlined),
-      ('Falhas', campanha.falhas, c.erro, Icons.error_outline_rounded),
+      (
+        'Enviadas',
+        campanha.aceitas,
+        c.tintaSuave,
+        Icons.north_east_rounded,
+        f.porcento(campanha.aceitas, t),
+      ),
+      (
+        'Entregues',
+        campanha.entregues,
+        c.realce,
+        Icons.done_all_rounded,
+        f.porcento(campanha.entregues, t),
+      ),
+      (
+        'Lidas',
+        campanha.lidas,
+        c.acento,
+        Icons.visibility_outlined,
+        r > 0
+            ? '${f.porcento(campanha.lidas, t)} · ${f.numero(r)} ${r == 1 ? 'respondeu' : 'responderam'}'
+            : f.porcento(campanha.lidas, t),
+      ),
+      (
+        'Falhas',
+        campanha.falhas,
+        c.erro,
+        Icons.error_outline_rounded,
+        f.porcento(campanha.falhas, t),
+      ),
     ];
 
     return Cartao(
@@ -517,7 +607,7 @@ class _Metricas extends StatelessWidget {
                 spacing: 10,
                 runSpacing: 10,
                 children: [
-                  for (final (rotulo, valor, cor, icone) in itens)
+                  for (final (rotulo, valor, cor, icone, apoio) in itens)
                     Container(
                       width: largura,
                       padding: const EdgeInsets.all(12),
@@ -533,7 +623,7 @@ class _Metricas extends StatelessWidget {
                               Icon(
                                 icone,
                                 size: 16,
-                                color: rotulo == 'Entregues' ? c.tinta : cor,
+                                color: rotulo == 'Lidas' ? c.tinta : cor,
                               ),
                               const SizedBox(width: 6),
                               Flexible(
@@ -552,27 +642,20 @@ class _Metricas extends StatelessWidget {
                           FittedBox(
                             fit: BoxFit.scaleDown,
                             alignment: Alignment.centerLeft,
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.baseline,
-                              textBaseline: TextBaseline.alphabetic,
-                              children: [
-                                Text(
-                                  f.numero(valor),
-                                  style: const TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  f.porcento(valor, t),
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: c.tintaSuave,
-                                  ),
-                                ),
-                              ],
+                            child: Text(
+                              f.numero(valor),
+                              style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w700,
+                                color: rotulo == 'Falhas' && valor > 0
+                                    ? c.erro
+                                    : c.tinta,
+                              ),
                             ),
+                          ),
+                          Text(
+                            apoio,
+                            style: TextStyle(fontSize: 12, color: c.tintaSuave),
                           ),
                         ],
                       ),
@@ -582,102 +665,23 @@ class _Metricas extends StatelessWidget {
             },
           ),
           const SizedBox(height: 14),
-          _BarraFunil(campanha: campanha),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 14,
-            runSpacing: 4,
-            children: [
-              if (campanha.naFila > 0)
-                _Legenda(
-                  cor: c.superficie2,
-                  borda: c.borda,
-                  texto: '${f.numero(campanha.naFila)} na fila',
-                ),
-              if (campanha.cancelados > 0)
-                _Legenda(
-                  cor: c.borda,
-                  texto: '${f.numero(campanha.cancelados)} cancelados',
-                ),
-            ],
-          ),
+          BarraDeStatus(campanha: campanha),
+          if (campanha.descansoDias != null && campanha.descansoDias! > 0) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Descanso de ${f.plural(campanha.descansoDias!, 'dia', 'dias')}: quem recebeu outra campanha de marketing nesse prazo fica de fora, sem contar no plano${campanha.emDescanso > 0 ? ' — ${f.numero(campanha.emDescanso)} ${campanha.emDescanso == 1 ? 'pessoa ficou' : 'pessoas ficaram'} de fora até agora' : ''}.',
+              style: TextStyle(fontSize: 12, color: c.tintaSuave, height: 1.4),
+            ),
+          ],
           const SizedBox(height: 10),
           Text(
-            'Lida só aparece quando a pessoa mantém a confirmação de leitura ligada — o número real de leituras pode ser maior.',
+            'Enviada quer dizer que a Meta aceitou a mensagem — ainda não que ela chegou. Entregue é a confirmação de que chegou ao aparelho, e vem depois, pela própria Meta. Lida só é informada quando a pessoa mantém a confirmação de leitura ligada no WhatsApp — o número real de leituras pode ser maior.',
             style: TextStyle(fontSize: 12, color: c.tintaSuave, height: 1.4),
           ),
         ],
       ),
     );
   }
-}
-
-/// A barra da campanha, em camadas: lidas, entregues, enviadas, falhas.
-class _BarraFunil extends StatelessWidget {
-  const _BarraFunil({required this.campanha});
-  final ResumoCampanha campanha;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = Cores.de(context);
-    final t = campanha.total == 0 ? 1 : campanha.total;
-    final partes = [
-      (campanha.lidas, c.realce),
-      (campanha.entregues - campanha.lidas, c.acento),
-      (campanha.enviadas, c.tintaSuave.withValues(alpha: 0.45)),
-      (campanha.falhas, c.erro),
-    ];
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(99),
-      child: SizedBox(
-        height: 10,
-        child: Row(
-          children: [
-            for (final (valor, cor) in partes)
-              if (valor > 0)
-                Expanded(
-                  flex: (valor * 1000 ~/ t).clamp(1, 1000),
-                  child: Container(color: cor),
-                ),
-            if (campanha.naFila + campanha.cancelados > 0)
-              Expanded(
-                flex: ((campanha.naFila + campanha.cancelados) * 1000 ~/ t)
-                    .clamp(1, 1000),
-                child: Container(color: c.superficie2),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Legenda extends StatelessWidget {
-  const _Legenda({required this.cor, required this.texto, this.borda});
-  final Color cor;
-  final Color? borda;
-  final String texto;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Container(
-        width: 10,
-        height: 10,
-        decoration: BoxDecoration(
-          color: cor,
-          shape: BoxShape.circle,
-          border: borda == null ? null : Border.all(color: borda!),
-        ),
-      ),
-      const SizedBox(width: 6),
-      Text(
-        texto,
-        style: TextStyle(fontSize: 12, color: Cores.de(context).tintaSuave),
-      ),
-    ],
-  );
 }
 
 class _Janela extends StatelessWidget {
@@ -745,14 +749,17 @@ class _Janela extends StatelessWidget {
   }
 }
 
-(String, TomPilula) _situacaoDestinatario(String s) => switch (s) {
-  'lida' => ('Lida', TomPilula.sucesso),
-  'entregue' => ('Entregue', TomPilula.acento),
-  'enviada' => ('Enviada', TomPilula.atencao),
-  'enviando' => ('Enviando', TomPilula.neutro),
-  'falhou' => ('Falhou', TomPilula.erro),
-  'cancelado' => ('Cancelado', TomPilula.neutro),
-  _ => ('Na fila', TomPilula.neutro),
+/// O que cada estado significa, em uma frase (as mesmas da web).
+const _explicacao = {
+  'pendente': 'Ainda não saiu.',
+  'enviando': 'Saindo agora.',
+  'enviada': 'A Meta aceitou. Ainda não chegou ao aparelho.',
+  'entregue': 'Chegou ao aparelho.',
+  'lida': 'A pessoa abriu.',
+  'falhou': 'Não foi entregue.',
+  'descanso':
+      'Recebeu outra campanha de marketing há pouco e ficou de fora. Não contou no plano.',
+  'cancelado': 'A campanha foi cancelada antes de sair para esta pessoa.',
 };
 
 class _Destinatarios extends ConsumerWidget {
@@ -769,9 +776,17 @@ class _Destinatarios extends ConsumerWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(top: 8, bottom: 10),
-          child: Text(
-            'Destinatários',
-            style: Theme.of(context).textTheme.titleLarge,
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Destinatários',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              if (campanha.emAndamento)
+                const Pilula('Atualizando sozinha', vivo: true),
+            ],
           ),
         ),
         carga.when(
@@ -807,7 +822,7 @@ class _Destinatarios extends ConsumerWidget {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: Text(
-                      'Mostrando ${f.numero(lista.length)} de ${f.numero(campanha.total)}, com as falhas primeiro. Os números do resultado contam todos.',
+                      'Mostrando ${f.numero(lista.length)} de ${f.numero(campanha.total)}, com as falhas primeiro. Os totais acima contam todos.',
                       style: TextStyle(
                         fontSize: 12,
                         color: c.tintaSuave,
@@ -842,9 +857,16 @@ class _LinhaDestinatario extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = Cores.de(context);
-    final (rotulo, tom) = _situacaoDestinatario(d.status);
-    final temErro =
-        d.status == 'falhou' && (d.erroTitulo != null || d.erroDetalhe != null);
+    final (rotulo, tom) = situacaoDoDestinatario(d.status);
+    final falhou = d.status == 'falhou' && d.erroDetalhe != null;
+    // O motivo real da falha, como a Meta explicou — é o que diz se o
+    // problema é do número, do modelo ou da pessoa. Descanso também traz o
+    // porquê; o resto, a frase de cada estado.
+    final explicacao = falhou
+        ? d.erroDetalhe!
+        : d.status == 'descanso' && d.erroDetalhe != null
+        ? d.erroDetalhe!
+        : _explicacao[d.status] ?? '—';
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
@@ -871,29 +893,20 @@ class _LinhaDestinatario extends StatelessWidget {
               Pilula(rotulo, tom: tom, vivo: d.status == 'enviando'),
             ],
           ),
-          // O motivo real da falha, como a Meta explicou — é o que diz se o
-          // problema é do número, do modelo ou da pessoa.
-          if (temErro) ...[
-            const SizedBox(height: 6),
-            if (d.erroTitulo != null)
-              Text(
-                d.erroTitulo!,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: c.erro,
-                  fontWeight: FontWeight.w600,
-                ),
+          const SizedBox(height: 6),
+          if (falhou && d.erroTitulo != null)
+            Text(
+              d.erroTitulo!,
+              style: TextStyle(
+                fontSize: 13,
+                color: c.erro,
+                fontWeight: FontWeight.w600,
               ),
-            if (d.erroDetalhe != null)
-              Text(
-                d.erroDetalhe!,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: c.tintaSuave,
-                  height: 1.4,
-                ),
-              ),
-          ],
+            ),
+          Text(
+            explicacao,
+            style: TextStyle(fontSize: 12.5, color: c.tintaSuave, height: 1.4),
+          ),
         ],
       ),
     );

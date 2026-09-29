@@ -52,12 +52,17 @@ class PaginaContatos {
     required this.pagina,
     required this.porPagina,
     required this.itens,
+    this.cashbackLido = false,
   });
 
   final int total;
   final int pagina;
   final int porPagina;
   final List<Contato> itens;
+
+  /// A conta tem saldo de cashback lido do Cardápio Web: as variáveis de
+  /// cashback aparecem na campanha.
+  final bool cashbackLido;
 
   bool get temMais => pagina * porPagina < total;
 
@@ -69,10 +74,11 @@ class PaginaContatos {
         .whereType<Map<String, dynamic>>()
         .map(Contato.deJson)
         .toList(),
+    cashbackLido: j['cashbackLido'] == true,
   );
 }
 
-/// Um público: o que a campanha escolhe no site.
+/// Uma lista de contatos — ou um bloco de uma divisão da base.
 class ListaContatos {
   const ListaContatos({
     required this.id,
@@ -80,13 +86,31 @@ class ListaContatos {
     required this.descricao,
     required this.total,
     required this.criadoEm,
+    this.divisaoId,
+    this.divisaoNome,
+    this.bloco,
+    this.blocos,
+    this.usadaEm,
   });
 
   final String id;
   final String nome;
   final String? descricao;
+
+  /// Quem pode receber (sem quem pediu para sair).
   final int total;
   final DateTime? criadoEm;
+
+  /// Quando a lista é um bloco: a divisão, a posição e quantos blocos ela tem.
+  final String? divisaoId;
+  final String? divisaoNome;
+  final int? bloco;
+  final int? blocos;
+
+  /// Última vez que uma campanha usou esta lista.
+  final DateTime? usadaEm;
+
+  bool get ehBloco => divisaoId != null;
 
   factory ListaContatos.deJson(Map<String, dynamic> j) => ListaContatos(
     id: _txt(j['id']),
@@ -94,6 +118,11 @@ class ListaContatos {
     descricao: _txtOuNulo(j['descricao']),
     total: _int(j['total']),
     criadoEm: _data(j['criadoEm']),
+    divisaoId: _txtOuNulo(j['divisaoId']),
+    divisaoNome: _txtOuNulo(j['divisaoNome']),
+    bloco: j['bloco'] is num ? (j['bloco'] as num).toInt() : null,
+    blocos: j['blocos'] is num ? (j['blocos'] as num).toInt() : null,
+    usadaEm: _data(j['usadaEm']),
   );
 }
 

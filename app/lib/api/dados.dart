@@ -234,6 +234,30 @@ class SituacaoWhatsapp {
 
 // ------------------------------------------------------------------ campanhas
 
+/// A campanha ativa está esperando — não é pausa: ela continua sozinha.
+class EsperaCampanha {
+  const EsperaCampanha({required this.motivo, this.ate, this.limite});
+
+  /// `limite_meta`: a conta já alcançou as pessoas que a Meta permite em 24 h;
+  /// `ritmo`: a Meta pediu para desacelerar.
+  final String motivo;
+  final DateTime? ate;
+
+  /// Pessoas diferentes por 24 h, quando o motivo é o limite.
+  final int? limite;
+
+  static EsperaCampanha? deJson(Object? v) {
+    if (v is! Map<String, dynamic>) return null;
+    final motivo = _txt(v['motivo']);
+    if (motivo.isEmpty) return null;
+    return EsperaCampanha(
+      motivo: motivo,
+      ate: _data(v['ate']),
+      limite: _intOuNulo(v['limite']),
+    );
+  }
+}
+
 class ResumoCampanha {
   const ResumoCampanha({
     required this.id,
@@ -255,11 +279,38 @@ class ResumoCampanha {
     this.maxPorDia,
     this.maxPorSemana,
     this.maxPorMes,
+    this.modeloCategoria,
+    this.modeloId,
+    this.listaId,
+    this.publicoOrigem,
+    this.publicoRotulo,
+    this.espera,
+    this.respondidas = 0,
+    this.descansoDias,
   });
 
   final String id;
   final String nome;
   final String modeloNome;
+
+  /// A categoria do modelo, traduzida (marketing, utilidade, autenticação).
+  final String? modeloCategoria;
+  final String? modeloId;
+  final String? listaId;
+
+  /// De onde saiu o público (`lista`, `base`, `importacao`, `perfil`,
+  /// `publico`, `numeros`…) e o nome dele no cartão ("Pedem à noite").
+  final String? publicoOrigem;
+  final String? publicoRotulo;
+
+  /// Esperando o limite da Meta ou o ritmo — continua sozinha.
+  final EsperaCampanha? espera;
+
+  /// Quantas pessoas responderam à mensagem.
+  final int respondidas;
+
+  /// O descanso desta campanha, em dias; nulo = sem descanso.
+  final int? descansoDias;
 
   /// `rascunho`, `agendada`, `enviando`, `pausada`, `concluida` ou `cancelada`.
   final String status;
@@ -293,11 +344,18 @@ class ResumoCampanha {
   int get enviadas => porStatus['enviada'] ?? 0;
   int get cancelados => porStatus['cancelado'] ?? 0;
 
+  /// Ficaram de fora pelo descanso entre campanhas (não contam no plano).
+  int get emDescanso => porStatus['descanso'] ?? 0;
+
   /// Ainda não saíram: na fila ou saindo agora.
   int get naFila => (porStatus['pendente'] ?? 0) + (porStatus['enviando'] ?? 0);
 
   /// Quantas já saíram (a Meta aceitou), de qualquer jeito que tenham terminado.
   int get sairam => enviadas + entregues + falhas;
+
+  /// A Meta aceitou — chegando ou não ao aparelho: enviada, entregue ou lida.
+  /// É o "Enviadas" da web; falha fica de fora.
+  int get aceitas => enviadas + entregues;
 
   bool get emAndamento => status == 'enviando' || status == 'agendada';
 
@@ -343,6 +401,14 @@ class ResumoCampanha {
     maxPorDia: _intOuNulo(j['maxPorDia']),
     maxPorSemana: _intOuNulo(j['maxPorSemana']),
     maxPorMes: _intOuNulo(j['maxPorMes']),
+    modeloCategoria: _txtOuNulo(j['modeloCategoria']),
+    modeloId: _txtOuNulo(j['modeloId']),
+    listaId: _txtOuNulo(j['listaId']),
+    publicoOrigem: _txtOuNulo(j['publicoOrigem']),
+    publicoRotulo: _txtOuNulo(j['publicoRotulo']),
+    espera: EsperaCampanha.deJson(j['espera']),
+    respondidas: _int(j['respondidas']),
+    descansoDias: _intOuNulo(j['descansoDias']),
   );
 }
 
@@ -365,7 +431,8 @@ class DestinatarioCampanha {
   /// E.164 sem o '+': 5521999998888.
   final String telefone;
 
-  /// `pendente`, `enviando`, `enviada`, `entregue`, `lida`, `falhou` ou `cancelado`.
+  /// `pendente`, `enviando`, `enviada`, `entregue`, `lida`, `falhou`,
+  /// `cancelado` ou `descanso`.
   final String status;
   final String? erroTitulo;
   final String? erroDetalhe;

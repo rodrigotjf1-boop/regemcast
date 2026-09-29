@@ -24,6 +24,7 @@ import 'package:regemcast/push/push.dart';
 import 'package:regemcast/sessao/cofre.dart';
 import 'package:regemcast/sessao/sessao.dart';
 import 'package:regemcast/telas/campanha_detalhe.dart';
+import 'package:regemcast/telas/campanha_formulario.dart';
 import 'package:regemcast/telas/campanhas.dart';
 import 'package:regemcast/telas/casca.dart';
 import 'package:regemcast/telas/conta.dart';
@@ -267,7 +268,122 @@ final _api = ClienteApi(
           {'id': 'l1', 'nome': 'Clientes 2026', 'total': 4820},
           {'id': 'l2', 'nome': 'Aniversariantes', 'total': 374},
           {'id': 'l3', 'nome': 'Delivery Zona Sul', 'total': 1290},
+          for (var b = 1; b <= 4; b++)
+            {
+              'id': 'b$b',
+              'nome': 'Base Anota Aí — bloco $b',
+              'total': 500,
+              'divisaoId': 'd1',
+              'divisaoNome': 'Base Anota Aí (ativos)',
+              'bloco': b,
+              'blocos': 4,
+              'usadaEm': b == 1 ? '2026-09-21T15:00:00Z' : null,
+            },
         ]);
+      case '/campanhas/previa':
+        return _json({
+          'total': 4702,
+          'descanso': {'dias': 3, 'emDescanso': 118},
+          'horario': {
+            'total': 4702,
+            'comHabito': 1880,
+            'minimo': 20,
+            'periodos': [
+              {'periodo': 'noite', 'total': 1147},
+              {'periodo': 'almoco', 'total': 490},
+              {'periodo': 'tarde', 'total': 243},
+            ],
+            'sugestao': {
+              'periodo': 'noite',
+              'percentual': 61,
+              'inicio': '17:00',
+              'fim': '19:00',
+            },
+          },
+          'cashback': null,
+        }, 201);
+      case '/contatos/importacoes':
+        return _json([
+          {
+            'id': 'i1',
+            'nome': 'Clientes ativos (Anota Aí)',
+            'formato': 'xlsx',
+            'criadoEm': '2026-09-26T13:00:00Z',
+            'total': 1539,
+          },
+        ]);
+      case '/contatos/segmentos':
+        return _json({
+          'segmentos': [
+            {'id': 'campeoes', 'nome': 'Campeões', 'regra': '', 'total': 412},
+            {'id': 'em_risco', 'nome': 'Em risco', 'regra': '', 'total': 690},
+          ],
+        });
+      case '/contatos/publicos':
+        return _json({
+          'publicos': [
+            {'id': 'vip', 'nome': 'VIP', 'regra': '', 'total': 240},
+            {
+              'id': 'ticket_alto',
+              'nome': 'Ticket alto',
+              'regra': '',
+              'total': 980,
+            },
+            {
+              'id': 'um_pedido',
+              'nome': 'Um pedido só',
+              'regra': '',
+              'total': 1310,
+            },
+            {
+              'id': 'entrega',
+              'nome': 'Pedem entrega',
+              'regra': '',
+              'total': 3100,
+            },
+            {
+              'id': 'retirada',
+              'nome': 'Retiram na loja',
+              'regra': '',
+              'total': 870,
+            },
+            {
+              'id': 'periodo_noite',
+              'nome': 'Pedem à noite',
+              'regra': '',
+              'total': 1147,
+            },
+            {
+              'id': 'periodo_almoco',
+              'nome': 'Pedem no almoço',
+              'regra': '',
+              'total': 490,
+            },
+            {
+              'id': 'nunca_receberam',
+              'nome': 'Nunca receberam',
+              'regra': '',
+              'total': 2210,
+            },
+          ],
+          'bairros': [
+            {'bairro': 'Centro', 'total': 820},
+            {'bairro': 'Tijuca', 'total': 540},
+          ],
+          'aniversarios': [
+            {'mes': 9, 'total': 374},
+            {'mes': 10, 'total': 402},
+          ],
+          'mesAtual': 9,
+          'conversasLigadas': true,
+        });
+      case '/contatos/publicos/produtos':
+        return _json({
+          'produtos': [
+            {'nome': 'Smash duplo', 'total': 1620},
+            {'nome': 'Batata com cheddar', 'total': 980},
+          ],
+        });
       case '/contatos':
         return _json({
           'total': 6484,
@@ -388,6 +504,90 @@ final _api = ClienteApi(
           },
           {'id': 'e', 'telefone': '5521967778888', 'status': 'pendente'},
         ]);
+      case '/campanhas/2':
+        return _json({
+          'id': '2',
+          'nome': 'Combo família',
+          'modeloNome': 'combo_familia',
+          'modeloIdioma': 'pt_BR',
+          'modeloCategoria': 'marketing',
+          'publicoOrigem': 'publico',
+          'publicoRotulo': 'Pedem à noite',
+          'status': 'enviando',
+          'criadoEm': DateTime.now()
+              .toUtc()
+              .subtract(const Duration(hours: 3))
+              .toIso8601String(),
+          'iniciadaEm': DateTime.now()
+              .toUtc()
+              .subtract(const Duration(hours: 2))
+              .toIso8601String(),
+          'espera': {
+            'motivo': 'limite_meta',
+            'ate': DateTime.now()
+                .toUtc()
+                .add(const Duration(hours: 9))
+                .toIso8601String(),
+            'limite': 1000,
+          },
+          'porStatus': {
+            'lida': 380,
+            'entregue': 520,
+            'enviada': 60,
+            'falhou': 9,
+            'pendente': 178,
+          },
+          'total': 1147,
+          'respondidas': 41,
+          'descansoDias': 3,
+        });
+      case '/campanhas/2/destinatarios':
+        return _json([
+          {
+            'id': 'x1',
+            'telefone': '5521988771234',
+            'status': 'falhou',
+            'erroTitulo': 'Número sem WhatsApp',
+            'erroDetalhe': 'A Meta não encontrou WhatsApp neste número.',
+          },
+          {'id': 'x2', 'telefone': '5521977123456', 'status': 'lida'},
+          {'id': 'x3', 'telefone': '5521966554433', 'status': 'pendente'},
+        ]);
+      case '/campanhas/3':
+        return _json({
+          'id': '3',
+          'nome': 'Aniversariantes de setembro',
+          'modeloNome': 'aniversario',
+          'modeloIdioma': 'pt_BR',
+          'modeloCategoria': 'marketing',
+          'publicoOrigem': 'publico',
+          'publicoRotulo': 'Aniversariantes de setembro',
+          'status': 'concluida',
+          'criadoEm': '2026-09-26T14:00:00Z',
+          'iniciadaEm': '2026-09-26T14:05:00Z',
+          'concluidaEm': '2026-09-26T14:42:00Z',
+          'porStatus': {
+            'lida': 210,
+            'entregue': 130,
+            'falhou': 4,
+            'descanso': 30,
+          },
+          'total': 374,
+          'respondidas': 27,
+          'descansoDias': 3,
+        });
+      case '/campanhas/3/destinatarios':
+        return _json([
+          {
+            'id': 'y1',
+            'telefone': '5521955443322',
+            'status': 'descanso',
+            'erroDetalhe':
+                'Recebeu "Sexta do Smash" em 25/09 e ficou de fora pelo descanso de 3 dias.',
+          },
+          {'id': 'y2', 'telefone': '5521944332211', 'status': 'lida'},
+          {'id': 'y3', 'telefone': '5521933221100', 'status': 'entregue'},
+        ]);
       case '/campanhas':
         final agora = DateTime.now().toUtc();
         return _json([
@@ -395,6 +595,7 @@ final _api = ClienteApi(
             'id': '1',
             'nome': 'Sexta do Smash',
             'modeloNome': 'promo_sexta_smash',
+            'modeloCategoria': 'marketing',
             'status': 'enviando',
             'listaNome': 'Clientes 2026',
             'criadoEm': agora
@@ -413,6 +614,9 @@ final _api = ClienteApi(
             'id': '2',
             'nome': 'Combo família',
             'modeloNome': 'combo_familia',
+            'modeloCategoria': 'marketing',
+            'publicoOrigem': 'publico',
+            'publicoRotulo': 'Pedem à noite',
             'status': 'pausada',
             'pausaMotivo': 'manual',
             'criadoEm': agora
@@ -431,6 +635,9 @@ final _api = ClienteApi(
             'id': '3',
             'nome': 'Aniversariantes de setembro',
             'modeloNome': 'aniversario',
+            'modeloCategoria': 'marketing',
+            'publicoOrigem': 'publico',
+            'publicoRotulo': 'Aniversariantes de setembro',
             'status': 'concluida',
             'criadoEm': agora
                 .subtract(const Duration(days: 3))
@@ -883,6 +1090,130 @@ void main() {
 
   testWidgets('modelos', (t) async {
     await _capturar(t, const Scaffold(body: TelaModelos()), '08-modelos');
+  }, skip: !ativo);
+
+  Future<void> assentar(WidgetTester t) async {
+    for (var i = 0; i < 10; i++) {
+      await t.pump(const Duration(milliseconds: 100));
+    }
+  }
+
+  Future<void> escolher(WidgetTester t, String campo, String opcao) async {
+    final alvo = find.byKey(ValueKey(campo));
+    if (alvo.evaluate().isEmpty) {
+      await t.scrollUntilVisible(
+        alvo,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+    }
+    await t.ensureVisible(alvo);
+    await assentar(t);
+    await t.tap(alvo);
+    await assentar(t);
+    await t.tap(find.text(opcao).last);
+    await assentar(t);
+  }
+
+  Future<void> montarComLista(WidgetTester t) async {
+    await t.enterText(find.byKey(const ValueKey('c-nome')), 'Sexta do Smash');
+    await escolher(t, 'c-modelo', 'promo_sexta_smash — Marketing');
+    await escolher(t, 'c-lista', 'Clientes 2026 · 4.820 contatos');
+  }
+
+  Future<void> rolarAte(WidgetTester t, Finder alvo) async {
+    if (alvo.evaluate().isEmpty) {
+      await t.scrollUntilVisible(
+        alvo,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+    }
+    await t.ensureVisible(alvo);
+    await assentar(t);
+  }
+
+  testWidgets('campanha — nova', (t) async {
+    await _capturar(
+      t,
+      const TelaFormularioCampanha(),
+      '31-campanha-nova',
+      antes: (t) async {
+        await montarComLista(t);
+        // De volta ao topo, para a captura mostrar o começo do formulário.
+        await t.drag(find.byType(ListView).first, const Offset(0, 4000));
+        await assentar(t);
+      },
+    );
+  }, skip: !ativo);
+
+  testWidgets('campanha — quem recebe', (t) async {
+    await _capturar(
+      t,
+      const TelaFormularioCampanha(),
+      '32-campanha-quem-recebe',
+      antes: (t) async {
+        await montarComLista(t);
+        await rolarAte(t, find.text('Quem recebe'));
+      },
+    );
+  }, skip: !ativo);
+
+  testWidgets('campanha — público pronto', (t) async {
+    await _capturar(
+      t,
+      const TelaFormularioCampanha(),
+      '33-campanha-publico-pronto',
+      antes: (t) async {
+        await escolher(t, 'c-modelo', 'promo_sexta_smash — Marketing');
+        await rolarAte(t, find.byKey(const ValueKey('quem-base')));
+        await t.tap(find.byKey(const ValueKey('quem-base')));
+        await assentar(t);
+        await escolher(
+          t,
+          'c-de-onde',
+          'Um público pronto (VIP, horário, produto, bairro…)',
+        );
+        await rolarAte(t, find.byKey(const ValueKey('c-qual')));
+        await t.tap(find.byKey(const ValueKey('c-qual')));
+        await assentar(t);
+      },
+    );
+  }, skip: !ativo);
+
+  testWidgets('campanha — janela', (t) async {
+    await _capturar(
+      t,
+      const TelaFormularioCampanha(),
+      '34-campanha-janela',
+      antes: (t) async {
+        await montarComLista(t);
+        await rolarAte(t, find.byKey(const ValueKey('c-usar-horario')));
+        await t.tap(find.byKey(const ValueKey('c-usar-horario')));
+        await assentar(t);
+        await rolarAte(t, find.byKey(const ValueKey('c-janela')));
+      },
+    );
+  }, skip: !ativo);
+
+  testWidgets('campanha — esperando o limite', (t) async {
+    await _capturar(
+      t,
+      const TelaCampanhaDetalhe(id: '2', nomeInicial: 'Combo família'),
+      '35-campanha-espera',
+    );
+  }, skip: !ativo);
+
+  testWidgets('campanha — descanso e respostas', (t) async {
+    await _capturar(
+      t,
+      const TelaCampanhaDetalhe(
+        id: '3',
+        nomeInicial: 'Aniversariantes de setembro',
+      ),
+      '36-campanha-descanso',
+      antes: (t) => rolarAte(t, find.text('Resultado')),
+    );
   }, skip: !ativo);
 
   testWidgets('modelo', (t) async {

@@ -1,14 +1,20 @@
 # RegemCast — app Android
 
 O RegemCast no celular, com os mesmos recursos do site (decisão do dono em
-29/09/2026). Já no app: acompanhar, disparar, pausar e editar campanhas, e
-**criar e editar modelos** — o mesmo editor do site, com imagem, vídeo e
-documento no cabeçalho, carrossel, oferta por tempo limitado e a prévia clara e
-escura. As regras da Meta continuam num lugar só: o `POST /modelos/conferir` do
-servidor, que o app chama antes de enviar.
+29/09/2026). Já no app:
 
-Montar campanha ainda é só no navegador até a próxima etapa: a sessão do app tem
-escopo `app`, e a rota de criação recusa esse escopo (`SomenteWebGuard`).
+- **modelos** — criar e editar com o mesmo editor do site: imagem, vídeo e
+  documento no cabeçalho, carrossel, oferta por tempo limitado e a prévia clara
+  e escura. As regras da Meta continuam num lugar só: o `POST /modelos/conferir`
+  do servidor, que o app chama antes de enviar;
+- **campanhas** — montar (modelo aprovado com as variáveis e a origem de cada
+  uma, "Quem recebe" por lista/bloco, da base ou números digitados, a prévia de
+  quantos recebem, o descanso, a sugestão de horário e a janela de envio),
+  editar, disparar, pausar e acompanhar — com a espera pelo limite da Meta e
+  quem respondeu.
+
+Nenhuma rota do servidor recusa a sessão do app (`escopo: app`); ele decide só
+a validade e a renovação da sessão.
 
 Flutter 3.44 · Android 7.0+ (minSdk 24) · pacote `com.dmsregem.regemcast`.
 
