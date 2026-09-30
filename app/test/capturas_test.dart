@@ -37,11 +37,14 @@ import 'package:regemcast/telas/dividir_em_blocos.dart';
 import 'package:regemcast/telas/entrar.dart';
 import 'package:regemcast/telas/importar_contatos.dart';
 import 'package:regemcast/telas/integracoes.dart';
+import 'package:regemcast/telas/lista_espera.dart';
 import 'package:regemcast/telas/modelo_detalhe.dart';
 import 'package:regemcast/telas/modelo_editor.dart';
 import 'package:regemcast/telas/modelos.dart';
 import 'package:regemcast/telas/plano.dart';
+import 'package:regemcast/telas/recuperar_senha.dart';
 import 'package:regemcast/telas/regras.dart';
+import 'package:regemcast/telas/seguranca.dart';
 import 'package:regemcast/telas/usuarios.dart';
 import 'package:regemcast/telas/whatsapp.dart';
 import 'package:regemcast/tema/tema.dart';
@@ -120,6 +123,8 @@ final _api = ClienteApi(
             'nome': 'MISTER BURGERS',
             'cnpj': '12345678000195',
             'timezone': 'America/Sao_Paulo',
+            'status': 'ativa',
+            'descansoMarketingDias': 3,
           },
           'plano': {
             'codigo': 'profissional',
@@ -136,6 +141,9 @@ final _api = ClienteApi(
           'conversasHabilitadas': true,
         });
       case '/whatsapp/situacao':
+        if (_contaNova) {
+          return _json({'conectado': false, 'conta': null, 'numeros': []});
+        }
         return _json({
           'conectado': true,
           'conta': {
@@ -290,6 +298,23 @@ final _api = ClienteApi(
         ]);
       case '/whatsapp/modelos':
         return _json(_modelosMeta);
+      case '/auth/seguranca':
+        return _json({
+          'doisFatores': 'nenhum',
+          'emailVerificado': true,
+          'appDisponivel': true,
+        });
+      case '/auth/seguranca/app/iniciar':
+        return _json({
+          'endereco':
+              'otpauth://totp/RegemCast:rodrigo%40misterburgers.com.br?secret=JBSWY3DPEHPK3PXP&issuer=RegemCast',
+          'segredo': 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+        });
+      case '/auth/senha/esqueci':
+        return _json({
+          'mensagem':
+              'Se este e-mail tiver acesso ao RegemCast, o código chega em instantes. Ele vale por 10 minutos.',
+        });
       case '/modelos':
         return _json(_modelosSalvos);
       case '/modelos/conferir':
@@ -829,6 +854,9 @@ final _api = ClienteApi(
         });
       case '/contatos':
         final q = req.url.queryParameters;
+        if (_contaNova) {
+          return _json({'total': 0, 'pagina': 1, 'porPagina': 1, 'itens': []});
+        }
         final agora = DateTime.now().toUtc();
         String atras(int dias) =>
             agora.subtract(Duration(days: dias, hours: 3)).toIso8601String();
@@ -1117,6 +1145,7 @@ final _api = ClienteApi(
           {'id': 'y3', 'telefone': '5521933221100', 'status': 'entregue'},
         ]);
       case '/campanhas':
+        if (_contaNova) return _json([]);
         final agora = DateTime.now().toUtc();
         return _json([
           {
@@ -1321,6 +1350,10 @@ final _rascunhoComProblema = ModeloSalvo.deJson({
 
 /// As "fotos" dos produtos, desenhadas no próprio teste (sem arquivo no Git).
 late final List<Uint8List> _fotos;
+
+/// Conta recém-criada: sem número, sem contatos, sem campanha — o Painel
+/// mostra o caminho até o disparo.
+var _contaNova = false;
 
 Future<Uint8List> _desenharBurger(
   Color fundoA,
@@ -2071,6 +2104,50 @@ void main() {
 
   testWidgets('usuarios', (t) async {
     await _capturar(t, const _ComSessao(child: TelaUsuarios()), '19-usuarios');
+  }, skip: !ativo);
+
+  testWidgets('segurança', (t) async {
+    await _capturar(
+      t,
+      const _ComSessao(child: TelaSeguranca()),
+      '53-seguranca',
+    );
+  }, skip: !ativo);
+
+  testWidgets('segurança — o aplicativo autenticador', (t) async {
+    await _capturar(
+      t,
+      const _ComSessao(child: TelaSeguranca()),
+      '54-seguranca-aplicativo',
+      antes: (t) async {
+        await t.tap(find.byKey(const ValueKey('configurar-aplicativo')));
+      },
+    );
+  }, skip: !ativo);
+
+  testWidgets('recuperar a senha', (t) async {
+    await _capturar(
+      t,
+      const TelaRecuperarSenha(email: 'rodrigo@misterburgers.com.br'),
+      '55-recuperar-senha',
+      antes: (t) async {
+        await t.tap(find.byKey(const ValueKey('enviar-codigo')));
+      },
+    );
+  }, skip: !ativo);
+
+  testWidgets('lista de espera', (t) async {
+    await _capturar(t, const TelaListaEspera(), '56-lista-espera');
+  }, skip: !ativo);
+
+  testWidgets('painel — conta nova', (t) async {
+    _contaNova = true;
+    addTearDown(() => _contaNova = false);
+    await _capturar(
+      t,
+      const _ComSessao(child: Casca()),
+      '57-painel-conta-nova',
+    );
   }, skip: !ativo);
 
   testWidgets('whatsapp', (t) async {

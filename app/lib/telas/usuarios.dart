@@ -8,6 +8,7 @@ import '../componentes/dialogos.dart';
 import '../sessao/sessao.dart';
 import '../tema/cores.dart';
 import '../util/formato.dart' as f;
+import '../util/senha.dart';
 
 /// Quem tem acesso à conta.
 ///
@@ -26,7 +27,10 @@ class TelaUsuarios extends ConsumerWidget {
       builder: (_) => const _NovoUsuario(),
     );
     if (criou == true && context.mounted) {
-      avisar(context, 'Acesso criado. Passe o e-mail e a senha para a pessoa.');
+      avisar(
+        context,
+        'Acesso criado. Passe a senha para a pessoa e peça para trocá-la no primeiro login.',
+      );
       ref.invalidate(usuariosProvider);
     }
   }
@@ -290,13 +294,11 @@ class _NovoUsuarioState extends ConsumerState<_NovoUsuario> {
       );
       return;
     }
-    if (senha.length < 10 ||
-        !RegExp(r'[A-Za-zÀ-ÿ]').hasMatch(senha) ||
-        !RegExp(r'\d').hasMatch(senha)) {
-      setState(
-        () => _erro =
-            'A senha precisa de ao menos 10 caracteres, com letra e número.',
-      );
+    // A mesma regra do site e do servidor: a senha provisória é a que a
+    // pessoa vai ter de reforçar na primeira troca.
+    final problema = erroDaSenha(senha);
+    if (problema != null) {
+      setState(() => _erro = problema);
       return;
     }
     setState(() {
@@ -357,8 +359,9 @@ class _NovoUsuarioState extends ConsumerState<_NovoUsuario> {
             obscureText: true,
             autofillHints: const [AutofillHints.newPassword],
             decoration: const InputDecoration(
-              labelText: 'Senha inicial',
-              helperText: 'Ao menos 10 caracteres, com letra e número.',
+              labelText: 'Senha provisória',
+              helperText: ajudaSenha,
+              helperMaxLines: 2,
             ),
           ),
           if (_erro != null) ...[

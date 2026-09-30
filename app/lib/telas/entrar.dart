@@ -1,19 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../api/dados.dart';
 import '../api/erro_api.dart';
+import '../componentes/acesso.dart';
 import '../componentes/basicos.dart';
-import '../componentes/marca.dart';
-import '../config.dart';
 import '../sessao/sessao.dart';
 import '../tema/cores.dart';
+import 'lista_espera.dart';
+import 'recuperar_senha.dart';
 
 /// Entrada. Duas telas no mesmo lugar: a senha e, para quem usa verificação
 /// em duas etapas, o código. A senha sai da memória assim que é aceita — o
 /// passo do código não precisa dela.
+///
+/// "Esqueci minha senha" e a lista de espera abrem dentro do app, como as
+/// páginas públicas do site (`/recuperar-senha` e `/lista-espera`).
 class TelaEntrar extends ConsumerStatefulWidget {
   const TelaEntrar({super.key, this.aviso});
 
@@ -32,6 +35,9 @@ class _TelaEntrarState extends ConsumerState<TelaEntrar> {
   EtapaCodigo? _etapa;
   String? _erro;
   String? _info;
+
+  /// Aviso de quem voltou de outra tela de acesso (senha nova criada).
+  String? _avisoDeVolta;
   bool _enviando = false;
   bool _senhaVisivel = false;
 
@@ -129,39 +135,60 @@ class _TelaEntrarState extends ConsumerState<TelaEntrar> {
     _info = null;
   });
 
+  Future<void> _esqueciASenha() async {
+    final email = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => TelaRecuperarSenha(email: _email.text.trim()),
+      ),
+    );
+    // Criou a senha nova: volta com o e-mail pronto, falta só a senha.
+    if (email != null && mounted) {
+      _senha.clear();
+      setState(() {
+        _email.text = email;
+        _erro = null;
+        _avisoDeVolta =
+            'Senha nova criada. Entre com ela — as sessões abertas em outros aparelhos foram encerradas.';
+      });
+    }
+  }
+
+  void _listaDeEspera() => Navigator.of(
+    context,
+  ).push(MaterialPageRoute<void>(builder: (_) => const TelaListaEspera()));
+
   @override
   Widget build(BuildContext context) {
     final c = Cores.de(context);
-    return Scaffold(
-      backgroundColor: c.fundo,
-      body: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(child: _Topo(etapa: _etapa)),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-            sliver: SliverToBoxAdapter(
-              child: Cartao(
-                padding: const EdgeInsets.all(22),
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 250),
-                  child: _etapa == null ? _formSenha(c) : _formCodigo(c),
-                ),
-              ),
-            ),
-          ),
-        ],
+    return MoldeDeAcesso(
+      titulo: _etapa == null
+          ? 'Suas campanhas, no bolso.'
+          : 'Só mais um passo.',
+      texto: _etapa == null
+          ? 'Acompanhe entregas, dispare e pause campanhas de onde estiver.'
+          : 'Confirme que é você para abrir a conta.',
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 250),
+        child: _etapa == null ? _formSenha(c) : _formCodigo(c),
       ),
     );
   }
 
   Widget _formSenha(Cores c) {
+    final aviso = _avisoDeVolta ?? widget.aviso;
     return AutofillGroup(
       key: const ValueKey('senha'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (widget.aviso != null) ...[
-            Aviso(texto: widget.aviso!),
+          if (aviso != null) ...[
+            Aviso(
+              key: const ValueKey('aviso-entrada'),
+              texto: aviso,
+              tom: _avisoDeVolta != null
+                  ? TomPilula.sucesso
+                  : TomPilula.atencao,
+            ),
             const SizedBox(height: 16),
           ],
           TextField(
@@ -199,10 +226,8 @@ class _TelaEntrarState extends ConsumerState<TelaEntrar> {
           Align(
             alignment: Alignment.centerRight,
             child: TextButton(
-              onPressed: () => launchUrl(
-                Uri.parse('$urlWeb/recuperar-senha'),
-                mode: LaunchMode.externalApplication,
-              ),
+              key: const ValueKey('esqueci-senha'),
+              onPressed: _esqueciASenha,
               child: const Text('Esqueci minha senha'),
             ),
           ),
@@ -214,30 +239,17 @@ class _TelaEntrarState extends ConsumerState<TelaEntrar> {
             ),
             const SizedBox(height: 14),
           ],
-          FilledButton(
-            onPressed: _enviando ? null : _entrar,
-            child: _enviando
-                ? SizedBox.square(
-                    dimension: 22,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      color: c.acentoContraste,
-                    ),
-                  )
-                : const Text('Entrar'),
-          ),
+          BotaoDeAcesso(rotulo: 'Entrar', ocupado: _enviando, aoTocar: _entrar),
           const SizedBox(height: 18),
           Text(
-            'Ainda não tem acesso? Entre na lista de espera pelo site.',
+            'Ainda não tem acesso?',
             textAlign: TextAlign.center,
             style: TextStyle(color: c.tintaSuave, fontSize: 13),
           ),
           TextButton(
-            onPressed: () => launchUrl(
-              Uri.parse('$urlWeb/lista-espera'),
-              mode: LaunchMode.externalApplication,
-            ),
-            child: const Text('Abrir a lista de espera'),
+            key: const ValueKey('abrir-lista-espera'),
+            onPressed: _listaDeEspera,
+            child: const Text('Entre na lista de espera'),
           ),
         ],
       ),
@@ -250,19 +262,20 @@ class _TelaEntrarState extends ConsumerState<TelaEntrar> {
       key: const ValueKey('codigo'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Icon(Icons.shield_outlined, color: c.tinta),
-            const SizedBox(width: 10),
-            Text(
-              'Verificação em duas etapas',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-          ],
+        const CabecalhoDoCartao(
+          titulo: 'Verificação em duas etapas',
+          icone: Icons.shield_outlined,
         ),
         const SizedBox(height: 10),
         if (_info != null)
           Text(_info!, style: TextStyle(color: c.tintaSuave, height: 1.45)),
+        const SizedBox(height: 12),
+        const Aviso(
+          tom: TomPilula.acento,
+          icone: Icons.verified_user_outlined,
+          texto:
+              'Sua conta está protegida. Sem o código, a senha sozinha não entra.',
+        ),
         const SizedBox(height: 18),
         TextField(
           controller: _codigo,
@@ -293,17 +306,10 @@ class _TelaEntrarState extends ConsumerState<TelaEntrar> {
           ),
           const SizedBox(height: 14),
         ],
-        FilledButton(
-          onPressed: _enviando ? null : _confirmar,
-          child: _enviando
-              ? SizedBox.square(
-                  dimension: 22,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    color: c.acentoContraste,
-                  ),
-                )
-              : const Text('Confirmar'),
+        BotaoDeAcesso(
+          rotulo: 'Confirmar',
+          ocupado: _enviando,
+          aoTocar: _confirmar,
         ),
         const SizedBox(height: 8),
         Row(
@@ -322,66 +328,6 @@ class _TelaEntrarState extends ConsumerState<TelaEntrar> {
           ],
         ),
       ],
-    );
-  }
-}
-
-/// O topo escuro da marca, como o lado esquerdo da entrada na web.
-class _Topo extends StatelessWidget {
-  const _Topo({required this.etapa});
-
-  final EtapaCodigo? etapa;
-
-  @override
-  Widget build(BuildContext context) {
-    final topo = MediaQuery.of(context).padding.top;
-    return Container(
-      padding: EdgeInsets.fromLTRB(24, topo + 28, 24, 36),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Cores.lateral, Cores.lateral2],
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Logotipo(sobreEscuro: true, tamanho: 36),
-          const SizedBox(height: 28),
-          Text(
-            'INTEGRAÇÃO VIA API OFICIAL DO WHATSAPP BUSINESS',
-            style: TextStyle(
-              color: const Color(0xFFA3E635).withValues(alpha: 0.95),
-              fontSize: 11,
-              letterSpacing: 1.4,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            etapa == null ? 'Suas campanhas, no bolso.' : 'Só mais um passo.',
-            style: const TextStyle(
-              color: Cores.lateralTinta,
-              fontSize: 28,
-              fontWeight: FontWeight.w700,
-              height: 1.15,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            etapa == null
-                ? 'Acompanhe entregas, dispare e pause campanhas de onde estiver.'
-                : 'Confirme que é você para abrir a conta.',
-            style: const TextStyle(
-              color: Cores.lateralSuave,
-              fontSize: 15,
-              height: 1.4,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

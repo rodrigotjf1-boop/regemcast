@@ -14,6 +14,7 @@ import '../config.dart';
 import '../tema/cores.dart';
 import '../util/formato.dart' as f;
 import 'campanha_formulario.dart';
+import 'plano.dart';
 import 'whatsapp.dart';
 
 /// Uma campanha: o que aconteceu, com quem, e o que dá para fazer agora.
@@ -452,9 +453,10 @@ class _TelaCampanhaDetalheState extends ConsumerState<TelaCampanhaDetalhe> {
               icone: Icons.credit_card_off_rounded,
               texto:
                   'Pausada: os disparos da conta estão parados por falta de pagamento do plano. Quem faltava continua na fila e a campanha volta sozinha assim que o pagamento for confirmado.',
-              acao: _BotaoSite(
+              // O plano tem tela no app: pagar ou trocar não precisa do site.
+              acao: const _BotaoTela(
                 rotulo: 'Ver plano e pagamento',
-                caminho: '/plano',
+                tela: TelaPlano(),
               ),
             ),
           );
@@ -970,6 +972,24 @@ class _BarraDeAcao extends StatelessWidget {
       ),
     );
   }
+}
+
+class _BotaoTela extends StatelessWidget {
+  const _BotaoTela({required this.rotulo, required this.tela});
+  final String rotulo;
+  final Widget tela;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.centerLeft,
+    child: OutlinedButton(
+      style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
+      onPressed: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => tela)),
+      child: Text(rotulo),
+    ),
+  );
 }
 
 class _BotaoSite extends StatelessWidget {

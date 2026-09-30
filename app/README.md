@@ -35,7 +35,21 @@ O RegemCast no celular, com os mesmos recursos do site (decisão do dono em
   dela rodar dentro de outro app;
 - **integrações** — o Cardápio Web inteiro: conectar com o token da loja,
   importar os clientes (com o consentimento), as compras, o cashback, trocar o
-  token e desconectar; e o atalho para importar a lista do celular.
+  token e desconectar; e o atalho para importar a lista do celular;
+- **conta e acesso** — a situação da conta, os dados da empresa com o descanso
+  entre campanhas (o CNPJ conferido na Receita aparece, mas só muda pelo
+  suporte), trocar a senha, as pessoas com acesso e a verificação em duas
+  etapas: aplicativo autenticador ou código por e-mail, e desligar pede a
+  senha. No site o autenticador lê um QR code; no celular ele costuma estar no
+  mesmo aparelho, então o app abre o autenticador direto pelo `otpauth://` (o
+  mesmo endereço do QR) e mostra a chave para copiar. A regra de senha mora em
+  `util/senha.dart` — a mesma do site e do servidor;
+- **entrada** — "Esqueci minha senha" (código por e-mail e a senha nova) e a
+  lista de espera dentro do app (`origem: app`);
+- **painel** — o "Caminho até o disparo" enquanto falta algum passo (no site
+  ele fica numa coluna ao lado; no celular empurraria o resto para baixo), os
+  indicadores de contatos e modelos aprovados e os atalhos "Nova campanha" e
+  "Importar contatos". Os avisos de pagamento abrem o plano do app.
 
 Nenhuma rota do servidor recusa a sessão do app (`escopo: app`); ele decide só
 a validade e a renovação da sessão.
@@ -55,12 +69,16 @@ lib/
   sessao/              cofre (Keystore) e o controle da sessão
   tema/                cores e tema — as MESMAS da web (frontend/src/app/globals.css)
   componentes/         marca, cartão, pílula, anel de consumo, estados, prévia do WhatsApp
-  telas/               entrar, portas (abrindo/biometria/sem conexão), casca, painel,
-                       modelos (lista, detalhe e o editor), campanhas, contatos
-                       (lista, públicos, blocos e listas), dividir em blocos,
-                       bloqueios, importar e conversas (lista e a conversa)
+  telas/               entrar, recuperar senha, lista de espera, portas
+                       (abrindo/biometria/sem conexão), casca, painel, modelos
+                       (lista, detalhe e o editor), campanhas, contatos (lista,
+                       públicos, blocos e listas), dividir em blocos, bloqueios,
+                       importar, conversas (lista e a conversa), WhatsApp,
+                       integrações, conta, segurança (duas etapas) e usuários
+  util/                formato (datas, números) e a regra de senha
 test/                  cliente da API, dados, telas (entrada, campanhas, editor de
-                       modelo, contatos, conversas); capturas das telas
+                       modelo, contatos, conversas, WhatsApp e integrações, conta
+                       e acesso); capturas das telas
 ```
 
 ## Sessão e segurança
