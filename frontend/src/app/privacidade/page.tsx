@@ -17,7 +17,7 @@ import { Logotipo } from '@/components/marca/logotipo';
  * com `new Date()` faria a página anunciar revisão que não houve.
  */
 
-const ATUALIZADO_EM = '29 de setembro de 2026';
+const ATUALIZADO_EM = '30 de setembro de 2026';
 const CONTROLADOR = 'DMS Tecnologias';
 const EMAIL = 'suporte@dmsregem.com';
 
@@ -173,7 +173,7 @@ export default function PoliticaDePrivacidade() {
             Sobre esses dados somos <strong className="text-tinta">operador</strong>: eles
             pertencem ao cliente e às pessoas que conversaram com ele. Guardamos para operar o
             serviço, não usamos para nenhuma outra finalidade e apagamos junto com a conta,
-            conforme o prazo da seção 6. O cliente pode recusar o compartilhamento na janela da
+            conforme o prazo da seção 7. O cliente pode recusar o compartilhamento na janela da
             Meta — nesse caso a conexão continua funcionando para enviar campanhas, apenas sem
             contatos e histórico trazidos do celular.
           </p>
@@ -183,7 +183,43 @@ export default function PoliticaDePrivacidade() {
           </p>
         </Secao>
 
-        <Secao titulo="5. Com quem compartilhamos">
+        <Secao titulo="5. Dados trazidos dos sistemas da loja (Cardápio Web e Regem)">
+          <p>
+            Quando o cliente liga o Regemcast ao cardápio digital (Cardápio Web) ou ao sistema de
+            gestão da empresa (Regem), recebemos desses sistemas, só para leitura: o nome e o
+            telefone dos clientes da loja, se eles pediram para não receber mensagens ou aceitaram
+            receber promoções (com a data e o texto do aceite, quando houver) e o resumo de cada
+            compra — data, valor, jeito de comprar (entrega, retirada ou salão), bairro da entrega e
+            os itens. Do Cardápio Web vêm também o e-mail, o aniversário e o saldo de cashback,
+            quando a loja tem.
+          </p>
+          <p>
+            Esses dados pertencem ao cliente e às pessoas que compraram dele; aqui somos{' '}
+            <strong className="text-tinta">operador</strong>, como na seção 2. Usamos só para o
+            cliente montar e enviar as próprias campanhas — separar quem compra mais, quem sumiu, o
+            bairro, o produto preferido. Nada é escrito de volta nesses sistemas e nada é cruzado
+            com dados de outros clientes.
+          </p>
+          <p>
+            Quem pediu para sair no sistema da loja entra aqui já bloqueado. Quem pediu à empresa,
+            pelo Regem, para ser esquecido tem os dados pessoais e as compras apagados aqui também;
+            o número fica bloqueado, para não voltar numa importação.
+          </p>
+          <p>
+            Compras feitas em marketplaces (iFood e outros) não entram: o cliente é do
+            marketplace. A única exceção é a <strong className="text-tinta">99Food</strong>, e só
+            quando o dono da conta autoriza no Regemcast, declarando, em nome da empresa e sob a
+            responsabilidade dela, que esses clientes autorizaram receber mensagens. A autorização
+            fica registrada com o texto aceito, quem aceitou e quando; desfeita, as compras da 99 e
+            os clientes que vieram só por ela saem da base.
+          </p>
+          <p>
+            A credencial de acesso a esses sistemas é guardada cifrada e nunca é exibida. Desligada
+            a integração, paramos de receber; o que já veio fica na base do cliente até ele apagar.
+          </p>
+        </Secao>
+
+        <Secao titulo="6. Com quem compartilhamos">
           <p>Apenas com quem é necessário para o serviço funcionar:</p>
           <ul className="list-disc space-y-2 pl-5">
             <li>
@@ -217,7 +253,7 @@ export default function PoliticaDePrivacidade() {
           <p>Não vendemos dados pessoais. Nunca.</p>
         </Secao>
 
-        <Secao titulo="6. Por quanto tempo guardamos">
+        <Secao titulo="7. Por quanto tempo guardamos">
           <p>
             Dados da conta ficam enquanto ela existir. Encerrada a conta, removemos os dados em
             até 90 dias, exceto o que a lei mandar guardar.
@@ -235,7 +271,7 @@ export default function PoliticaDePrivacidade() {
           </p>
         </Secao>
 
-        <Secao titulo="7. Segurança">
+        <Secao titulo="8. Segurança">
           <p>
             Os dados de cada conta são isolados no banco por controle de acesso em nível de
             linha, aplicado pelo próprio banco de dados e não apenas pelo código — uma consulta
@@ -253,7 +289,7 @@ export default function PoliticaDePrivacidade() {
           </p>
         </Secao>
 
-        <Secao titulo="8. Seus direitos">
+        <Secao titulo="9. Seus direitos">
           <p>
             A Lei Geral de Proteção de Dados (Lei 13.709/2018) garante a você: confirmação de
             que tratamos seus dados, acesso a eles, correção do que estiver errado ou
@@ -268,7 +304,7 @@ export default function PoliticaDePrivacidade() {
           </p>
         </Secao>
 
-        <Secao titulo="9. Cookies">
+        <Secao titulo="10. Cookies">
           <p>
             Usamos um único cookie, de sessão, para manter você conectado ao painel. Ele é
             <code className="mx-1 rounded bg-superficie-2 px-1.5 py-0.5 font-mono text-xs text-acento-forte">
@@ -279,7 +315,7 @@ export default function PoliticaDePrivacidade() {
           </p>
         </Secao>
 
-        <Secao titulo="10. Aplicativo para Android">
+        <Secao titulo="11. Aplicativo para Android">
           <p>
             O aplicativo do Regemcast usa a mesma conta do painel e trata os mesmos dados. Além
             deles, trata apenas:
@@ -325,7 +361,7 @@ export default function PoliticaDePrivacidade() {
           </p>
         </Secao>
 
-        <Secao titulo="11. Exclusão da conta">
+        <Secao titulo="12. Exclusão da conta">
           <p>
             O dono da conta pode pedir a exclusão da conta e dos dados a qualquer momento. O passo
             a passo e o que é mantido por obrigação legal estão em{' '}
@@ -336,7 +372,7 @@ export default function PoliticaDePrivacidade() {
           </p>
         </Secao>
 
-        <Secao titulo="12. Crianças e adolescentes">
+        <Secao titulo="13. Crianças e adolescentes">
           <p>
             O Regemcast é uma ferramenta de trabalho, destinada a empresas. Não é dirigido a
             menores de 18 anos e não coletamos dados de crianças e adolescentes de forma
@@ -344,7 +380,7 @@ export default function PoliticaDePrivacidade() {
           </p>
         </Secao>
 
-        <Secao titulo="13. Mudanças nesta política">
+        <Secao titulo="14. Mudanças nesta política">
           <p>
             Se mudarmos este texto de forma relevante, avisamos os clientes por e-mail ou pelo
             painel antes de a mudança valer. A data no topo indica desde quando esta versão está

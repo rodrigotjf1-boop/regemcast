@@ -6,6 +6,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { IconeAtualizar, IconeSair } from '@/components/app/icones';
 import { PainelListaEspera } from '@/components/app/painel-lista-espera';
 import { PainelPlanos } from '@/components/app/painel-planos';
+import { PainelRegem } from '@/components/app/painel-regem';
 import { CarregandoMarca } from '@/components/marca/carregando-marca';
 import { Logotipo } from '@/components/marca/logotipo';
 import { Alerta } from '@/components/ui/alerta';
@@ -60,7 +61,7 @@ export default function ConsoleDistribuicao() {
   const [resumo, setResumo] = useState<ResumoDoConsole | null>(null);
   const [contas, setContas] = useState<ContaNoConsole[]>([]);
   const [telemetria, setTelemetria] = useState<TelemetriaDoConsole | null>(null);
-  const [aba, setAba] = useState<'contas' | 'lista' | 'planos' | 'telemetria'>('contas');
+  const [aba, setAba] = useState<'contas' | 'lista' | 'planos' | 'regem' | 'telemetria'>('contas');
   const [filtro, setFiltro] = useState<SituacaoConta | 'todas'>('todas');
   const [dias, setDias] = useState(7);
   const [erro, setErro] = useState('');
@@ -145,7 +146,7 @@ export default function ConsoleDistribuicao() {
         {resumo && <Indicadores resumo={resumo} aoFiltrar={(s) => { setAba('contas'); setFiltro(s); }} />}
 
         <div className="flex flex-wrap items-center gap-2 border-b border-borda" role="tablist">
-          {(['contas', 'lista', 'planos', 'telemetria'] as const).map((a) => (
+          {(['contas', 'lista', 'planos', 'regem', 'telemetria'] as const).map((a) => (
             <button
               key={a}
               type="button"
@@ -163,7 +164,9 @@ export default function ConsoleDistribuicao() {
                   ? 'Lista de espera'
                   : a === 'planos'
                     ? 'Planos'
-                    : 'Telemetria'}
+                    : a === 'regem'
+                      ? 'Regem'
+                      : 'Telemetria'}
             </button>
           ))}
           <Button variante="secundario" tamanho="sm" className="ml-auto mb-1" onClick={() => void carregar()}>
@@ -184,6 +187,8 @@ export default function ConsoleDistribuicao() {
           <PainelListaEspera />
         ) : aba === 'planos' ? (
           <PainelPlanos />
+        ) : aba === 'regem' ? (
+          <PainelRegem contas={contas} />
         ) : (
           <PainelTelemetria telemetria={telemetria} dias={dias} aoMudarDias={setDias} />
         )}
@@ -330,7 +335,7 @@ function TabelaContas({
         ))}
       </div>
 
-      <div className="overflow-x-auto rounded-card border border-borda bg-superficie shadow-card">
+      <div className="relative overflow-x-auto rounded-card border border-borda bg-superficie shadow-card">
         <table className="w-full min-w-[56rem] text-left text-sm">
           <caption className="sr-only">Contas, com situação, uso do plano e atividade</caption>
           <thead>
@@ -472,7 +477,7 @@ function PainelTelemetria({
         <p className="text-xs text-tinta-suave">
           Um código em muitas contas é UM problema — token vencendo em massa, limite da Meta —, não vários.
         </p>
-        <div className="overflow-x-auto rounded-card border border-borda bg-superficie shadow-card">
+        <div className="relative overflow-x-auto rounded-card border border-borda bg-superficie shadow-card">
           <table className="w-full min-w-[36rem] text-left text-sm">
             <caption className="sr-only">Erros agrupados por código</caption>
             <thead>

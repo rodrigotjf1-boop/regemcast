@@ -170,7 +170,7 @@ export function PainelListaEspera() {
       {!pagina && !erro ? (
         <EsqueletoLista linhas={4} />
       ) : pagina ? (
-        <div className="overflow-x-auto rounded-card border border-borda bg-superficie shadow-card">
+        <div className="relative overflow-x-auto rounded-card border border-borda bg-superficie shadow-card">
           <table className="w-full min-w-[52rem] text-left text-sm">
             <caption className="sr-only">Pedidos da lista de espera, em ordem de chegada</caption>
             <thead>
