@@ -35,4 +35,4 @@ const bool compraNoApp = !bool.fromEnvironment('LOJA_PLAY');
 
 /// Vai junto do registro do aparelho, para saber quem ainda roda versão velha.
 /// Acompanha o `version` do pubspec.yaml.
-const String versaoDoApp = '0.5.0';
+const String versaoDoApp = '0.6.0';
