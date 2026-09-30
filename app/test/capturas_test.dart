@@ -20,6 +20,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:regemcast/api/cliente_api.dart';
 import 'package:regemcast/api/contatos.dart';
 import 'package:regemcast/api/dados.dart';
+import 'package:regemcast/api/repeticao.dart';
 import 'package:regemcast/api/modelos.dart';
 import 'package:regemcast/push/push.dart';
 import 'package:regemcast/sessao/cofre.dart';
@@ -31,6 +32,7 @@ import 'package:regemcast/telas/casca.dart';
 import 'package:regemcast/telas/conta.dart';
 import 'package:regemcast/telas/bloqueios.dart';
 import 'package:regemcast/telas/contatos.dart';
+import 'package:regemcast/telas/conversas.dart';
 import 'package:regemcast/telas/dividir_em_blocos.dart';
 import 'package:regemcast/telas/entrar.dart';
 import 'package:regemcast/telas/importar_contatos.dart';
@@ -130,6 +132,7 @@ final _api = ClienteApi(
             'gratisAte': null,
           },
           'uso': {'disparos': 12480, 'teto': 20000, 'restantes': 7520},
+          'conversasHabilitadas': true,
         });
       case '/whatsapp/situacao':
         return _json({
@@ -266,6 +269,197 @@ final _api = ClienteApi(
         return http.Response.bytes(_fotos[1], 200);
       case '/midia/foto3':
         return http.Response.bytes(_fotos[2], 200);
+      case '/conversas':
+        final agora = DateTime.now();
+        String ha(Duration d) => agora.subtract(d).toUtc().toIso8601String();
+        final janela = agora
+            .add(const Duration(hours: 23, minutes: 20))
+            .toUtc()
+            .toIso8601String();
+        return _json([
+          {
+            'id': 'c1',
+            'telefone': '5521991112222',
+            'nome': 'Ana Beatriz Souza',
+            'contatoId': 'k1',
+            'optOut': false,
+            'naoLidas': 2,
+            'ultimaMensagem': 'Chegou certinho, obrigada!',
+            'ultimaMensagemEm': ha(const Duration(minutes: 4)),
+            'janelaAteEm': janela,
+          },
+          {
+            'id': 'c2',
+            'telefone': '5521983334444',
+            'nome': 'Carlos Menezes',
+            'contatoId': 'k2',
+            'optOut': false,
+            'naoLidas': 0,
+            'ultimaMensagem': 'Vocês abrem amanhã no almoço?',
+            'ultimaMensagemEm': ha(const Duration(hours: 2)),
+            'janelaAteEm': janela,
+          },
+          {
+            'id': 'c3',
+            'telefone': '5511975556666',
+            'nome': null,
+            'contatoId': null,
+            'optOut': false,
+            'naoLidas': 1,
+            'ultimaMensagem': 'Quero o combo da promoção',
+            'ultimaMensagemEm': ha(const Duration(hours: 26)),
+            'janelaAteEm': null,
+          },
+          {
+            'id': 'c4',
+            'telefone': '5521967778888',
+            'nome': 'Fernanda Lima',
+            'contatoId': 'k4',
+            'optOut': true,
+            'naoLidas': 0,
+            'ultimaMensagem': 'Parar promoções',
+            'ultimaMensagemEm': ha(const Duration(days: 3)),
+            'janelaAteEm': null,
+          },
+          {
+            'id': 'c5',
+            'telefone': '5521959990000',
+            'nome': 'João Pedro Alves',
+            'contatoId': 'k5',
+            'optOut': false,
+            'naoLidas': 0,
+            'ultimaMensagem': '📷 Foto',
+            'ultimaMensagemEm': ha(const Duration(days: 9)),
+            'janelaAteEm': null,
+          },
+        ]);
+      case '/conversas/c1':
+        return _json({
+          'id': 'c1',
+          'telefone': '5521991112222',
+          'nome': 'Ana Beatriz Souza',
+          'contatoId': 'k1',
+          'optOut': false,
+          'naoLidas': 0,
+          'ultimaMensagem': 'Chegou certinho, obrigada!',
+          'ultimaMensagemEm': DateTime.now().toUtc().toIso8601String(),
+          'janelaAteEm': DateTime.now()
+              .add(const Duration(hours: 23, minutes: 20))
+              .toUtc()
+              .toIso8601String(),
+        });
+      case '/conversas/c3':
+        return _json({
+          'id': 'c3',
+          'telefone': '5511975556666',
+          'nome': null,
+          'contatoId': null,
+          'optOut': false,
+          'naoLidas': 0,
+          'ultimaMensagem': 'Quero o combo da promoção',
+          'ultimaMensagemEm': DateTime.now()
+              .subtract(const Duration(hours: 26))
+              .toUtc()
+              .toIso8601String(),
+          'janelaAteEm': null,
+        });
+      case '/conversas/c1/mensagens':
+        final hoje = DateTime.now();
+        String as(int dia, int h, int m) => DateTime(
+          hoje.year,
+          hoje.month,
+          hoje.day + dia,
+          h,
+          m,
+        ).toUtc().toIso8601String();
+        Map<String, Object?> msg(
+          String id,
+          String quando, {
+          bool saida = false,
+          String origem = 'cliente',
+          String tipo = 'text',
+          String? texto,
+          bool midia = false,
+          String? status,
+          String? por,
+        }) => {
+          'id': id,
+          'direcao': saida ? 'saida' : 'entrada',
+          'origem': origem,
+          'tipo': tipo,
+          'texto': texto,
+          'temMidia': midia,
+          'midiaMime': midia ? 'image/png' : null,
+          'midiaNome': null,
+          'status': status,
+          'erroCodigo': null,
+          'erroTitulo': null,
+          'enviadaPor': por,
+          'criadaEm': quando,
+        };
+        return _json([
+          msg(
+            'a1',
+            as(-1, 20, 5),
+            texto: 'Boa noite! Vocês entregam na Tijuca?',
+          ),
+          msg(
+            'a2',
+            as(-1, 20, 6),
+            saida: true,
+            origem: 'celular',
+            texto: 'Entregamos sim, Ana! A taxa é R\$ 6,00 🛵',
+            status: 'lida',
+          ),
+          msg(
+            'a3',
+            as(-1, 20, 9),
+            texto: 'Então vou querer 2 smash duplos e uma batata com cheddar',
+          ),
+          msg(
+            'a4',
+            as(-1, 20, 10),
+            saida: true,
+            origem: 'painel',
+            texto: 'Anotado! Sai em 35 minutos.',
+            status: 'lida',
+            por: 'Rodrigo Tavares',
+          ),
+          msg(
+            'a5',
+            as(0, 12, 31),
+            tipo: 'image',
+            midia: true,
+            texto: 'Chegou assim, perfeito 😍',
+          ),
+          msg('a6', as(0, 12, 32), tipo: 'audio', midia: true),
+          msg('a7', as(0, 12, 33), texto: 'Chegou certinho, obrigada!'),
+          msg(
+            'a8',
+            as(0, 12, 40),
+            saida: true,
+            origem: 'painel',
+            texto: 'Que bom! Obrigado pela preferência, Ana 🍔',
+            status: 'entregue',
+            por: 'Rodrigo Tavares',
+          ),
+        ]);
+      case '/conversas/c1/mensagens/a5/midia':
+        return http.Response.bytes(_fotos[0], 200);
+      case '/conversas/c3/mensagens':
+        final ontem = DateTime.now().subtract(const Duration(hours: 26));
+        return _json([
+          {
+            'id': 'b1',
+            'direcao': 'entrada',
+            'origem': 'cliente',
+            'tipo': 'text',
+            'texto': 'Quero o combo da promoção',
+            'temMidia': false,
+            'status': null,
+            'criadaEm': ontem.toUtc().toIso8601String(),
+          },
+        ]);
       case '/contatos/listas':
         return _json([
           {'id': 'l1', 'nome': 'Clientes 2026', 'total': 4820},
@@ -1194,6 +1388,9 @@ Future<void> _carregarImagens(WidgetTester tester) async {
     final d = (e.widget as DecoratedBox).decoration;
     if (d is BoxDecoration && d.image != null) provedores.add(d.image!.image);
   }
+  for (final e in find.byType(Image).evaluate()) {
+    provedores.add((e.widget as Image).image);
+  }
   if (provedores.isEmpty) return;
   final contexto = tester.element(find.byType(Scaffold).last);
   await tester.runAsync(
@@ -1259,6 +1456,8 @@ Future<void> _capturar(
 
   await tester.pumpWidget(
     ProviderScope(
+      // Como no app: leitura que falhou não se repete sozinha (ERR-026).
+      retry: semRepeticao,
       overrides: [
         clienteApiProvider.overrideWithValue(_api),
         cofreProvider.overrideWithValue(_CofreMemoria()),
@@ -1757,6 +1956,45 @@ void main() {
     );
   }, skip: !ativo);
 
+  testWidgets('conversas', (t) async {
+    await _capturar(t, const Scaffold(body: TelaConversas()), '46-conversas');
+  }, skip: !ativo);
+
+  Future<void> abrirConversa(WidgetTester t, String id) async {
+    await t.tap(find.byKey(ValueKey('conversa-$id')));
+    for (var i = 0; i < 20; i++) {
+      await t.pump(const Duration(milliseconds: 100));
+    }
+  }
+
+  testWidgets('conversa aberta', (t) async {
+    await _capturar(
+      t,
+      const Scaffold(body: TelaConversas()),
+      '47-conversa',
+      antes: (t) => abrirConversa(t, 'c1'),
+    );
+  }, skip: !ativo);
+
+  testWidgets('conversa aberta — escuro', (t) async {
+    await _capturar(
+      t,
+      const Scaffold(body: TelaConversas()),
+      '48-conversa-escuro',
+      brilho: Brightness.dark,
+      antes: (t) => abrirConversa(t, 'c1'),
+    );
+  }, skip: !ativo);
+
+  testWidgets('conversa com a janela fechada', (t) async {
+    await _capturar(
+      t,
+      const Scaffold(body: TelaConversas()),
+      '49-conversa-fechada',
+      antes: (t) => abrirConversa(t, 'c3'),
+    );
+  }, skip: !ativo);
+
   testWidgets('mais', (t) async {
     await _capturar(t, const _ComSessao(child: _AbaMais()), '15-mais');
   }, skip: !ativo);
@@ -1805,7 +2043,7 @@ class _AbaMais extends StatelessWidget {
   const _AbaMais();
 
   @override
-  Widget build(BuildContext context) => const Casca(abaInicial: 4);
+  Widget build(BuildContext context) => const Casca(abaInicial: Aba.mais);
 }
 
 /// A casca lê a sessão ativa; aqui ela é posta direto, sem passar pelo login.

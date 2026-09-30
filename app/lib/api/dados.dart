@@ -101,6 +101,7 @@ class ResumoConta {
     required this.disparos,
     required this.teto,
     required this.restantes,
+    this.conversasHabilitadas = false,
   });
 
   final String nomeConta;
@@ -115,6 +116,10 @@ class ResumoConta {
   /// Nulo = sem plano, sem teto.
   final int? teto;
   final int? restantes;
+
+  /// Algum número guarda conversas (coexistência + resposta "sim"): a aba
+  /// Conversas aparece. As rotas de conversa conferem de novo.
+  final bool conversasHabilitadas;
 
   /// Fração usada do ciclo, de 0 a 1. Sem teto não há fração.
   double? get fracao => (teto == null || teto == 0)
@@ -138,6 +143,7 @@ class ResumoConta {
       disparos: _int(uso['disparos']),
       teto: _intOuNulo(uso['teto']),
       restantes: _intOuNulo(uso['restantes']),
+      conversasHabilitadas: j['conversasHabilitadas'] == true,
     );
   }
 }

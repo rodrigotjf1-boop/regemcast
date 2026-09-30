@@ -19,10 +19,21 @@ O RegemCast no celular, com os mesmos recursos do site (decisão do dono em
   blocos com o resultado de cada bloco; os bloqueios (voltar à base com o
   pedido registrado, apagar dados, apagar tudo) e os números sem WhatsApp; e a
   importação com as colunas extras da planilha (e-mail, aniversário, pedidos,
-  total gasto e última compra), igual à do site.
+  total gasto e última compra), igual à do site;
+- **conversas** — com as conversas ligadas (coexistência + "Sim, trazer"), a
+  aba Conversas toma o lugar de Modelos na barra e Modelos vai para "Mais"
+  (decisão do dono em 29/09/2026). A lista e a conversa aberta se atualizam
+  sozinhas (15 s e 5 s, só com a tela na frente); resposta de texto só dentro
+  da janela de 24 horas; fotos na hora, áudio e vídeo no play (`video_player`,
+  com a sessão no cabeçalho) e documentos salvos no celular pela janela do
+  Android; "Adicionar à lista" e a guarda das mensagens (só o dono).
 
 Nenhuma rota do servidor recusa a sessão do app (`escopo: app`); ele decide só
 a validade e a renovação da sessão.
+
+Leitura que falha **não** se repete sozinha: o Riverpod 3 repetiria até 10
+vezes com a tela em "carregando" (`ProviderScope(retry: semRepeticao)` no
+`main.dart`) — o erro aparece na hora, com o "Tentar de novo".
 
 Flutter 3.44 · Android 7.0+ (minSdk 24) · pacote `com.dmsregem.regemcast`.
 
@@ -38,9 +49,9 @@ lib/
   telas/               entrar, portas (abrindo/biometria/sem conexão), casca, painel,
                        modelos (lista, detalhe e o editor), campanhas, contatos
                        (lista, públicos, blocos e listas), dividir em blocos,
-                       bloqueios e importar
+                       bloqueios, importar e conversas (lista e a conversa)
 test/                  cliente da API, dados, telas (entrada, campanhas, editor de
-                       modelo, contatos); capturas das telas
+                       modelo, contatos, conversas); capturas das telas
 ```
 
 ## Sessão e segurança

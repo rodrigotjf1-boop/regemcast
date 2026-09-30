@@ -310,6 +310,12 @@ export default function PoliticaDePrivacidade() {
               Ele segue para a Meta quando o modelo vai para aprovação. O aplicativo só abre a
               galeria ou os arquivos quando você toca em escolher, e não lê mais nada do aparelho.
             </li>
+            <li>
+              <strong className="text-tinta">Conversas</strong> — quando as conversas estão ligadas,
+              o aplicativo mostra as mensagens e abre fotos, áudios, vídeos e documentos como o
+              painel: o arquivo é buscado na Meta na hora e não fica guardado no aparelho. Ele só vai
+              para a memória do celular se você tocar em salvar — e fica na pasta que você escolher.
+            </li>
           </ul>
           <p>
             O aplicativo não usa localização, câmera, microfone nem a agenda do celular, e não tem

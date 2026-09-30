@@ -1,9 +1,15 @@
 name: CI
 
-# O portão antes do merge. Roda em todo push e em toda PR, e os dois lados são
-# independentes: erro no front não esconde erro no back, e vice-versa.
+# O portão antes do merge. Roda em toda PR e na `main` depois do merge, e os
+# dois lados são independentes: erro no front não esconde erro no back, e
+# vice-versa.
+#
+# Push em branch de PR NÃO dispara de novo: com `push` sem filtro, cada commit
+# de uma PR rodava duas vezes (o push e a PR, em grupos de concorrência
+# diferentes) e esgotou a cota de minutos do repositório privado em 29/09/2026.
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:

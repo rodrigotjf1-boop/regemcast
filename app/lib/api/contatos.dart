@@ -784,6 +784,18 @@ class ServicoContatos {
     return (nome: _txt(r['nome']), total: _int(r['total']));
   }
 
+  /// Põe a pessoa de uma conversa numa lista — o substituto das etiquetas do
+  /// WhatsApp Business, que a Meta não sincroniza.
+  Future<({bool jaEstava, String lista})> adicionarNaLista(
+    String contatoId,
+    String listaId,
+  ) async {
+    final r =
+        await _api.post('/contatos/$contatoId/listas', {'listaId': listaId})
+            as Map<String, dynamic>;
+    return (jaEstava: r['jaEstava'] == true, lista: _txt(r['lista']));
+  }
+
   /// Divide em blocos; cada bloco vira uma lista.
   Future<DivisaoDeBlocos> dividir(Map<String, Object?> pedido) async =>
       DivisaoDeBlocos.deJson(
