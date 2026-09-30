@@ -75,7 +75,7 @@ class _TelaListaEsperaState extends ConsumerState<TelaListaEspera> {
     final c = Cores.de(context);
     return MoldeDeAcesso(
       podeVoltar: true,
-      titulo: _pronto ? 'Lugar guardado.' : 'Quer usar o RegemCast?',
+      titulo: _pronto ? 'Lugar guardado.' : 'Quer usar o Regemcast?',
       texto: _pronto
           ? 'Avisamos por e-mail quando for a sua vez.'
           : 'Conte quem você é. Avisamos por e-mail quando a sua vaga for liberada.',
