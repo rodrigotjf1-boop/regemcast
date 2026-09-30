@@ -179,8 +179,9 @@ class _TelaPlanoState extends ConsumerState<TelaPlano> {
               if (!compraNoApp)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
+                  // Só informa, sem dizer onde comprar (ERR-029).
                   child: Text(
-                    'A contratação e a troca de plano são feitas na sua conta do Regemcast, fora do app.',
+                    'Os planos não são vendidos pelo aplicativo.',
                     style: TextStyle(
                       color: c.tintaSuave,
                       fontSize: 13,
@@ -286,48 +287,67 @@ class _TelaPlanoState extends ConsumerState<TelaPlano> {
 
   /// O quadro do topo — as mesmas frases da página do site.
   Widget? _situacao(SituacaoPlano s) {
-    if (s.bloqueado) {
-      return Aviso(
-        tom: TomPilula.erro,
-        icone: Icons.block_rounded,
-        texto: s.status == 'cancelada'
-            ? 'Sua assinatura terminou e os disparos estão parados. Escolha um plano para voltar a enviar.'
-            : 'Os disparos estão parados por falta de pagamento. As campanhas voltam sozinhas quando o pagamento for confirmado.',
-      );
-    }
-    if (s.status == 'cortesia') {
-      return Aviso(
-        tom: TomPilula.acento,
-        icone: Icons.card_giftcard_rounded,
-        texto:
-            'Primeiro mês grátis até ${f.data(s.gratisAte)}. Escolha um plano antes de ${f.data(s.disparosParamEm)} para os disparos não pararem.',
-      );
-    }
-    if (s.status == 'inadimplente') {
-      return Aviso(
-        tom: TomPilula.erro,
-        icone: Icons.credit_card_off_rounded,
-        texto:
-            'O último pagamento não foi aprovado. Os disparos param em ${f.data(s.disparosParamEm)} se ele não for regularizado — confira o meio de pagamento no Mercado Pago.',
-      );
-    }
-    if (s.renovacaoCancelada) {
-      return Aviso(
-        icone: Icons.event_busy_rounded,
-        texto:
-            'Renovação cancelada. Seu plano vale até ${f.data(s.cicloFim)}.${s.recontratarEm != null ? ' A partir dessa data você pode contratar de novo — antes disso seria pagar o mesmo mês duas vezes.' : ''}',
-      );
-    }
-    if (s.status == 'ativa') {
-      return Aviso(
-        tom: TomPilula.sucesso,
-        icone: Icons.check_circle_outline_rounded,
-        texto:
-            'Plano ${s.planoAtual?.nome ?? ''} ativo e em dia. Renova em ${f.data(s.cicloFim)}.',
-      );
-    }
-    return null;
+    final aviso = avisoDoPlano(s);
+    if (aviso == null) return null;
+    final (texto, tom, icone) = aviso;
+    return Aviso(tom: tom, icone: icone, texto: texto);
   }
+}
+
+/// O aviso do topo da tela Plano: texto, tom e ícone — ou nada.
+///
+/// Com [compra] (o APK distribuído direto) são as frases da página do site.
+/// Sem ela (o build da Play) o aviso só INFORMA: a Google proíbe chamar para
+/// pagar fora do faturamento dela — nada de "escolha um plano", "contratar"
+/// nem "Mercado Pago" (ERR-029).
+(String, TomPilula, IconData)? avisoDoPlano(
+  SituacaoPlano s, {
+  bool compra = compraNoApp,
+}) {
+  if (s.bloqueado) {
+    return (
+      s.status == 'cancelada'
+          ? compra
+                ? 'Sua assinatura terminou e os disparos estão parados. Escolha um plano para voltar a enviar.'
+                : 'Sua assinatura terminou e os disparos estão parados.'
+          : 'Os disparos estão parados por falta de pagamento. As campanhas voltam sozinhas quando o pagamento for confirmado.',
+      TomPilula.erro,
+      Icons.block_rounded,
+    );
+  }
+  if (s.status == 'cortesia') {
+    return (
+      compra
+          ? 'Primeiro mês grátis até ${f.data(s.gratisAte)}. Escolha um plano antes de ${f.data(s.disparosParamEm)} para os disparos não pararem.'
+          : 'Primeiro mês grátis até ${f.data(s.gratisAte)}. Os disparos param em ${f.data(s.disparosParamEm)} se a conta não tiver um plano.',
+      TomPilula.acento,
+      Icons.card_giftcard_rounded,
+    );
+  }
+  if (s.status == 'inadimplente') {
+    return (
+      compra
+          ? 'O último pagamento não foi aprovado. Os disparos param em ${f.data(s.disparosParamEm)} se ele não for regularizado — confira o meio de pagamento no Mercado Pago.'
+          : 'O último pagamento não foi aprovado. Os disparos param em ${f.data(s.disparosParamEm)} se ele não for regularizado.',
+      TomPilula.erro,
+      Icons.credit_card_off_rounded,
+    );
+  }
+  if (s.renovacaoCancelada) {
+    return (
+      'Renovação cancelada. Seu plano vale até ${f.data(s.cicloFim)}.${compra && s.recontratarEm != null ? ' A partir dessa data você pode contratar de novo — antes disso seria pagar o mesmo mês duas vezes.' : ''}',
+      TomPilula.atencao,
+      Icons.event_busy_rounded,
+    );
+  }
+  if (s.status == 'ativa') {
+    return (
+      'Plano ${s.planoAtual?.nome ?? ''} ativo e em dia. Renova em ${f.data(s.cicloFim)}.',
+      TomPilula.sucesso,
+      Icons.check_circle_outline_rounded,
+    );
+  }
+  return null;
 }
 
 class _Consumo extends StatelessWidget {

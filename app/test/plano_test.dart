@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:regemcast/api/conta.dart';
+import 'package:regemcast/telas/plano.dart';
 
 Map<String, dynamic> _plano(String id, int preco) => {
   'id': id,
@@ -16,6 +18,63 @@ SituacaoPlano _situacao(Map<String, dynamic> extra) => SituacaoPlano.deJson({
 });
 
 void main() {
+  setUpAll(() => initializeDateFormatting('pt_BR'));
+
+  group('aviso do topo da tela Plano', () {
+    const datas = {
+      'gratisAte': '2026-10-10T12:00:00Z',
+      'disparosParamEm': '2026-10-10T12:00:00Z',
+      'cicloFim': '2026-10-17T12:00:00Z',
+    };
+    const casos = <String, Map<String, dynamic>>{
+      'grátis': {'status': 'cortesia'},
+      'assinatura terminou': {'status': 'cancelada', 'bloqueado': true},
+      'parada por falta de pagamento': {
+        'status': 'inadimplente',
+        'bloqueado': true,
+      },
+      'pagamento recusado': {'status': 'inadimplente'},
+      'renovação cancelada': {
+        'status': 'ativa',
+        'mpStatus': 'cancelled',
+        'recontratarEm': '2026-10-17T12:00:00Z',
+      },
+    };
+
+    test('APK direto: as frases do site, com o convite para contratar', () {
+      String texto(Map<String, dynamic> caso) =>
+          avisoDoPlano(_situacao({...datas, ...caso}), compra: true)!.$1;
+      expect(texto(casos['grátis']!), contains('Escolha um plano'));
+      expect(texto(casos['pagamento recusado']!), contains('Mercado Pago'));
+      expect(
+        texto(casos['renovação cancelada']!),
+        contains('contratar de novo'),
+      );
+    });
+
+    test('build da Play: nenhum aviso chama para pagar fora (ERR-029)', () {
+      for (final caso in casos.entries) {
+        final aviso = avisoDoPlano(
+          _situacao({...datas, ...caso.value}),
+          compra: false,
+        );
+        expect(aviso, isNotNull, reason: caso.key);
+        for (final proibido in [
+          'Escolha',
+          'contratar',
+          'Mercado Pago',
+          'fora do app',
+        ]) {
+          expect(
+            aviso!.$1,
+            isNot(contains(proibido)),
+            reason: '${caso.key}: "${aviso.$1}"',
+          );
+        }
+      }
+    });
+  });
+
   test('sem pagar: todos contratam', () {
     final s = _situacao({'status': 'cortesia'});
     expect(s.planos.map(s.rotuloDo), everyElement('Contratar'));
