@@ -157,12 +157,17 @@ class NumeroWhatsapp {
     required this.qualidade,
     required this.tierLimite,
     required this.status,
+    this.phoneNumberId = '',
+    this.tierNome,
     this.coexistencia = false,
     this.vazaoMaxima,
     this.sincronizacao,
     this.horasParaSincronizar,
+    this.integrarConversas,
   });
 
+  /// O identificador do número na Meta (vai na resposta sobre as conversas).
+  final String phoneNumberId;
   final String? telefone;
   final String? nome;
 
@@ -171,6 +176,9 @@ class NumeroWhatsapp {
 
   /// Pessoas diferentes por 24h. Nulo = ilimitado ou não informado.
   final int? tierLimite;
+
+  /// `TIER_250`, `TIER_2K`… — `TIER_UNLIMITED` é "sem teto".
+  final String? tierNome;
 
   /// `pendente`, `registrado`, `suspenso` ou `removido`.
   final String status;
@@ -182,13 +190,25 @@ class NumeroWhatsapp {
   final int? vazaoMaxima;
 
   /// Cópia de contatos e conversas (coexistência): `pendente`,
-  /// `sincronizando`, `concluida`, `erro` ou `nao_se_aplica`.
+  /// `sincronizando`, `concluida`, `expirada`, `falhou` ou `nao_se_aplica`
+  /// (o `SincronizacaoNumero` do site).
   final String? sincronizacao;
 
   /// Prazo da Meta para terminar a cópia. Nulo = não há prazo correndo.
   final double? horasParaSincronizar;
 
+  /// Coexistência: trazer os contatos e as conversas do WhatsApp Business?
+  /// Nulo = o dono ainda não respondeu (o que chega fica esperando).
+  final bool? integrarConversas;
+
+  bool get semTeto => tierNome == 'TIER_UNLIMITED';
+
   factory NumeroWhatsapp.deJson(Map<String, dynamic> j) => NumeroWhatsapp(
+    phoneNumberId: _txt(j['phoneNumberId']),
+    tierNome: _txtOuNulo(j['tierNome']),
+    integrarConversas: j['integrarConversas'] is bool
+        ? j['integrarConversas'] as bool
+        : null,
     telefone: _txtOuNulo(j['telefone']),
     nome: _txtOuNulo(j['nome']),
     qualidade: _txt(j['qualidade']).isEmpty
@@ -211,6 +231,10 @@ class SituacaoWhatsapp {
     required this.conectado,
     required this.numeros,
     this.contaNome,
+    this.wabaId,
+    this.moeda,
+    this.webhookAssinadoEm,
+    this.tokenExpiraEm,
   });
 
   final bool conectado;
@@ -218,6 +242,17 @@ class SituacaoWhatsapp {
 
   /// O nome da conta do WhatsApp Business na Meta.
   final String? contaNome;
+  final String? wabaId;
+
+  /// A moeda em que a Meta cobra a conta.
+  final String? moeda;
+
+  /// Nulo = a Meta ainda não confirmou os avisos de entrega (webhook).
+  final DateTime? webhookAssinadoEm;
+
+  /// A autorização do Embedded Signup vence (60 dias): o aviso aparece na
+  /// última semana.
+  final DateTime? tokenExpiraEm;
 
   /// O número que envia: o registrado, ou o primeiro que houver.
   NumeroWhatsapp? get principal {
@@ -231,6 +266,10 @@ class SituacaoWhatsapp {
   factory SituacaoWhatsapp.deJson(Map<String, dynamic> j) => SituacaoWhatsapp(
     conectado: j['conectado'] == true,
     contaNome: _txtOuNulo(_mapa(j['conta'])['nome']),
+    wabaId: _txtOuNulo(_mapa(j['conta'])['wabaId']),
+    moeda: _txtOuNulo(_mapa(j['conta'])['moeda']),
+    webhookAssinadoEm: _data(_mapa(j['conta'])['webhookAssinadoEm']),
+    tokenExpiraEm: _data(_mapa(j['conta'])['tokenExpiraEm']),
     numeros: (j['numeros'] is List ? j['numeros'] as List : const [])
         .whereType<Map<String, dynamic>>()
         .map(NumeroWhatsapp.deJson)

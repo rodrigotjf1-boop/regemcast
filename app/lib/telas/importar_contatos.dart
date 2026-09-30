@@ -1,15 +1,14 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../api/contatos.dart';
 import '../api/erro_api.dart';
 import '../componentes/basicos.dart';
-import '../config.dart';
 import '../tema/cores.dart';
 import '../util/formato.dart' as f;
 import 'dividir_em_blocos.dart';
+import 'integracoes.dart';
 
 /// Importar contatos em três passos: de onde vêm, o que o servidor leu, e o
 /// resultado.
@@ -399,12 +398,14 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
               ),
               const SizedBox(height: 10),
               OutlinedButton.icon(
-                onPressed: () => launchUrl(
-                  Uri.parse('$urlWeb/integracoes'),
-                  mode: LaunchMode.externalApplication,
+                key: const ValueKey('abrir-integracoes'),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const TelaIntegracoes(),
+                  ),
                 ),
-                icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                label: const Text('Abrir Integrações no site'),
+                icon: const Icon(Icons.hub_outlined, size: 18),
+                label: const Text('Abrir Integrações'),
               ),
             ],
           ),
