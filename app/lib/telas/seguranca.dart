@@ -439,7 +439,7 @@ class _TelaSegurancaState extends ConsumerState<TelaSeguranca> {
         const _Passo(
           numero: 1,
           texto:
-              'Abra o aplicativo autenticador. O RegemCast entra na lista dele com o seu e-mail.',
+              'Abra o aplicativo autenticador. O Regemcast entra na lista dele com o seu e-mail.',
         ),
         const SizedBox(height: 12),
         FilledButton.icon(
@@ -483,7 +483,7 @@ class _TelaSegurancaState extends ConsumerState<TelaSeguranca> {
         const SizedBox(height: 6),
         const _Passo(
           numero: 2,
-          texto: 'Digite o código de 6 dígitos que aparece para o RegemCast.',
+          texto: 'Digite o código de 6 dígitos que aparece para o Regemcast.',
         ),
         const SizedBox(height: 12),
         _campoDoCodigo(autofocus: false),
