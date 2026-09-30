@@ -296,7 +296,7 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
     final c = Cores.de(context);
     final ajuda = TextStyle(color: c.tintaSuave, fontSize: 13, height: 1.45);
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+      padding: respiroDaTela(context),
       children: [
         Text(
           'Nada é gravado agora: primeiro você vê o que foi lido.',
@@ -427,7 +427,7 @@ class _TelaImportarContatosState extends ConsumerState<TelaImportarContatos> {
     final amostra = p.contatos.take(20).toList();
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+      padding: respiroDaTela(context),
       children: [
         if (p.arquivoNome != null)
           Padding(
@@ -760,7 +760,7 @@ class _Resultado extends StatelessWidget {
     final podeDividir = importacaoId != null && r.gravados + r.jaExistiam > 0;
     final soNomeENumero = previa.soNomeENumero;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
+      padding: respiroDaTela(context, topo: 24),
       children: [
         Icon(Icons.check_circle_rounded, color: c.sucesso, size: 56),
         const SizedBox(height: 14),

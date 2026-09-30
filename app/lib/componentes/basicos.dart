@@ -420,3 +420,23 @@ class Aviso extends StatelessWidget {
     );
   }
 }
+
+/// O respiro de uma tela que rola: o de sempre MAIS a barra de navegação do
+/// Android (ERR-030).
+///
+/// Desde o Android 15 o app desenha por trás das barras do sistema
+/// (edge-to-edge), e um respiro fixo deixa o fim da tela atrás dos botões do
+/// Android — com os três botões, a barra tem uns 48 pontos; o respiro, 28.
+/// Num Scaffold com barra de baixo (as abas, um botão fixo embaixo), o
+/// Scaffold já descontou a barra do sistema e a soma é zero.
+EdgeInsets respiroDaTela(
+  BuildContext context, {
+  double lados = 20,
+  double topo = 8,
+  double fim = 28,
+}) => EdgeInsets.fromLTRB(
+  lados,
+  topo,
+  lados,
+  fim + MediaQuery.paddingOf(context).bottom,
+);

@@ -47,3 +47,28 @@ Future<bool> confirmar(
 void avisar(BuildContext context, String texto) => ScaffoldMessenger.of(context)
   ..hideCurrentSnackBar()
   ..showSnackBar(SnackBar(content: Text(texto)));
+
+/// Abre uma folha de baixo. TODA folha do app passa por aqui (há um teste
+/// que confere).
+///
+/// Desde o Android 15 o app desenha por trás das barras do sistema
+/// (edge-to-edge), e a folha vai até a borda da tela. O `useSafeArea` do
+/// Flutter só protege o topo e as laterais: sem o respiro de baixo, a última
+/// opção fica atrás dos botões do Android (ERR-030). O fundo da folha segue
+/// até a borda; o CONTEÚDO é que para acima da barra. Com o teclado aberto o
+/// respiro é zero — o teclado já cobre a barra, e a folha soma a altura dele.
+Future<T?> abrirFolha<T>(
+  BuildContext context, {
+  required WidgetBuilder builder,
+  bool alca = true,
+  ShapeBorder? forma,
+}) => showModalBottomSheet<T>(
+  context: context,
+  isScrollControlled: true,
+  useSafeArea: true,
+  showDragHandle: alca,
+  backgroundColor: Cores.de(context).superficie,
+  shape: forma,
+  builder: (ctx) =>
+      SafeArea(top: false, left: false, right: false, child: builder(ctx)),
+);

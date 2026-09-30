@@ -29,7 +29,7 @@ class TelaIntegracoes extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Integrações')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+        padding: respiroDaTela(context, topo: 4),
         children: [
           Text(
             'Ligue o Regemcast ao cardápio digital da sua loja: os clientes e o histórico de compras de cada um chegam sozinhos, prontos para separar a base das campanhas.',

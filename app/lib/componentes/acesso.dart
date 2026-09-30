@@ -35,7 +35,7 @@ class MoldeDeAcesso extends StatelessWidget {
             child: _Topo(titulo: titulo, texto: texto, podeVoltar: podeVoltar),
           ),
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+            padding: respiroDaTela(context, topo: 20, fim: 32),
             sliver: SliverToBoxAdapter(
               child: Cartao(padding: const EdgeInsets.all(22), child: child),
             ),

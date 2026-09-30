@@ -356,10 +356,9 @@ class _TelaEditorModeloState extends ConsumerState<TelaEditorModelo> {
   }
 
   Future<String?> _escolherTipoDeBotao() {
-    final c = Cores.de(context);
-    return showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: c.superficie,
+    return abrirFolha<String>(
+      context,
+      alca: false,
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -521,13 +520,10 @@ class _TelaEditorModeloState extends ConsumerState<TelaEditorModelo> {
 
   Future<void> _abrirPrevia() async {
     FocusScope.of(context).unfocus();
-    final c = Cores.de(context);
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: c.superficie,
-      shape: const RoundedRectangleBorder(
+    await abrirFolha<void>(
+      context,
+      alca: false,
+      forma: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
       builder: (_) => FractionallySizedBox(
@@ -591,7 +587,7 @@ class _TelaEditorModeloState extends ConsumerState<TelaEditorModelo> {
         ),
         body: ListView(
           controller: _rolagem,
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+          padding: respiroDaTela(context),
           children: [
             Text(
               'Conferimos as regras da Meta antes de enviar — a recusa dela leva horas e diz pouco.',

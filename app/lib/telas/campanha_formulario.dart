@@ -549,7 +549,7 @@ class _TelaFormularioCampanhaState
         ),
         body: ListView(
           controller: _rolagem,
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+          padding: respiroDaTela(context),
           children: [
             Text(
               _editando && !_podeTrocarConteudo

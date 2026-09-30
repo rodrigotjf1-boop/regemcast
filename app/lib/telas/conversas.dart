@@ -154,11 +154,8 @@ class _TelaConversasState extends ConsumerState<TelaConversas> {
   }
 
   Future<void> _ajustarGuarda() async {
-    final texto = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: Cores.de(context).superficie,
+    final texto = await abrirFolha<String>(
+      context,
       builder: (_) => const _FolhaDaGuarda(),
     );
     if (texto != null && mounted) avisar(context, texto);
@@ -254,7 +251,7 @@ class _TelaConversasState extends ConsumerState<TelaConversas> {
 
   List<Widget> _conteudo(Cores c) {
     Widget caixa(Widget filho) => SliverPadding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+      padding: respiroDaTela(context, topo: 12),
       sliver: SliverToBoxAdapter(child: filho),
     );
     if (!_carregou) return [caixa(const Cartao(child: Esqueleto(altura: 140)))];
@@ -333,7 +330,7 @@ class _TelaConversasState extends ConsumerState<TelaConversas> {
     }
     return [
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+        padding: respiroDaTela(context, topo: 12),
         sliver: DecoratedSliver(
           decoration: BoxDecoration(
             color: c.superficie,

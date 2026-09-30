@@ -298,7 +298,7 @@ class _TelaContatosState extends ConsumerState<TelaContatos> {
             VistaContatos.contatos => _vistaDaLista(c),
             VistaContatos.publicos => [
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+                padding: respiroDaTela(context, topo: 12),
                 sliver: SliverToBoxAdapter(
                   child: VistaPublicos(
                     filtro: _filtro,
@@ -311,7 +311,7 @@ class _TelaContatosState extends ConsumerState<TelaContatos> {
             ],
             VistaContatos.blocos => [
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+                padding: respiroDaTela(context, topo: 12),
                 sliver: SliverToBoxAdapter(
                   child: VistaBlocos(
                     ehDono: ehDono,
@@ -370,7 +370,7 @@ class _TelaContatosState extends ConsumerState<TelaContatos> {
         ),
       if (_itens.isEmpty)
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+          padding: respiroDaTela(context, topo: 12),
           sliver: SliverToBoxAdapter(
             child: _carregando
                 ? const Cartao(child: Esqueleto(altura: 120))
@@ -427,7 +427,7 @@ class _TelaContatosState extends ConsumerState<TelaContatos> {
         ),
       if (_itens.isNotEmpty)
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+          padding: respiroDaTela(context),
           sliver: SliverToBoxAdapter(
             child: _carregando
                 ? const Padding(

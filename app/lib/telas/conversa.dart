@@ -201,11 +201,8 @@ class _TelaConversaState extends ConsumerState<TelaConversa> {
   Future<void> _adicionarNaLista() async {
     final contatoId = _c.contatoId;
     if (contatoId == null) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: Cores.de(context).superficie,
+    await abrirFolha<void>(
+      context,
       builder: (_) => _FolhaDaLista(contatoId: contatoId),
     );
   }

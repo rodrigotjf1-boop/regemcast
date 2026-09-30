@@ -140,7 +140,7 @@ class _TelaDividirEmBlocosState extends ConsumerState<TelaDividirEmBlocos> {
     return Scaffold(
       appBar: AppBar(title: const Text('Dividir em blocos')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+        padding: respiroDaTela(context),
         children: [
           Text(alvo.rotulo, style: Theme.of(context).textTheme.titleMedium),
           if (total != null)

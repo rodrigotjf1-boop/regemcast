@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../tema/cores.dart';
+import 'dialogos.dart';
 
 /// Uma opção de um [CampoDeEscolha].
 class OpcaoDeEscolha<T> {
@@ -64,12 +65,10 @@ class CampoDeEscolha<T> extends StatelessWidget {
 
   Future<void> _abrir(BuildContext context) async {
     final c = Cores.de(context);
-    final escolhido = await showModalBottomSheet<_Escolhido<T>>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: c.superficie,
-      shape: const RoundedRectangleBorder(
+    final escolhido = await abrirFolha<_Escolhido<T>>(
+      context,
+      alca: false,
+      forma: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
       builder: (ctx) => ConstrainedBox(

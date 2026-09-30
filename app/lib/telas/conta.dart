@@ -43,7 +43,7 @@ class TelaConta extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Conta')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+        padding: respiroDaTela(context),
         children: [
           Wrap(
             spacing: 8,
@@ -339,13 +339,8 @@ class _Senha extends StatelessWidget {
           child: OutlinedButton.icon(
             key: const ValueKey('trocar-senha'),
             style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
-            onPressed: () => showModalBottomSheet<void>(
-              context: context,
-              isScrollControlled: true,
-              showDragHandle: true,
-              backgroundColor: c.superficie,
-              builder: (_) => const _TrocarSenha(),
-            ),
+            onPressed: () =>
+                abrirFolha<void>(context, builder: (_) => const _TrocarSenha()),
             icon: const Icon(Icons.key_rounded),
             label: const Text('Trocar senha'),
           ),

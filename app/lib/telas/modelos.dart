@@ -174,7 +174,7 @@ class TelaModelos extends ConsumerWidget {
             ),
           ),
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+            padding: respiroDaTela(context, topo: 4),
             sliver: SliverList.list(
               children: [
                 if (!conectado)

@@ -164,7 +164,7 @@ class _TelaCampanhasState extends ConsumerState<TelaCampanhas> {
             ),
           ),
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 28),
+            padding: respiroDaTela(context, topo: 10),
             sliver: carga.when(
               loading: () => SliverList.list(
                 children: const [

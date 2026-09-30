@@ -8,6 +8,7 @@ import '../api/contatos.dart';
 import '../api/erro_api.dart';
 import '../api/publicos.dart';
 import '../componentes/basicos.dart';
+import '../componentes/dialogos.dart';
 import '../componentes/contato.dart';
 import '../tema/cores.dart';
 import '../util/formato.dart' as f;
@@ -111,11 +112,8 @@ class _Perfis extends ConsumerWidget {
     BuildContext context,
     ParametrosSegmentacao parametros,
   ) async {
-    final salvou = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: Cores.de(context).superficie,
+    final salvou = await abrirFolha<bool>(
+      context,
       builder: (_) => _FolhaDeRegras(parametros: parametros),
     );
     if (salvou == true) aoMudarRegras();

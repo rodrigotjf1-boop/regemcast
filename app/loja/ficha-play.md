@@ -1,14 +1,14 @@
 # Ficha do Regemcast na Google Play
 
 Tudo o que o Play Console pede, pronto para copiar. Atualizado para a versão
-0.6.0 (código 6) — a que tem os recursos do site. Quando algo mudar no app,
+0.6.1 (código 7) — a que tem os recursos do site. Quando algo mudar no app,
 atualize aqui antes de mexer na ficha.
 
 ## Arquivos
 
 | O quê | Arquivo | Especificação da Play |
 |---|---|---|
-| Pacote para envio | `C:\RegemCast-apk\regemcast-0.6.0-play.aab` | AAB assinado com a chave de upload |
+| Pacote para envio | `C:\RegemCast-apk\regemcast-0.6.1-play.aab` | AAB assinado com a chave de upload |
 | Ícone | `app/loja/icone-512.png` | 512×512, PNG com alfa |
 | Imagem de destaque | `app/loja/banner-1024x500.png` | 1024×500 |
 | Capturas de celular | `app/loja/capturas/01…08` | 1080×1920 (proporção ≤ 2:1) |
@@ -145,7 +145,7 @@ conversas chegam pelo servidor — o app só mostra; não é coleta do aparelho.
 - Quem tem o APK instalado precisa **desinstalar antes** de instalar pela Play:
   a assinatura da Play é outra e o Android recusa a atualização por cima.
 
-## Notas da versão (0.6.0)
+## Notas da versão (0.6.1)
 
 ```
 O app agora faz o que o painel faz: crie campanhas e modelos (com imagem, vídeo, documento e carrossel), veja as compras e os públicos da sua base, responda as conversas do WhatsApp, acompanhe o número e as integrações, ligue a verificação em duas etapas e recupere a senha sem sair do app.
