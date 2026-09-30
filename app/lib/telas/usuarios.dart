@@ -18,12 +18,8 @@ class TelaUsuarios extends ConsumerWidget {
   const TelaUsuarios({super.key});
 
   Future<void> _novo(BuildContext context, WidgetRef ref) async {
-    final c = Cores.de(context);
-    final criou = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: c.superficie,
+    final criou = await abrirFolha<bool>(
+      context,
       builder: (_) => const _NovoUsuario(),
     );
     if (criou == true && context.mounted) {
@@ -122,7 +118,7 @@ class TelaUsuarios extends ConsumerWidget {
           ),
         ),
         data: (lista) => ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+          padding: respiroDaTela(context),
           children: [
             if (!ehDono)
               Padding(

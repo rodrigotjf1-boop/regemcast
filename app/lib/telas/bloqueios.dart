@@ -118,11 +118,8 @@ class _TelaBloqueiosState extends ConsumerState<TelaBloqueios> {
   }
 
   Future<void> _voltarABase(Contato contato) async {
-    final justificativa = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: Cores.de(context).superficie,
+    final justificativa = await abrirFolha<String>(
+      context,
       builder: (_) => _FolhaDeRetorno(contato: contato),
     );
     if (justificativa == null || !mounted) return;
@@ -187,7 +184,7 @@ class _TelaBloqueiosState extends ConsumerState<TelaBloqueios> {
         child: ListView(
           controller: _rolagem,
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+          padding: respiroDaTela(context, topo: 4),
           children: [
             if (_pagina > 0)
               Text(

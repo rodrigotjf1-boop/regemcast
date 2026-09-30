@@ -71,7 +71,7 @@ class TelaWhatsapp extends ConsumerWidget {
           },
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+            padding: respiroDaTela(context),
             children: [
               if (!s.conectado || s.numeros.isEmpty)
                 Aviso(

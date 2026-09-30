@@ -237,7 +237,7 @@ class TelaRegras extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Regras da Meta')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+        padding: respiroDaTela(context),
         children: [
           const Aviso(
             tom: TomPilula.acento,

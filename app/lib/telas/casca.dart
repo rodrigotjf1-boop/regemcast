@@ -8,6 +8,7 @@ import '../api/leituras.dart';
 import '../api/modelos.dart';
 import '../componentes/avisos_celular.dart';
 import '../componentes/basicos.dart';
+import '../componentes/dialogos.dart';
 import '../componentes/marca.dart';
 import '../config.dart';
 import '../push/push.dart';
@@ -212,10 +213,8 @@ class _CascaState extends ConsumerState<Casca> {
   Future<void> _oferecerBiometria() async {
     final controle = ref.read(sessaoProvider.notifier);
     final c = Cores.de(context);
-    final ligar = await showModalBottomSheet<bool>(
-      context: context,
-      showDragHandle: true,
-      backgroundColor: c.superficie,
+    final ligar = await abrirFolha<bool>(
+      context,
       builder: (ctx) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 4, 24, 20),
@@ -341,7 +340,7 @@ class _TelaMaisState extends ConsumerState<_TelaMais> {
 
     return SafeArea(
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        padding: respiroDaTela(context, topo: 16, fim: 24),
         children: [
           Text('Mais', style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 18),

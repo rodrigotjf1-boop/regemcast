@@ -214,7 +214,7 @@ class _TelaSegurancaState extends ConsumerState<TelaSeguranca> {
     return Scaffold(
       appBar: AppBar(title: const Text('Verificação em duas etapas')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+        padding: respiroDaTela(context),
         children: [
           _Cabecalho(email: email, situacao: s),
           const SizedBox(height: 18),

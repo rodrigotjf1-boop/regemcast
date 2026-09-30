@@ -303,7 +303,7 @@ class _TelaCampanhaDetalheState extends ConsumerState<TelaCampanhaDetalhe> {
           onRefresh: _atualizar,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+            padding: respiroDaTela(context),
             children: [
               _Cabecalho(campanha: camp),
               const SizedBox(height: 14),

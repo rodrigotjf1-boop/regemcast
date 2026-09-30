@@ -105,7 +105,7 @@ class TelaPainel extends ConsumerWidget {
             ),
           ),
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+            padding: respiroDaTela(context),
             sliver: SliverList.list(
               children: const [
                 _BlocoAlertas(),

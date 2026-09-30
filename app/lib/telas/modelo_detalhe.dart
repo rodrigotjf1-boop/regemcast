@@ -172,7 +172,7 @@ class _TelaModeloDetalheState extends ConsumerState<TelaModeloDetalhe> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+        padding: respiroDaTela(context),
         children: [
           Wrap(
             spacing: 8,
