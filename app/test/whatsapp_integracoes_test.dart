@@ -1,0 +1,715 @@
+import 'dart:convert';
+
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:intl/date_symbol_data_local.dart';
+import 'package:regemcast/api/cliente_api.dart';
+import 'package:regemcast/api/dados.dart';
+import 'package:regemcast/api/repeticao.dart';
+import 'package:regemcast/push/push.dart';
+import 'package:regemcast/sessao/sessao.dart';
+import 'package:regemcast/telas/casca.dart';
+import 'package:regemcast/telas/importar_contatos.dart';
+import 'package:regemcast/telas/integracoes.dart';
+import 'package:regemcast/telas/whatsapp.dart';
+import 'package:regemcast/tema/tema.dart';
+
+http.Response _json(Object corpo, [int status = 200]) => http.Response.bytes(
+  utf8.encode(jsonEncode(corpo)),
+  status,
+  headers: {'content-type': 'application/json; charset=utf-8'},
+);
+
+Map<String, dynamic> _numero({
+  String id = '1111',
+  String? tierNome = 'TIER_10K',
+  int? tierLimite = 10000,
+  bool coexistencia = true,
+  String sincronizacao = 'concluida',
+  double? horas,
+  Object? integrar = true,
+  String qualidade = 'verde',
+  String status = 'registrado',
+}) => {
+  'phoneNumberId': id,
+  'telefone': '+55 21 99999-8888',
+  'nome': 'Mister Burgers',
+  'qualidade': qualidade,
+  'tierLimite': tierLimite,
+  'tierNome': tierNome,
+  'status': status,
+  'coexistencia': coexistencia,
+  'sincronizacao': sincronizacao,
+  'horasParaSincronizar': horas,
+  'vazaoMaxima': coexistencia ? 20 : 80,
+  'integrarConversas': integrar,
+};
+
+Map<String, dynamic> _situacaoWhatsapp({
+  bool conectado = true,
+  List<Map<String, dynamic>>? numeros,
+  DateTime? expiraEm,
+  bool webhook = false,
+}) => {
+  'conectado': conectado,
+  'conta': conectado
+      ? {
+          'nome': 'Mister Burgers Ltda',
+          'wabaId': '123456789',
+          'moeda': 'BRL',
+          'webhookAssinadoEm': webhook ? '2026-09-20T12:00:00Z' : null,
+          'tokenExpiraEm': expiraEm?.toUtc().toIso8601String(),
+        }
+      : null,
+  'numeros': conectado ? (numeros ?? [_numero()]) : <Object>[],
+};
+
+Map<String, dynamic> _cw({
+  bool conectado = true,
+  String clientes = 'concluida',
+  int pagina = 2,
+  int? totalPaginas = 5,
+  String? pedidos = 'em_dia',
+  String? erroPedidos,
+  bool saldos = true,
+}) => {
+  'conectado': conectado,
+  'modo': conectado ? 'chave' : null,
+  'lojaNome': conectado ? 'Mister Burgers Tijuca' : null,
+  'sincronizacao': {
+    'status': clientes,
+    'pagina': pagina,
+    'totalPaginas': totalPaginas,
+    'lidos': 120,
+    'novos': 30,
+    'bloqueados': 4,
+    'invalidos': 2,
+    'iniciadaEm': null,
+    'concluidaEm': '2026-09-25T15:00:00Z',
+    'erro': clientes == 'falhou' ? 'O Cardápio Web não respondeu.' : null,
+    'listaId': null,
+  },
+  if (pedidos != null)
+    'pedidos': {
+      'status': pedidos,
+      'progresso': 40,
+      'cargaDe': '2023-09-29T00:00:00Z',
+      'cargaAte': '2026-09-29T00:00:00Z',
+      'lidos': 5200,
+      'ignorados': 10,
+      'ultimaConsulta': '2026-09-29T14:30:00Z',
+      'erro': erroPedidos,
+      'compras': 4870,
+      'clientes': 1480,
+      'primeira': '2023-10-02T00:00:00Z',
+      'ultima': '2026-09-29T13:10:00Z',
+    },
+  if (saldos)
+    'saldos': {
+      'comCashback': 310,
+      'vencendo': 42,
+      'totalCentavos': 123450,
+      'lendo': false,
+      'ultimaLeitura': '2026-09-29T07:00:00Z',
+      'proximaLeitura': '2026-09-30T07:00:00Z',
+      'erro': null,
+    },
+};
+
+/// O servidor falso: anota cada pedido e o corpo de cada escrita; as
+/// situações seguintes saem de uma fila (a última se repete).
+class _Servidor {
+  _Servidor({
+    Map<String, dynamic>? whatsapp,
+    List<Map<String, dynamic>>? cardapioWeb,
+  }) : whatsapp = whatsapp ?? _situacaoWhatsapp(),
+       cardapioWeb = cardapioWeb ?? [_cw()];
+
+  Map<String, dynamic> whatsapp;
+  List<Map<String, dynamic>> cardapioWeb;
+  bool conversasNaConta = false;
+  final pedidos = <String>[];
+  final corpos = <String, Object?>{};
+
+  ClienteApi get api => ClienteApi(
+    base: 'https://api.teste',
+    http: MockClient((req) async {
+      final chave = '${req.method} ${req.url.path}';
+      pedidos.add(chave);
+      if (req.body.isNotEmpty) corpos[chave] = jsonDecode(req.body);
+      switch (chave) {
+        case 'GET /whatsapp/situacao':
+          return _json(whatsapp);
+        case 'GET /whatsapp/config':
+          return _json({
+            'appId': '1',
+            'configId': '2',
+            'graphVersao': 'v23.0',
+            'declaracaoIntegracao':
+                'As pessoas da agenda deste número autorizaram receber mensagens da minha empresa.',
+          });
+        case 'POST /whatsapp/integrar':
+          return _json({
+            'phoneNumberId': (corpos[chave] as Map)['phoneNumberId'],
+            'integrarConversas': (corpos[chave] as Map)['integrar'],
+          }, 201);
+        case 'GET /integracoes/cardapioweb':
+          final atual = cardapioWeb.first;
+          if (cardapioWeb.length > 1) cardapioWeb.removeAt(0);
+          return _json(atual);
+        case 'POST /integracoes/cardapioweb/chave':
+          return _json({'lojaNome': 'Mister Burgers Tijuca'}, 201);
+        case 'POST /integracoes/cardapioweb/importar':
+        case 'POST /integracoes/cardapioweb/pedidos':
+          return _json(cardapioWeb.first, 201);
+        case 'DELETE /integracoes/cardapioweb':
+          return http.Response('', 204);
+        case 'GET /conta':
+          return _json({
+            'conta': {'nome': 'MISTER BURGERS'},
+            'uso': {'disparos': 0},
+            'conversasHabilitadas': conversasNaConta,
+          });
+      }
+      return _json({});
+    }),
+  );
+
+  int quantos(String pedido) => pedidos.where((p) => p == pedido).length;
+}
+
+class _SessaoFixa extends ControleSessao {
+  _SessaoFixa(this.papel);
+  final String papel;
+
+  @override
+  EstadoSessao build() => SessaoAtiva(
+    Sessao.deJson({
+      'usuario': {'id': 'u', 'nome': 'Rodrigo', 'email': 'r@x', 'papel': papel},
+      'conta': {'id': 'c', 'nome': 'MISTER BURGERS', 'status': 'ativa'},
+    }),
+  );
+}
+
+class _AvisosQuietos extends ServicoPush {
+  _AvisosQuietos(super.api);
+
+  @override
+  Future<void> ativar({
+    void Function(RemoteMessage)? aoChegar,
+    void Function(Map<String, dynamic>)? aoTocar,
+  }) async {}
+}
+
+Widget _app(_Servidor s, Widget tela, {String papel = 'dono'}) => ProviderScope(
+  retry: semRepeticao,
+  overrides: [
+    clienteApiProvider.overrideWithValue(s.api),
+    sessaoProvider.overrideWith(() => _SessaoFixa(papel)),
+    servicoPushProvider.overrideWith(
+      (ref) => _AvisosQuietos(ref.read(clienteApiProvider)),
+    ),
+    preferenciasAvisoProvider.overrideWith(
+      (ref) async => const PreferenciasAviso(
+        campanhas: true,
+        modelos: true,
+        cobranca: false,
+      ),
+    ),
+  ],
+  child: MaterialApp(
+    theme: temaDoApp(Brightness.light),
+    home: MediaQuery(
+      data: const MediaQueryData(disableAnimations: true),
+      child: tela,
+    ),
+  ),
+);
+
+void _telaAlta(WidgetTester t) {
+  t.view.physicalSize = const Size(1080, 6000);
+  t.view.devicePixelRatio = 2.625;
+  addTearDown(t.view.reset);
+}
+
+Future<void> _assentar(WidgetTester t) async {
+  for (var i = 0; i < 10; i++) {
+    await t.pump(const Duration(milliseconds: 50));
+  }
+}
+
+Future<void> _transicao(WidgetTester t) async {
+  for (var i = 0; i < 20; i++) {
+    await t.pump(const Duration(milliseconds: 100));
+  }
+}
+
+Future<void> _abrir(
+  WidgetTester t,
+  _Servidor s,
+  Widget tela, {
+  String papel = 'dono',
+}) async {
+  _telaAlta(t);
+  await t.pumpWidget(_app(s, tela, papel: papel));
+  await _assentar(t);
+}
+
+/// Rola até o alvo (a lista só monta o que está perto da tela), espera o
+/// quadro com a rolagem nova e só então toca.
+Future<void> _tocar(WidgetTester t, Finder alvo) async {
+  if (alvo.evaluate().isEmpty) {
+    await t.scrollUntilVisible(
+      alvo,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+  }
+  await t.ensureVisible(alvo.first);
+  await t.pump();
+  await t.tap(alvo.first);
+  await _assentar(t);
+}
+
+void main() {
+  setUpAll(() => initializeDateFormatting('pt_BR'));
+
+  group('WhatsApp', () {
+    testWidgets(
+      'conta conectada: nome, WABA, moeda, entrega pendente e o número completo',
+      (t) async {
+        final s = _Servidor();
+        await _abrir(t, s, const TelaWhatsapp());
+
+        expect(find.text('Mister Burgers Ltda'), findsOneWidget);
+        expect(find.text('Conectada'), findsOneWidget);
+        expect(find.text('Status de entrega pendente'), findsOneWidget);
+        expect(
+          find.text('WABA 123456789 · Cobrança da Meta em BRL · 1 número'),
+          findsOneWidget,
+        );
+        expect(find.text('Pronto para enviar'), findsOneWidget);
+        expect(find.text('Qualidade: Boa'), findsOneWidget);
+        expect(find.text('Também no seu celular'), findsOneWidget);
+        expect(find.text('até 20 msg/s'), findsOneWidget);
+        expect(find.text('10.000 pessoas / 24h'), findsOneWidget);
+        expect(
+          find.textContaining(
+            'É o teto de quem mantém o aplicativo no celular',
+          ),
+          findsOneWidget,
+        );
+        expect(find.textContaining('uma vez a cada 13 dias'), findsOneWidget);
+      },
+    );
+
+    testWidgets('sem teto, qualidade ruim e número dedicado', (t) async {
+      final s = _Servidor(
+        whatsapp: _situacaoWhatsapp(
+          webhook: true,
+          numeros: [
+            _numero(
+              tierNome: 'TIER_UNLIMITED',
+              tierLimite: null,
+              coexistencia: false,
+              qualidade: 'vermelha',
+              sincronizacao: 'nao_se_aplica',
+            ),
+          ],
+        ),
+      );
+      await _abrir(t, s, const TelaWhatsapp());
+
+      expect(find.text('Sem teto'), findsOneWidget);
+      expect(find.text('Status de entrega pendente'), findsNothing);
+      expect(find.text('Qualidade: Ruim'), findsOneWidget);
+      expect(find.textContaining('Muita gente marcou'), findsOneWidget);
+      // Número dedicado: sem cópia do celular nem a pergunta das conversas.
+      expect(find.text('Também no seu celular'), findsNothing);
+      expect(find.byKey(const ValueKey('conversas-1111')), findsNothing);
+    });
+
+    testWidgets('autorização vencendo em 3 dias, e vencida', (t) async {
+      final s = _Servidor(
+        whatsapp: _situacaoWhatsapp(
+          expiraEm: DateTime.now().add(const Duration(days: 2, hours: 20)),
+        ),
+      );
+      await _abrir(t, s, const TelaWhatsapp());
+      expect(
+        find.textContaining('vence em 3 dias. Reconecte antes disso'),
+        findsOneWidget,
+      );
+
+      s.whatsapp = _situacaoWhatsapp(
+        expiraEm: DateTime.now().subtract(const Duration(days: 1)),
+      );
+      await t.pumpWidget(Container());
+      await _abrir(t, s, const TelaWhatsapp());
+      expect(
+        find.textContaining('A autorização do WhatsApp venceu'),
+        findsOneWidget,
+      );
+
+      s.whatsapp = _situacaoWhatsapp(
+        expiraEm: DateTime.now().add(const Duration(days: 30)),
+      );
+      await t.pumpWidget(Container());
+      await _abrir(t, s, const TelaWhatsapp());
+      expect(find.byKey(const ValueKey('vencimento')), findsNothing);
+    });
+
+    testWidgets(
+      'a cópia que falhou ou expirou aparece, com o caminho (ERR-028)',
+      (t) async {
+        for (final estado in ['falhou', 'expirada']) {
+          final s = _Servidor(
+            whatsapp: _situacaoWhatsapp(
+              numeros: [_numero(sincronizacao: estado)],
+            ),
+          );
+          await t.pumpWidget(Container());
+          await _abrir(t, s, const TelaWhatsapp());
+          expect(
+            find.byKey(ValueKey('sincronizacao-$estado')),
+            findsOneWidget,
+            reason: estado,
+          );
+          expect(find.text('Conectar de novo no site'), findsOneWidget);
+        }
+      },
+    );
+
+    testWidgets('copiando: o prazo em horas', (t) async {
+      final s = _Servidor(
+        whatsapp: _situacaoWhatsapp(
+          numeros: [_numero(sincronizacao: 'sincronizando', horas: 5.6)],
+        ),
+      );
+      await _abrir(t, s, const TelaWhatsapp());
+      expect(
+        find.textContaining(
+          'Copiando seus contatos e conversas. Mantenha o WhatsApp Business aberto',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Faltam 5 horas para o prazo acabar.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'sem resposta: o dono responde "sim" com a declaração do servidor',
+      (t) async {
+        final s = _Servidor(
+          whatsapp: _situacaoWhatsapp(numeros: [_numero(integrar: null)]),
+        );
+        await _abrir(t, s, const TelaWhatsapp());
+
+        expect(s.pedidos, contains('GET /whatsapp/config'));
+        expect(
+          find.textContaining(
+            'Ao escolher sim, você declara: “As pessoas da agenda',
+          ),
+          findsOneWidget,
+        );
+        final salvar = find.byKey(const ValueKey('salvar-resposta'));
+        expect(t.widget<FilledButton>(salvar).onPressed, isNull);
+        await _tocar(t, find.byKey(const ValueKey('integrar-true')));
+        await _tocar(t, salvar);
+
+        expect(s.corpos['POST /whatsapp/integrar'], {
+          'phoneNumberId': '1111',
+          'integrar': true,
+        });
+        expect(
+          find.text(
+            'Resposta salva. Os contatos que já chegaram entram na sua base em até um minuto.',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('operador vê o estado, mas não responde', (t) async {
+      final s = _Servidor(
+        whatsapp: _situacaoWhatsapp(numeros: [_numero(integrar: null)]),
+      );
+      await _abrir(t, s, const TelaWhatsapp(), papel: 'operador');
+      expect(
+        find.textContaining('O dono da conta ainda não respondeu'),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('salvar-resposta')), findsNothing);
+      expect(s.pedidos, isNot(contains('GET /whatsapp/config')));
+    });
+
+    testWidgets('trazendo: o dono para, com confirmação', (t) async {
+      final s = _Servidor();
+      await _abrir(t, s, const TelaWhatsapp());
+      expect(find.text('Trazendo para o Regemcast'), findsOneWidget);
+      await _tocar(t, find.byKey(const ValueKey('parar-de-trazer')));
+      expect(find.text('Parar de trazer?'), findsOneWidget);
+      await _tocar(t, find.widgetWithText(FilledButton, 'Parar de trazer'));
+      expect(s.corpos['POST /whatsapp/integrar'], {
+        'phoneNumberId': '1111',
+        'integrar': false,
+      });
+    });
+
+    testWidgets(
+      'não trazemos: "Passar a trazer" abre a pergunta com Cancelar',
+      (t) async {
+        final s = _Servidor(
+          whatsapp: _situacaoWhatsapp(numeros: [_numero(integrar: false)]),
+        );
+        await _abrir(t, s, const TelaWhatsapp());
+        expect(find.text('Não trazemos'), findsOneWidget);
+        await _tocar(t, find.byKey(const ValueKey('passar-a-trazer')));
+        expect(find.byKey(const ValueKey('salvar-resposta')), findsOneWidget);
+        await _tocar(t, find.text('Cancelar'));
+        expect(find.text('Não trazemos'), findsOneWidget);
+      },
+    );
+
+    testWidgets('sem conexão: conectar é pelo site', (t) async {
+      final s = _Servidor(whatsapp: _situacaoWhatsapp(conectado: false));
+      await _abrir(t, s, const TelaWhatsapp());
+      expect(find.byKey(const ValueKey('sem-conexao')), findsOneWidget);
+      expect(find.text('Conectar no site'), findsOneWidget);
+    });
+  });
+
+  group('Integrações', () {
+    testWidgets(
+      'não conectada: o dono cola o token e conecta; o operador não pode',
+      (t) async {
+        final s = _Servidor(
+          cardapioWeb: [
+            _cw(conectado: false, clientes: 'parada', pedidos: null),
+            _cw(clientes: 'parada', pedidos: 'parado'),
+          ],
+        );
+        await _abrir(t, s, const TelaIntegracoes());
+
+        expect(find.text('Não conectada'), findsOneWidget);
+        expect(
+          find.textContaining('Configurações → Integrações → API'),
+          findsOneWidget,
+        );
+        final conectar = find.byKey(const ValueKey('conectar-cw'));
+        expect(t.widget<FilledButton>(conectar).onPressed, isNull);
+        await t.enterText(find.byKey(const ValueKey('chave-cw')), 'curto');
+        await _assentar(t);
+        expect(t.widget<FilledButton>(conectar).onPressed, isNull);
+        await t.enterText(
+          find.byKey(const ValueKey('chave-cw')),
+          '  token-da-loja-1234567890  ',
+        );
+        await _assentar(t);
+        await _tocar(t, conectar);
+
+        expect(s.corpos['POST /integracoes/cardapioweb/chave'], {
+          'chave': 'token-da-loja-1234567890',
+        });
+        expect(
+          find.text('Loja Mister Burgers Tijuca conectada.'),
+          findsOneWidget,
+        );
+        expect(find.text('Conectada'), findsOneWidget);
+        expect(find.text('Importar clientes'), findsOneWidget);
+      },
+    );
+
+    testWidgets('operador: vê, mas não conecta nem importa', (t) async {
+      final s = _Servidor(
+        cardapioWeb: [_cw(conectado: false, clientes: 'parada', pedidos: null)],
+      );
+      await _abrir(t, s, const TelaIntegracoes(), papel: 'operador');
+      expect(
+        find.text('Só o dono da conta pode conectar a loja do Cardápio Web.'),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('chave-cw')), findsNothing);
+    });
+
+    testWidgets('importar clientes pede o consentimento e leva a evidência', (
+      t,
+    ) async {
+      final s = _Servidor(
+        cardapioWeb: [_cw(clientes: 'parada', pedidos: 'parado')],
+      );
+      await _abrir(t, s, const TelaIntegracoes());
+
+      final importar = find.byKey(const ValueKey('importar-clientes'));
+      expect(t.widget<FilledButton>(importar).onPressed, isNull);
+      await _tocar(t, find.byKey(const ValueKey('consentimento-cw')));
+      await t.enterText(
+        find.widgetWithText(TextField, 'Como autorizaram? (opcional)'),
+        'Aceite no cadastro do cardápio',
+      );
+      await _assentar(t);
+      await _tocar(t, importar);
+
+      expect(s.corpos['POST /integracoes/cardapioweb/importar'], {
+        'consentimento': true,
+        'evidencia': 'Aceite no cadastro do cardápio',
+      });
+    });
+
+    testWidgets('importando: mostra o progresso e relê a cada 2 s até terminar', (
+      t,
+    ) async {
+      final s = _Servidor(
+        cardapioWeb: [
+          _cw(clientes: 'rodando', pedidos: 'carga'),
+          _cw(clientes: 'rodando', pagina: 4, pedidos: 'carga'),
+          _cw(),
+        ],
+      );
+      await _abrir(t, s, const TelaIntegracoes());
+
+      expect(
+        find.textContaining('Importando os clientes de Mister Burgers Tijuca'),
+        findsOneWidget,
+      );
+      expect(find.text('120 lidos · 30 novos · página 2 de 5'), findsOneWidget);
+      expect(
+        find.text(
+          'A busca dos pedidos começa assim que a importação dos clientes terminar.',
+        ),
+        findsOneWidget,
+      );
+      await t.pump(const Duration(seconds: 2));
+      await _assentar(t);
+      expect(find.text('120 lidos · 30 novos · página 4 de 5'), findsOneWidget);
+      await t.pump(const Duration(seconds: 2));
+      await _assentar(t);
+      expect(find.text('Importados'), findsOneWidget);
+      final leituras = s.quantos('GET /integracoes/cardapioweb');
+      // Terminou: para de reler.
+      await t.pump(const Duration(seconds: 10));
+      expect(s.quantos('GET /integracoes/cardapioweb'), leituras);
+    });
+
+    testWidgets('em dia: compras, clientes, cashback e o que fica de fora', (
+      t,
+    ) async {
+      final s = _Servidor();
+      await _abrir(t, s, const TelaIntegracoes());
+
+      expect(
+        find.text('Loja conectada: Mister Burgers Tijuca'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(
+          'Importação de 25/09/2026: 120 clientes lidos, 30 novos na base, 4 com WhatsApp desligado',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('4.870'), findsOneWidget);
+      expect(find.text('1.480'), findsOneWidget);
+      expect(find.text('310'), findsOneWidget);
+      expect(find.text('R\$ 1.234,50'), findsOneWidget);
+      expect(
+        find.textContaining('Ficam de fora os pedidos do iFood'),
+        findsOneWidget,
+      );
+      await _tocar(t, find.byKey(const ValueKey('atualizar-pedidos')));
+      expect(s.pedidos, contains('POST /integracoes/cardapioweb/pedidos'));
+    });
+
+    testWidgets(
+      'compras paradas: tentar de novo ou trocar o token (e cancelar a troca)',
+      (t) async {
+        final s = _Servidor(
+          cardapioWeb: [
+            _cw(
+              pedidos: 'falhou',
+              erroPedidos: 'O Cardápio Web recusou o token.',
+            ),
+          ],
+        );
+        await _abrir(t, s, const TelaIntegracoes());
+
+        expect(find.text('O Cardápio Web recusou o token.'), findsOneWidget);
+        await _tocar(t, find.byKey(const ValueKey('tentar-pedidos')));
+        expect(s.pedidos, contains('POST /integracoes/cardapioweb/pedidos'));
+
+        await _tocar(t, find.byKey(const ValueKey('trocar-token')));
+        expect(find.text('Salvar token novo'), findsOneWidget);
+        expect(
+          find.textContaining('Token novo da loja Mister Burgers Tijuca'),
+          findsOneWidget,
+        );
+        await _tocar(t, find.text('Cancelar'));
+        expect(find.text('Salvar token novo'), findsNothing);
+      },
+    );
+
+    testWidgets('desconectar pede confirmação', (t) async {
+      final s = _Servidor(
+        cardapioWeb: [
+          _cw(),
+          _cw(conectado: false, clientes: 'parada', pedidos: null),
+        ],
+      );
+      await _abrir(t, s, const TelaIntegracoes());
+
+      await _tocar(t, find.byKey(const ValueKey('desconectar')));
+      expect(find.text('Desconectar a loja?'), findsOneWidget);
+      await _tocar(t, find.widgetWithText(FilledButton, 'Desconectar'));
+      expect(s.pedidos, contains('DELETE /integracoes/cardapioweb'));
+      expect(find.text('Loja desconectada.'), findsOneWidget);
+      expect(find.text('Não conectada'), findsOneWidget);
+    });
+
+    testWidgets('lista do celular: leva para a importação', (t) async {
+      final s = _Servidor();
+      await _abrir(t, s, const TelaIntegracoes());
+      await _tocar(t, find.byKey(const ValueKey('ir-importar')));
+      await _transicao(t);
+      expect(find.byType(TelaImportarContatos), findsOneWidget);
+    });
+  });
+
+  testWidgets('importar: o cartão do Cardápio Web abre as Integrações do app', (
+    t,
+  ) async {
+    final s = _Servidor();
+    await _abrir(t, s, const TelaImportarContatos());
+    await _tocar(t, find.byKey(const ValueKey('abrir-integracoes')));
+    await _transicao(t);
+    expect(find.byType(TelaIntegracoes), findsOneWidget);
+  });
+
+  testWidgets('Mais: Integrações abre a tela do app', (t) async {
+    final s = _Servidor();
+    await _abrir(t, s, const Casca(abaInicial: Aba.mais));
+    await _tocar(t, find.byKey(const ValueKey('mais-integracoes')));
+    await _transicao(t);
+    expect(find.byType(TelaIntegracoes), findsOneWidget);
+  });
+
+  test('o número lê a resposta sobre as conversas e o tier sem teto', () {
+    final n = NumeroWhatsapp.deJson(
+      _numero(integrar: null, tierNome: 'TIER_UNLIMITED'),
+    );
+    expect(n.integrarConversas, isNull);
+    expect(n.semTeto, isTrue);
+    expect(n.phoneNumberId, '1111');
+    final s = SituacaoWhatsapp.deJson(
+      _situacaoWhatsapp(expiraEm: DateTime.utc(2026, 11, 20)),
+    );
+    expect(s.wabaId, '123456789');
+    expect(s.moeda, 'BRL');
+    expect(s.webhookAssinadoEm, isNull);
+    expect(s.tokenExpiraEm, DateTime.utc(2026, 11, 20).toLocal());
+  });
+}

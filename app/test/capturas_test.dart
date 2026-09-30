@@ -36,6 +36,7 @@ import 'package:regemcast/telas/conversas.dart';
 import 'package:regemcast/telas/dividir_em_blocos.dart';
 import 'package:regemcast/telas/entrar.dart';
 import 'package:regemcast/telas/importar_contatos.dart';
+import 'package:regemcast/telas/integracoes.dart';
 import 'package:regemcast/telas/modelo_detalhe.dart';
 import 'package:regemcast/telas/modelo_editor.dart';
 import 'package:regemcast/telas/modelos.dart';
@@ -137,19 +138,71 @@ final _api = ClienteApi(
       case '/whatsapp/situacao':
         return _json({
           'conectado': true,
-          'conta': {'nome': 'Mister Burgers Ltda'},
+          'conta': {
+            'nome': 'Mister Burgers Ltda',
+            'wabaId': '1234567890123456',
+            'moeda': 'BRL',
+            'webhookAssinadoEm': '2026-09-15T12:00:00Z',
+            'tokenExpiraEm': null,
+          },
           'numeros': [
             {
+              'phoneNumberId': '987654321',
               'telefone': '+55 21 99999-8888',
               'nome': 'Mister Burgers',
               'qualidade': 'verde',
               'tierLimite': 10000,
+              'tierNome': 'TIER_10K',
               'status': 'registrado',
               'coexistencia': true,
               'vazaoMaxima': 20,
               'sincronizacao': 'concluida',
+              'integrarConversas': true,
             },
           ],
+        });
+      case '/integracoes/cardapioweb':
+        return _json({
+          'conectado': true,
+          'modo': 'chave',
+          'lojaNome': 'Mister Burgers Tijuca',
+          'sincronizacao': {
+            'status': 'concluida',
+            'pagina': 13,
+            'totalPaginas': 13,
+            'lidos': 6412,
+            'novos': 5108,
+            'bloqueados': 212,
+            'invalidos': 38,
+            'concluidaEm': '2026-09-25T15:00:00Z',
+            'erro': null,
+          },
+          'pedidos': {
+            'status': 'em_dia',
+            'progresso': 100,
+            'lidos': 31540,
+            'ultimaConsulta': DateTime.now()
+                .subtract(const Duration(minutes: 12))
+                .toUtc()
+                .toIso8601String(),
+            'erro': null,
+            'compras': 28730,
+            'clientes': 3042,
+            'primeira': '2023-10-02T00:00:00Z',
+            'ultima': DateTime.now()
+                .subtract(const Duration(minutes: 40))
+                .toUtc()
+                .toIso8601String(),
+          },
+          'saldos': {
+            'comCashback': 1204,
+            'vencendo': 87,
+            'totalCentavos': 1873450,
+            'lendo': false,
+            'ultimaLeitura': '2026-09-29T07:00:00Z',
+            'proximaLeitura': '2026-09-30T07:00:00Z',
+            'erro': null,
+          },
         });
       case '/plano':
         return _json({
@@ -2021,7 +2074,38 @@ void main() {
   }, skip: !ativo);
 
   testWidgets('whatsapp', (t) async {
-    await _capturar(t, const TelaWhatsapp(), '20-whatsapp');
+    await _capturar(t, const _ComSessao(child: TelaWhatsapp()), '20-whatsapp');
+  }, skip: !ativo);
+
+  testWidgets('whatsapp — escuro', (t) async {
+    await _capturar(
+      t,
+      const _ComSessao(child: TelaWhatsapp()),
+      '50-whatsapp-escuro',
+      brilho: Brightness.dark,
+    );
+  }, skip: !ativo);
+
+  testWidgets('integrações', (t) async {
+    await _capturar(
+      t,
+      const _ComSessao(child: TelaIntegracoes()),
+      '51-integracoes',
+    );
+  }, skip: !ativo);
+
+  testWidgets('integrações — mais abaixo', (t) async {
+    await _capturar(
+      t,
+      const _ComSessao(child: TelaIntegracoes()),
+      '52-integracoes-2',
+      antes: (t) async {
+        await t.drag(find.byType(Scrollable).first, const Offset(0, -1400));
+        for (var i = 0; i < 10; i++) {
+          await t.pump(const Duration(milliseconds: 100));
+        }
+      },
+    );
   }, skip: !ativo);
 
   testWidgets('regras', (t) async {

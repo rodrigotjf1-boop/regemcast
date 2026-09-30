@@ -26,7 +26,16 @@ O RegemCast no celular, com os mesmos recursos do site (decisão do dono em
   sozinhas (15 s e 5 s, só com a tela na frente); resposta de texto só dentro
   da janela de 24 horas; fotos na hora, áudio e vídeo no play (`video_player`,
   com a sessão no cabeçalho) e documentos salvos no celular pela janela do
-  Android; "Adicionar à lista" e a guarda das mensagens (só o dono).
+  Android; "Adicionar à lista" e a guarda das mensagens (só o dono);
+- **WhatsApp** — a conta na Meta (WABA, moeda, entrega pendente, autorização
+  vencendo), cada número (pronto ou não, qualidade, limite da Meta, velocidade),
+  a cópia dos dados do celular em cada estado e, no número em coexistência, a
+  pergunta "Contatos e conversas do celular" (o dono responde com a declaração
+  do servidor). Conectar o número continua no site: a Meta não deixa o login
+  dela rodar dentro de outro app;
+- **integrações** — o Cardápio Web inteiro: conectar com o token da loja,
+  importar os clientes (com o consentimento), as compras, o cashback, trocar o
+  token e desconectar; e o atalho para importar a lista do celular.
 
 Nenhuma rota do servidor recusa a sessão do app (`escopo: app`); ele decide só
 a validade e a renovação da sessão.

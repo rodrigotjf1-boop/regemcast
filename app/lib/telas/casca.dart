@@ -18,6 +18,7 @@ import 'campanhas.dart';
 import 'conta.dart';
 import 'contatos.dart';
 import 'conversas.dart';
+import 'integracoes.dart';
 import 'modelos.dart';
 import 'painel.dart';
 import 'plano.dart';
@@ -450,6 +451,13 @@ class _TelaMaisState extends ConsumerState<_TelaMais> {
                   icone: Icons.chat_bubble_outline_rounded,
                   texto: 'WhatsApp',
                   tela: const TelaWhatsapp(),
+                ),
+                const Divider(height: 1),
+                _LinhaTela(
+                  key: const ValueKey('mais-integracoes'),
+                  icone: Icons.hub_outlined,
+                  texto: 'Integrações',
+                  tela: const TelaIntegracoes(),
                 ),
                 const Divider(height: 1),
                 _LinhaTela(

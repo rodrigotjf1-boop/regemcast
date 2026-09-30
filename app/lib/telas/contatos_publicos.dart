@@ -3,16 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../api/contatos.dart';
 import '../api/erro_api.dart';
 import '../api/publicos.dart';
 import '../componentes/basicos.dart';
 import '../componentes/contato.dart';
-import '../config.dart';
 import '../tema/cores.dart';
 import '../util/formato.dart' as f;
+import 'integracoes.dart';
 
 /// Quantos bairros e produtos aparecem antes de "mais".
 const _visiveis = 12;
@@ -23,10 +22,9 @@ const _esperaDaBusca = Duration(milliseconds: 300);
 /// O servidor recusa busca maior que isto.
 const _tamanhoMaximoDaBusca = 80;
 
-void _abrirIntegracoes() => launchUrl(
-  Uri.parse('$urlWeb/integracoes'),
-  mode: LaunchMode.externalApplication,
-);
+void _abrirIntegracoes(BuildContext context) => Navigator.of(
+  context,
+).push(MaterialPageRoute<void>(builder: (_) => const TelaIntegracoes()));
 
 /// Os públicos da base, para filtrar a lista — os mesmos do site: perfis
 /// (pela última compra e pelos pedidos), públicos pelas compras, produtos,
@@ -157,9 +155,9 @@ class _Perfis extends ConsumerWidget {
               texto:
                   'Para classificar a base, conecte o cardápio em Integrações ou importe uma planilha com pedidos e última compra (ou dias sem comprar) — a exportação de clientes do seu cardápio costuma trazer.',
               acao: TextButton.icon(
-                onPressed: _abrirIntegracoes,
-                icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                label: const Text('Abrir Integrações no site'),
+                onPressed: () => _abrirIntegracoes(context),
+                icon: const Icon(Icons.hub_outlined, size: 18),
+                label: const Text('Abrir Integrações'),
               ),
             ),
             const SizedBox(height: 10),
@@ -429,9 +427,9 @@ class _PublicosPelasComprasState extends ConsumerState<_PublicosPelasCompras> {
           texto:
               'Para separar a base por valor gasto, bairro, jeito de comprar, horário e produto, traga as compras: conecte o cardápio em Integrações ou importe uma planilha com pedidos e total gasto.',
           acao: TextButton.icon(
-            onPressed: _abrirIntegracoes,
-            icon: const Icon(Icons.open_in_new_rounded, size: 18),
-            label: const Text('Abrir Integrações no site'),
+            onPressed: () => _abrirIntegracoes(context),
+            icon: const Icon(Icons.hub_outlined, size: 18),
+            label: const Text('Abrir Integrações'),
           ),
         ),
         const SizedBox(height: 14),
