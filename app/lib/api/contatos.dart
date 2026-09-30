@@ -677,6 +677,13 @@ final regioesProvider = FutureProvider.autoDispose<RegioesDaBase>((ref) async {
   );
 });
 
+/// Quantos contatos a base tem — o "Contatos" do Painel, como no site: uma
+/// página de um só, para ler o total.
+final totalContatosProvider = FutureProvider.autoDispose<int>((ref) async {
+  final pagina = await ref.read(servicoContatosProvider).pagina(1, tamanho: 1);
+  return pagina.total;
+});
+
 final opcoesDeBlocoProvider = FutureProvider.autoDispose<OpcoesDeBloco>((
   ref,
 ) async {

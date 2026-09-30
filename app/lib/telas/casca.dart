@@ -502,6 +502,18 @@ class _TelaMaisState extends ConsumerState<_TelaMais> {
                     mode: LaunchMode.externalApplication,
                   ),
                 ),
+                const Divider(height: 1),
+                // A mesma página pública que a ficha da Play aponta: como
+                // pedir a exclusão e o que é mantido por lei.
+                _Linha(
+                  key: const ValueKey('mais-excluir-conta'),
+                  icone: Icons.person_remove_outlined,
+                  texto: 'Excluir a conta',
+                  aoTocar: () => launchUrl(
+                    Uri.parse('$urlWeb/excluir-conta'),
+                    mode: LaunchMode.externalApplication,
+                  ),
+                ),
               ],
             ),
           ),
@@ -551,6 +563,7 @@ class _LinhaTela extends StatelessWidget {
 
 class _Linha extends StatelessWidget {
   const _Linha({
+    super.key,
     required this.icone,
     required this.texto,
     required this.aoTocar,

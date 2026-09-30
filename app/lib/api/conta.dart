@@ -14,21 +14,32 @@ Map<String, dynamic> _mapa(Object? v) =>
 
 // ------------------------------------------------------------------ conta
 
-/// `GET /conta` → `conta`: o que o dono pode mudar.
+/// `GET /conta` → `conta`: o que o dono pode mudar, e a situação da conta.
 class DadosConta {
   const DadosConta({
     required this.nome,
     required this.cnpj,
     required this.timezone,
+    this.status = 'ativa',
+    this.descansoMarketingDias,
   });
 
   final String nome;
 
-  /// Só dígitos, ou nulo.
+  /// Só dígitos (ou letras e dígitos, no CNPJ novo), ou nulo. Conferido na
+  /// Receita no cadastro: é a identidade da conta na Meta e só muda pelo
+  /// suporte — por isso a tela mostra, mas não edita.
   final String? cnpj;
 
   /// Nome IANA (`America/Sao_Paulo`): rege as janelas de envio.
   final String timezone;
+
+  /// `aprovada`, `ativa`, `suspensa` ou `cancelada`.
+  final String status;
+
+  /// Descanso entre campanhas de marketing, em dias (0 desliga). Nulo quando
+  /// o servidor não manda o campo — aí a tela não mostra, como no site.
+  final int? descansoMarketingDias;
 
   factory DadosConta.deJson(Map<String, dynamic> j) {
     final c = _mapa(j['conta']);
@@ -38,9 +49,21 @@ class DadosConta {
       timezone: _txt(c['timezone']).isEmpty
           ? 'America/Sao_Paulo'
           : _txt(c['timezone']),
+      status: _txt(c['status']).isEmpty ? 'ativa' : _txt(c['status']),
+      descansoMarketingDias: _intOuNulo(c['descansoMarketingDias']),
     );
   }
 }
+
+/// Cada situação da conta tem nome próprio: "Ativa" no lugar de "Cancelada"
+/// seria mentira. A mesma tabela da página "Conta e usuários" do site.
+String rotuloDaSituacaoDaConta(String status) => switch (status) {
+  'aprovada' => 'Aprovada',
+  'ativa' => 'Ativa',
+  'suspensa' => 'Suspensa',
+  'cancelada' => 'Cancelada',
+  _ => status,
+};
 
 /// Os fusos do Brasil, do jeito que as pessoas os chamam.
 const fusosBrasil = {
@@ -305,14 +328,17 @@ class ServicoConta {
 
   final ClienteApi _api;
 
+  /// `PATCH /conta` com o mesmo corpo do site: nome, fuso e o descanso. O
+  /// CNPJ não vai — conferido na Receita, ele só muda pelo suporte, e o
+  /// servidor recusaria a troca.
   Future<void> atualizar({
     required String nome,
-    required String cnpj,
     required String timezone,
+    int? descansoMarketingDias,
   }) => _api.patch('/conta', {
     'nome': nome.trim(),
-    'cnpj': cnpj.trim(),
     'timezone': timezone,
+    'descansoMarketingDias': ?descansoMarketingDias,
   });
 
   Future<void> criarUsuario({

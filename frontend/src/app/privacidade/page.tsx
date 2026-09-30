@@ -103,7 +103,9 @@ export default function PoliticaDePrivacidade() {
             São os dados da empresa cliente e das pessoas que acessam a conta: nome, e-mail,
             senha (guardada apenas como hash), telefone de contato, dados da empresa e registros
             de uso do sistema. Decidimos por que e como tratamos esses dados, e respondemos por
-            eles.
+            eles. Antes de a conta existir, quem pede uma vaga na lista de espera (pelo site ou
+            pelo aplicativo) informa nome, e-mail e, se quiser, a empresa e um telefone — usados
+            só para avisar e convidar quando a vaga for liberada.
           </p>
           <p>
             <strong className="text-tinta">
