@@ -14,6 +14,7 @@ import 'package:regemcast/api/conta.dart';
 import 'package:regemcast/api/dados.dart';
 import 'package:regemcast/api/repeticao.dart';
 import 'package:regemcast/api/seguranca.dart';
+import 'package:regemcast/config.dart';
 import 'package:regemcast/push/push.dart';
 import 'package:regemcast/sessao/cofre.dart';
 import 'package:regemcast/sessao/sessao.dart';
@@ -61,6 +62,7 @@ class _Servidor {
     'descansoMarketingDias': 3,
   };
   String? statusAssinatura = 'ativa';
+  String? gratisAte;
   List<Map<String, dynamic>> seguranca = [_seguranca()];
   Map<String, dynamic> whatsapp = {
     'conectado': false,
@@ -97,7 +99,7 @@ class _Servidor {
               'status': statusAssinatura,
               'cicloInicio': '2026-09-17T00:00:00Z',
               'cicloFim': '2026-10-17T00:00:00Z',
-              'gratisAte': null,
+              'gratisAte': gratisAte,
             },
             'uso': {'disparos': 120, 'teto': 5000, 'restantes': 4880},
             'conversasHabilitadas': false,
@@ -1071,6 +1073,50 @@ void main() {
       },
     );
   });
+
+  testWidgets(
+    'mês grátis acabando: o aviso abre o plano do app — e, no build da Play, só informa',
+    (t) async {
+      final s = _Servidor()
+        ..statusAssinatura = 'cortesia'
+        ..gratisAte = DateTime.now()
+            .add(const Duration(days: 3))
+            .toUtc()
+            .toIso8601String();
+      await _abrir(t, s, const Scaffold(body: TelaPainel()));
+
+      final aviso = _chave('aviso-gratis');
+      expect(aviso, findsOneWidget);
+      if (compraNoApp) {
+        expect(
+          find.descendant(
+            of: aviso,
+            matching: find.textContaining('Escolha um plano'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: aviso, matching: find.text('Escolher plano')),
+          findsOneWidget,
+        );
+      } else {
+        // Build da Play: nada de chamar para pagar fora do faturamento dela.
+        expect(
+          find.descendant(of: aviso, matching: find.textContaining('Escolha')),
+          findsNothing,
+        );
+        expect(
+          find.descendant(of: aviso, matching: find.text('Ver plano')),
+          findsOneWidget,
+        );
+      }
+
+      await _tocar(t, _chave('escolher-plano'));
+      await _transicao(t);
+      expect(find.byType(TelaPlano), findsOneWidget);
+      expect(s.quantos('GET /plano'), 1, reason: 'o plano do app, não o site');
+    },
+  );
 
   testWidgets('Mais: "Excluir a conta" está lá, como a Play pede', (t) async {
     final s = _Servidor();

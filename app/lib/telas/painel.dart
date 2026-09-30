@@ -209,13 +209,18 @@ class _BlocoAlertas extends ConsumerWidget {
         ref.watch(campanhasProvider).value ?? const <ResumoCampanha>[];
     final avisos = <Widget>[];
 
+    // Os avisos de cobrança abrem o plano DO APP. No build da Play
+    // (`compraNoApp` desligado) eles só informam: a Google proíbe chamar para
+    // pagar fora do faturamento dela — nada de "escolha um plano" nem de link
+    // para o site.
     if (resumo?.statusAssinatura == 'inadimplente') {
       avisos.add(
         Aviso(
           tom: TomPilula.erro,
           icone: Icons.credit_card_off_rounded,
-          texto:
-              'O último pagamento do plano não foi aprovado. Regularize para os disparos não pararem.',
+          texto: compraNoApp
+              ? 'O último pagamento do plano não foi aprovado. Regularize para os disparos não pararem.'
+              : 'O último pagamento do plano não foi aprovado, e os disparos param enquanto ele estiver pendente.',
           acao: const _BotaoTela(
             chave: 'ver-plano',
             rotulo: 'Ver plano e pagamento',
@@ -229,16 +234,25 @@ class _BlocoAlertas extends ConsumerWidget {
     if (resumo?.statusAssinatura == 'cortesia' && gratis != null) {
       final dias = gratis.difference(DateTime.now()).inDays;
       if (dias <= 7) {
+        final String texto;
+        if (dias <= 0) {
+          texto = compraNoApp
+              ? 'Seu mês grátis terminou. Escolha um plano para continuar disparando.'
+              : 'Seu mês grátis terminou, e os disparos ficam parados até a conta ter um plano.';
+        } else {
+          texto = compraNoApp
+              ? 'Seu mês grátis termina em ${f.data(gratis)}. Escolha um plano para os disparos não pararem.'
+              : 'Seu mês grátis termina em ${f.data(gratis)}. Depois dele, os disparos param até a conta ter um plano.';
+        }
         avisos.add(
           Aviso(
+            key: const ValueKey('aviso-gratis'),
             icone: Icons.hourglass_bottom_rounded,
-            texto: dias <= 0
-                ? 'Seu mês grátis terminou. Escolha um plano para continuar disparando.'
-                : 'Seu mês grátis termina em ${f.data(gratis)}. Escolha um plano para os disparos não pararem.',
-            acao: const _BotaoTela(
+            texto: texto,
+            acao: _BotaoTela(
               chave: 'escolher-plano',
-              rotulo: 'Escolher plano',
-              tela: TelaPlano(),
+              rotulo: compraNoApp ? 'Escolher plano' : 'Ver plano',
+              tela: const TelaPlano(),
             ),
           ),
         );
