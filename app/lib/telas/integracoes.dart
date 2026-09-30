@@ -7,17 +7,19 @@ import '../api/erro_api.dart';
 import '../api/integracoes.dart';
 import '../componentes/basicos.dart';
 import '../componentes/dialogos.dart';
+import '../componentes/integracao.dart';
 import '../sessao/sessao.dart';
 import '../tema/cores.dart';
 import '../util/formato.dart' as f;
 import 'importar_contatos.dart';
+import 'integracoes_regem.dart';
 
 /// Importando clientes, a tela relê depressa; buscando pedidos, sem pressa (é
 /// uma página a cada 15 s no servidor).
 const _releituraClientes = Duration(seconds: 2);
 const _releituraPedidos = Duration(seconds: 8);
 
-/// Integrações: o Regemcast ligado ao cardápio digital da loja — a tela do
+/// Integrações: o Regemcast ligado ao cardápio digital da loja e ao Regem — a tela do
 /// site (`(app)/integracoes`). Diferente de importar um arquivo, a integração
 /// traz o HISTÓRICO de compras de cada cliente e continua trazendo.
 class TelaIntegracoes extends ConsumerWidget {
@@ -32,47 +34,13 @@ class TelaIntegracoes extends ConsumerWidget {
         padding: respiroDaTela(context, topo: 4),
         children: [
           Text(
-            'Ligue o Regemcast ao cardápio digital da sua loja: os clientes e o histórico de compras de cada um chegam sozinhos, prontos para separar a base das campanhas.',
+            'Ligue o Regemcast ao cardápio digital e ao Regem da sua loja: os clientes e o histórico de compras de cada um chegam sozinhos, prontos para separar a base das campanhas.',
             style: TextStyle(color: c.tintaSuave, height: 1.45),
           ),
           const SizedBox(height: 16),
           const CartaoCardapioWeb(),
           const SizedBox(height: 14),
-          Cartao(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Cardápio digital do Regem',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ),
-                    Pilula(
-                      'Em preparação',
-                      tom: TomPilula.acento,
-                      ponto: false,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Para quem vende pelo cardápio digital e pelo PDV do Regem.',
-                  style: TextStyle(color: c.tintaSuave, fontSize: 13),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Os clientes e as compras vão chegar direto do Regem, sem planilha e sem token para copiar. Quando estiver liberado, a conexão aparece aqui.',
-                  style: TextStyle(color: c.tintaSuave, height: 1.45),
-                ),
-              ],
-            ),
-          ),
+          const CartaoRegem(),
           const SizedBox(height: 14),
           Cartao(
             child: Column(
@@ -470,98 +438,6 @@ class _ConectarState extends State<_Conectar> {
   }
 }
 
-/// Um bloco do cartão (Clientes, Compras, Cashback): título e o selo.
-class _Bloco extends StatelessWidget {
-  const _Bloco({
-    required this.titulo,
-    required this.selo,
-    required this.tom,
-    required this.filhos,
-    this.vivo = false,
-  });
-
-  final String titulo;
-  final String selo;
-  final TomPilula tom;
-  final bool vivo;
-  final List<Widget> filhos;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = Cores.de(context);
-    return Container(
-      key: ValueKey('bloco-$titulo'),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: c.borda),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  titulo,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
-              Pilula(selo, tom: tom, vivo: vivo),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ...filhos,
-        ],
-      ),
-    );
-  }
-}
-
-class _Numero extends StatelessWidget {
-  const _Numero({required this.rotulo, required this.valor});
-
-  final String rotulo;
-  final String valor;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = Cores.de(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: c.superficie2,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(rotulo, style: TextStyle(color: c.tintaSuave, fontSize: 12)),
-          Text(
-            valor,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              fontFeatures: [FontFeature.tabularFigures()],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-Widget _grade(List<Widget> numeros) => LayoutBuilder(
-  builder: (_, limites) {
-    final largura = (limites.maxWidth - 8) / 2;
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [for (final n in numeros) SizedBox(width: largura, child: n)],
-    );
-  },
-);
-
 Widget _barra(Cores c, double fracao) => ClipRRect(
   borderRadius: BorderRadius.circular(99),
   child: LinearProgressIndicator(
@@ -615,7 +491,7 @@ class _ClientesState extends State<_Clientes> {
     };
     final suave = TextStyle(color: c.tintaSuave, height: 1.45, fontSize: 13.5);
 
-    return _Bloco(
+    return BlocoIntegracao(
       titulo: 'Clientes',
       selo: selo,
       tom: tom,
@@ -784,7 +660,7 @@ class _Compras extends StatelessWidget {
       height: 1.45,
     );
 
-    return _Bloco(
+    return BlocoIntegracao(
       titulo: 'Compras',
       selo: selo,
       tom: tom,
@@ -832,14 +708,17 @@ class _Compras extends StatelessWidget {
             ],
           ],
         if (p.status == 'em_dia') ...[
-          _grade([
-            _Numero(rotulo: 'Compras', valor: f.numero(p.compras)),
-            _Numero(
+          gradeDeNumeros([
+            NumeroIntegracao(rotulo: 'Compras', valor: f.numero(p.compras)),
+            NumeroIntegracao(
               rotulo: 'Clientes que compraram',
               valor: f.numero(p.clientes),
             ),
-            _Numero(rotulo: 'Primeira compra', valor: f.data(p.primeira)),
-            _Numero(rotulo: 'Última compra', valor: f.data(p.ultima)),
+            NumeroIntegracao(
+              rotulo: 'Primeira compra',
+              valor: f.data(p.primeira),
+            ),
+            NumeroIntegracao(rotulo: 'Última compra', valor: f.data(p.ultima)),
           ]),
           if (p.compras == 0) ...[
             const SizedBox(height: 8),
@@ -936,23 +815,23 @@ class _Cashback extends StatelessWidget {
         : k.ultimaLeitura != null
         ? ('Em dia', TomPilula.sucesso)
         : ('Aguardando', TomPilula.neutro);
-    return _Bloco(
+    return BlocoIntegracao(
       titulo: 'Cashback',
       selo: selo,
       tom: tom,
       vivo: k.lendo,
       filhos: [
         if (k.ultimaLeitura != null)
-          _grade([
-            _Numero(
+          gradeDeNumeros([
+            NumeroIntegracao(
               rotulo: 'Clientes com cashback',
               valor: f.numero(k.comCashback),
             ),
-            _Numero(
+            NumeroIntegracao(
               rotulo: 'Vencem em até 7 dias',
               valor: f.numero(k.vencendo),
             ),
-            _Numero(
+            NumeroIntegracao(
               rotulo: 'Cashback na base',
               valor: f.reais(k.totalCentavos),
             ),
