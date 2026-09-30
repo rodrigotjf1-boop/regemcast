@@ -20,6 +20,7 @@ import { ConversaModule } from './modules/conversa/conversa.module';
 import { ListaEsperaModule } from './modules/lista-espera/lista-espera.module';
 import { CampanhaModule } from './modules/campanha/campanha.module';
 import { CardapiowebModule } from './modules/cardapioweb/cardapioweb.module';
+import { RegemModule } from './modules/regem/regem.module';
 import { MetaModule } from './modules/meta/meta.module';
 import { DistribuicaoModule } from './modules/distribuicao/distribuicao.module';
 import { MidiaModule } from './modules/midia/midia.module';
@@ -75,6 +76,7 @@ import { CobrancaModule } from './modules/cobranca/cobranca.module';
     ContatoModule,
     ConversaModule,
     CardapiowebModule,
+    RegemModule,
     ModeloModule,
     MidiaModule,
     DistribuicaoModule,

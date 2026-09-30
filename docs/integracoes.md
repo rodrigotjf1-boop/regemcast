@@ -10,7 +10,7 @@ A integração é **só leitura**: nenhum método altera nada na loja do cliente
 | Cardápio | Situação |
 | --- | --- |
 | Cardápio Web | No ar: clientes (importação) e compras (sincronização contínua). |
-| Cardápio digital do Regem | Em preparação. Depende de uma API de parceiro, só de leitura, do lado do Regem (pedida ao projeto Regem em 25/09/2026). |
+| Regem (cardápio próprio, Anota Aí, delivery direto; 99Food com autorização) | Conector pronto deste lado (migration 035). Depende da API de integração do Regem liberar o RegemCast (pedido ao projeto Regem em 30/09/2026). |
 
 Lista só com nome e número (a agenda exportada do celular, uma planilha) não é
 integração: entra por **Contatos → Importar** e se organiza em blocos e por DDD.
@@ -269,3 +269,124 @@ ela não é visto pela carga que cobre o buraco (a carga pega os pedidos
 **criados** no período). Essa compra continua guardada — só uma carga completa
 (**Tentar de novo**, depois de a busca parar) a desfaz. Raro: pedido fechado
 raramente é cancelado horas depois.
+
+## Regem
+
+O Regem (o sistema de gestão da loja) é o ponto central: por ele chegam os
+clientes e as vendas do **cardápio próprio**, do **Anota Aí**, do **delivery
+direto** e das vendas de balcão e mesa com telefone. **Marketplace fica de
+fora** (iFood, Keeta, Rappi, Uber Eats, Open Delivery: o número é mascarado e
+os termos do marketplace não deixam), com uma exceção opcional: a **99Food**,
+só com a autorização do dono (abaixo). Decisões do dono, 30/09/2026.
+
+Código: `backend/src/modules/regem/` (regras sem rede e sem banco em
+`regem.regras.ts`, cliente HTTP em `regem.cliente.ts`, o serviço, o job e as
+rotas). Tabelas: `integracao_regem` e `integracao_regem_cliente` (migration
+`035_integracao_regem.sql`). O contrato do lado de lá é a API de integração do
+Regem (`/api/v1/integracao/…`), estendida para o RegemCast.
+
+### Conexão — pela distribuição
+
+A conta liga à **empresa** no Regem (todas as lojas dela). Quem liga é a
+**distribuição**, pelo console: emitimos o token de integração (`rgm_it_…`) no
+console do Regem e o colamos no console do RegemCast
+(`POST /distribuicao/contas/:id/regem`). A loja não copia nada. O token é
+conferido na hora (`GET /integracao/loja` — a empresa, as lojas e os escopos),
+precisa dos escopos `clientes.ler`, `pedidos.ler` e `clientes.telefone.ler`, e
+é guardado cifrado (`INTEGRACOES_CHAVE`). Base da API: `REGEM_API_URL`
+(padrão `https://api.dmsregem.com/api/v1`).
+
+- **Token novo da mesma empresa** (trocado, ou com escopo a mais): continua de
+  onde parou; parado por recusa, retoma.
+- **Outra empresa**: a conexão recomeça do zero — a declaração do dono e a
+  autorização da 99 eram sobre a empresa antiga. Os contatos e as compras que
+  já vieram ficam.
+- **Desligar** (o dono, na tela; ou a distribuição) apaga o token, o andamento
+  e a ligação dos clientes do Regem aos contatos. Os contatos e as compras
+  ficam.
+- `GET /distribuicao/regem` lista as contas ligadas, primeiro as que esperam
+  por nós: a 99 autorizada pelo dono e ainda não liberada no token
+  (**emitir** outro com `vendas.99food.ler`), ou o contrário (**retirar**).
+
+### Clientes
+
+O dono declara o consentimento e começa (`POST /integracoes/regem/importar`).
+Uma leitura completa = um registro em `importacao` (formato `regem`) e a lista
+**"Clientes Regem"**. Os clientes vêm pelo cursor, 500 por página:
+
+| Cliente do Regem | O que acontece aqui |
+| --- | --- |
+| Pode receber | Entra como contato (`consentimento_origem = 'api'`) e na lista. Com o aceite que o próprio cliente deu no Regem, a evidência é o aceite (data, origem e o texto mostrado); sem ele, a declaração do dono. Quem já está na base mantém o cadastro e o consentimento que tinha. |
+| Pediu para sair no Regem, ou recusou o aceite | Entra (ou passa a estar) **descadastrado**, origem `regem`. Descadastro nunca é desfeito. |
+| Só comprou em marketplace | Fica de fora. |
+| Só comprou pela 99 | Só entra com a autorização do dono. |
+| Telefone que não serve (0800, vazio, fora do padrão) | Fica de fora (`clientes_invalidos`). |
+| **Esquecido** no Regem (a lápide, `removido`) | O contato é **anonimizado**, como o pedido de exclusão da tela do contato (`contato/anonimizar.ts`): dados pessoais e compras somem, o número fica bloqueado. Se o mesmo contato ainda está ligado a outro cliente vivo do Regem (cadastro duplicado que a loja apagou lá), só a ligação sai. |
+
+Cada cliente fica ligado ao contato em `integracao_regem_cliente` — é por ela
+que a lápide acha quem anonimizar e que desfazer a 99 acha quem entrou só por
+ela.
+
+### Vendas
+
+Começam quando a leitura dos clientes termina, do começo do cursor (a carga do
+Regem para o RegemCast cobre **3 anos**). Venda **confirmada** vira compra
+(`compra.fonte = 'regem'`): o faturamento do Regem (`receita_centavos`, a
+definição única do Painel), a data de faturamento, o tipo (entrega / retirada /
+salão — balcão e mesa contam como salão), o canal, o bairro (a distância
+"~3.2 km" que a loja por quilômetro guarda no lugar dele não conta) e os itens
+resumidos. Venda **cancelada ou removida** desfaz a compra. Ficam de fora (e
+contam em `pedidos_ignorados`): não confirmada, marketplace (a 99 só
+autorizada), sem cliente ou sem telefone, a compra de quem **pediu para sair**
+aqui, e — quando a loja também liga o **Cardápio Web direto** aqui — a venda do
+canal `cardapio_web`, para a mesma venda não contar duas vezes.
+
+O contato da compra é achado pelo telefone, nas duas formas do celular. Venda
+de um cliente que a leitura de clientes ainda não trouxe (ele entrou no Regem
+depois dela) faz os clientes serem lidos de novo **antes** de gravar a página,
+uma vez por passo — senão a primeira compra dele se perderia. Os totais do
+contato são refeitos de TODAS as compras, de qualquer fonte.
+
+### 99Food — a autorização é do dono, registrada aqui
+
+O Regem tem o número real do cliente da 99, mas o cliente não deu aceite de
+marketing à loja. Por isso a 99 só entra quando o dono **autoriza no RegemCast**
+(`POST /integracoes/regem/99`), aceitando o texto que o servidor devolve em
+`textoAutorizacao99` — gravado com quem e quando (`autorizacao_99_*`) — sob a
+responsabilidade da empresa (CNPJ). O Regem só entrega a 99 quando o token tem
+o escopo `vendas.99food.ler`: a distribuição emite outro token e o liga. Quando
+as duas coisas se encontram (autorização + escopo), tudo é relido do começo,
+porque os clientes e as vendas da 99 tinham ficado para trás no cursor.
+
+**Desfazer** a autorização tira na hora as compras da 99 e os contatos que
+entraram **só** por ela (nascidos de uma leitura do Regem, sem compra de outra
+fonte e sem descadastro — o descadastro fica, para o número não voltar).
+
+### Estados
+
+| Estado | Clientes | Vendas |
+| --- | --- | --- |
+| `parado` | Sem a declaração do dono (ou outra empresa). | Esperando os clientes terminarem. |
+| `carga` | A leitura completa, do começo do cursor. | Idem, até 3 anos. |
+| `em_dia` | A cada 30 min, o que mudou desde a última leitura. **Atualizar agora** (`POST /integracoes/regem/atualizar`) antecipa. | Idem. |
+| `falhou` | O Regem recusou (token, escopo). O motivo aparece na tela; ligar de novo ou **Atualizar agora** retoma de onde parou. | Idem. |
+
+### Ritmo, concorrência e erros
+
+- O job (`RegemJob`, a cada 20 s) reserva até 8 contas por volta com a trava no
+  banco (`trava_ate`, 5 min) e uma **CTE materializada**. Um passo lê até 5
+  páginas de clientes e 5 de vendas, com 1,2 s entre elas — abaixo das 60
+  consultas por minuto que o Regem aceita por token. Nenhuma chamada ao Regem
+  acontece com transação aberta.
+- Cada página é gravada com a linha da integração travada (`for update`) e só
+  se o cursor ainda for o que foi lido: recomeçar, autorizar a 99, trocar de
+  empresa ou desligar no meio de um passo faz o passo parar, nunca gravar por
+  cima.
+
+| Erro | O que acontece |
+| --- | --- |
+| 429 | Espera o `Retry-After` (60 s se não vier, no máximo 10 min) e continua do mesmo ponto. |
+| 5xx, rede, tempo esgotado (20 s) | Espera 2 min e continua. |
+| 401 | Token revogado ou trocado: as duas fases param (`falhou`); a distribuição liga de novo. |
+| 403 e demais 4xx | A fase para (`falhou`), com o motivo do Regem (`detail` do problem+json) na tela. |
+| Erro nosso (banco, código) | Motivo genérico na tela, detalhe no log; tenta de novo em 5 min. |

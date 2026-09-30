@@ -125,6 +125,7 @@ trabalho.
 | `cardapioweb.retomar` | `cardapioweb.service.ts` | A cada minuto, o job procura importações de clientes do Cardápio Web que ficaram órfãs (servidor reiniciou no meio), entre todas as contas. Dura o `select` e acaba — a importação roda em `comConta`, uma conta por vez. |
 | `cardapioweb.pedidos.fila` | `cardapioweb.pedidos.job.ts` | A cada 15 s, o job reserva até 8 lojas com a busca de pedidos pendente, entre todas as contas: um `update` com CTE materializada que só grava a trava (`pedidos_trava_ate`) e devolve o `conta_id`. O passo de cada loja — chamadas ao Cardápio Web, compras, totais — roda em `comConta`, e nenhuma transação fica aberta durante a chamada. |
 | `cardapioweb.saldos.fila` | `cardapioweb.saldos.job.ts` | A cada 10 s, o job reserva até 8 lojas com a leitura diária do cashback vencida (4h no fuso da conta), entre todas as contas: um `update` com CTE materializada que só grava a trava (`saldos_trava_ate`) e devolve o `conta_id`. O passo de cada loja — até 5 páginas de clientes, com os saldos e os bloqueios — roda em `comConta`, e nenhuma transação fica aberta durante a chamada ao Cardápio Web. |
+| `regem.fila` | `regem.job.ts` | A cada 20 s, o job reserva até 8 contas com a leitura do Regem pendente (leitura completa em andamento, ou em dia com a consulta das mudanças vencida), entre todas as contas: um `update` com CTE materializada que só grava a trava (`trava_ate`) e devolve o `conta_id`. O passo de cada conta — chamadas ao Regem, contatos, compras, totais — roda em `comConta`, e nenhuma transação fica aberta durante a chamada. |
 
 **(B) O registro precisa sobreviver ao rollback da operação.**
 
@@ -139,8 +140,9 @@ autenticador (segredo próprio, fora do login dos clientes), e cada ação dele
 fica em `acesso_distribuicao`. As tabelas da distribuição têm a policy
 `rc_sistema`: nenhuma conta as lê, nem as próprias linhas. O que o console lê
 das contas é agregado — uso, envios, situação, erros —, sem conteúdo de
-mensagem nem contato. O que ele escreve numa conta são duas ações de suporte,
-numa conta nomeada, que ficam também na auditoria da própria conta.
+mensagem nem contato. O que ele escreve numa conta são ações de suporte numa conta nomeada —
+zerar as duas etapas, estender o grátis, ligar a conta ao Regem —, que ficam
+também na auditoria da própria conta.
 
 | Uso | Onde | Por quê |
 |---|---|---|
@@ -153,6 +155,7 @@ numa conta nomeada, que ficam também na auditoria da própria conta.
 | `distribuicao.zerar_duas_etapas` | `distribuicao-leitura.service.ts` | Suporte, depois de conferir a identidade por fora: desliga as duas etapas de um usuário nomeado, destrava e derruba as sessões. Fica também na auditoria da conta, visível ao cliente. |
 | `distribuicao.estender_gratis` | `distribuicao-leitura.service.ts` | Estende o grátis de uma conta nomeada (negociação, conta interna) e devolve à fila as campanhas dela paradas por falta de pagamento. Não mexe em quem já paga. |
 | `distribuicao.planos.listar`, `distribuicao.planos.criar`, `distribuicao.planos.atualizar` | `distribuicao-planos.service.ts` | O catálogo de planos (`plano`, policy `rc_sistema`) é da distribuição; a listagem conta quantas contas há em cada plano. |
+| `distribuicao.regem` | `regem.service.ts` | A lista do console: as contas ligadas ao Regem, com o nome da conta, a empresa, a situação da leitura e a 99 (autorizada pelo dono × liberada no token), primeiro as que esperam por nós. Só leitura, nunca o token. Ligar e desligar uma conta nomeada rodam em `comConta`, sem a chave mestra. |
 | `whatsapp.conectar-manual` | `meta.service.ts` | A rota é da distribuição e não tem sessão: o operador informa qual conta está conectando, e antes de qualquer chamada à Meta é preciso confirmar que ela existe. Dura o `select` e acaba — a gravação acontece em `comConta`. |
 
 Quando um caminho novo aparecer, a pergunta não é "posso usar?", e sim **em qual
@@ -192,7 +195,8 @@ o nome não for texto à vista. Completada em 27/09/2026 com 90 nomes; em
 29/09/2026 os 4 que abriam a chave mestra com a conta já conhecida
 (`auth.renovar`, `aviso.remover_dispositivo`, `aviso.alvos`,
 `aviso.limpar_tokens`) passaram para `comConta` — ficam 86, todos em um dos três
-motivos.
+motivos. Em 30/09/2026 entraram `regem.fila` e `distribuicao.regem` (a integração
+com o Regem): 88.
 
 ## Teste manual: provar que a RLS pega
 

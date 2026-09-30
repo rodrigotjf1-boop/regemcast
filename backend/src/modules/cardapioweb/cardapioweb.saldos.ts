@@ -12,6 +12,7 @@ import { sql, type SQL } from 'drizzle-orm';
 
 import { emPartes } from '../../common/em-partes';
 import type { Db } from '../../db/contexto';
+import { bloquearContatos } from '../contato/compras';
 import type { SaldoDeCashback } from './cardapioweb.regras';
 
 /** A leitura diária sai às 4h, no fuso da conta: a loja fechada, a campanha do dia com o saldo da madrugada. */
@@ -63,25 +64,14 @@ export async function gravarSaldos(
  * tocado, e nenhum é desfeito. A linha criada para quem não estava na base
  * impede que o número volte por uma importação de arquivo.
  */
-export async function bloquearClientes(
+export function bloquearClientes(
   db: Db,
   contaId: string,
   bloqueados: readonly { telefone: string; nome: string | null }[],
   importacaoId: string | null,
   agora: Date,
 ): Promise<void> {
-  for (const parte of emPartes([...bloqueados], 500)) {
-    await db.execute(sql`
-      insert into contato (conta_id, telefone_e164, nome, opt_out, opt_out_em, opt_out_origem, importacao_id)
-      values ${sql.join(
-        parte.map((b) => sql`(${contaId}, ${b.telefone}, ${b.nome}, true, ${agora}, 'cardapioweb', ${importacaoId})`),
-        sql`, `,
-      )}
-      on conflict (conta_id, telefone_e164) do update
-         set opt_out = true, opt_out_em = excluded.opt_out_em, opt_out_origem = excluded.opt_out_origem
-       where contato.opt_out = false
-    `);
-  }
+  return bloquearContatos(db, contaId, bloqueados, importacaoId, agora, 'cardapioweb');
 }
 
 /** A próxima leitura diária: 4h no fuso da conta, a pelo menos 6 h de agora. */
