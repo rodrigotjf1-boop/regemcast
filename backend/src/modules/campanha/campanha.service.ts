@@ -42,7 +42,7 @@ import { PERIODOS, sugerirHorario, type Periodo, type SugestaoDeHorario } from '
 import { origemDoPublico, type PedidoDeOrigem } from '../contato/origem-do-publico';
 import { ERRO_SEM_WHATSAPP, marcarSemWhatsappNaFila, registrarFalhaSemWhatsapp } from '../contato/sem-whatsapp';
 import { ErroGraph, GraphService } from '../meta/graph.service';
-import { MetaService } from '../meta/meta.service';
+import { MetaService, MODELO_APROVADO, type ModeloDeMensagem } from '../meta/meta.service';
 import { TelemetriaService } from '../telemetria/telemetria.service';
 import type { CriarCampanhaDto } from './dto/criar-campanha.dto';
 import type { EditarCampanhaDto } from './dto/editar-campanha.dto';
@@ -440,6 +440,16 @@ export class CampanhaService {
     if (dto.destinatarios?.length) this.conferirNumeros(dto.destinatarios);
     this.conferirTetos(dto.maxPorDia, dto.maxPorSemana, dto.maxPorMes);
 
+    // O modelo é lido da Meta, não do que a tela mandou: nome, idioma, id e
+    // categoria que entram na campanha são os dela.
+    const modelo = await this.conferirModelo(contaId, dto);
+    this.conferirVariaveis(
+      modelo,
+      dto.destinatarios?.length
+        ? dto.destinatarios.map((d) => d.variaveis?.length ?? 0)
+        : [dto.variaveisLista?.length ?? 0],
+    );
+
     // Descanso entre campanhas: o número da conta é COPIADO para a campanha
     // agora — mudar o da conta depois não mexe em campanha já criada. Só para
     // modelo de marketing; liberar (mandar mesmo para quem está em descanso) é
@@ -452,7 +462,8 @@ export class CampanhaService {
       .from(conta)
       .where(eq(conta.id, contaId))
       .limit(1);
-    const ehMarketing = (dto.modeloCategoria ?? '').toUpperCase() === 'MARKETING';
+    // A categoria decide o descanso — por isso é a da Meta, não a que a tela mandou.
+    const ehMarketing = modelo.categoria.toUpperCase() === 'MARKETING';
     const descansoDias = ehMarketing && !dto.ignorarDescanso && (config?.dias ?? 0) > 0 ? config!.dias : null;
 
     const [criada] = await this.ctx.db
@@ -460,10 +471,10 @@ export class CampanhaService {
       .values({
         contaId,
         nome: dto.nome.trim(),
-        modeloId: dto.modeloId ?? null,
-        modeloNome: dto.modeloNome,
-        modeloIdioma: dto.modeloIdioma,
-        modeloCategoria: dto.modeloCategoria ?? null,
+        modeloId: modelo.id,
+        modeloNome: modelo.nome,
+        modeloIdioma: modelo.idioma,
+        modeloCategoria: modelo.categoria,
         status: 'rascunho',
         criadaPor: usuarioId,
         janelaDias: dto.janelaDias ?? [],
@@ -507,7 +518,7 @@ export class CampanhaService {
       entidadeId: criada!.id,
       detalhe: {
         nome: dto.nome,
-        modelo: dto.modeloNome,
+        modelo: modelo.nome,
         destinatarios: totalDestinatarios,
         lista: publico.listaId,
         publico: publico.origem,
@@ -518,6 +529,79 @@ export class CampanhaService {
     });
 
     return { id: criada!.id };
+  }
+
+  /**
+   * O modelo escolhido, como a Meta o tem agora.
+   *
+   * A campanha guardava nome, idioma, id e categoria do jeito que a tela
+   * mandava. A tela só oferece modelo aprovado, mas a tela não é a trava: um
+   * pedido montado à mão criava campanha com modelo que não existe, que a Meta
+   * recusou, ou com a categoria trocada — e é a categoria que decide o descanso
+   * entre promoções. Aqui o servidor lê a lista da Meta (a mesma que alimenta
+   * a tela) e passa a valer o que ELA diz.
+   *
+   * Pelo id quando ele vem; senão por nome e idioma. Sem a Meta no ar não há
+   * como conferir, e a campanha não é criada: a tela também não teria lista
+   * de modelos para mostrar.
+   */
+  private async conferirModelo(
+    contaId: string,
+    escolha: { modeloId?: string | null; modeloNome: string; modeloIdioma: string },
+  ): Promise<ModeloDeMensagem> {
+    const modelos = await this.meta.modelos(contaId);
+    const modelo =
+      (escolha.modeloId ? modelos.find((m) => m.id === escolha.modeloId) : undefined) ??
+      modelos.find((m) => m.nome === escolha.modeloNome && m.idioma === escolha.modeloIdioma);
+
+    if (!modelo) {
+      throw new BadRequestException(
+        `O modelo "${escolha.modeloNome}" não está mais na sua conta da Meta. Escolha outro modelo.`,
+      );
+    }
+    if (modelo.status !== MODELO_APROVADO) {
+      throw new BadRequestException(
+        `O modelo "${modelo.nome}" está ${modelo.status} na Meta e não pode ser disparado. Escolha um modelo aprovado.`,
+      );
+    }
+    return modelo;
+  }
+
+  /**
+   * A campanha traz um valor para cada variável do texto — nem a mais, nem a
+   * menos. Com a conta errada a Meta recusa TODAS as mensagens (132000), e a
+   * pessoa só descobriria depois de disparar.
+   *
+   * `quantas` = quantos valores vieram: um número para o público que sai da
+   * base, um por destinatário quando os números são digitados.
+   */
+  private conferirVariaveis(modelo: ModeloDeMensagem, quantas: number[]): void {
+    const errada = quantas.find((n) => n !== modelo.variaveis);
+    if (errada === undefined) return;
+    const usa =
+      modelo.variaveis === 0
+        ? 'não usa variável'
+        : modelo.variaveis === 1
+          ? 'usa 1 variável'
+          : `usa ${modelo.variaveis} variáveis`;
+    throw new BadRequestException(
+      `O modelo "${modelo.nome}" ${usa} e a campanha trouxe ${errada}. Escolha o modelo de novo e preencha as variáveis.`,
+    );
+  }
+
+  /** Quantos valores de variável a campanha já tem gravados (um número por tamanho diferente). */
+  private async variaveisGravadas(
+    contaId: string,
+    alvo: { id: string; variaveisLista: unknown },
+  ): Promise<number[]> {
+    const daLista = lerVariaveis(alvo.variaveisLista);
+    if (daLista) return [daLista.length];
+    const r = await this.ctx.db.execute(sql`
+      select distinct jsonb_array_length(variaveis) as n
+        from campanha_destinatario
+       where conta_id = ${contaId} and campanha_id = ${alvo.id}
+    `);
+    return (r.rows as Array<{ n: number | string }>).map((l) => Number(l.n));
   }
 
   /**
@@ -758,10 +842,31 @@ export class CampanhaService {
 
     const mudancas: Record<string, unknown> = {};
     if (dto.nome !== undefined) mudancas.nome = dto.nome.trim();
-    if (dto.modeloNome !== undefined) mudancas.modeloNome = dto.modeloNome;
-    if (dto.modeloIdioma !== undefined) mudancas.modeloIdioma = dto.modeloIdioma;
-    if (dto.modeloId !== undefined) mudancas.modeloId = dto.modeloId;
-    if (dto.modeloCategoria !== undefined) mudancas.modeloCategoria = dto.modeloCategoria;
+
+    // Mexeu no modelo ou no público (só em rascunho): o modelo é conferido na
+    // Meta como na criação, e as variáveis têm de fechar com ele — as que vêm
+    // no pedido, ou as que a campanha já tem quando o pedido troca só o modelo.
+    if (mexeNoConteudo) {
+      const trocaModelo = Boolean(dto.modeloNome || dto.modeloId);
+      const modelo = await this.conferirModelo(contaId, {
+        modeloId: trocaModelo ? dto.modeloId : alvo.modeloId,
+        modeloNome: dto.modeloNome ?? alvo.modeloNome,
+        modeloIdioma: dto.modeloIdioma ?? alvo.modeloIdioma,
+      });
+      const trocaPublico = Boolean(dto.listaId || dto.daBase || dto.destinatarios?.length);
+      this.conferirVariaveis(
+        modelo,
+        !trocaPublico
+          ? await this.variaveisGravadas(contaId, alvo)
+          : dto.destinatarios?.length
+            ? dto.destinatarios.map((d) => d.variaveis?.length ?? 0)
+            : [dto.variaveisLista?.length ?? 0],
+      );
+      mudancas.modeloId = modelo.id;
+      mudancas.modeloNome = modelo.nome;
+      mudancas.modeloIdioma = modelo.idioma;
+      mudancas.modeloCategoria = modelo.categoria;
+    }
     if (dto.pausaSegundos !== undefined) mudancas.pausaSegundos = dto.pausaSegundos;
     if (dto.maxPorDia !== undefined) mudancas.maxPorDia = dto.maxPorDia;
     if (dto.maxPorSemana !== undefined) mudancas.maxPorSemana = dto.maxPorSemana;

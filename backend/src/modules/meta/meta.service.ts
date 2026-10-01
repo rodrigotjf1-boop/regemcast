@@ -115,8 +115,11 @@ export interface ModeloDeMensagem {
   botoes: string[];
 }
 
+/** O único status com que a Meta deixa um modelo ser disparado. */
+export const MODELO_APROVADO = 'aprovado';
+
 const STATUS_MODELO: Record<string, string> = {
-  APPROVED: 'aprovado',
+  APPROVED: MODELO_APROVADO,
   PENDING: 'em análise',
   IN_APPEAL: 'em recurso',
   REJECTED: 'recusado',
