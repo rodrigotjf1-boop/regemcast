@@ -60,6 +60,13 @@ const _rotuloOrigem = {
 bool _deCashback(String origem) =>
     origem == 'cashback_saldo' || origem == 'cashback_validade';
 
+/// De onde a variável do título pode sair: o cashback fica de fora (o
+/// servidor recusa).
+const _origensDoTitulo = ['fixo', 'nome', 'primeiro_nome'];
+
+/// O título de um modelo aceita até 60 caracteres.
+const _limiteDoTitulo = 60;
+
 /// O que o campo de cada variável pede, e o que a pessoa lê embaixo dele.
 ({String dica, String? ajuda}) _ajudaDaOrigem(
   String origem,
@@ -121,6 +128,15 @@ class _TelaFormularioCampanhaState
   final _valores = <TextEditingController>[];
   final _origens = <String>[];
 
+  // ---- a variável do título do modelo (pré-preenchida da campanha)
+  late String _tituloOrigem =
+      _origensDoTitulo.contains(_c?.variavelCabecalho?.origem)
+      ? _c!.variavelCabecalho!.origem
+      : 'fixo';
+  late final _titulo = TextEditingController(
+    text: _c?.variavelCabecalho?.valor ?? '',
+  );
+
   late String? _modeloId = _c?.modeloId;
   _Quem? _quemEscolhido;
   String? _listaEscolhida;
@@ -161,7 +177,15 @@ class _TelaFormularioCampanhaState
   @override
   void initState() {
     super.initState();
-    for (final c in [_nome, _numeros, _pausa, _maxDia, _maxSemana, _maxMes]) {
+    for (final c in [
+      _nome,
+      _numeros,
+      _titulo,
+      _pausa,
+      _maxDia,
+      _maxSemana,
+      _maxMes,
+    ]) {
       c.addListener(_marcar);
     }
   }
@@ -171,6 +195,7 @@ class _TelaFormularioCampanhaState
     for (final c in [
       _nome,
       _numeros,
+      _titulo,
       _pausa,
       _maxDia,
       _maxSemana,
@@ -425,6 +450,22 @@ class _TelaFormularioCampanhaState
         );
       }
     }
+    final naoSabeMandar = modelo.exige?.semSuporte ?? const <String>[];
+    if (naoSabeMandar.isNotEmpty) {
+      return _falhar(
+        'Este modelo ainda não pode ser disparado por aqui: ${naoSabeMandar.join('; ')}.',
+      );
+    }
+    final temTitulo = modelo.exige?.tituloComVariavel ?? false;
+    // Número digitado não tem contato de onde tirar o nome: só texto fixo.
+    final origemDoTitulo = quem == _Quem.numeros ? 'fixo' : _tituloOrigem;
+    if (temTitulo && _titulo.text.trim().isEmpty) {
+      return _falhar(
+        origemDoTitulo == 'fixo'
+            ? 'Preencha a variável do título do modelo.'
+            : 'Preencha o que usar no título quando o contato não tiver nome.',
+      );
+    }
     if (problemaJanela != null) return _falhar(problemaJanela);
 
     final corpo = <String, Object?>{
@@ -434,6 +475,11 @@ class _TelaFormularioCampanhaState
       'modeloIdioma': modelo.idioma,
       'modeloId': modelo.id,
       'modeloCategoria': modelo.categoria,
+      if (temTitulo)
+        'variavelCabecalho': {
+          'origem': origemDoTitulo,
+          'valor': _titulo.text.trim(),
+        },
       if (!_editando && ehDono && _ignorarDescanso) 'ignorarDescanso': true,
       if (quem != _Quem.numeros) ...{
         if (quem == _Quem.lista)
@@ -744,17 +790,23 @@ class _TelaFormularioCampanhaState
               ),
           ]),
         ],
-        aoEscolher: (id) => setState(() {
-          _modeloId = id;
-          // Trocar o modelo zera as variáveis: o {{1}} de um não é o do outro.
-          for (final v in _valores) {
-            v.dispose();
-          }
-          _valores.clear();
-          _origens.clear();
-          _mexeu = true;
-          _erro = null;
-        }),
+        aoEscolher: (id) {
+          // O título de um modelo não é o do outro (limpar avisa o ouvinte,
+          // então fica fora do `setState`).
+          _titulo.clear();
+          setState(() {
+            _modeloId = id;
+            // Trocar o modelo zera as variáveis: o {{1}} de um não é o do outro.
+            for (final v in _valores) {
+              v.dispose();
+            }
+            _valores.clear();
+            _origens.clear();
+            _tituloOrigem = 'fixo';
+            _mexeu = true;
+            _erro = null;
+          });
+        },
       ),
       if (modelo != null) ...[
         if (categoria != null) ...[
@@ -777,6 +829,15 @@ class _TelaFormularioCampanhaState
             ],
           ),
         ],
+        if (modelo.exige?.semSuporte.isNotEmpty ?? false) ...[
+          const SizedBox(height: 12),
+          Aviso(
+            key: const ValueKey('c-sem-suporte'),
+            icone: Icons.block_rounded,
+            texto:
+                'Este modelo ainda não pode ser disparado por aqui: ${modelo.exige!.semSuporte.join('; ')}. Escolha outro modelo.',
+          ),
+        ],
         const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.all(14),
@@ -788,7 +849,34 @@ class _TelaFormularioCampanhaState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if ((modelo.cabecalho ?? '').isNotEmpty &&
+                  !(modelo.exige?.cabecalhoDeMidia ?? false)) ...[
+                Text(
+                  modelo.cabecalho!,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: 6),
+              ],
               Text(modelo.corpo, style: const TextStyle(height: 1.45)),
+              for (final linha in oQueVaiDoModelo(modelo))
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    linha,
+                    style: TextStyle(
+                      color: c.tintaSuave,
+                      fontSize: 12.5,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              if (modelo.exige?.tituloComVariavel ?? false) ...[
+                const SizedBox(height: 12),
+                _variavelDoTitulo(c, quem),
+              ],
               for (var i = 0; i < modelo.variaveis; i++) ...[
                 const SizedBox(height: 12),
                 _variavel(c, i, quem, cashbackNaConta),
@@ -798,6 +886,69 @@ class _TelaFormularioCampanhaState
         ),
       ],
     ];
+  }
+
+  /// A variável do título (cabeçalho de texto) do modelo. Sai de um texto
+  /// igual para todos ou do nome do contato — nunca do cashback.
+  Widget _variavelDoTitulo(Cores c, _Quem quem) {
+    final origem = quem != _Quem.numeros ? _tituloOrigem : 'fixo';
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: c.superficie,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: c.borda),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Variável do título',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          if (quem != _Quem.numeros) ...[
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              key: ValueKey('c-titulo-origem-$_modeloId'),
+              initialValue: origem,
+              isExpanded: true,
+              dropdownColor: c.superficie,
+              decoration: const InputDecoration(
+                labelText: 'De onde vem a variável do título',
+              ),
+              items: [
+                for (final o in _origensDoTitulo)
+                  DropdownMenuItem(value: o, child: Text(_rotuloOrigem[o]!)),
+              ],
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() {
+                  _tituloOrigem = v;
+                  _mexeu = true;
+                  _erro = null;
+                });
+              },
+            ),
+          ],
+          const SizedBox(height: 8),
+          TextField(
+            key: ValueKey('c-titulo-$_modeloId'),
+            controller: _titulo,
+            maxLength: _limiteDoTitulo,
+            decoration: InputDecoration(
+              labelText: origem == 'fixo' ? 'Texto' : 'Se não tiver',
+              hintText: _ajudaDaOrigem(origem).dica,
+            ),
+          ),
+          Text(
+            origem != 'fixo'
+                ? 'Usado quando o contato não tem nome cadastrado. Até $_limiteDoTitulo caracteres.'
+                : 'Entra no lugar da variável do título do modelo. Até $_limiteDoTitulo caracteres.',
+            style: TextStyle(color: c.tintaSuave, fontSize: 12.5),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _variavel(Cores c, int i, _Quem quem, bool cashbackNaConta) {

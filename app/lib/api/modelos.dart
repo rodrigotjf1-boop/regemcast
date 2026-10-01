@@ -25,6 +25,74 @@ List<BotaoModelo> _botoes(Object? v) => (v is List ? v : const [])
     .map(BotaoModelo.deJson)
     .toList();
 
+/// O que o modelo pede no envio além das variáveis do texto (o `exige` de
+/// `GET /whatsapp/modelos`). A mídia, o cupom e a validade da oferta saem do
+/// próprio modelo; a variável do título é preenchida na campanha.
+class ExigeDoEnvio {
+  const ExigeDoEnvio({
+    this.cabecalho,
+    this.oferta = false,
+    this.cupomNoBotao,
+    this.cartoes = 0,
+    this.semSuporte = const [],
+  });
+
+  /// `image`, `video`, `document`, `texto` (título com variável) ou nulo.
+  final String? cabecalho;
+  final bool oferta;
+
+  /// A posição do botão de copiar código; nulo = o modelo não tem.
+  final int? cupomNoBotao;
+
+  /// Quantos cartões o carrossel tem; 0 = não é carrossel.
+  final int cartoes;
+
+  /// O que o disparo ainda não sabe mandar; vazio = sabe tudo.
+  final List<String> semSuporte;
+
+  bool get cabecalhoDeMidia =>
+      cabecalho == 'image' || cabecalho == 'video' || cabecalho == 'document';
+  bool get tituloComVariavel => cabecalho == 'texto';
+
+  static ExigeDoEnvio? deJson(Object? v) {
+    if (v is! Map<String, dynamic>) return null;
+    final cupom = v['cupomNoBotao'];
+    return ExigeDoEnvio(
+      cabecalho: _txtOuNulo(v['cabecalho']),
+      oferta: v['oferta'] == true,
+      cupomNoBotao: cupom is num ? cupom.toInt() : null,
+      cartoes: v['cartoes'] is List ? (v['cartoes'] as List).length : 0,
+      semSuporte: (v['semSuporte'] is List ? v['semSuporte'] as List : const [])
+          .map((e) => '$e')
+          .toList(),
+    );
+  }
+}
+
+const _nomeDaMidia = {
+  'image': 'a imagem',
+  'video': 'o vídeo',
+  'document': 'o documento',
+};
+
+/// O que a mensagem leva além do texto, e de onde sai — para a pessoa saber,
+/// antes de disparar, que a imagem e o cupom são os do próprio modelo. As
+/// mesmas frases do site.
+List<String> oQueVaiDoModelo(ModeloNaMeta modelo) {
+  final pede = modelo.exige;
+  if (pede == null) return const [];
+  return [
+    if (pede.cabecalhoDeMidia)
+      'Vai com ${_nomeDaMidia[pede.cabecalho]} do modelo no topo da mensagem.',
+    if (pede.cartoes > 0)
+      'Carrossel com ${pede.cartoes} cartões: cada um vai com a imagem do modelo.',
+    if (pede.cupomNoBotao != null)
+      'O botão de copiar código leva o código cadastrado no modelo.',
+    if (pede.oferta)
+      'Oferta por tempo limitado: vale a partir do envio, pelas horas definidas no modelo (3 se não houver).',
+  ];
+}
+
 /// `GET /whatsapp/modelos`. A categoria e o status já vêm em português.
 class ModeloNaMeta {
   const ModeloNaMeta({
@@ -39,12 +107,16 @@ class ModeloNaMeta {
     required this.rodape,
     required this.variaveis,
     required this.botoes,
+    this.exige,
   });
 
   final String id;
   final String nome;
   final String idioma;
   final String categoria;
+
+  /// O que o envio leva do modelo; nulo quando o servidor não informou.
+  final ExigeDoEnvio? exige;
 
   /// "aprovado", "em análise", "recusado", "pausado"…
   final String status;
@@ -71,6 +143,7 @@ class ModeloNaMeta {
     botoes: (j['botoes'] is List ? j['botoes'] as List : const [])
         .map((b) => '$b')
         .toList(),
+    exige: ExigeDoEnvio.deJson(j['exige']),
   );
 }
 
@@ -173,6 +246,7 @@ class ModeloSalvo {
     required this.cartoes,
     required this.ltoAtivo,
     required this.ltoTexto,
+    this.ltoHoras,
     required this.metaTemplateId,
     required this.editadoMetaEm,
     required this.variaveis,
@@ -202,6 +276,9 @@ class ModeloSalvo {
   final List<CartaoModelo> cartoes;
   final bool ltoAtivo;
   final String? ltoTexto;
+
+  /// Por quantas horas a oferta vale depois de enviada; nulo = 3 (o padrão).
+  final int? ltoHoras;
   final String? metaTemplateId;
   final DateTime? editadoMetaEm;
   final int variaveis;
@@ -252,6 +329,7 @@ class ModeloSalvo {
         .toList(),
     ltoAtivo: j['ltoAtivo'] == true,
     ltoTexto: _txtOuNulo(j['ltoTexto']),
+    ltoHoras: j['ltoHoras'] is num ? (j['ltoHoras'] as num).toInt() : null,
     metaTemplateId: _txtOuNulo(j['metaTemplateId']),
     editadoMetaEm: _data(j['editadoMetaEm']),
     variaveis: _int(j['variaveis']),
@@ -281,6 +359,7 @@ class DadosModelo {
     this.cartoes = const [],
     this.ltoAtivo = false,
     this.ltoTexto = '',
+    this.ltoHoras,
   });
 
   /// `simples` ou `carrossel`.
@@ -309,6 +388,9 @@ class DadosModelo {
   final List<CartaoModelo> cartoes;
   final bool ltoAtivo;
   final String ltoTexto;
+
+  /// Validade da oferta, em horas depois do envio (1 a 720). Nulo = 3.
+  final int? ltoHoras;
 
   bool get ehCarrossel => tipo == 'carrossel';
   bool get cabecalhoDeMidia =>
@@ -339,6 +421,7 @@ class DadosModelo {
     cartoes: m.cartoes,
     ltoAtivo: m.ltoAtivo,
     ltoTexto: m.ltoTexto ?? '',
+    ltoHoras: m.ltoHoras,
   );
 
   DadosModelo copiar({
@@ -357,6 +440,7 @@ class DadosModelo {
     List<CartaoModelo>? cartoes,
     bool? ltoAtivo,
     String? ltoTexto,
+    Object? ltoHoras = _manter,
   }) => DadosModelo(
     tipo: tipo ?? this.tipo,
     nome: nome ?? this.nome,
@@ -375,6 +459,7 @@ class DadosModelo {
     cartoes: cartoes ?? this.cartoes,
     ltoAtivo: ltoAtivo ?? this.ltoAtivo,
     ltoTexto: ltoTexto ?? this.ltoTexto,
+    ltoHoras: identical(ltoHoras, _manter) ? this.ltoHoras : ltoHoras as int?,
   );
 
   /// Troca a forma do modelo limpando o que a outra forma não tem — em vez de
@@ -389,6 +474,7 @@ class DadosModelo {
           rodape: '',
           ltoAtivo: false,
           ltoTexto: '',
+          ltoHoras: null,
           botoes: const [],
           cartoes: cartoes.isNotEmpty
               ? cartoes
@@ -437,6 +523,10 @@ class DadosModelo {
           : const [],
       'ltoAtivo': simples && ltoAtivo,
       if (simples && ltoAtivo) 'ltoTexto': ltoTexto,
+      // As horas só existem com a oferta ligada; sem valor, o servidor usa 3.
+      // O servidor grava o que chega: não mandar apagaria as horas definidas
+      // no site.
+      if (simples && ltoAtivo && ltoHoras != null) 'ltoHoras': ltoHoras,
     };
   }
 }
@@ -509,6 +599,17 @@ class ServicoModelos {
         await _api.put('/modelos/$id', dados.paraJson())
             as Map<String, dynamic>?;
     return r?['status'] as String?;
+  }
+
+  /// Muda só a validade da oferta, em horas depois do envio (nulo = o padrão,
+  /// 3). Não vai à Meta: não gasta a edição do dia de modelo aprovado. Devolve
+  /// o que ficou gravado.
+  Future<int?> validadeDaOferta(String id, int? horas) async {
+    final r =
+        await _api.patch('/modelos/$id/oferta', {'horas': horas})
+            as Map<String, dynamic>;
+    final gravado = r['ltoHoras'];
+    return gravado is num ? gravado.toInt() : null;
   }
 
   /// Manda o rascunho para a Meta analisar.

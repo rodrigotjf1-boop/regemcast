@@ -89,7 +89,14 @@ function daListaParaEdicao(m: ModeloSalvo): DadosModelo {
     cartoes: m.cartoes ?? [],
     ltoAtivo: m.ltoAtivo,
     ltoTexto: m.ltoTexto ?? undefined,
+    ltoHoras: m.ltoHoras ?? undefined,
   };
+}
+
+/** As horas da oferta como foram digitadas; em branco = o padrão (3). Quem diz se vale é o servidor. */
+function lerHoras(texto: string): number | undefined {
+  const n = Number(texto);
+  return texto.trim() === '' || !Number.isFinite(n) ? undefined : n;
 }
 
 export function EditorModelo({
@@ -104,6 +111,10 @@ export function EditorModelo({
 }) {
   // Modelo que já existe na Meta: a alteração vai até lá, e as regras dela valem.
   const naMeta = Boolean(inicial?.metaTemplateId);
+  // A validade da oferta fica só aqui (a Meta recebe o vencimento a cada
+  // mensagem): em modelo que já está lá com a oferta, dá para mudar só ela, sem
+  // gastar a edição do dia.
+  const podeSalvarSoAValidade = naMeta && Boolean(inicial?.ltoAtivo);
 
   const [dados, setDados] = useState<DadosModelo>(
     inicial ? daListaParaEdicao(inicial) : VAZIO,
@@ -144,6 +155,7 @@ export function EditorModelo({
             rodape: undefined,
             ltoAtivo: false,
             ltoTexto: undefined,
+            ltoHoras: undefined,
             botoes: [],
             cartoes: d.cartoes?.length ? d.cartoes : [{ ...CARTAO_VAZIO }, { ...CARTAO_VAZIO }],
           }
@@ -171,6 +183,26 @@ export function EditorModelo({
     } finally {
       setOcupado(false);
     }
+  }
+
+  /** Só a validade da oferta: grava aqui, nada vai à Meta. */
+  async function salvarValidade() {
+    if (!inicial) return;
+    setErro('');
+    setAviso('');
+    setOcupado(true);
+    try {
+      const { ltoHoras } = await modelos.validadeDaOferta(inicial.id, dados.ltoHoras ?? null);
+      const horas = ltoHoras ?? 3;
+      setAviso(
+        `Validade salva: a oferta vale por ${horas} ${horas === 1 ? 'hora' : 'horas'} depois de cada envio. Nada foi enviado à Meta.`,
+      );
+    } catch (e) {
+      setErro(mensagemDoErro(e));
+    } finally {
+      setOcupado(false);
+    }
+    topo.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   async function salvar(enviar: boolean) {
@@ -466,7 +498,11 @@ export function EditorModelo({
                   <input
                     type="checkbox"
                     checked={!!dados.ltoAtivo}
-                    onChange={(e) => mudar('ltoAtivo', e.target.checked)}
+                    onChange={(e) => {
+                      // As horas só existem com a oferta ligada.
+                      mudar('ltoAtivo', e.target.checked);
+                      if (!e.target.checked) mudar('ltoHoras', undefined);
+                    }}
                     className="mt-0.5 h-4 w-4 shrink-0 accent-[rgb(var(--cor-acento))]"
                   />
                   <span className="leading-relaxed">
@@ -479,16 +515,53 @@ export function EditorModelo({
                 </label>
 
                 {dados.ltoAtivo ? (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="m-lto">Texto da oferta</Label>
-                    <Campo
-                      id="m-lto"
-                      valor={dados.ltoTexto ?? ''}
-                      limite={16}
-                      aoMudar={(v) => mudar('ltoTexto', v)}
-                      placeholder="Oferta!"
-                    />
-                  </div>
+                  <>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="m-lto">Texto da oferta</Label>
+                      <Campo
+                        id="m-lto"
+                        valor={dados.ltoTexto ?? ''}
+                        limite={16}
+                        aoMudar={(v) => mudar('ltoTexto', v)}
+                        placeholder="Oferta!"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="m-lto-horas">Validade da oferta, em horas</Label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="w-28">
+                          <Input
+                            id="m-lto-horas"
+                            type="number"
+                            inputMode="numeric"
+                            min={1}
+                            max={720}
+                            step={1}
+                            value={dados.ltoHoras ?? ''}
+                            onChange={(e) => mudar('ltoHoras', lerHoras(e.target.value))}
+                            placeholder="3"
+                          />
+                        </div>
+                        {podeSalvarSoAValidade && (
+                          <Button
+                            tamanho="sm"
+                            variante="secundario"
+                            onClick={() => void salvarValidade()}
+                            carregando={ocupado}
+                          >
+                            Salvar só a validade
+                          </Button>
+                        )}
+                      </div>
+                      <p className="text-xs leading-relaxed text-tinta-suave">
+                        A oferta vence esse tempo depois de cada mensagem ser enviada. De 1 a 720 (30 dias); em
+                        branco, vale 3 horas.
+                        {podeSalvarSoAValidade
+                          ? ' Salvar só a validade não passa pela Meta nem gasta a edição do dia. Vale para as campanhas montadas ou editadas daqui em diante.'
+                          : ''}
+                      </p>
+                    </div>
+                  </>
                 ) : (
                   <div className="space-y-1.5">
                     <Label htmlFor="m-rodape">Rodapé</Label>

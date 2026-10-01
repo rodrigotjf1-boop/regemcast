@@ -36,6 +36,59 @@ void main() {
     expect(variaveisDe('{{2}} e {{1}} e {{2}}'), [1, 2]);
   });
 
+  group('o que o modelo exige no envio (GET /whatsapp/modelos)', () {
+    ModeloNaMeta modelo(Object? exige) => ModeloNaMeta.deJson({
+      'id': 't',
+      'nome': 'promo',
+      'idioma': 'pt_BR',
+      'categoria': 'marketing',
+      'status': 'aprovado',
+      'corpo': 'Oi',
+      'variaveis': 0,
+      'botoes': <String>[],
+      'exige': exige,
+    });
+
+    test('lê a mídia, o cupom, a oferta e os cartões', () {
+      final m = modelo({
+        'cabecalho': 'video',
+        'oferta': true,
+        'cupomNoBotao': 0,
+        'cartoes': <Object>[],
+        'semSuporte': <String>[],
+      });
+      expect(m.exige!.cabecalhoDeMidia, true);
+      expect(m.exige!.tituloComVariavel, false);
+      expect(m.exige!.cupomNoBotao, 0, reason: 'posição 0 não é "sem cupom"');
+      expect(oQueVaiDoModelo(m), [
+        'Vai com o vídeo do modelo no topo da mensagem.',
+        'O botão de copiar código leva o código cadastrado no modelo.',
+        'Oferta por tempo limitado: vale a partir do envio, pelas horas definidas no modelo (3 se não houver).',
+      ]);
+    });
+
+    test('título com variável e o que o disparo não sabe mandar', () {
+      final m = modelo({
+        'cabecalho': 'texto',
+        'oferta': false,
+        'cupomNoBotao': null,
+        'cartoes': <Object>[],
+        'semSuporte': ['o botão de link tem variável'],
+      });
+      expect(m.exige!.tituloComVariavel, true);
+      expect(m.exige!.cabecalhoDeMidia, false);
+      expect(m.exige!.cupomNoBotao, isNull);
+      expect(m.exige!.semSuporte, ['o botão de link tem variável']);
+      expect(oQueVaiDoModelo(m), isEmpty);
+    });
+
+    test('servidor antigo, sem o campo: nada a dizer e nada a barrar', () {
+      final m = modelo(null);
+      expect(m.exige, isNull);
+      expect(oQueVaiDoModelo(m), isEmpty);
+    });
+  });
+
   group('ModeloSalvo', () {
     Map<String, dynamic> base(Map<String, dynamic> extra) => {
       'id': 'm',
@@ -178,6 +231,51 @@ void main() {
       expect(j['ltoAtivo'], true);
       expect(j['ltoTexto'], 'Só hoje!');
       expect(j.containsKey('rodape'), false);
+    });
+
+    test(
+      'validade da oferta: vai com a oferta ligada, e só quando há valor',
+      () {
+        const d = DadosModelo(
+          corpo: 'Hoje tem.',
+          ltoAtivo: true,
+          ltoTexto: 'Só hoje!',
+          ltoHoras: 12,
+        );
+        expect(d.paraJson()['ltoHoras'], 12);
+        // Sem valor não vai: o servidor usa o padrão (3 horas).
+        expect(
+          const DadosModelo(ltoAtivo: true).paraJson().containsKey('ltoHoras'),
+          false,
+        );
+        // Oferta desligada: as horas que sobraram não vão.
+        expect(
+          d.copiar(ltoAtivo: false).paraJson().containsKey('ltoHoras'),
+          false,
+        );
+        // `copiar` mantém as horas, e aceita voltar ao padrão.
+        expect(d.copiar(corpo: 'Outro').ltoHoras, 12);
+        expect(d.copiar(ltoHoras: null).ltoHoras, isNull);
+        expect(d.comTipo('carrossel').ltoHoras, isNull);
+      },
+    );
+
+    test('reabrir traz as horas gravadas — salvar pelo app não as apaga', () {
+      final salvo = ModeloSalvo.deJson({
+        'id': 'm',
+        'nome': 'oferta',
+        'categoria': 'MARKETING',
+        'status': 'rascunho',
+        'corpo': 'Hoje tem.',
+        'ltoAtivo': true,
+        'ltoTexto': 'Só hoje!',
+        'ltoHoras': 48,
+      });
+      expect(salvo.ltoHoras, 48);
+      expect(DadosModelo.deSalvo(salvo).paraJson()['ltoHoras'], 48);
+      // Modelo antigo, sem o campo: nulo, e nada vai no pedido.
+      final antigo = ModeloSalvo.deJson({'id': 'm', 'ltoAtivo': true});
+      expect(antigo.ltoHoras, isNull);
     });
 
     test('carrossel: sem cabeçalho, rodapé, oferta nem botões soltos', () {

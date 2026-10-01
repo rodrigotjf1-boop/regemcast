@@ -457,6 +457,20 @@ mensagens.
 - **É uma foto tirada ao criar a campanha** (`campanha.envio`), como o público:
   editar o modelo depois não muda campanha montada. Nulo = só o corpo, e o
   envio sai pelo caminho de sempre (toda campanha antiga).
+- **A validade da oferta muda sem passar pela Meta**
+  (`PATCH /modelos/:id/oferta`, corpo `{ horas }`, de 1 a 720; nulo = o padrão,
+  3). As horas ficam só aqui — a Meta recebe o vencimento a cada mensagem, não
+  no modelo —, então mudar não gasta a edição do dia de modelo aprovado nem o
+  devolve à análise. Vale para a campanha montada ou editada depois, e fica na
+  auditoria (`modelo.validade_da_oferta`). No editor, do site e do app, é o
+  campo "Validade da oferta, em horas" e, em modelo que já está na Meta, o
+  botão "Salvar só a validade". O `PUT /modelos/:id` também leva `ltoHoras`, e
+  os dois clientes mandam o campo: o servidor grava o que chega, e quem não
+  mandasse apagaria as horas.
+- **O app monta a campanha com as mesmas regras do site**: a variável do
+  título (`variavelCabecalho`), as linhas que dizem o que a mensagem leva do
+  modelo, o aviso do que o disparo ainda não sabe mandar e o aviso da campanha
+  pausada pelo modelo.
 - **Recusa antes de gravar**, com a frase dizendo o que falta: modelo com mídia
   ou cupom que não foi criado pelo Regemcast (não temos o arquivo nem o código),
   arquivo que não está mais guardado, variável do título sem valor. E o que o

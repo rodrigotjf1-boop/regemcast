@@ -1144,6 +1144,34 @@ final _api = ClienteApi(
           {'id': 'y2', 'telefone': '5521944332211', 'status': 'lida'},
           {'id': 'y3', 'telefone': '5521933221100', 'status': 'entregue'},
         ]);
+      case '/campanhas/4':
+        return _json({
+          'id': '4',
+          'nome': 'Oferta relâmpago de sexta',
+          'modeloNome': 'oferta_relampago',
+          'modeloIdioma': 'pt_BR',
+          'modeloCategoria': 'marketing',
+          'listaNome': 'Clientes 2026',
+          'status': 'pausada',
+          'pausaMotivo': 'modelo',
+          'criadoEm': '2026-10-01T14:00:00Z',
+          'iniciadaEm': '2026-10-01T14:05:00Z',
+          'porStatus': {'falhou': 1, 'pendente': 4819},
+          'total': 4820,
+        });
+      case '/campanhas/4/destinatarios':
+        return _json([
+          {
+            'id': 'z1',
+            'telefone': '5521988771234',
+            'status': 'falhou',
+            'erroTitulo': 'O formato de um parâmetro não bate com o modelo',
+            'erroDetalhe':
+                'A Meta recusou a mensagem porque um parâmetro do modelo veio em formato diferente do aprovado (132012).',
+          },
+          {'id': 'z2', 'telefone': '5521977123456', 'status': 'pendente'},
+          {'id': 'z3', 'telefone': '5521966554433', 'status': 'pendente'},
+        ]);
       case '/campanhas':
         if (_contaNova) return _json([]);
         final agora = DateTime.now().toUtc();
@@ -1522,7 +1550,60 @@ final _modelosMeta = [
     'variaveis': 0,
     'botoes': [],
   },
+  {
+    'id': 't10',
+    'nome': 'boas_vindas_clube',
+    'idioma': 'pt_BR',
+    'categoria': 'MARKETING',
+    'status': 'aprovado',
+    'cabecalho': 'Oi, {{1}}!',
+    'corpo':
+        'Seu cadastro no clube Mister Burgers está pronto. Na primeira compra tem fritas por nossa conta.',
+    'variaveis': 0,
+    'botoes': ['Parar promoções'],
+    'exige': {
+      'cabecalho': 'texto',
+      'oferta': false,
+      'cupomNoBotao': null,
+      'cartoes': <Object>[],
+      'semSuporte': <String>[],
+    },
+  },
+  {
+    'id': 't11',
+    'nome': 'oferta_relampago',
+    'idioma': 'pt_BR',
+    'categoria': 'MARKETING',
+    'status': 'aprovado',
+    'corpo': 'Só hoje: combo em dobro para quem pedir pelo cardápio.',
+    'variaveis': 0,
+    'botoes': ['Copiar código', 'Parar promoções'],
+    'exige': {
+      'cabecalho': 'image',
+      'oferta': true,
+      'cupomNoBotao': 0,
+      'cartoes': <Object>[],
+      'semSuporte': <String>[],
+    },
+  },
 ];
+
+/// Um modelo aprovado, com oferta por tempo limitado, que já está na Meta.
+final _ofertaNaMeta = ModeloSalvo.deJson({
+  'id': 'm11',
+  'nome': 'oferta_relampago',
+  'idioma': 'pt_BR',
+  'categoria': 'MARKETING',
+  'status': 'aprovado',
+  'corpo': 'Só hoje: combo em dobro para quem pedir pelo cardápio.',
+  'botoes': [
+    {'tipo': 'COPY_CODE', 'texto': 'SMASH10'},
+  ],
+  'ltoAtivo': true,
+  'ltoTexto': 'Só hoje!',
+  'ltoHoras': 12,
+  'metaTemplateId': '999',
+});
 
 final _paraLoja = Platform.environment['LOJA'] == '1';
 
@@ -1779,6 +1860,64 @@ void main() {
       ),
       '36-campanha-descanso',
       antes: (t) => rolarAte(t, find.text('Resultado')),
+    );
+  }, skip: !ativo);
+
+  testWidgets('campanha — variável do título', (t) async {
+    await _capturar(
+      t,
+      const TelaFormularioCampanha(),
+      '58-campanha-titulo',
+      antes: (t) async {
+        await t.enterText(
+          find.byKey(const ValueKey('c-nome')),
+          'Boas-vindas ao clube',
+        );
+        await escolher(t, 'c-modelo', 'boas_vindas_clube — Marketing');
+        await escolher(t, 'c-titulo-origem-t10', 'Primeiro nome do contato');
+        await t.enterText(
+          find.byKey(const ValueKey('c-titulo-t10')),
+          'cliente',
+        );
+        await assentar(t);
+        await rolarAte(t, find.text('Variável do título'));
+      },
+    );
+  }, skip: !ativo);
+
+  testWidgets('campanha — o que vai do modelo', (t) async {
+    await _capturar(
+      t,
+      const TelaFormularioCampanha(),
+      '59-campanha-do-modelo',
+      antes: (t) async {
+        await t.enterText(
+          find.byKey(const ValueKey('c-nome')),
+          'Oferta relâmpago de sexta',
+        );
+        await escolher(t, 'c-modelo', 'oferta_relampago — Marketing');
+      },
+    );
+  }, skip: !ativo);
+
+  testWidgets('campanha — pausada pelo modelo', (t) async {
+    await _capturar(
+      t,
+      const TelaCampanhaDetalhe(
+        id: '4',
+        nomeInicial: 'Oferta relâmpago de sexta',
+      ),
+      '60-campanha-pausada-modelo',
+    );
+  }, skip: !ativo);
+
+  testWidgets('modelo — validade da oferta', (t) async {
+    await _capturar(
+      t,
+      TelaEditorModelo(inicial: _ofertaNaMeta),
+      '61-modelo-validade-oferta',
+      antes: (t) =>
+          rolarAte(t, find.byKey(const ValueKey('m-lto-salvar-validade'))),
     );
   }, skip: !ativo);
 

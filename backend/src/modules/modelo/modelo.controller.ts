@@ -7,12 +7,13 @@
  * divergiriam — foi assim que um telefone sem o código do país passou na tela e
  * foi recusado pela Meta.
  */
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
 import type { UsuarioAutenticado } from '../../common/auth.guard';
 import { UsuarioAtual } from '../../common/usuario-atual.decorator';
 import { SalvarModeloDto } from './dto/salvar-modelo.dto';
+import { ValidadeDaOfertaDto } from './dto/validade-da-oferta.dto';
 import { ModeloService } from './modelo.service';
 
 @ApiTags('Modelos')
@@ -57,6 +58,20 @@ export class ModeloController {
     @Body() dto: SalvarModeloDto,
   ) {
     return this.servico.salvar(usuario.contaId, usuario.id, dto, id);
+  }
+
+  /**
+   * Muda só a validade da oferta por tempo limitado. Fica aqui: a Meta recebe
+   * o vencimento a cada mensagem, não no modelo — então não gasta a edição do
+   * dia de modelo aprovado nem o devolve à análise, como o `PUT` faria.
+   */
+  @Patch(':id/oferta')
+  validadeDaOferta(
+    @UsuarioAtual() usuario: UsuarioAutenticado,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ValidadeDaOfertaDto,
+  ) {
+    return this.servico.mudarValidadeDaOferta(usuario.contaId, usuario.id, id, dto.horas ?? null);
   }
 
   /** Submete à Meta. Confere antes; se algo estiver errado, nada sai daqui. */

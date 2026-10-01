@@ -179,6 +179,11 @@ class _TelaEditorModeloState extends ConsumerState<TelaEditorModelo> {
   late String? _id = _inicial?.id;
   bool get _naMeta => _inicial?.naMeta ?? false;
 
+  /// A validade da oferta fica só aqui (a Meta recebe o vencimento a cada
+  /// mensagem): em modelo que já está lá com a oferta, dá para mudar só ela,
+  /// sem gastar a edição do dia.
+  bool get _podeSalvarSoAValidade => _naMeta && (_inicial?.ltoAtivo ?? false);
+
   late String _tipo = _d0.tipo;
   late String _categoria = _d0.categoria;
   late String? _cabecalhoFormato = _d0.cabecalhoFormato;
@@ -194,6 +199,9 @@ class _TelaEditorModeloState extends ConsumerState<TelaEditorModelo> {
   late final _corpo = TextEditingController(text: _d0.corpo);
   late final _rodape = TextEditingController(text: _d0.rodape);
   late final _ltoTexto = TextEditingController(text: _d0.ltoTexto);
+  late final _ltoHoras = TextEditingController(
+    text: _d0.ltoHoras == null ? '' : '${_d0.ltoHoras}',
+  );
   final _exemplos = <TextEditingController>[];
   late final List<_BotaoEmEdicao> _botoes = [
     for (final b in _d0.botoes) _BotaoEmEdicao(b, _mudou),
@@ -227,6 +235,7 @@ class _TelaEditorModeloState extends ConsumerState<TelaEditorModelo> {
       _cabecalhoExemplo,
       _rodape,
       _ltoTexto,
+      _ltoHoras,
     ]) {
       c.addListener(_mudou);
     }
@@ -246,6 +255,7 @@ class _TelaEditorModeloState extends ConsumerState<TelaEditorModelo> {
       _corpo,
       _rodape,
       _ltoTexto,
+      _ltoHoras,
       ..._exemplos,
     ]) {
       c.dispose();
@@ -300,6 +310,8 @@ class _TelaEditorModeloState extends ConsumerState<TelaEditorModelo> {
     cartoes: [for (final c in _cartoes) c.valor],
     ltoAtivo: _ltoAtivo,
     ltoTexto: _ltoTexto.text,
+    // Em branco = o padrão do servidor (3 horas).
+    ltoHoras: _ltoAtivo ? int.tryParse(_ltoHoras.text.trim()) : null,
   );
 
   String _assinatura() => jsonEncode(_dados.paraJson());
@@ -320,6 +332,7 @@ class _TelaEditorModeloState extends ConsumerState<TelaEditorModelo> {
         _cabecalhoExemplo.clear();
         _rodape.clear();
         _ltoTexto.clear();
+        _ltoHoras.clear();
         for (final b in _botoes) {
           b.descartar();
         }
@@ -431,6 +444,45 @@ class _TelaEditorModeloState extends ConsumerState<TelaEditorModelo> {
       _rolarAoTopo();
     } catch (e) {
       if (mounted) setState(() => _erro = mensagemDoErro(e));
+    } finally {
+      if (mounted) setState(() => _ocupado = false);
+    }
+  }
+
+  /// Só a validade da oferta: grava aqui, nada vai à Meta.
+  Future<void> _salvarValidade() async {
+    FocusScope.of(context).unfocus();
+    final horas = int.tryParse(_ltoHoras.text.trim());
+    setState(() {
+      _ocupado = true;
+      _erro = null;
+      _aviso = null;
+    });
+    try {
+      final gravado = await ref
+          .read(servicoModelosProvider)
+          .validadeDaOferta(_id!, horas);
+      // No servidor só as horas mudaram: elas deixam de ser "o que se perde ao
+      // sair", e o resto do que foi mexido na tela continua contando.
+      final salvo = jsonDecode(_salvo) as Map<String, dynamic>;
+      if (gravado == null) {
+        salvo.remove('ltoHoras');
+      } else {
+        salvo['ltoHoras'] = gravado;
+      }
+      _salvo = jsonEncode(salvo);
+      if (!mounted) return;
+      ref.invalidate(modelosSalvosProvider);
+      final n = gravado ?? 3;
+      setState(
+        () => _aviso =
+            'Validade salva: a oferta vale por ${n == 1 ? '1 hora' : '$n horas'} depois de cada envio. Nada foi enviado à Meta.',
+      );
+      _rolarAoTopo();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _erro = mensagemDoErro(e));
+      _rolarAoTopo();
     } finally {
       if (mounted) setState(() => _ocupado = false);
     }
@@ -838,7 +890,7 @@ class _TelaEditorModeloState extends ConsumerState<TelaEditorModelo> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  if (_ltoAtivo)
+                  if (_ltoAtivo) ...[
                     TextField(
                       key: const ValueKey('m-lto-texto'),
                       controller: _ltoTexto,
@@ -847,8 +899,46 @@ class _TelaEditorModeloState extends ConsumerState<TelaEditorModelo> {
                         labelText: 'Texto da oferta',
                         hintText: 'Oferta!',
                       ),
-                    )
-                  else
+                    ),
+                    const SizedBox(height: 4),
+                    TextField(
+                      key: const ValueKey('m-lto-horas'),
+                      controller: _ltoHoras,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      maxLength: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Validade da oferta, em horas',
+                        hintText: '3',
+                        helperText:
+                            'A oferta vence esse tempo depois de cada mensagem ser enviada. De 1 a 720 (30 dias); em branco, vale 3 horas.',
+                        helperMaxLines: 3,
+                      ),
+                    ),
+                    if (_podeSalvarSoAValidade) ...[
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: OutlinedButton(
+                          key: const ValueKey('m-lto-salvar-validade'),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(0, 42),
+                          ),
+                          onPressed: _ocupado ? null : _salvarValidade,
+                          child: const Text('Salvar só a validade'),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Salvar só a validade não passa pela Meta nem gasta a edição do dia. Vale para as campanhas montadas ou editadas daqui em diante.',
+                        style: TextStyle(
+                          color: c.tintaSuave,
+                          fontSize: 12.5,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ] else
                     TextField(
                       key: const ValueKey('m-rodape'),
                       controller: _rodape,

@@ -24,18 +24,51 @@ Map<String, dynamic> _modelo(
   String categoria,
   int variaveis, {
   String status = 'aprovado',
+  String? cabecalho,
+  Map<String, dynamic>? exige,
 }) => {
   'id': id,
   'nome': nome,
   'idioma': 'pt_BR',
   'categoria': categoria,
   'status': status,
+  'cabecalho': cabecalho,
   'corpo': variaveis == 0
       ? 'Seu pedido saiu para entrega.'
       : 'Oi {{1}}, hoje o smash duplo sai com fritas grátis.',
   'variaveis': variaveis,
   'botoes': <String>[],
+  'exige': ?exige,
 };
+
+/// O `exige` de `GET /whatsapp/modelos`, com o que o servidor sempre manda.
+Map<String, dynamic> _exige({
+  String? cabecalho,
+  bool oferta = false,
+  int? cupomNoBotao,
+  int cartoes = 0,
+  List<String> semSuporte = const [],
+}) => {
+  'cabecalho': cabecalho,
+  'oferta': oferta,
+  'cupomNoBotao': cupomNoBotao,
+  'cartoes': [
+    for (var i = 0; i < cartoes; i++)
+      {'tipo': 'image', 'respostas': <Object>[]},
+  ],
+  'semSuporte': semSuporte,
+};
+
+/// Um modelo com variável no título (cabeçalho de texto) e sem variável no
+/// corpo.
+final _comTitulo = _modelo(
+  't5',
+  'boas_vindas',
+  'utilidade',
+  0,
+  cabecalho: 'Oi, {{1}}!',
+  exige: _exige(cabecalho: 'texto'),
+);
 
 /// Um servidor falso para o formulário: modelos, listas (com blocos), a base
 /// e a prévia — e anota o que recebeu.
@@ -507,6 +540,222 @@ void main() {
       expect(corpo['janelaDias'], isEmpty);
       expect(corpo.containsKey('janelaInicio'), isTrue);
       expect(corpo['janelaInicio'], isNull);
+    },
+  );
+
+  testWidgets(
+    'modelo com variável no título: cobra o valor e manda com a origem escolhida',
+    (t) async {
+      final s = _Servidor(modelos: [_comTitulo]);
+      await _abrirNovo(t, s);
+      await _escolher(t, 'c-modelo', 'boas_vindas — Utilidade');
+      expect(find.text('Oi, {{1}}!'), findsOneWidget);
+      expect(find.text('Variável do título'), findsOneWidget);
+      await _escolher(t, 'c-lista', 'Clientes 2026 · 4.820 contatos');
+
+      await _montar(t);
+      expect(
+        find.text('Preencha a variável do título do modelo.'),
+        findsOneWidget,
+      );
+      expect(s.pedidos, isNot(contains('POST /campanhas')));
+
+      // O cashback não entra no título: o servidor recusa.
+      await _tocar(t, find.byKey(const ValueKey('c-titulo-origem-t5')));
+      expect(find.text('Saldo do cashback'), findsNothing);
+      await t.tap(find.text('Primeiro nome do contato').last);
+      await _assentar(t);
+      await _montar(t);
+      expect(
+        find.text(
+          'Preencha o que usar no título quando o contato não tiver nome.',
+        ),
+        findsOneWidget,
+      );
+
+      await _escrever(t, 'c-titulo-t5', ' cliente ');
+      await _montar(t);
+      final corpo = s.corpos['POST /campanhas']!;
+      expect(corpo['variavelCabecalho'], {
+        'origem': 'primeiro_nome',
+        'valor': 'cliente',
+      });
+      expect(corpo['variaveisLista'], isEmpty);
+    },
+  );
+
+  testWidgets('números digitados: o título só aceita texto igual para todos', (
+    t,
+  ) async {
+    final s = _Servidor(modelos: [_comTitulo]);
+    await _abrirNovo(t, s);
+    await _escolher(t, 'c-modelo', 'boas_vindas — Utilidade');
+    await _tocar(t, find.byKey(const ValueKey('quem-numeros')));
+    expect(find.byKey(const ValueKey('c-titulo-origem-t5')), findsNothing);
+
+    await _escrever(t, 'c-numeros', '5521999998888');
+    await _escrever(t, 'c-titulo-t5', 'Promoção');
+    await _montar(t);
+    expect(s.corpos['POST /campanhas']!['variavelCabecalho'], {
+      'origem': 'fixo',
+      'valor': 'Promoção',
+    });
+  });
+
+  testWidgets(
+    'modelo com imagem, cupom e oferta: diz o que vai do modelo, sem pedir nada a mais',
+    (t) async {
+      final s = _Servidor(
+        modelos: [
+          _modelo(
+            't6',
+            'cupom_da_semana',
+            'marketing',
+            0,
+            exige: _exige(cabecalho: 'image', oferta: true, cupomNoBotao: 0),
+          ),
+          _modelo('t7', 'vitrine', 'marketing', 0, exige: _exige(cartoes: 3)),
+        ],
+      );
+      await _abrirNovo(t, s);
+      await _escolher(t, 'c-modelo', 'cupom_da_semana — Marketing');
+      expect(
+        find.text('Vai com a imagem do modelo no topo da mensagem.'),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'O botão de copiar código leva o código cadastrado no modelo.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(
+          'Oferta por tempo limitado: vale a partir do envio',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Variável do título'), findsNothing);
+
+      // E o carrossel conta os cartões.
+      await _escolher(t, 'c-modelo', 'vitrine — Marketing');
+      expect(
+        find.text(
+          'Carrossel com 3 cartões: cada um vai com a imagem do modelo.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Vai com a imagem do modelo no topo da mensagem.'),
+        findsNothing,
+      );
+
+      await _escolher(t, 'c-lista', 'Clientes 2026 · 4.820 contatos');
+      await _montar(t);
+      expect(
+        s.corpos['POST /campanhas']!.containsKey('variavelCabecalho'),
+        isFalse,
+      );
+    },
+  );
+
+  testWidgets('modelo que o disparo ainda não sabe mandar: avisa e não monta', (
+    t,
+  ) async {
+    final s = _Servidor(
+      modelos: [
+        _modelo(
+          't8',
+          'rastreio',
+          'utilidade',
+          0,
+          exige: _exige(semSuporte: ['o botão de link tem variável']),
+        ),
+      ],
+    );
+    await _abrirNovo(t, s);
+    await _escolher(t, 'c-modelo', 'rastreio — Utilidade');
+    expect(find.byKey(const ValueKey('c-sem-suporte')), findsOneWidget);
+    expect(
+      find.textContaining(
+        'ainda não pode ser disparado por aqui: o botão de link tem variável. Escolha outro modelo.',
+      ),
+      findsOneWidget,
+    );
+
+    await _escolher(t, 'c-lista', 'Clientes 2026 · 4.820 contatos');
+    await _montar(t);
+    expect(s.pedidos, isNot(contains('POST /campanhas')));
+  });
+
+  testWidgets('trocar o modelo limpa a variável do título', (t) async {
+    final s = _Servidor(
+      modelos: [
+        _comTitulo,
+        _modelo(
+          't9',
+          'ola_de_novo',
+          'utilidade',
+          0,
+          cabecalho: 'Olá, {{1}}',
+          exige: _exige(cabecalho: 'texto'),
+        ),
+      ],
+    );
+    await _abrirNovo(t, s);
+    await _escolher(t, 'c-modelo', 'boas_vindas — Utilidade');
+    await _tocar(t, find.byKey(const ValueKey('c-titulo-origem-t5')));
+    await t.tap(find.text('Nome do contato').last);
+    await _assentar(t);
+    await _escrever(t, 'c-titulo-t5', 'cliente');
+
+    // O título de um modelo não é o do outro.
+    await _escolher(t, 'c-modelo', 'ola_de_novo — Utilidade');
+    expect(find.text('Texto igual para todos'), findsOneWidget);
+    expect(
+      t
+          .widget<TextField>(find.byKey(const ValueKey('c-titulo-t9')))
+          .controller!
+          .text,
+      isEmpty,
+    );
+  });
+
+  testWidgets(
+    'rascunho em edição: a variável do título vem preenchida da campanha',
+    (t) async {
+      final s = _Servidor(modelos: [_comTitulo]);
+      _telaAlta(t);
+      final rascunho = ResumoCampanha.deJson({
+        'id': 'r1',
+        'nome': 'Boas-vindas',
+        'modeloNome': 'boas_vindas',
+        'modeloId': 't5',
+        'status': 'rascunho',
+        'porStatus': {'pendente': 10},
+        'total': 10,
+        'variavelCabecalho': {'origem': 'nome', 'valor': 'cliente'},
+      });
+      await t.pumpWidget(
+        _app(s.api, TelaFormularioCampanha(campanha: rascunho)),
+      );
+      await _assentar(t);
+      expect(find.text('Nome do contato'), findsOneWidget);
+      expect(
+        t
+            .widget<TextField>(find.byKey(const ValueKey('c-titulo-t5')))
+            .controller!
+            .text,
+        'cliente',
+      );
+
+      await _escolher(t, 'c-lista', 'Clientes 2026 · 4.820 contatos');
+      await t.tap(find.text('Salvar alterações'));
+      await _assentar(t);
+      expect(s.corpos['PATCH /campanhas/r1']!['variavelCabecalho'], {
+        'origem': 'nome',
+        'valor': 'cliente',
+      });
     },
   );
 }
