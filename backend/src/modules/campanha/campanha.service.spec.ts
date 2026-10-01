@@ -20,6 +20,7 @@ import { traduzirErroMeta } from '../meta/erros-meta';
 const CONTA = '11111111-1111-4111-8111-111111111111';
 const USUARIO = '22222222-2222-4222-8222-222222222222';
 const CAMPANHA = '33333333-3333-4333-8333-333333333333';
+const LISTA = '44444444-4444-4444-8444-444444444444';
 
 interface Escrita {
   tipo: 'update' | 'insert';
@@ -61,6 +62,21 @@ const CAMPANHA_RASCUNHO = {
   atualizadoEm: new Date('2026-09-15T12:00:00Z'),
 };
 
+/** O modelo `promo` como a lista da Meta o devolve (já traduzido por `MetaService.modelos`). */
+const MODELO_PROMO = {
+  id: '1',
+  nome: 'promo',
+  idioma: 'pt_BR',
+  categoria: 'marketing',
+  status: 'aprovado',
+  motivo: null,
+  cabecalho: null,
+  corpo: 'Promoção de sexta!',
+  rodape: null,
+  variaveis: 0,
+  botoes: [],
+};
+
 function montar() {
   const diario: Escrita[] = [];
 
@@ -74,6 +90,8 @@ function montar() {
 
   const meta = {
     tokenDaConta: jest.fn().mockResolvedValue({ token: 'EAA-token', wabaId: 'WABA1' }),
+    // O que a Meta diz da conta: um modelo aprovado, sem variável.
+    modelos: jest.fn().mockResolvedValue([MODELO_PROMO]),
   };
 
   const graph = {
@@ -153,6 +171,7 @@ describe('criar', () => {
 
   it('nasce em rascunho: criar não envia nada', async () => {
     const m = montar();
+    m.meta.modelos.mockResolvedValue([{ ...MODELO_PROMO, corpo: 'Oi, {{1}}!', variaveis: 1 }]);
     m.db.insert.mockReturnValueOnce(consulta([{ id: CAMPANHA }], m.diario, 'insert'));
 
     await m.service.criar(CONTA, USUARIO, {
@@ -164,6 +183,222 @@ describe('criar', () => {
 
     expect(m.graph.enviarModelo).not.toHaveBeenCalled();
     expect(m.diario[0]?.valores.status).toBe('rascunho');
+  });
+});
+
+/**
+ * O modelo da campanha é o que a META diz, não o que a tela mandou. A tela só
+ * oferece modelo aprovado, mas a tela não é a trava: um pedido montado à mão
+ * criava campanha com modelo inexistente, recusado, ou com a categoria trocada
+ * — e a categoria decide o descanso entre promoções.
+ */
+describe('criar — o modelo é conferido na Meta', () => {
+  const pedido = {
+    nome: 'Promoção de sexta',
+    modeloNome: 'promo',
+    modeloIdioma: 'pt_BR',
+    destinatarios: [{ telefone: '5521999998888' }],
+  };
+  const criarCom = async (m: ReturnType<typeof montar>, extra: Record<string, unknown> = {}) => {
+    m.db.insert.mockReturnValueOnce(consulta([{ id: CAMPANHA }], m.diario, 'insert'));
+    return m.service.criar(CONTA, USUARIO, { ...pedido, ...extra });
+  };
+  const gravada = (m: ReturnType<typeof montar>) => m.diario.find((e) => e.tipo === 'insert')?.valores;
+
+  it('recusa modelo que não está na conta da Meta, antes de gravar', async () => {
+    const m = montar();
+    const erro = await criarCom(m, { modeloNome: 'inventado' }).catch((e: unknown) => e);
+
+    expect(erro).toBeInstanceOf(BadRequestException);
+    expect((erro as BadRequestException).message).toContain('"inventado"');
+    expect(m.db.insert).not.toHaveBeenCalled();
+  });
+
+  it.each(['em análise', 'recusado', 'pausado', 'desativado'])(
+    'recusa modelo %s, dizendo o estado dele na Meta',
+    async (status) => {
+      const m = montar();
+      m.meta.modelos.mockResolvedValue([{ ...MODELO_PROMO, status }]);
+      const erro = await criarCom(m).catch((e: unknown) => e);
+
+      expect(erro).toBeInstanceOf(BadRequestException);
+      expect((erro as BadRequestException).message).toContain(status);
+      expect(m.db.insert).not.toHaveBeenCalled();
+    },
+  );
+
+  it('o mesmo nome em outro idioma é outro modelo', async () => {
+    const m = montar();
+    const erro = await criarCom(m, { modeloIdioma: 'en_US' }).catch((e: unknown) => e);
+    expect(erro).toBeInstanceOf(BadRequestException);
+  });
+
+  it('grava nome, idioma, id e categoria como a Meta diz — não como a tela mandou', async () => {
+    const m = montar();
+    m.meta.modelos.mockResolvedValue([{ ...MODELO_PROMO, id: '777', categoria: 'marketing' }]);
+    // A tela "manda" utilidade para escapar do descanso, e um id que não é o do modelo.
+    await criarCom(m, { modeloCategoria: 'utilidade', modeloId: 'outro-id' });
+
+    expect(gravada(m)).toEqual(
+      expect.objectContaining({ modeloId: '777', modeloNome: 'promo', modeloIdioma: 'pt_BR', modeloCategoria: 'marketing' }),
+    );
+  });
+
+  it('acha pelo id quando ele vem, mesmo com o nome trocado no pedido', async () => {
+    const m = montar();
+    await criarCom(m, { modeloId: '1', modeloNome: 'nome-errado' });
+    expect(gravada(m)?.modeloNome).toBe('promo');
+  });
+
+  it('o descanso vale pela categoria da Meta: marketing dito "utilidade" pela tela descansa do mesmo jeito', async () => {
+    const m = montar();
+    m.db.select.mockReturnValueOnce(m.consulta([{ dias: 3 }])); // o descanso da conta
+    await criarCom(m, { modeloCategoria: 'utilidade' });
+    expect(gravada(m)?.descansoDias).toBe(3);
+  });
+
+  it('modelo de utilidade na Meta não descansa, mesmo que a tela diga marketing', async () => {
+    const m = montar();
+    m.meta.modelos.mockResolvedValue([{ ...MODELO_PROMO, categoria: 'utilidade' }]);
+    m.db.select.mockReturnValueOnce(m.consulta([{ dias: 3 }]));
+    await criarCom(m, { modeloCategoria: 'marketing' });
+    expect(gravada(m)?.descansoDias).toBeNull();
+  });
+
+  it.each([
+    ['a menos', 2, ['Ana'], 'usa 2 variáveis e a campanha trouxe 1'],
+    ['a mais', 0, ['Ana'], 'não usa variável e a campanha trouxe 1'],
+    ['nenhuma', 1, undefined, 'usa 1 variável e a campanha trouxe 0'],
+  ])('recusa variável %s nos números digitados', async (_caso, variaveis, enviadas, trecho) => {
+    const m = montar();
+    m.meta.modelos.mockResolvedValue([{ ...MODELO_PROMO, variaveis }]);
+    const erro = await criarCom(m, {
+      destinatarios: [{ telefone: '5521999998888', ...(enviadas ? { variaveis: enviadas } : {}) }],
+    }).catch((e: unknown) => e);
+
+    expect(erro).toBeInstanceOf(BadRequestException);
+    expect((erro as BadRequestException).message).toContain(trecho);
+    expect(m.db.insert).not.toHaveBeenCalled();
+  });
+
+  it('recusa quando UM dos números digitados traz a conta errada de variáveis', async () => {
+    const m = montar();
+    m.meta.modelos.mockResolvedValue([{ ...MODELO_PROMO, variaveis: 1 }]);
+    const erro = await criarCom(m, {
+      destinatarios: [
+        { telefone: '5521999998888', variaveis: ['Ana'] },
+        { telefone: '5521999997777', variaveis: [] },
+      ],
+    }).catch((e: unknown) => e);
+    expect(erro).toBeInstanceOf(BadRequestException);
+  });
+
+  it('recusa variável a menos no público que sai da base', async () => {
+    const m = montar();
+    m.meta.modelos.mockResolvedValue([{ ...MODELO_PROMO, variaveis: 2 }]);
+    const erro = await criarCom(m, {
+      destinatarios: undefined,
+      listaId: LISTA,
+      variaveisLista: [{ origem: 'primeiro_nome', valor: 'cliente' }],
+    }).catch((e: unknown) => e);
+
+    expect(erro).toBeInstanceOf(BadRequestException);
+    expect((erro as BadRequestException).message).toContain('usa 2 variáveis e a campanha trouxe 1');
+    expect(m.db.insert).not.toHaveBeenCalled();
+  });
+
+  it('sem a Meta no ar não cria: o erro dela chega inteiro', async () => {
+    const m = montar();
+    m.meta.modelos.mockRejectedValue(new BadRequestException('Não conseguimos carregar seus modelos. Tente de novo.'));
+    const erro = await criarCom(m).catch((e: unknown) => e);
+
+    expect((erro as BadRequestException).message).toContain('Não conseguimos carregar seus modelos');
+    expect(m.db.insert).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Editar um rascunho passa pela mesma conferência da criação: o que fica
+ * gravado é o modelo como a Meta o tem, e as variáveis fecham com ele.
+ */
+describe('editar — o modelo é conferido na Meta', () => {
+  const comRascunho = (m: ReturnType<typeof montar>, extra: Record<string, unknown> = {}) =>
+    m.db.select.mockReturnValueOnce(m.consulta([{ ...CAMPANHA_RASCUNHO, variaveisLista: [], ...extra }]));
+  const gravado = (m: ReturnType<typeof montar>) => m.diario.find((e) => e.tipo === 'update')?.valores;
+
+  it('mudar só o nome ou a janela não consulta a Meta', async () => {
+    const m = montar();
+    comRascunho(m);
+    await m.service.editar(CONTA, USUARIO, CAMPANHA, { nome: 'Outro nome' }).catch(() => undefined);
+
+    expect(m.meta.modelos).not.toHaveBeenCalled();
+    expect(gravado(m)).toEqual({ nome: 'Outro nome' });
+  });
+
+  it('trocar o modelo grava o que a Meta diz dele, inclusive a categoria', async () => {
+    const m = montar();
+    comRascunho(m);
+    m.meta.modelos.mockResolvedValue([
+      MODELO_PROMO,
+      { ...MODELO_PROMO, id: '2', nome: 'aviso', categoria: 'utilidade' },
+    ]);
+    await m.service
+      .editar(CONTA, USUARIO, CAMPANHA, { modeloNome: 'aviso', modeloIdioma: 'pt_BR', modeloCategoria: 'marketing' })
+      .catch(() => undefined);
+
+    expect(gravado(m)).toEqual(
+      expect.objectContaining({ modeloId: '2', modeloNome: 'aviso', modeloIdioma: 'pt_BR', modeloCategoria: 'utilidade' }),
+    );
+  });
+
+  it('recusa trocar para um modelo que a Meta não aprovou', async () => {
+    const m = montar();
+    comRascunho(m);
+    m.meta.modelos.mockResolvedValue([{ ...MODELO_PROMO, id: '2', nome: 'aviso', status: 'recusado' }]);
+
+    await expect(
+      m.service.editar(CONTA, USUARIO, CAMPANHA, { modeloNome: 'aviso', modeloIdioma: 'pt_BR' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(m.db.update).not.toHaveBeenCalled();
+  });
+
+  it('trocar SÓ o modelo confere as variáveis que a campanha já tem gravadas', async () => {
+    const m = montar();
+    comRascunho(m, { variaveisLista: [{ origem: 'primeiro_nome', valor: 'cliente' }] }); // 1 valor gravado
+    m.meta.modelos.mockResolvedValue([{ ...MODELO_PROMO, id: '2', nome: 'aviso', variaveis: 2 }]);
+
+    const erro = await m.service
+      .editar(CONTA, USUARIO, CAMPANHA, { modeloNome: 'aviso', modeloIdioma: 'pt_BR' })
+      .catch((e: unknown) => e);
+
+    expect(erro).toBeInstanceOf(BadRequestException);
+    expect((erro as BadRequestException).message).toContain('usa 2 variáveis e a campanha trouxe 1');
+    expect(m.db.update).not.toHaveBeenCalled();
+  });
+
+  it('números digitados: as variáveis gravadas saem da fila da campanha', async () => {
+    const m = montar();
+    comRascunho(m, { variaveisLista: null });
+    m.db.execute.mockResolvedValueOnce({ rows: [{ n: 0 }] }); // toda a fila sem variável
+    m.meta.modelos.mockResolvedValue([{ ...MODELO_PROMO, id: '2', nome: 'aviso', variaveis: 1 }]);
+
+    await expect(
+      m.service.editar(CONTA, USUARIO, CAMPANHA, { modeloNome: 'aviso', modeloIdioma: 'pt_BR' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('trocar o público confere as variáveis que vêm no pedido, contra o modelo que a campanha já tem', async () => {
+    const m = montar();
+    comRascunho(m);
+    m.meta.modelos.mockResolvedValue([{ ...MODELO_PROMO, variaveis: 1 }]);
+
+    const erro = await m.service
+      .editar(CONTA, USUARIO, CAMPANHA, { listaId: LISTA, variaveisLista: [] })
+      .catch((e: unknown) => e);
+
+    expect(erro).toBeInstanceOf(BadRequestException);
+    expect((erro as BadRequestException).message).toContain('usa 1 variável e a campanha trouxe 0');
+    expect(m.db.delete).not.toHaveBeenCalled();
   });
 });
 
