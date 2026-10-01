@@ -20,6 +20,7 @@ import { mascararTelefone, paraCloudApi } from '../../common/telefone';
 import { ContextoDb } from '../../db/contexto';
 import { campanha, contato, contatoLista, contatoListaItem, importacao, listaDivisao } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { anonimizarContatos } from './anonimizar';
 import { cashbackValido, hojeDaConta } from './cashback';
 import type { ConfirmarImportacaoDto, PreviaImportacaoDto } from './dto/importacao.dto';
 import { gravarExtras } from './extras';
@@ -758,38 +759,14 @@ export class ContatoService {
   async anonimizar(contaId: string, usuarioId: string, contatoId: string) {
     return this.ctx.comConta(contaId, async (db) => {
       const quando = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-      const [alterado] = await db
-        .update(contato)
-        .set({
-          nome: null,
-          email: null,
-          dataNascimento: null,
-          pedidos: null,
-          totalGastoCentavos: null,
-          primeiroPedidoEm: null,
-          ultimoPedidoEm: null,
-          bairro: null,
-          tipoPreferido: null,
-          periodoPreferido: null,
-          cashbackCentavos: null,
-          cashbackVenceEm: null,
-          cashbackEm: null,
-          metricasEm: null,
-          metricasOrigem: null,
-          consentimentoEvidencia: `Dados pessoais apagados a pedido da pessoa em ${quando}. Número mantido bloqueado.`,
-          optOut: true,
-          optOutEm: sql`coalesce(${contato.optOutEm}, now())`,
-          optOutOrigem: sql`coalesce(${contato.optOutOrigem}, 'pedido_exclusao')`,
-        })
-        .where(and(eq(contato.contaId, contaId), eq(contato.id, contatoId)))
-        .returning({ id: contato.id, telefone: contato.telefoneE164 });
-
+      // O que é dado pessoal, e as compras junto: `anonimizar.ts`.
+      const [alterado] = await anonimizarContatos(
+        db,
+        contaId,
+        [contatoId],
+        `Dados pessoais apagados a pedido da pessoa em ${quando}. Número mantido bloqueado.`,
+      );
       if (!alterado) throw new NotFoundException('Contato não encontrado.');
-
-      // As compras dessa pessoa também são dado pessoal: saem junto, e o que
-      // saiu delas (os produtos que ela comprou).
-      await db.execute(sql`delete from compra where conta_id = ${contaId} and contato_id = ${contatoId}`);
-      await db.execute(sql`delete from contato_produto where conta_id = ${contaId} and contato_id = ${contatoId}`);
 
       await this.auditoria.registrar({
         contaId,

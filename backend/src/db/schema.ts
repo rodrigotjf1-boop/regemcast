@@ -799,6 +799,73 @@ export const integracaoCardapioweb = pgTable('integracao_cardapioweb', {
 });
 
 /**
+ * A conexão com a empresa no Regem (migration 035): o token da API de
+ * integração, cifrado, ligado pela distribuição; a autorização da 99 do dono;
+ * e o andamento de clientes e vendas, cada um pelo seu cursor.
+ */
+export const integracaoRegem = pgTable('integracao_regem', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contaId: uuid('conta_id').notNull(),
+  credencialCifrada: text('credencial_cifrada'),
+  empresaId: text('empresa_id'),
+  empresaNome: text('empresa_nome'),
+  /** `[{ id, nome }]` — as lojas da empresa que o token abre. */
+  lojas: jsonb('lojas').notNull().default(sql`'[]'::jsonb`),
+  escopos: text('escopos').array().notNull().default(sql`'{}'`),
+  ligadaEm: timestamp('ligada_em', { withTimezone: true }),
+  /** Quem ligou pela distribuição (e-mail do operador). */
+  ligadaPor: text('ligada_por'),
+  incluir99: boolean('incluir_99').notNull().default(false),
+  autorizacao99Por: uuid('autorizacao_99_por'),
+  autorizacao99Em: timestamp('autorizacao_99_em', { withTimezone: true }),
+  autorizacao99Texto: text('autorizacao_99_texto'),
+  consentimentoPor: uuid('consentimento_por'),
+  consentimentoEm: timestamp('consentimento_em', { withTimezone: true }),
+  consentimentoEvidencia: text('consentimento_evidencia'),
+  listaId: uuid('lista_id'),
+  importacaoId: uuid('importacao_id'),
+  /** parado | carga | em_dia | falhou */
+  clientesStatus: text('clientes_status').notNull().default('parado'),
+  clientesCursor: text('clientes_cursor'),
+  clientesLidos: integer('clientes_lidos').notNull().default(0),
+  clientesNovos: integer('clientes_novos').notNull().default(0),
+  clientesBloqueados: integer('clientes_bloqueados').notNull().default(0),
+  clientesIgnorados: integer('clientes_ignorados').notNull().default(0),
+  clientesInvalidos: integer('clientes_invalidos').notNull().default(0),
+  clientesRemovidos: integer('clientes_removidos').notNull().default(0),
+  clientesUltimaConsulta: timestamp('clientes_ultima_consulta', { withTimezone: true }),
+  clientesErro: text('clientes_erro'),
+  /** parado | carga | em_dia | falhou */
+  pedidosStatus: text('pedidos_status').notNull().default('parado'),
+  pedidosCursor: text('pedidos_cursor'),
+  pedidosLidos: integer('pedidos_lidos').notNull().default(0),
+  pedidosGravados: integer('pedidos_gravados').notNull().default(0),
+  pedidosIgnorados: integer('pedidos_ignorados').notNull().default(0),
+  pedidosUltimaConsulta: timestamp('pedidos_ultima_consulta', { withTimezone: true }),
+  pedidosErro: text('pedidos_erro'),
+  travaAte: timestamp('trava_ate', { withTimezone: true }),
+  proximoEm: timestamp('proximo_em', { withTimezone: true }),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** O cliente do Regem ligado ao contato (migration 035). */
+export const integracaoRegemCliente = pgTable(
+  'integracao_regem_cliente',
+  {
+    contaId: uuid('conta_id').notNull(),
+    regemId: text('regem_id').notNull(),
+    contatoId: uuid('contato_id'),
+    telefoneE164: text('telefone_e164'),
+    canais: text('canais').array().notNull().default(sql`'{}'`),
+    /** Entrou na base só pela 99, por esta conexão: sai se a autorização for desfeita. */
+    so99: boolean('so_99').notNull().default(false),
+    atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.contaId, t.regemId] }) }),
+);
+
+/**
  * O resumo de cada compra trazida de uma integração (migration 029) — só para
  * segmentar. Os totais do contato (`pedidos`, `totalGastoCentavos`,
  * `primeiroPedidoEm`, `ultimoPedidoEm`) saem daqui a cada sincronização.

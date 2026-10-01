@@ -257,6 +257,8 @@ export const env = {
   integracoes: {
     chave: opcional('INTEGRACOES_CHAVE'),
     cardapiowebUrl: opcional('CARDAPIOWEB_API_URL', 'https://integracao.cardapioweb.com'),
+    /** A API de integração do Regem, com o prefixo (`…/api/v1`). O teste local aponta para um Regem simulado. */
+    regemUrl: opcional('REGEM_API_URL', 'https://api.dmsregem.com/api/v1'),
   },
 
   /**

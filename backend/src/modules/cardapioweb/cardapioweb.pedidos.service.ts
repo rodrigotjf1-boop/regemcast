@@ -29,15 +29,14 @@
  * campanha da noite não pode dizer "você tem R$ 20" a quem gastou à tarde.
  */
 import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
-import { eq, sql, type SQL } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import { env } from '../../config/env';
 import { emPartes } from '../../common/em-partes';
-import { gemeoDoCelular } from '../../common/telefone';
 import { ContextoDb, type Db } from '../../db/contexto';
 import { integracaoCardapioweb } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
-import { periodoPreferidoSql, refazerProdutos } from '../contato/habitos';
+import { acharContato, contatosPorTelefone, gravarCompras, recalcularTotais } from '../contato/compras';
 import { decifrarToken } from '../meta/cripto';
 import { CardapiowebCliente, ErroCardapioWeb, type Credencial } from './cardapioweb.cliente';
 import {
@@ -371,38 +370,8 @@ export class PedidosCardapiowebService {
         else ignorados++;
       }
 
-      const afetados = new Set<string>();
-      let novas = 0;
-      for (const parte of emPartes(linhas, 200)) {
-        const r = await db.execute(sql`
-          insert into compra (conta_id, contato_id, fonte, id_externo, feita_em, valor_centavos, tipo, canal, bairro, itens, atualizada_na_fonte)
-          values ${sql.join(
-            parte.map(
-              ({ compra: c, contatoId }) =>
-                sql`(${contaId}, ${contatoId}, 'cardapioweb', ${c.idExterno}, ${c.feitaEm}, ${c.valorCentavos}, ${c.tipo},
-                     ${c.canal}, ${c.bairro}, ${JSON.stringify(c.itens)}::jsonb, ${c.atualizadaNaFonte})`,
-            ),
-            sql`, `,
-          )}
-          on conflict (conta_id, fonte, id_externo) do update
-             set contato_id = excluded.contato_id,
-                 feita_em = excluded.feita_em,
-                 valor_centavos = excluded.valor_centavos,
-                 tipo = excluded.tipo,
-                 canal = excluded.canal,
-                 bairro = excluded.bairro,
-                 itens = excluded.itens,
-                 atualizada_na_fonte = excluded.atualizada_na_fonte
-           where compra.atualizada_na_fonte is distinct from excluded.atualizada_na_fonte
-              or compra.contato_id <> excluded.contato_id
-          returning contato_id, (xmax = 0) as nova
-        `);
-        for (const x of r.rows as { contato_id: string; nova: boolean }[]) {
-          afetados.add(x.contato_id);
-          if (x.nova) novas++;
-        }
-      }
-      await recalcularTotais(db, contaId, [...afetados]);
+      const { afetados, novas } = await gravarCompras(db, contaId, 'cardapioweb', linhas);
+      await recalcularTotais(db, contaId, afetados, 'cardapioweb');
       return novas;
     });
 
@@ -445,35 +414,6 @@ export class PedidosCardapiowebService {
 
 // ------------------------------------------------------------ banco (funções da transação)
 
-interface ContatoDoTelefone {
-  id: string;
-  telefone: string;
-  optOut: boolean;
-}
-
-/** Os contatos da conta com estes telefones — em qualquer das duas formas do celular. */
-async function contatosPorTelefone(db: Db, contaId: string, telefones: string[]): Promise<Map<string, ContatoDoTelefone>> {
-  const formas = [...new Set(telefones.flatMap((t) => [t, gemeoDoCelular(t)].filter((x): x is string => Boolean(x))))];
-  const mapa = new Map<string, ContatoDoTelefone>();
-  for (const parte of emPartes(formas, 500)) {
-    const r = await db.execute(sql`
-      select id, telefone_e164, opt_out from contato
-       where conta_id = ${contaId}
-         and telefone_e164 in (${sql.join(parte.map((t) => sql`${t}`), sql`, `)})
-    `);
-    for (const x of r.rows as { id: string; telefone_e164: string; opt_out: boolean }[]) {
-      mapa.set(x.telefone_e164, { id: x.id, telefone: x.telefone_e164, optOut: x.opt_out });
-    }
-  }
-  return mapa;
-}
-
-/** O contato deste telefone, na forma dele ou na outra; bloqueado em qualquer forma vence. */
-function acharContato(mapa: Map<string, ContatoDoTelefone>, telefone: string): ContatoDoTelefone | null {
-  const achados = [mapa.get(telefone), mapa.get(gemeoDoCelular(telefone) ?? '')].filter((x): x is ContatoDoTelefone => Boolean(x));
-  return achados.find((k) => k.optOut) ?? achados[0] ?? null;
-}
-
 /**
  * Clientes que chegaram pelo pedido antes de estarem na base: as mesmas regras
  * da importação de clientes (WhatsApp liberado → contato com a evidência;
@@ -511,69 +451,4 @@ async function gravarClientesNovos(db: Db, contaId: string, l: Linha, clientes: 
     }
   }
   await bloquearClientes(db, contaId, bloqueados, l.importacaoId, agora);
-}
-
-/**
- * Os totais do contato (pedidos, gasto, primeira e última compra), o bairro
- * mais frequente nas entregas, o jeito de comprar mais frequente (entrega,
- * retirada, salão; empate: o mais recente), o período do dia em que mais pede
- * (no fuso da conta) e os produtos que já comprou, refeitos das compras — para
- * os contatos tocados neste lote. Quem ficou sem compra nenhuma (o único
- * pedido foi cancelado) volta a "sem histórico", se o histórico vinha daqui.
- */
-export async function recalcularTotais(db: Db, contaId: string, contatoIds: string[]): Promise<void> {
-  for (const parte of emPartes([...new Set(contatoIds)], 500)) {
-    const lista: SQL = sql.join(parte.map((id) => sql`${id}::uuid`), sql`, `);
-    await db.execute(sql`
-      update contato c
-         set pedidos = a.qtd,
-             total_gasto_centavos = a.total,
-             primeiro_pedido_em = a.primeiro,
-             ultimo_pedido_em = a.ultimo,
-             bairro = b.bairro,
-             tipo_preferido = t.tipo,
-             periodo_preferido = ${periodoPreferidoSql(sql`a.contato_id`)},
-             metricas_em = now(),
-             metricas_origem = 'cardapioweb'
-        from (
-          select contato_id, count(*)::int as qtd, sum(valor_centavos)::bigint as total,
-                 min(feita_em) as primeiro, max(feita_em) as ultimo
-            from compra
-           where conta_id = ${contaId} and contato_id in (${lista})
-           group by contato_id
-        ) a
-        left join lateral (
-          -- O bairro que mais aparece (sem ligar para maiúscula; empate: o mais
-          -- recente) e, dentro dele, a grafia mais usada, de preferência com
-          -- inicial maiúscula — "Tijuca" e "tijuca" são o mesmo bairro.
-          select x.bairro
-            from compra x
-           where x.contato_id = a.contato_id and x.bairro is not null
-           group by x.bairro
-           order by sum(count(*)) over (partition by lower(x.bairro)) desc,
-                    max(max(x.feita_em)) over (partition by lower(x.bairro)) desc,
-                    count(*) desc, (x.bairro ~ '^[[:upper:]]') desc, x.bairro
-           limit 1
-        ) b on true
-        left join lateral (
-          select x.tipo
-            from compra x
-           where x.contato_id = a.contato_id and x.tipo in ('entrega', 'retirada', 'salao')
-           group by x.tipo
-           order by count(*) desc, max(x.feita_em) desc
-           limit 1
-        ) t on true
-       where c.id = a.contato_id and c.conta_id = ${contaId}
-    `);
-    await db.execute(sql`
-      update contato c
-         set pedidos = null, total_gasto_centavos = null, primeiro_pedido_em = null, ultimo_pedido_em = null,
-             bairro = null, tipo_preferido = null, periodo_preferido = null, metricas_em = now()
-       where c.conta_id = ${contaId}
-         and c.id in (${lista})
-         and c.metricas_origem = 'cardapioweb'
-         and not exists (select 1 from compra x where x.contato_id = c.id)
-    `);
-    await refazerProdutos(db, contaId, lista);
-  }
 }
