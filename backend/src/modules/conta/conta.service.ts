@@ -31,6 +31,7 @@ import {
 import { and, asc, eq, sql, type SQL } from 'drizzle-orm';
 
 import type { UsuarioAutenticado } from '../../common/auth.guard';
+import { ligadaAoRegem } from '../../common/gratuidade-regem';
 import { ContextoDb } from '../../db/contexto';
 import {
   assinatura as tAssinatura,
@@ -80,7 +81,7 @@ export interface AssinaturaResumo {
 
 export interface UsoResumo {
   disparos: number;
-  /** `null` quando a conta ainda não tem plano — aí não há teto a informar. */
+  /** `null` quando não há teto a informar: conta sem plano, ou ligada ao Regem. */
   teto: number | null;
   restantes: number | null;
 }
@@ -90,6 +91,11 @@ export interface ContaResumo {
   plano: PlanoResumo | null;
   assinatura: AssinaturaResumo | null;
   uso: UsoResumo;
+  /**
+   * A conta está ligada ao Regem: não paga e não tem teto do plano enquanto a
+   * integração estiver ativa. As telas não mostram "grátis acabando" nem teto.
+   */
+  gratisPeloRegem: boolean;
   /**
    * Algum número guarda conversas (coexistência + resposta "sim")? É o que faz
    * o menu "Conversas" aparecer. A rota de conversas confere de novo.
@@ -154,6 +160,7 @@ export class ContaService {
         planoCodigo: tPlano.codigo,
         planoNome: tPlano.nome,
         planoDisparosMes: tPlano.disparosMes,
+        gratisPeloRegem: ligadaAoRegem(sql`conta.id`),
         conversasHabilitadas: sql<boolean>`exists (
           select 1 from wa_numero n
            where n.conta_id = conta.id and n.coexistencia and n.integrar_conversas is true
@@ -193,7 +200,8 @@ export class ContaService {
     // `uso_ciclo.disparos` é bigint no banco: o driver entrega string, e
     // "42" - 5000 viraria NaN sem avisar.
     const disparos = Number(linha.disparos ?? 0);
-    const teto = plano?.disparosMes ?? null;
+    const gratisPeloRegem = linha.gratisPeloRegem === true;
+    const teto = gratisPeloRegem ? null : (plano?.disparosMes ?? null);
 
     return {
       conta: {
@@ -221,6 +229,7 @@ export class ContaService {
         teto,
         restantes: teto === null ? null : Math.max(0, teto - disparos),
       },
+      gratisPeloRegem,
       conversasHabilitadas: linha.conversasHabilitadas === true,
     };
   }

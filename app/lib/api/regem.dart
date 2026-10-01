@@ -103,6 +103,7 @@ class SituacaoRegem {
     required this.vendas,
     this.empresaNome,
     this.autorizacao99Em,
+    this.carenciaDias = 5,
   });
 
   final bool ligado;
@@ -124,6 +125,10 @@ class SituacaoRegem {
   final ClientesDoRegem clientes;
   final VendasDoRegem vendas;
 
+  /// Desligou a integração, a gratuidade acaba: sem plano pago, os disparos
+  /// param depois destes dias.
+  final int carenciaDias;
+
   /// Algo andando no servidor: a tela relê sozinha.
   bool get lendo => clientes.status == 'carga' || vendas.status == 'carga';
 
@@ -139,6 +144,9 @@ class SituacaoRegem {
     autorizacao99Em: _data(j['autorizacao99Em']),
     textoAutorizacao99: _txt(j['textoAutorizacao99']),
     cardapioWebDireto: j['cardapioWebDireto'] == true,
+    carenciaDias: j['carenciaDias'] is num
+        ? (j['carenciaDias'] as num).toInt()
+        : 5,
     clientes: ClientesDoRegem.deJson(_mapa(j['clientes'])),
     vendas: VendasDoRegem.deJson(_mapa(j['pedidos'])),
   );

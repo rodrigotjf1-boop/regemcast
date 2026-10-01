@@ -556,6 +556,8 @@ export interface ContaNoConsole {
   ultimoLogin: string | null;
   erros7d: number;
   whatsappPronto: boolean;
+  /** Ligada ao Regem: não paga e não tem teto do plano. */
+  gratisPeloRegem?: boolean;
   situacao: SituacaoConta;
 }
 
@@ -566,7 +568,7 @@ export interface ResumoDoConsole {
   erros: { ultimas24h: number; contasAfetadas24h: number };
   campanhasEmAndamento: number;
   perto_do_teto: number;
-  receita: { mrrCentavos: number; pagantes: number; inadimplentes: number; emGratis: number };
+  receita: { mrrCentavos: number; pagantes: number; inadimplentes: number; emGratis: number; gratisPeloRegem?: number };
 }
 
 export interface TelemetriaDoConsole {

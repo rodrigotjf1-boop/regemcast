@@ -32,10 +32,12 @@ import { BadRequestException, Injectable, Logger, NotFoundException, ServiceUnav
 import { and, eq, sql, type SQL } from 'drizzle-orm';
 
 import { emPartes } from '../../common/em-partes';
+import { MARCA_REGEM_DESLIGADO } from '../../common/gratuidade-regem';
 import { env } from '../../config/env';
 import { ContextoDb, type Db } from '../../db/contexto';
 import { contatoLista, importacao, integracaoCardapioweb, integracaoRegem } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { retomarPausadasPorTeto } from '../campanha/campanha.service';
 import { anonimizarContatos } from '../contato/anonimizar';
 import {
   acharContato,
@@ -98,6 +100,11 @@ export interface SituacaoRegem {
   listaId: string | null;
   /** A loja também liga o Cardápio Web direto aqui: as vendas dele que chegam pelo Regem ficam de fora. */
   cardapioWebDireto: boolean;
+  /**
+   * Ligada ao Regem, a conta não paga (`common/gratuidade-regem.ts`). Desligou,
+   * a gratuidade acaba: sem plano pago, os disparos param depois destes dias.
+   */
+  carenciaDias: number;
   clientes: {
     status: Status;
     lidos: number;
@@ -176,6 +183,7 @@ export class RegemService {
         consentimentoEm: l?.consentimentoEm ?? null,
         listaId: l?.listaId ?? null,
         cardapioWebDireto: await cardapioWebDireto(db, contaId),
+        carenciaDias: env.mercadoPago.carenciaDias,
         clientes: {
           status: (l?.clientesStatus ?? 'parado') as Status,
           lidos: l?.clientesLidos ?? 0,
@@ -294,6 +302,10 @@ export class RegemService {
         }
       }
 
+      // Ligada ao Regem, a conta não paga nem tem teto do plano: as campanhas
+      // paradas por falta de saldo ou de pagamento voltam à fila.
+      const retomadas = await retomarPausadasPorTeto(db, [contaId], ['teto_plano', 'inadimplencia']);
+
       await this.auditoria.registrar({
         contaId,
         atorTipo: 'distribuicao',
@@ -306,6 +318,7 @@ export class RegemService {
           operador,
           ...(outraEmpresa ? { outraEmpresa: true } : {}),
           ...(releitura ? { releitura: 'a 99 autorizada foi liberada no Regem' } : {}),
+          ...(retomadas ? { campanhasRetomadas: retomadas } : {}),
         },
       });
     });
@@ -314,7 +327,8 @@ export class RegemService {
 
   /**
    * Desliga: apaga o token, o andamento e a ligação dos clientes do Regem aos
-   * contatos. Os contatos e as compras ficam — são da conta.
+   * contatos. Os contatos e as compras ficam — são da conta. A gratuidade do
+   * Regem acaba junto (`encerrarGratuidade`).
    */
   async desligar(contaId: string, por: { usuarioId: string } | { operador: string }): Promise<void> {
     await this.ctx.comConta(contaId, async (db) => {
@@ -324,11 +338,12 @@ export class RegemService {
         .returning({ id: integracaoRegem.id });
       await db.execute(sql`delete from integracao_regem_cliente where conta_id = ${contaId}`);
       if (!apagada.length) return;
+      const cobranca = await encerrarGratuidade(db, contaId);
       await this.auditoria.registrar({
         contaId,
         ...('usuarioId' in por
-          ? { atorTipo: 'usuario' as const, atorUsuarioId: por.usuarioId }
-          : { atorTipo: 'distribuicao' as const, detalhe: { operador: por.operador } }),
+          ? { atorTipo: 'usuario' as const, atorUsuarioId: por.usuarioId, detalhe: { cobranca } }
+          : { atorTipo: 'distribuicao' as const, detalhe: { operador: por.operador, cobranca } }),
         acao: 'regem.desligado',
         entidade: 'integracao_regem',
       });
@@ -810,6 +825,42 @@ const RETOMAR_DA_FALHA = {
   pedidosStatus: sql`case when ${integracaoRegem.pedidosStatus} <> 'falhou' then ${integracaoRegem.pedidosStatus}
     when ${integracaoRegem.pedidosUltimaConsulta} is null then 'carga' else 'em_dia' end`,
 };
+
+/**
+ * A gratuidade do Regem acabou (a integração foi desligada).
+ *
+ * - Quem tem plano pago segue como está.
+ * - Quem ainda está no grátis de entrada (ou é conta sem prazo) segue nele.
+ * - Os demais ganham a carência: o grátis termina AGORA — os disparos param em
+ *   `CARENCIA_DIAS`, com o aviso por e-mail (a marca faz a frase certa sair).
+ * - Cobrança recusada de quem tem assinatura no Mercado Pago: a carência
+ *   volta a contar de hoje.
+ */
+async function encerrarGratuidade(
+  db: Db,
+  contaId: string,
+): Promise<'sem_assinatura' | 'plano_pago' | 'gratis_de_entrada' | 'carencia'> {
+  const [a] = (
+    await db.execute(sql`
+      select status, mp_status, gratis_ate is null as sem_prazo, coalesce(gratis_ate > now(), false) as no_gratis
+        from assinatura where conta_id = ${contaId} for update
+    `)
+  ).rows as { status: string; mp_status: string | null; sem_prazo: boolean; no_gratis: boolean }[];
+  if (!a) return 'sem_assinatura';
+  if (a.status === 'ativa') return 'plano_pago';
+  if (a.status === 'cortesia' && (a.sem_prazo || a.no_gratis)) return 'gratis_de_entrada';
+  if (a.status === 'inadimplente' && a.mp_status === 'authorized') {
+    await db.execute(sql`update assinatura set inadimplente_desde = now() where conta_id = ${contaId}`);
+    return 'carencia';
+  }
+  await db.execute(sql`
+    update assinatura
+       set status = 'cortesia', gratis_ate = now(), inadimplente_desde = null,
+           avisos_enviados = array[${MARCA_REGEM_DESLIGADO}]::text[]
+     where conta_id = ${contaId}
+  `);
+  return 'carencia';
+}
 
 /** Em dia, a consulta das mudanças sai a cada 30 min. */
 function vencida(ultima: Date | null): boolean {

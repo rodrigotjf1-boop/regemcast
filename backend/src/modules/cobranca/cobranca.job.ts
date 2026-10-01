@@ -11,12 +11,18 @@
  *    conta a partir do fim do grátis, e o bloqueio dos disparos em si é decidido
  *    na hora do envio (`motivoDeBloqueio`) — não depende deste job ter rodado.
  *
+ * Conta ligada ao Regem fica de fora das duas coisas: quem usa o Regem não paga
+ * (`common/gratuidade-regem.ts`). Quando a integração é desligada, o grátis
+ * dela termina naquele instante (`RegemService.desligar`) e o aviso sai com a
+ * frase própria.
+ *
  * Nada aqui cobra nem cancela nada no Mercado Pago.
  */
 import { Injectable, Logger } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { sql } from 'drizzle-orm';
 
+import { ligadaAoRegem, MARCA_REGEM_DESLIGADO } from '../../common/gratuidade-regem';
 import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
 import { EmailService } from '../email/email.service';
@@ -71,12 +77,14 @@ export class CobrancaJob {
              and a.status = 'cortesia'
              and a.gratis_ate is not null
              and a.mp_status is distinct from 'authorized'
+             and not ${ligadaAoRegem(sql`a.conta_id`)}
              and not (${aviso.marca} = any(a.avisos_enviados))
              and a.gratis_ate <= now() + make_interval(days => ${aviso.ateDias})
              and a.gratis_ate >  now() + make_interval(days => ${aviso.deDias})
-          returning a.conta_id, a.gratis_ate, c.nome as conta_nome
+          returning a.conta_id, a.gratis_ate, c.nome as conta_nome,
+                    (${MARCA_REGEM_DESLIGADO} = any(a.avisos_enviados)) as regem_desligado
         `);
-        const contas = r.rows as { conta_id: string; gratis_ate: string; conta_nome: string }[];
+        const contas = r.rows as { conta_id: string; gratis_ate: string; conta_nome: string; regem_desligado: boolean }[];
         if (!contas.length) return [];
 
         const donos = await db.execute(sql`
@@ -93,7 +101,11 @@ export class CobrancaJob {
         const gratisAte = new Date(alvo.gratis_ate);
         const corte = new Date(gratisAte.getTime() + env.mercadoPago.carenciaDias * 86_400_000);
         try {
-          await this.email.enviar(emailFimDoGratis(alvo.email, alvo.conta_nome, gratisAte, corte, `${base}/plano`));
+          await this.email.enviar(
+            emailFimDoGratis(alvo.email, alvo.conta_nome, gratisAte, corte, `${base}/plano`, {
+              regemDesligado: alvo.regem_desligado,
+            }),
+          );
           enviados += 1;
         } catch (erro) {
           // O aviso fica marcado mesmo assim: reenviar a cada hora um e-mail que
@@ -111,13 +123,14 @@ export class CobrancaJob {
   async marcarInadimplentes(): Promise<number> {
     return this.ctx.comEscopoSistema('cobranca.inadimplentes', async (db) => {
       const r = await db.execute(sql`
-        update assinatura
-           set status = 'inadimplente', inadimplente_desde = gratis_ate
-         where status = 'cortesia'
-           and gratis_ate is not null
-           and gratis_ate <= now()
-           and mp_status is distinct from 'authorized'
-        returning id
+        update assinatura a
+           set status = 'inadimplente', inadimplente_desde = a.gratis_ate
+         where a.status = 'cortesia'
+           and a.gratis_ate is not null
+           and a.gratis_ate <= now()
+           and a.mp_status is distinct from 'authorized'
+           and not ${ligadaAoRegem(sql`a.conta_id`)}
+        returning a.id
       `);
       if (r.rows.length) this.log.log(`${r.rows.length} conta(s) passaram do grátis sem pagar.`);
       return r.rows.length;

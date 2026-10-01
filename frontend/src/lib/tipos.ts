@@ -85,6 +85,11 @@ export interface ResumoConta {
   plano: Plano | null;
   assinatura: Assinatura | null;
   uso: UsoCiclo;
+  /**
+   * A conta está ligada ao Regem: não paga e não tem teto do plano enquanto a
+   * integração estiver ativa. Ausente só numa API mais antiga que a tela.
+   */
+  gratisPeloRegem?: boolean;
   /** Algum número guarda conversas (coexistência com "sim"): mostra o menu Conversas. */
   conversasHabilitadas: boolean;
 }
@@ -871,6 +876,8 @@ export interface SituacaoCobranca {
   inadimplenteDesde: string | null;
   disparosParamEm: string | null;
   bloqueado: boolean;
+  /** Ligada ao Regem: não paga e não tem teto do plano. Ausente só numa API mais antiga que a tela. */
+  gratisPeloRegem?: boolean;
   carenciaDias: number;
   planoAtual: PlanoOferta | null;
   planoProximoCiclo: PlanoOferta | null;
@@ -974,6 +981,8 @@ export interface SituacaoRegem {
   listaId: string | null;
   /** A loja também liga o Cardápio Web direto: as vendas dele que vêm pelo Regem ficam de fora. */
   cardapioWebDireto: boolean;
+  /** Desligou a integração, a gratuidade acaba: sem plano pago, os disparos param depois destes dias. */
+  carenciaDias?: number;
   clientes: {
     status: StatusRegem;
     lidos: number;

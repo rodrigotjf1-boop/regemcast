@@ -30,6 +30,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 
+import { ligadaAoRegem } from '../../common/gratuidade-regem';
 import { ContextoDb } from '../../db/contexto';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { retomarPausadasPorTeto } from '../campanha/campanha.service';
@@ -56,6 +57,8 @@ export interface ContaNoConsole {
   ultimoLogin: string | null;
   erros7d: number;
   whatsappPronto: boolean;
+  /** Ligada ao Regem: não paga e não tem teto do plano. */
+  gratisPeloRegem: boolean;
   situacao: Situacao;
 }
 
@@ -68,7 +71,7 @@ export interface ResumoDoConsole {
   /** Contas acima de 80% do teto: quem vai precisar de plano maior. */
   perto_do_teto: number;
   /** Receita recorrente: assinaturas pagas e em dia no Mercado Pago. */
-  receita: { mrrCentavos: number; pagantes: number; inadimplentes: number; emGratis: number };
+  receita: { mrrCentavos: number; pagantes: number; inadimplentes: number; emGratis: number; gratisPeloRegem: number };
 }
 
 const iso = (v: unknown): string | null => (v ? new Date(String(v)).toISOString() : null);
@@ -108,7 +111,9 @@ const BASE = sql`
   )
   select c.id, c.nome, c.cnpj, c.status as conta_status, c.criado_em,
          a.status as assinatura_status, a.ciclo_inicio, a.ciclo_fim, a.gratis_ate,
-         p.nome as plano_nome, p.disparos_mes as teto,
+         p.nome as plano_nome,
+         ${ligadaAoRegem(sql`c.id`)} as gratis_regem,
+         case when ${ligadaAoRegem(sql`c.id`)} then null else p.disparos_mes end as teto,
          coalesce(u.disparos, 0) as uso_ciclo,
          ue.ultimo as ultimo_envio,
          coalesce(ue.envios_30d, 0) as envios_30d,
@@ -232,6 +237,7 @@ export class DistribuicaoLeituraService {
           ultimoLogin: iso(l.ultimo_login),
           erros7d: num(l.erros_7d),
           whatsappPronto: Boolean(l.whatsapp_pronto),
+          gratisPeloRegem: Boolean(l.gratis_regem),
           situacao: String(l.situacao) as Situacao,
         };
       });
@@ -283,8 +289,9 @@ export class DistribuicaoLeituraService {
       const receita = await db.execute(sql`
         select coalesce(sum(p.preco_centavos) filter (where a.status = 'ativa' and a.mp_status = 'authorized'), 0) as mrr,
                count(*) filter (where a.status = 'ativa' and a.mp_status = 'authorized') as pagantes,
-               count(*) filter (where a.status = 'inadimplente') as inadimplentes,
-               count(*) filter (where a.status = 'cortesia') as em_gratis
+               count(*) filter (where a.status = 'inadimplente' and not ${ligadaAoRegem(sql`a.conta_id`)}) as inadimplentes,
+               count(*) filter (where a.status = 'cortesia' and not ${ligadaAoRegem(sql`a.conta_id`)}) as em_gratis,
+               count(*) filter (where a.mp_status is distinct from 'authorized' and ${ligadaAoRegem(sql`a.conta_id`)}) as gratis_regem
           from assinatura a join plano p on p.id = a.plano_id
       `);
       const rc = receita.rows[0] as Record<string, unknown>;
@@ -317,6 +324,7 @@ export class DistribuicaoLeituraService {
           pagantes: num(rc.pagantes),
           inadimplentes: num(rc.inadimplentes),
           emGratis: num(rc.em_gratis),
+          gratisPeloRegem: num(rc.gratis_regem),
         },
       };
     });

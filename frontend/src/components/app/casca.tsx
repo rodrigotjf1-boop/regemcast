@@ -333,7 +333,9 @@ function ConsumoLateral({ dados }: { dados: ResumoConta | null }) {
   return (
     <div className="relative mx-4 mb-3 rounded-xl border border-lateral-borda bg-lateral-2/70 p-3">
       <div className="flex items-baseline justify-between gap-2">
-        <p className="text-xs font-medium text-lateral-suave">{dados.plano?.nome ?? 'Uso do ciclo'}</p>
+        <p className="text-xs font-medium text-lateral-suave">
+          {dados.gratisPeloRegem ? 'Grátis pelo Regem' : (dados.plano?.nome ?? 'Uso do ciclo')}
+        </p>
         {teto ? <p className="numerico text-xs text-lateral-tinta">{pct}%</p> : null}
       </div>
       <p className="mt-1 text-sm text-lateral-tinta">

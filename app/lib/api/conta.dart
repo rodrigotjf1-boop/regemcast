@@ -185,7 +185,16 @@ class SituacaoPlano {
     required this.teto,
     required this.planos,
     required this.cobrancas,
+    this.gratisPeloRegem = false,
   });
+
+  /// A conta está ligada ao Regem: não paga e não tem teto do plano enquanto a
+  /// integração estiver ativa.
+  final bool gratisPeloRegem;
+
+  /// Ligada ao Regem e sem assinatura no Mercado Pago: não há o que contratar.
+  bool get semCobranca =>
+      gratisPeloRegem && mpStatus != 'authorized' && mpStatus != 'pending';
 
   /// `cortesia`, `ativa`, `inadimplente` ou `cancelada`.
   final String status;
@@ -243,6 +252,7 @@ class SituacaoPlano {
       cicloFim: _data(j['cicloFim']),
       disparosParamEm: _data(j['disparosParamEm']),
       bloqueado: j['bloqueado'] == true,
+      gratisPeloRegem: j['gratisPeloRegem'] == true,
       planoAtual: PlanoOferta.deJson(j['planoAtual']),
       planoProximoCiclo: PlanoOferta.deJson(j['planoProximoCiclo']),
       mpStatus: _txtOuNulo(j['mpStatus']),

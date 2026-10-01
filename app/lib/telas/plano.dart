@@ -10,6 +10,7 @@ import '../config.dart';
 import '../sessao/sessao.dart';
 import '../tema/cores.dart';
 import '../util/formato.dart' as f;
+import 'integracoes.dart';
 
 /// Plano e pagamento: em que pé está a assinatura, quanto do ciclo foi usado,
 /// os planos e o histórico de pagamentos.
@@ -159,6 +160,27 @@ class _TelaPlanoState extends ConsumerState<TelaPlano> {
                 aviso,
                 const SizedBox(height: 14),
               ],
+              // O informativo da cobrança: 30 dias grátis, e quem usa o Regem
+              // não paga. Só informa — vale também no build da Play.
+              if (!s.gratisPeloRegem) ...[
+                Aviso(
+                  key: const ValueKey('informativo-regem'),
+                  tom: TomPilula.neutro,
+                  icone: Icons.info_outline_rounded,
+                  texto:
+                      'Toda conta começa com 30 dias grátis. Usa o Regem? Você não paga o Regemcast: é só ativar a integração com o Regem.',
+                  acao: TextButton(
+                    key: const ValueKey('ver-integracoes'),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<Object?>(
+                        builder: (_) => const TelaIntegracoes(),
+                      ),
+                    ),
+                    child: const Text('Ver integrações'),
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
               _Consumo(situacao: s),
               if (compraNoApp && s.checkoutPendenteUrl != null && !s.pago) ...[
                 const SizedBox(height: 14),
@@ -173,90 +195,92 @@ class _TelaPlanoState extends ConsumerState<TelaPlano> {
                   ),
                 ),
               ],
-              const SizedBox(height: 22),
-              Text('Planos', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              if (!compraNoApp)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  // Só informa, sem dizer onde comprar (ERR-029).
-                  child: Text(
-                    'Os planos não são vendidos pelo aplicativo.',
-                    style: TextStyle(
-                      color: c.tintaSuave,
-                      fontSize: 13,
-                      height: 1.45,
+              if (!s.semCobranca) ...[
+                const SizedBox(height: 22),
+                Text('Planos', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                if (!compraNoApp)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    // Só informa, sem dizer onde comprar (ERR-029).
+                    child: Text(
+                      'Os planos não são vendidos pelo aplicativo.',
+                      style: TextStyle(
+                        color: c.tintaSuave,
+                        fontSize: 13,
+                        height: 1.45,
+                      ),
+                    ),
+                  )
+                else if (!s.cobrancaDisponivel)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 10),
+                    child: Aviso(
+                      texto:
+                          'A contratação pelo Mercado Pago ainda não está disponível. Fale com o suporte do Regemcast.',
+                    ),
+                  )
+                else if (!ehDono)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Text(
+                      'Só o dono da conta pode contratar ou trocar de plano.',
+                      style: TextStyle(color: c.tintaSuave, fontSize: 13),
                     ),
                   ),
-                )
-              else if (!s.cobrancaDisponivel)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 10),
-                  child: Aviso(
-                    texto:
-                        'A contratação pelo Mercado Pago ainda não está disponível. Fale com o suporte do Regemcast.',
-                  ),
-                )
-              else if (!ehDono)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Text(
-                    'Só o dono da conta pode contratar ou trocar de plano.',
-                    style: TextStyle(color: c.tintaSuave, fontSize: 13),
-                  ),
-                ),
-              for (final p in s.planos)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _CartaoPlano(
-                    plano: p,
-                    atual: s.ehAtual(p),
-                    rotulo: s.rotuloDo(p),
-                    ocupado: _ocupado == p.id,
-                    aoEscolher:
-                        compraNoApp &&
-                            ehDono &&
-                            s.podeEscolher(p) &&
-                            _ocupado == null
-                        ? () => _escolher(s, p)
-                        : null,
-                    mostrarBotao: compraNoApp,
-                  ),
-                ),
-              if (compraNoApp &&
-                  ehDono &&
-                  s.cobrancaDisponivel &&
-                  !s.pago &&
-                  s.recontratarEm == null) ...[
-                CheckboxListTile(
-                  value: _outroEmail,
-                  onChanged: (v) => setState(() => _outroEmail = v ?? false),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text(
-                    'Vou pagar com uma conta do Mercado Pago de outro e-mail',
-                    style: TextStyle(fontSize: 14),
-                  ),
-                ),
-                if (_outroEmail)
-                  TextField(
-                    controller: _emailPagador,
-                    keyboardType: TextInputType.emailAddress,
-                    autocorrect: false,
-                    decoration: const InputDecoration(
-                      labelText: 'E-mail da conta do Mercado Pago',
+                for (final p in s.planos)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _CartaoPlano(
+                      plano: p,
+                      atual: s.ehAtual(p),
+                      rotulo: s.rotuloDo(p),
+                      ocupado: _ocupado == p.id,
+                      aoEscolher:
+                          compraNoApp &&
+                              ehDono &&
+                              s.podeEscolher(p) &&
+                              _ocupado == null
+                          ? () => _escolher(s, p)
+                          : null,
+                      mostrarBotao: compraNoApp,
                     ),
                   ),
+                if (compraNoApp &&
+                    ehDono &&
+                    s.cobrancaDisponivel &&
+                    !s.pago &&
+                    s.recontratarEm == null) ...[
+                  CheckboxListTile(
+                    value: _outroEmail,
+                    onChanged: (v) => setState(() => _outroEmail = v ?? false),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      'Vou pagar com uma conta do Mercado Pago de outro e-mail',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                  ),
+                  if (_outroEmail)
+                    TextField(
+                      controller: _emailPagador,
+                      keyboardType: TextInputType.emailAddress,
+                      autocorrect: false,
+                      decoration: const InputDecoration(
+                        labelText: 'E-mail da conta do Mercado Pago',
+                      ),
+                    ),
+                ],
+                const SizedBox(height: 8),
+                Text(
+                  'O pagamento do plano renova todo mês. A cobrança das mensagens enviadas pelo WhatsApp é da Meta, na conta da sua empresa, e é separada do plano.',
+                  style: TextStyle(
+                    color: c.tintaSuave,
+                    fontSize: 12.5,
+                    height: 1.45,
+                  ),
+                ),
               ],
-              const SizedBox(height: 8),
-              Text(
-                'O pagamento do plano renova todo mês. A cobrança das mensagens enviadas pelo WhatsApp é da Meta, na conta da sua empresa, e é separada do plano.',
-                style: TextStyle(
-                  color: c.tintaSuave,
-                  fontSize: 12.5,
-                  height: 1.45,
-                ),
-              ),
               const SizedBox(height: 22),
               Text(
                 'Pagamentos',
@@ -304,6 +328,14 @@ class _TelaPlanoState extends ConsumerState<TelaPlano> {
   SituacaoPlano s, {
   bool compra = compraNoApp,
 }) {
+  if (s.gratisPeloRegem) {
+    return (
+      'Você usa o Regem: o Regemcast é grátis para a sua empresa enquanto a integração estiver ativa, sem teto de disparos do plano.'
+          '${s.pago ? ' Você ainda tem o plano ${s.planoAtual?.nome ?? ''} contratado${compra ? ' — pode cancelar a renovação abaixo.' : '.'}' : ''}',
+      TomPilula.sucesso,
+      Icons.verified_rounded,
+    );
+  }
   if (s.bloqueado) {
     return (
       s.status == 'cancelada'
@@ -318,8 +350,8 @@ class _TelaPlanoState extends ConsumerState<TelaPlano> {
   if (s.status == 'cortesia') {
     return (
       compra
-          ? 'Primeiro mês grátis até ${f.data(s.gratisAte)}. Escolha um plano antes de ${f.data(s.disparosParamEm)} para os disparos não pararem.'
-          : 'Primeiro mês grátis até ${f.data(s.gratisAte)}. Os disparos param em ${f.data(s.disparosParamEm)} se a conta não tiver um plano.',
+          ? 'Você está nos 30 dias grátis, até ${f.data(s.gratisAte)}. Escolha um plano antes de ${f.data(s.disparosParamEm)} para os disparos não pararem.'
+          : 'Você está nos 30 dias grátis, até ${f.data(s.gratisAte)}. Os disparos param em ${f.data(s.disparosParamEm)} se a conta não tiver um plano.',
       TomPilula.acento,
       Icons.card_giftcard_rounded,
     );
@@ -368,7 +400,9 @@ class _Consumo extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            s.planoAtual?.nome ?? 'Sem plano contratado',
+            s.semCobranca
+                ? 'Grátis pelo Regem'
+                : s.planoAtual?.nome ?? 'Sem plano contratado',
             style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 10),
@@ -384,7 +418,9 @@ class _Consumo extends StatelessWidget {
                 ),
                 TextSpan(
                   text: teto == null
-                      ? ' disparos neste ciclo'
+                      ? s.gratisPeloRegem
+                            ? ' disparos neste ciclo, sem teto do plano'
+                            : ' disparos neste ciclo'
                       : ' de ${f.numero(teto)} disparos neste ciclo',
                   style: TextStyle(color: c.tintaSuave),
                 ),

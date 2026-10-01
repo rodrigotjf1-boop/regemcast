@@ -29,6 +29,7 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, count, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 
+import { ligadaAoRegem } from '../../common/gratuidade-regem';
 import { paraCloudApi } from '../../common/telefone';
 import { formasDosContatos, gemeoEmSql } from '../../common/telefone-sql';
 import { env } from '../../config/env';
@@ -117,7 +118,9 @@ export const MENSAGEM_SEM_SALDO =
 /**
  * Quantos disparos ainda cabem no plano da conta neste ciclo.
  *
- * `null` = sem teto (conta sem plano): não limita. O que conta como gasto:
+ * `null` = sem teto: não limita. É o caso da conta sem plano e da conta ligada
+ * ao Regem (`common/gratuidade-regem.ts`) — para ela vale só o limite da Meta.
+ * O que conta como gasto:
  *
  * - `uso_ciclo.disparos` — o que a Meta já aceitou neste ciclo;
  * - destinatários em `enviando` — o que está saindo AGORA e ainda não entrou no
@@ -126,7 +129,7 @@ export const MENSAGEM_SEM_SALDO =
  */
 export async function saldoDoPlano(db: Executor, contaId: string): Promise<number | null> {
   const r = (await db.execute(sql`
-    select p.disparos_mes as teto,
+    select case when ${ligadaAoRegem(sql`c.id`)} then null else p.disparos_mes end as teto,
            coalesce(u.disparos, 0) as usados,
            (select count(*) from campanha_destinatario d
              where d.conta_id = c.id and d.status = 'enviando') as em_voo
@@ -157,20 +160,24 @@ export const MENSAGEM_INADIMPLENTE =
  *
  * Assinatura cancelada não envia. Conta sem assinatura nenhuma não é bloqueada
  * aqui (é conta interna ou legado; o teto do plano continua valendo).
+ *
+ * Conta ligada ao Regem nunca é bloqueada por cobrança: quem usa o Regem não
+ * paga (`common/gratuidade-regem.ts`).
  */
 export async function motivoDeBloqueio(db: Executor, contaId: string): Promise<'inadimplencia' | null> {
   const r = (await db.execute(sql`
     select a.status,
+           ${ligadaAoRegem(sql`a.conta_id`)} as gratis_regem,
            (a.status = 'cortesia' and a.gratis_ate is not null
               and a.gratis_ate + make_interval(days => ${env.mercadoPago.carenciaDias}) <= now()) as gratis_vencido,
            (a.status = 'inadimplente'
               and coalesce(a.inadimplente_desde, now()) + make_interval(days => ${env.mercadoPago.carenciaDias}) <= now()) as carencia_vencida
       from assinatura a
      where a.conta_id = ${contaId}
-  `)) as { rows: { status: string; gratis_vencido: boolean; carencia_vencida: boolean }[] };
+  `)) as { rows: { status: string; gratis_regem: boolean; gratis_vencido: boolean; carencia_vencida: boolean }[] };
 
   const a = r.rows[0];
-  if (!a) return null;
+  if (!a || a.gratis_regem) return null;
   if (a.status === 'cancelada' || a.gratis_vencido || a.carencia_vencida) return 'inadimplencia';
   return null;
 }

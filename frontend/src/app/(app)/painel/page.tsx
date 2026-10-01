@@ -161,7 +161,9 @@ export default function Painel() {
                 Uso do ciclo
               </p>
               <p className="text-lg font-semibold text-lateral-tinta">
-                {resumo.dados?.plano?.nome ?? (resumo.carregando ? '…' : 'Sem plano definido')}
+                {resumo.dados?.gratisPeloRegem
+                  ? 'Grátis pelo Regem'
+                  : (resumo.dados?.plano?.nome ?? (resumo.carregando ? '…' : 'Sem plano definido'))}
               </p>
               {uso?.restantes !== null && uso?.restantes !== undefined ? (
                 <p className="text-sm text-lateral-suave">
@@ -169,7 +171,9 @@ export default function Painel() {
                   disparos disponíveis
                 </p>
               ) : null}
-              {resumo.dados?.assinatura?.cicloFim ? (
+              {resumo.dados?.gratisPeloRegem ? (
+                <p className="text-sm text-lateral-suave">Sem teto do plano: vale o limite da sua conta do WhatsApp.</p>
+              ) : resumo.dados?.assinatura?.cicloFim ? (
                 <p className="text-xs text-lateral-suave">
                   Renova em {formatarData(resumo.dados.assinatura.cicloFim)}
                 </p>
