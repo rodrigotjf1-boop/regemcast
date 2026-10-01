@@ -309,6 +309,24 @@ class EsperaCampanha {
   }
 }
 
+/// De onde sai a variável do título do modelo: `origem` (`fixo`, `nome` ou
+/// `primeiro_nome`) e o texto — o valor fixo, ou o que usar sem nome.
+class VariavelDoTitulo {
+  const VariavelDoTitulo({required this.origem, required this.valor});
+
+  final String origem;
+  final String valor;
+
+  static VariavelDoTitulo? deJson(Object? v) {
+    if (v is! Map<String, dynamic>) return null;
+    final origem = _txt(v['origem']);
+    return VariavelDoTitulo(
+      origem: origem.isEmpty ? 'fixo' : origem,
+      valor: _txt(v['valor']),
+    );
+  }
+}
+
 class ResumoCampanha {
   const ResumoCampanha({
     required this.id,
@@ -338,6 +356,7 @@ class ResumoCampanha {
     this.espera,
     this.respondidas = 0,
     this.descansoDias,
+    this.variavelCabecalho,
   });
 
   final String id;
@@ -366,8 +385,12 @@ class ResumoCampanha {
   /// `rascunho`, `agendada`, `enviando`, `pausada`, `concluida` ou `cancelada`.
   final String status;
 
-  /// `conexao`, `teto_plano`, `inadimplencia` ou `manual` — só quando pausada.
+  /// `conexao`, `teto_plano`, `inadimplencia`, `manual` ou `modelo` (a Meta
+  /// recusou o modelo, ou o arquivo dele sumiu) — só quando pausada.
   final String? pausaMotivo;
+
+  /// A variável do título do modelo; nulo quando o modelo não tem.
+  final VariavelDoTitulo? variavelCabecalho;
   final DateTime? criadoEm;
   final Map<String, int> porStatus;
   final int total;
@@ -460,6 +483,7 @@ class ResumoCampanha {
     espera: EsperaCampanha.deJson(j['espera']),
     respondidas: _int(j['respondidas']),
     descansoDias: _intOuNulo(j['descansoDias']),
+    variavelCabecalho: VariavelDoTitulo.deJson(j['variavelCabecalho']),
   );
 }
 

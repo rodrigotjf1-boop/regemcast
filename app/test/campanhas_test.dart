@@ -230,6 +230,28 @@ void main() {
       expect(find.text('Retomar envio'), findsOneWidget);
     });
 
+    testWidgets(
+      'pausada pelo modelo: diz que parou na primeira recusa, leva aos modelos e oferece retomar',
+      (t) async {
+        _telaAlta(t);
+        final s = _Servidor(_campanha('pausada', pausaMotivo: 'modelo'));
+        await t.pumpWidget(_app(s.api, const TelaCampanhaDetalhe(id: 'c1')));
+        await _assentar(t);
+
+        expect(find.byKey(const ValueKey('cd-pausa-modelo')), findsOneWidget);
+        expect(
+          find.textContaining('a Meta recusou o modelo desta campanha'),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining('sem ser marcado como falha'),
+          findsOneWidget,
+        );
+        expect(find.text('Ver modelos'), findsOneWidget);
+        expect(find.text('Retomar envio'), findsOneWidget);
+      },
+    );
+
     testWidgets('mostra o motivo real da falha de cada destinatário', (
       t,
     ) async {

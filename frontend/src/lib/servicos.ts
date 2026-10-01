@@ -481,7 +481,13 @@ export const modelos = {
   enviar: (id: string) =>
     api.post<{ status: string; motivo: string | null }>(`/modelos/${id}/enviar`, {}),
 
-  /** `DELETE /modelos/:id` — só rascunho e recusado. */
+  /**
+   * `PATCH /modelos/:id/oferta` — só a validade da oferta, em horas depois do
+   * envio (`null` = o padrão, 3). Não vai à Meta: não gasta a edição do dia.
+   */
+  validadeDaOferta: (id: string, horas: number | null) =>
+    api.patch<{ id: string; ltoHoras: number | null }>(`/modelos/${id}/oferta`, { horas }),
+
   /** `DELETE /modelos/:id` — apaga aqui e, quando o modelo está lá, também na Meta. */
   excluir: (id: string) => api.delete<{ ok: boolean; naMeta: boolean }>(`/modelos/${id}`),
 };

@@ -703,6 +703,46 @@ export class ModeloService {
     return { status, motivo: null };
   }
 
+  /**
+   * Muda só por quantas horas a oferta vale depois de enviada.
+   *
+   * As horas ficam aqui: a Meta recebe o instante do vencimento a cada
+   * mensagem, não no modelo. Por isso nada vai até ela — não gasta a edição do
+   * dia de modelo aprovado, nem o devolve à análise. Vale para a campanha
+   * montada ou editada daqui em diante; a que já está montada guarda a
+   * validade na foto do envio dela.
+   */
+  async mudarValidadeDaOferta(
+    contaId: string,
+    usuarioId: string,
+    id: string,
+    horas: number | null,
+  ): Promise<{ id: string; ltoHoras: number | null }> {
+    return this.ctx.comConta(contaId, async (db) => {
+      const atual = await this.buscar(db, contaId, id);
+      if (!atual.ltoAtivo) {
+        throw new BadRequestException('Este modelo não tem oferta por tempo limitado.');
+      }
+
+      await db
+        .update(modelo)
+        .set({ ltoHoras: horas })
+        .where(and(eq(modelo.contaId, contaId), eq(modelo.id, id)));
+
+      await this.auditoria.registrar({
+        contaId,
+        atorTipo: 'usuario',
+        atorUsuarioId: usuarioId,
+        acao: 'modelo.validade_da_oferta',
+        entidade: 'modelo',
+        entidadeId: id,
+        detalhe: { nome: atual.nome, de: atual.ltoHoras ?? null, para: horas },
+      });
+
+      return { id, ltoHoras: horas };
+    });
+  }
+
   // ------------------------------------------------------------------ apoio
 
   /**

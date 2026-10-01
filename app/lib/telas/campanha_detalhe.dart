@@ -14,6 +14,7 @@ import '../config.dart';
 import '../tema/cores.dart';
 import '../util/formato.dart' as f;
 import 'campanha_formulario.dart';
+import 'casca.dart';
 import 'plano.dart';
 import 'whatsapp.dart';
 
@@ -457,6 +458,20 @@ class _TelaCampanhaDetalheState extends ConsumerState<TelaCampanhaDetalhe> {
               acao: const _BotaoTela(
                 rotulo: 'Ver plano e pagamento',
                 tela: TelaPlano(),
+              ),
+            ),
+          );
+        case 'modelo':
+          lista.add(
+            const Aviso(
+              key: ValueKey('cd-pausa-modelo'),
+              tom: TomPilula.erro,
+              icone: Icons.report_gmailerrorred_rounded,
+              texto:
+                  'Pausada: a Meta recusou o modelo desta campanha, ou o arquivo dele não está mais disponível. A campanha parou na primeira recusa — quem faltava continua na fila, sem ser marcado como falha. Veja o motivo na lista abaixo, confira o modelo e retome.',
+              acao: _BotaoTela(
+                rotulo: 'Ver modelos',
+                tela: TelaModelosAvulsa(),
               ),
             ),
           );

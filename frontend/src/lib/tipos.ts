@@ -793,6 +793,8 @@ export interface DadosModelo {
   botoes?: BotaoDoModelo[];
   ltoAtivo?: boolean;
   ltoTexto?: string;
+  /** Por quantas horas a oferta vale depois de enviada (1 a 720). Ausente = 3. */
+  ltoHoras?: number;
 }
 
 /** Um problema encontrado pelas regras da Meta, já em português. */
@@ -828,6 +830,8 @@ export interface ModeloSalvo {
   cartoes: CartaoDoModelo[];
   ltoAtivo: boolean;
   ltoTexto: string | null;
+  /** Validade da oferta em horas depois do envio; nulo = 3 (o padrão). */
+  ltoHoras?: number | null;
   variaveis: number;
   criadoEm: string;
 }

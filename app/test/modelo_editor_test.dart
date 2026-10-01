@@ -31,6 +31,7 @@ class _Servidor {
   final corpos = <String, Map<String, dynamic>>{};
   List<Map<String, String>> problemas = [];
   String? erroNoEnvio;
+  String? erroNaValidade;
   String statusDoEnvio = 'enviado';
   String? multipart;
 
@@ -66,6 +67,15 @@ class _Servidor {
           return _json({'status': statusDoEnvio, 'motivo': null}, 201);
         case 'GET /midia/abc':
           return http.Response.bytes(_png, 200);
+      }
+      if (req.method == 'PATCH' && req.url.path.endsWith('/oferta')) {
+        if (erroNaValidade != null) {
+          return _json({'mensagem': erroNaValidade}, 400);
+        }
+        return _json({
+          'id': req.url.pathSegments[1],
+          'ltoHoras': corpos[chave]?['horas'],
+        });
       }
       if (req.method == 'PUT' && req.url.path.startsWith('/modelos/')) {
         return _json({'id': req.url.pathSegments.last, 'status': 'aprovado'});
@@ -498,4 +508,154 @@ void main() {
       expect(find.text('Editar'), findsWidgets);
     },
   );
+
+  group('validade da oferta por tempo limitado', () {
+    Map<String, dynamic> comOferta({int? horas, String? metaTemplateId}) => {
+      'id': 'm6',
+      'nome': 'oferta_relampago',
+      'idioma': 'pt_BR',
+      'categoria': 'MARKETING',
+      'status': metaTemplateId == null ? 'rascunho' : 'aprovado',
+      'corpo': 'Só hoje: smash duplo com fritas.',
+      'cabecalhoFormato': 'IMAGE',
+      'cabecalhoMidia': 'midia:abc',
+      'botoes': [
+        {'tipo': 'COPY_CODE', 'texto': 'SMASH10'},
+      ],
+      'ltoAtivo': true,
+      'ltoTexto': 'Só hoje!',
+      'ltoHoras': horas,
+      'metaTemplateId': metaTemplateId,
+    };
+
+    testWidgets('rascunho: as horas gravadas aparecem e vão no salvar', (
+      t,
+    ) async {
+      final s = _Servidor();
+      final rascunho = ModeloSalvo.deJson(comOferta(horas: 12));
+      await _abrir(t, s, TelaEditorModelo(inicial: rascunho));
+
+      final campo = find.byKey(const ValueKey('m-lto-horas'));
+      await _ver(t, campo);
+      expect(t.widget<TextField>(campo).controller!.text, '12');
+      // Fora da Meta não há o que poupar: salva-se tudo junto.
+      expect(find.text('Salvar só a validade'), findsNothing);
+
+      await _escrever(t, 'm-lto-horas', '48');
+      await t.tap(find.text('Salvar rascunho'));
+      await _assentar(t);
+      expect(s.corpos['PUT /modelos/m6']!['ltoHoras'], 48);
+    });
+
+    testWidgets('rascunho: em branco não manda as horas', (t) async {
+      final s = _Servidor();
+      final rascunho = ModeloSalvo.deJson(comOferta(horas: 12));
+      await _abrir(t, s, TelaEditorModelo(inicial: rascunho));
+
+      await _escrever(t, 'm-lto-horas', '');
+      await t.tap(find.text('Salvar rascunho'));
+      await _assentar(t);
+      expect(
+        s.corpos['PUT /modelos/m6']!.containsKey('ltoHoras'),
+        isFalse,
+        reason: 'em branco vale o padrão do servidor',
+      );
+    });
+
+    testWidgets('oferta desligada: as horas não vão', (t) async {
+      final s = _Servidor();
+      final rascunho = ModeloSalvo.deJson(comOferta(horas: 12));
+      await _abrir(t, s, TelaEditorModelo(inicial: rascunho));
+
+      await _ver(t, find.byKey(const ValueKey('m-lto')));
+      await t.tap(find.byKey(const ValueKey('m-lto')));
+      await _assentar(t);
+      expect(find.byKey(const ValueKey('m-lto-horas')), findsNothing);
+
+      await t.tap(find.text('Salvar rascunho'));
+      await _assentar(t);
+      final corpo = s.corpos['PUT /modelos/m6']!;
+      expect(corpo['ltoAtivo'], isFalse);
+      expect(corpo.containsKey('ltoHoras'), isFalse);
+    });
+
+    testWidgets(
+      'modelo na Meta: salvar só a validade não confere, não edita na Meta e não prende a saída',
+      (t) async {
+        final s = _Servidor();
+        final naMeta = ModeloSalvo.deJson(comOferta(metaTemplateId: '999'));
+        final fim = await _abrir(t, s, TelaEditorModelo(inicial: naMeta));
+
+        await _escrever(t, 'm-lto-horas', '6');
+        final botao = find.byKey(const ValueKey('m-lto-salvar-validade'));
+        await _ver(t, botao);
+        await t.tap(botao);
+        await _assentar(t);
+
+        // (A prévia baixa a imagem do cabeçalho: isso não é gravação.)
+        expect(s.pedidos.where((p) => !p.startsWith('GET /midia/')), [
+          'PATCH /modelos/m6/oferta',
+        ]);
+        expect(s.corpos['PATCH /modelos/m6/oferta'], {'horas': 6});
+        expect(
+          find.text(
+            'Validade salva: a oferta vale por 6 horas depois de cada envio. Nada foi enviado à Meta.',
+          ),
+          findsOneWidget,
+        );
+        expect(fim, isEmpty, reason: 'o editor continua aberto');
+
+        // Só as horas tinham mudado, e elas estão gravadas: sai sem perguntar.
+        await t.pageBack();
+        await _assentar(t);
+        expect(find.text('Sair sem salvar?'), findsNothing);
+        expect(find.text('abrir'), findsOneWidget);
+      },
+    );
+
+    testWidgets('modelo na Meta: em branco volta ao padrão de 3 horas', (
+      t,
+    ) async {
+      final s = _Servidor();
+      final naMeta = ModeloSalvo.deJson(
+        comOferta(horas: 24, metaTemplateId: '999'),
+      );
+      await _abrir(t, s, TelaEditorModelo(inicial: naMeta));
+
+      await _escrever(t, 'm-lto-horas', '');
+      final botao = find.byKey(const ValueKey('m-lto-salvar-validade'));
+      await _ver(t, botao);
+      await t.tap(botao);
+      await _assentar(t);
+
+      expect(s.corpos['PATCH /modelos/m6/oferta'], {'horas': null});
+      expect(
+        find.textContaining('a oferta vale por 3 horas depois de cada envio'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'modelo na Meta: a recusa do servidor aparece com a frase dele',
+      (t) async {
+        final s = _Servidor()
+          ..erroNaValidade =
+              'A oferta pode valer no máximo 720 horas (30 dias).';
+        final naMeta = ModeloSalvo.deJson(comOferta(metaTemplateId: '999'));
+        await _abrir(t, s, TelaEditorModelo(inicial: naMeta));
+
+        await _escrever(t, 'm-lto-horas', '900');
+        final botao = find.byKey(const ValueKey('m-lto-salvar-validade'));
+        await _ver(t, botao);
+        await t.tap(botao);
+        await _assentar(t);
+
+        expect(
+          find.text('A oferta pode valer no máximo 720 horas (30 dias).'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('Validade salva'), findsNothing);
+      },
+    );
+  });
 }

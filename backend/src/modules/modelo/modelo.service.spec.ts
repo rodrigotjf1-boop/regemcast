@@ -377,3 +377,49 @@ describe('mídia que não combina com o formato (imagem no cabeçalho que virou 
     expect(m.midia.handleParaModelo).not.toHaveBeenCalled();
   });
 });
+
+describe('validade da oferta por tempo limitado (as horas ficam aqui, não na Meta)', () => {
+  it('grava as horas sem chamar a Meta — não gasta a edição do dia do modelo aprovado', async () => {
+    // Editado há 2 horas: o `PUT` recusaria; mudar só a validade não.
+    const m = montar({ ltoAtivo: true, editadoMetaEm: new Date(Date.now() - 2 * 3_600_000) });
+
+    await expect(m.service.mudarValidadeDaOferta('c1', 'u1', 'm1', 12)).resolves.toEqual({ id: 'm1', ltoHoras: 12 });
+
+    expect(m.gravado).toEqual([{ ltoHoras: 12 }]);
+    expect(m.graph.editarModelo).not.toHaveBeenCalled();
+    expect(m.meta.tokenDaConta).not.toHaveBeenCalled();
+  });
+
+  it('não mexe no status nem na data da última edição', async () => {
+    const m = montar({ ltoAtivo: true });
+    await m.service.mudarValidadeDaOferta('c1', 'u1', 'm1', 48);
+
+    expect(Object.keys(m.gravado[0])).toEqual(['ltoHoras']);
+  });
+
+  it('nulo volta ao padrão', async () => {
+    const m = montar({ ltoAtivo: true });
+    await expect(m.service.mudarValidadeDaOferta('c1', 'u1', 'm1', null)).resolves.toEqual({ id: 'm1', ltoHoras: null });
+    expect(m.gravado).toEqual([{ ltoHoras: null }]);
+  });
+
+  it('modelo sem oferta: recusa e não grava', async () => {
+    const m = montar({ ltoAtivo: false });
+    await expect(m.service.mudarValidadeDaOferta('c1', 'u1', 'm1', 12)).rejects.toBeInstanceOf(BadRequestException);
+    expect(m.gravado).toEqual([]);
+    expect(m.auditoria.registrar).not.toHaveBeenCalled();
+  });
+
+  it('fica na auditoria, com o valor de antes e o de depois', async () => {
+    const m = montar({ ltoAtivo: true });
+    await m.service.mudarValidadeDaOferta('c1', 'u1', 'm1', 6);
+
+    expect(m.auditoria.registrar).toHaveBeenCalledWith(
+      expect.objectContaining({
+        acao: 'modelo.validade_da_oferta',
+        entidadeId: 'm1',
+        detalhe: { nome: 'promo_sexta', de: null, para: 6 },
+      }),
+    );
+  });
+});
