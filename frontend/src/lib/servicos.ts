@@ -11,7 +11,7 @@
  * campo a mais no corpo não é ignorado — é 400 na cara do usuário.
  */
 import { api, enderecoDaApi } from './api';
-import type { SituacaoCardapioWeb, Segmento, ResumoSegmentos, ParametrosSegmentacao,
+import type { SituacaoCardapioWeb, SituacaoRegem, Segmento, ResumoSegmentos, ParametrosSegmentacao,
   AlvoDePublico,
   ImportacaoDaBase,
   PreviaDoPublico,
@@ -316,6 +316,26 @@ export const cardapioWeb = {
   desconectar: () => api.delete<void>('/integracoes/cardapioweb'),
 };
 
+/** A empresa no Regem. Ligar é da equipe do Regemcast (console); o resto é do dono. */
+export const regem = {
+  /** `GET /integracoes/regem` */
+  situacao: () => api.get<SituacaoRegem>('/integracoes/regem'),
+
+  /** `POST /integracoes/regem/importar` — a declaração do dono e a leitura completa, em segundo plano. */
+  importar: (consentimento: boolean, evidencia?: string) =>
+    api.post<SituacaoRegem>('/integracoes/regem/importar', { consentimento, evidencia }),
+
+  /** `POST /integracoes/regem/99` — autoriza (com a declaração) ou desfaz o uso dos clientes da 99Food. */
+  autorizar99: (autorizar: boolean, declaracao?: boolean) =>
+    api.post<SituacaoRegem>('/integracoes/regem/99', { autorizar, declaracao }),
+
+  /** `POST /integracoes/regem/atualizar` — consulta as mudanças agora; parado por falha, retoma. */
+  atualizar: () => api.post<SituacaoRegem>('/integracoes/regem/atualizar'),
+
+  /** `DELETE /integracoes/regem` — para de trazer; os contatos e as compras ficam. */
+  desligar: () => api.delete<void>('/integracoes/regem'),
+};
+
 export const contatos = {
   /** `GET /contatos` */
   listar: (
@@ -589,6 +609,32 @@ export interface PlanoNoConsole {
 
 export type DadosPlano = Partial<Omit<PlanoNoConsole, 'id' | 'contas'>>;
 
+/** Uma conta ligada ao Regem, vista pelo console. */
+export interface LigacaoRegemNoConsole {
+  contaId: string;
+  contaNome: string;
+  empresaNome: string | null;
+  ligadaEm: string | null;
+  ligadaPor: string | null;
+  escopo99: boolean;
+  incluir99: boolean;
+  autorizacao99Em: string | null;
+  /** O dono autorizou a 99 e o token não a libera (emitir outro), ou o contrário (tirar). */
+  acao99: 'emitir' | 'retirar' | null;
+  importando: boolean;
+  clientesStatus: 'parado' | 'carga' | 'em_dia' | 'falhou';
+  pedidosStatus: 'parado' | 'carga' | 'em_dia' | 'falhou';
+  erro: string | null;
+}
+
+/** A empresa que o token do Regem abre (a resposta de ligar). */
+export interface EmpresaDoRegem {
+  empresaId: string | null;
+  empresaNome: string;
+  lojas: { id: string; nome: string }[];
+  escopos: string[];
+}
+
 export type StatusListaEspera = 'aguardando' | 'convidada' | 'recusada' | 'convertida';
 
 export interface PedidoListaEspera {
@@ -672,6 +718,11 @@ export const distribuicao = {
     api.patch<{ ok: boolean; campanhasRetomadas: number }>('/distribuicao/planos/' + id, dados, SEM_REDIRECT_DIST),
   telemetria: (dias = 7) =>
     api.get<TelemetriaDoConsole>(`/distribuicao/telemetria?dias=${dias}`, SEM_REDIRECT_DIST),
+  regem: () => api.get<LigacaoRegemNoConsole[]>('/distribuicao/regem', SEM_REDIRECT_DIST),
+  ligarRegem: (contaId: string, token: string) =>
+    api.post<EmpresaDoRegem>('/distribuicao/contas/' + contaId + '/regem', { token }, SEM_REDIRECT_DIST),
+  desligarRegem: (contaId: string) =>
+    api.delete<void>('/distribuicao/contas/' + contaId + '/regem', SEM_REDIRECT_DIST),
 };
 
 /** A tela de conversas (coexistência com "sim"). O servidor recusa se não estiver ligada. */

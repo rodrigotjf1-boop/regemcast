@@ -239,7 +239,7 @@ export function PainelPlanos() {
       {!planos && !erro ? (
         <EsqueletoLista linhas={3} />
       ) : planos ? (
-        <div className="overflow-x-auto rounded-card border border-borda bg-superficie shadow-card">
+        <div className="relative overflow-x-auto rounded-card border border-borda bg-superficie shadow-card">
           <table className="w-full min-w-[46rem] text-left text-sm">
             <caption className="sr-only">Planos do catálogo</caption>
             <thead>

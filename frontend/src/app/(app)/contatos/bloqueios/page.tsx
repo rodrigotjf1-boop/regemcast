@@ -40,6 +40,7 @@ const ORIGEM: Record<string, string> = {
   mensagem: 'Respondeu pedindo para sair',
   painel: 'Descadastrado no painel',
   cardapioweb: 'Desligou o WhatsApp no Cardápio Web',
+  regem: 'Pediu para sair no Regem',
   pedido_exclusao: 'Pediu a exclusão dos dados',
 };
 

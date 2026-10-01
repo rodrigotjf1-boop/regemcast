@@ -308,6 +308,12 @@ precisa dos escopos `clientes.ler`, `pedidos.ler` e `clientes.telefone.ler`, e
   por nós: a 99 autorizada pelo dono e ainda não liberada no token
   (**emitir** outro com `vendas.99food.ler`), ou o contrário (**retirar**).
 
+Na tela: em **Configuração → Integrações**, o cartão **Regem** mostra a
+situação, a importação com a declaração do dono, a 99 (com o texto que o
+servidor devolve), **Atualizar agora** e **Desligar do Regem**; sem ligação,
+ele pede a ligação ao suporte. No console da distribuição, a aba **Regem** liga
+uma conta (conta + token), troca o token, desliga e mostra o que espera por nós.
+
 ### Clientes
 
 O dono declara o consentimento e começa (`POST /integracoes/regem/importar`).

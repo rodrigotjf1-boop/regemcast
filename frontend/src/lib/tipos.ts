@@ -950,3 +950,52 @@ export interface SituacaoCardapioWeb {
 
 export type StatusPedidosCardapioWeb = 'parado' | 'carga' | 'em_dia' | 'falhou';
 export type PedidosCardapioWeb = NonNullable<SituacaoCardapioWeb['pedidos']>;
+
+/** A leitura dos clientes ou das vendas do Regem: parada, completa (carga), em dia ou parada por falha. */
+export type StatusRegem = 'parado' | 'carga' | 'em_dia' | 'falhou';
+
+/**
+ * A conta ligada à empresa no Regem (`GET /integracoes/regem`). Quem liga é a
+ * equipe do Regemcast, pelo console: a loja não copia nada.
+ */
+export interface SituacaoRegem {
+  ligado: boolean;
+  empresaNome: string | null;
+  lojas: { id: string; nome: string }[];
+  ligadaEm: string | null;
+  /** O Regem já entrega os clientes e as vendas da 99 para esta conta. */
+  escopo99: boolean;
+  /** O dono autorizou usar os clientes da 99, sob a responsabilidade da empresa. */
+  incluir99: boolean;
+  autorizacao99Em: string | null;
+  /** O texto que o dono aceita para autorizar a 99 — o mesmo que fica gravado. */
+  textoAutorizacao99: string;
+  consentimentoEm: string | null;
+  listaId: string | null;
+  /** A loja também liga o Cardápio Web direto: as vendas dele que vêm pelo Regem ficam de fora. */
+  cardapioWebDireto: boolean;
+  clientes: {
+    status: StatusRegem;
+    lidos: number;
+    novos: number;
+    bloqueados: number;
+    ignorados: number;
+    invalidos: number;
+    removidos: number;
+    ultimaConsulta: string | null;
+    erro: string | null;
+  };
+  pedidos: {
+    status: StatusRegem;
+    lidos: number;
+    gravados: number;
+    ignorados: number;
+    ultimaConsulta: string | null;
+    erro: string | null;
+    /** O que já está guardado. */
+    compras: number;
+    clientes: number;
+    primeira: string | null;
+    ultima: string | null;
+  };
+}
