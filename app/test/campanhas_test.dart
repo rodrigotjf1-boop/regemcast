@@ -11,6 +11,7 @@ import 'package:regemcast/api/cliente_api.dart';
 import 'package:regemcast/api/dados.dart';
 import 'package:regemcast/sessao/sessao.dart';
 import 'package:regemcast/telas/campanha_detalhe.dart';
+import 'package:regemcast/config.dart';
 import 'package:regemcast/telas/campanha_formulario.dart';
 import 'package:regemcast/tema/tema.dart';
 import 'package:regemcast/util/formato.dart' as f;
@@ -37,6 +38,23 @@ Map<String, dynamic> _campanha(
   'listaNome': 'Clientes',
   'janelaDias': <int>[],
   'pausaSegundos': 0,
+};
+
+/// O 131042 (pagamento da conta do WhatsApp na Meta) como o servidor manda.
+const _erroDoPagamento = {
+  'codigo': 131042,
+  'titulo': 'Falta acertar o pagamento na Meta',
+  'explicacao':
+      'A Meta não entregou porque o pagamento da conta do WhatsApp Business não está em ordem.',
+  'acao': 'Acerte o pagamento da conta do WhatsApp na Meta.',
+  'quem': 'voce',
+  'tela': null,
+  'link': {
+    'rotulo': 'Abrir o pagamento na Meta',
+    'url': 'https://business.facebook.com/billing_hub/accounts/details/',
+  },
+  'daMeta':
+      'Message failed to send because your WhatsApp Business account currency is not configured.',
 };
 
 /// Um servidor falso que responde à campanha e anota o que foi pedido.
@@ -248,6 +266,107 @@ void main() {
           findsOneWidget,
         );
         expect(find.text('Ver modelos'), findsOneWidget);
+        expect(find.text('Retomar envio'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'pausada pela conta na Meta: diz o que houve, o que fazer e de quem depende, sem a frase em inglês',
+      (t) async {
+        _telaAlta(t);
+        final s = _Servidor({
+          ..._campanha('pausada', pausaMotivo: 'conta_meta'),
+          'pausaErro': _erroDoPagamento,
+        });
+        await t.pumpWidget(_app(s.api, const TelaCampanhaDetalhe(id: 'c1')));
+        await _assentar(t);
+
+        expect(find.byKey(const ValueKey('cd-pausa-conta')), findsOneWidget);
+        expect(
+          find.textContaining('quem faltava continua na fila'),
+          findsOneWidget,
+        );
+        expect(find.text('Falta acertar o pagamento na Meta'), findsOneWidget);
+        expect(find.text('Depende de você'), findsOneWidget);
+        expect(
+          find.textContaining('Acerte o pagamento da conta do WhatsApp'),
+          findsOneWidget,
+        );
+        // No app da Play nada leva a uma página de pagamento fora dele.
+        expect(
+          find.text('Abrir o pagamento na Meta'),
+          compraNoApp ? findsOneWidget : findsNothing,
+        );
+        expect(find.text('Retomar envio'), findsOneWidget);
+
+        // A frase da Meta fica recolhida, para quem quiser ler.
+        expect(find.textContaining('Message failed to send'), findsNothing);
+        await t.ensureVisible(find.byKey(const ValueKey('erro-da-meta')));
+        await t.tap(find.byKey(const ValueKey('erro-da-meta')));
+        await _assentar(t);
+        expect(
+          find.textContaining('Código 131042. Message failed to send'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'por que falhou: um bloco por motivo, com a contagem, o que fazer e o atalho da tela',
+      (t) async {
+        _telaAlta(t);
+        final s = _Servidor({
+          ..._campanha('concluida', porStatus: {'entregue': 60, 'falhou': 40}),
+          'falhasPorMotivo': [
+            {
+              'total': 38,
+              'erro': {
+                'codigo': 131050,
+                'titulo': 'Parou o marketing pelo WhatsApp',
+                'explicacao':
+                    'A pessoa escolheu, no próprio WhatsApp, não receber mais mensagens de marketing da sua empresa.',
+                'acao': 'Não precisa fazer nada, e reenviar não adianta.',
+                'quem': 'ninguem',
+                'tela': 'bloqueios',
+                'link': null,
+                'daMeta': null,
+              },
+            },
+            {'total': 2, 'erro': _erroDoPagamento},
+            // Linha que o app não entende não derruba a tela.
+            {'total': 1, 'erro': 'lixo'},
+          ],
+        });
+        await t.pumpWidget(_app(s.api, const TelaCampanhaDetalhe(id: 'c1')));
+        await _assentar(t);
+
+        expect(find.byKey(const ValueKey('cd-por-que-falhou')), findsOneWidget);
+        expect(
+          find.text(
+            '2 motivos, do mais comum para o menos, cada um com o que fazer.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('38 mensagens'), findsOneWidget);
+        expect(find.text('Parou o marketing pelo WhatsApp'), findsOneWidget);
+        expect(find.text('Sem ação sua'), findsOneWidget);
+        expect(find.text('Ver bloqueios'), findsOneWidget);
+        expect(find.text('2 mensagens'), findsOneWidget);
+        expect(find.text('Falta acertar o pagamento na Meta'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'servidor antigo, sem o erro na pausa: o aviso aparece sem o bloco',
+      (t) async {
+        _telaAlta(t);
+        final s = _Servidor(_campanha('pausada', pausaMotivo: 'conta_meta'));
+        await t.pumpWidget(_app(s.api, const TelaCampanhaDetalhe(id: 'c1')));
+        await _assentar(t);
+
+        expect(find.byKey(const ValueKey('cd-pausa-conta')), findsOneWidget);
+        expect(find.byKey(const ValueKey('erro-da-meta')), findsNothing);
+        expect(find.byKey(const ValueKey('cd-por-que-falhou')), findsNothing);
         expect(find.text('Retomar envio'), findsOneWidget);
       },
     );

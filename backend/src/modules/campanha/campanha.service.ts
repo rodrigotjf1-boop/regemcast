@@ -51,6 +51,16 @@ import {
   type MidiaNaMeta,
   type PlanoDeEnvio,
 } from '../meta/envio.regras';
+import {
+  erroParaTela,
+  frasesDoErro,
+  limparMensagemDaMeta,
+  mensagemDoErroMeta,
+  pausaPorErro,
+  traduzirErroMeta,
+  type ErroParaTela,
+  type PausaPorErro,
+} from '../meta/erros-meta';
 import { ErroGraph, GraphService } from '../meta/graph.service';
 import { MetaService, MODELO_APROVADO, type ModeloDeMensagem } from '../meta/meta.service';
 import { MidiaIndisponivel, MidiaService } from '../midia/midia.service';
@@ -285,9 +295,60 @@ export function detalheDaFalha(g: ErroGraph | null, tentativasFeitas: number): s
     return 'A conexão com a Meta caiu durante o envio e não dá para saber se a mensagem chegou. Para não correr o risco de enviar duas vezes, ela não foi reenviada.';
   }
   if (g.retentavel) {
-    return `A Meta recusou ${tentativasFeitas + 1} vezes seguidas (${g.traduzido.titulo.toLowerCase()}). Para não insistir, esta mensagem não foi reenviada.`;
+    return `A Meta recusou ${tentativasFeitas + 1} vezes seguidas (${g.traduzido.titulo.toLowerCase()}).`;
   }
-  return g.mensagemParaUsuario;
+  return g.traduzido.explicacao;
+}
+
+/** A frase de `detalheDaFalha` para a recusa que continuou depois de todas as tentativas. */
+const DESISTENCIA = /^A Meta recusou \d+ vezes seguidas/;
+
+/** Falha gravada antes do catálogo conhecer o código: a frase da Meta ia dentro do detalhe. */
+const DETALHE_DE_CODIGO_SEM_CATALOGO = /^A Meta respondeu: "([\s\S]*)"\. Este código ainda não está mapeado/;
+
+/** O que cada falha de destinatário tem gravado. */
+interface FalhaGravada {
+  status: string;
+  erroCodigo: number | null;
+  erroTitulo: string | null;
+  erroDetalhe: string | null;
+  erroMeta: string | null;
+}
+
+/**
+ * A falha de um destinatário como a tela mostra: o que houve, o que fazer, quem
+ * resolve e onde.
+ *
+ * Com código da Meta, a explicação sai do CATÁLOGO na hora da leitura — não da
+ * frase gravada no dia da falha. Assim a falha antiga ganha o texto de hoje
+ * (inclusive a que foi gravada como "código não mapeado", com a frase da Meta
+ * em inglês). A exceção é a recusa passageira que desistiu: aí a frase gravada
+ * diz quantas vezes tentamos, e ela fica.
+ *
+ * Sem código, a falha é nossa (sem valor para o título, pediu para sair, rede
+ * que caiu no meio): a frase gravada já é a explicação.
+ */
+export function erroDoDestinatario(l: FalhaGravada): ErroParaTela | null {
+  if (l.status !== 'falhou') return null;
+  if (l.erroCodigo == null) {
+    if (!l.erroTitulo && !l.erroDetalhe) return null;
+    return {
+      codigo: null,
+      titulo: l.erroTitulo ?? 'Falha no envio',
+      explicacao: l.erroDetalhe ?? 'Não conseguimos enviar esta mensagem.',
+      acao: null,
+      quem: null,
+      tela: null,
+      link: null,
+      daMeta: null,
+    };
+  }
+  const daMeta = l.erroMeta ?? DETALHE_DE_CODIGO_SEM_CATALOGO.exec(l.erroDetalhe ?? '')?.[1] ?? null;
+  const desistiu = DESISTENCIA.test(l.erroDetalhe ?? '');
+  return erroParaTela(traduzirErroMeta(l.erroCodigo, daMeta), {
+    definitivo: true,
+    explicacao: desistiu ? l.erroDetalhe!.replace(' Para não insistir, esta mensagem não foi reenviada.', '') : null,
+  });
 }
 
 /** O que acontece com um destinatário depois da tentativa de envio. */
@@ -296,18 +357,11 @@ type ResultadoEnvio =
   | { tipo: 'falhou' }
   | { tipo: 'nova_tentativa' }
   | { tipo: 'desacelerar'; esperaSegundos: number }
-  /** A Meta recusou o MODELO: a rodada para e a campanha pausa. */
-  | { tipo: 'modelo'; codigo: number };
-
-/**
- * Recusas da Meta que são do MODELO, e não de quem recebe (132000 a 132016:
- * parâmetro que não fecha, modelo que não existe, pausado, desativado). A
- * próxima mensagem teria a mesma resposta: a campanha para na primeira, em vez
- * de marcar a fila inteira como falha, um destinatário por vez.
- */
-export function ehErroDeModelo(codigo: number | null | undefined): codigo is number {
-  return typeof codigo === 'number' && codigo >= 132000 && codigo <= 132016;
-}
+  /**
+   * A Meta recusou por algo que não é desta pessoa — o MODELO, ou a CONTA
+   * (pagamento, restrição, credencial): a rodada para e a campanha pausa.
+   */
+  | { tipo: 'pausar'; motivo: PausaPorErro; codigo: number; daMeta: string };
 
 /** O título de um modelo aceita até 60 caracteres — o valor da variável também não passa disso. */
 const LIMITE_VARIAVEL_DO_TITULO = 60;
@@ -351,7 +405,13 @@ export async function retomarPausadasPorTeto(
 }
 
 /** Estados em que a campanha ainda tem trabalho para o worker. */
-const ESTADOS_ATIVOS = ['agendada', 'enviando'] as const;
+export const ESTADOS_ATIVOS = ['agendada', 'enviando'] as const;
+
+/** As pausas que nascem de um erro da Meta, e por isso guardam o código dele. */
+const PAUSAS_POR_ERRO: readonly string[] = ['modelo', 'conta_meta', 'conexao'];
+
+/** Quantos motivos de falha o detalhe da campanha lista. */
+const LIMITE_MOTIVOS_DE_FALHA = 12;
 
 /**
  * Quantas mensagens por rodada, no máximo.
@@ -405,8 +465,19 @@ export interface ResumoCampanha {
   modeloNome: string;
   modeloIdioma: string;
   status: string;
-  /** conexao | teto_plano | inadimplencia | manual | modelo — só quando pausada. */
+  /** conexao | teto_plano | inadimplencia | manual | modelo | conta_meta — só quando pausada. */
   pausaMotivo: string | null;
+  /**
+   * O erro da Meta que pausou a campanha (modelo, conta_meta ou conexao): o que
+   * houve, o que fazer e onde. Nulo nas outras pausas.
+   */
+  pausaErro: ErroParaTela | null;
+  /**
+   * Por que as mensagens falharam, do motivo mais comum para o menos — só no
+   * detalhe da campanha. É o que guia quem tem 300 falhas: lê três motivos, não
+   * trezentas linhas.
+   */
+  falhasPorMotivo?: Array<{ total: number; erro: ErroParaTela }>;
   /** De onde sai a variável do título do modelo; nulo quando o modelo não tem. */
   variavelCabecalho: { origem: string; valor: string } | null;
   criadoEm: Date;
@@ -1385,7 +1456,7 @@ export class CampanhaService {
 
     await this.ctx.db
       .update(campanha)
-      .set({ status: 'agendada', pausaMotivo: null })
+      .set({ status: 'agendada', pausaMotivo: null, pausaErroCodigo: null, pausaErroMeta: null })
       .where(and(eq(campanha.id, campanhaId), eq(campanha.status, 'pausada')));
 
     await this.auditoria.registrar({
@@ -1729,11 +1800,18 @@ export class CampanhaService {
           await this.adiarRodada(campanhaId, todos, Math.max(60, erro.traduzido.esperaSegundos ?? 60));
           return;
         }
-        if (erro.classe === 'credencial') {
-          await this.pausarDevolvendo(c, todos, 'conexao', 'a autorização do WhatsApp venceu', 'A conexão com o WhatsApp caiu antes de terminar. Reconecte pelo site e retome a campanha.');
+        const daMeta = limparMensagemDaMeta(mensagemDoErroMeta(erro.corpo));
+        const guardar = erro.codigo === null ? undefined : { codigo: erro.codigo, daMeta };
+        const pausa = pausaPorErro(erro.traduzido);
+        if (pausa === 'conexao') {
+          await this.pausarDevolvendo(c, todos, 'conexao', 'a autorização do WhatsApp venceu', 'A conexão com o WhatsApp caiu antes de terminar. Reconecte pelo site e retome a campanha.', guardar);
           return;
         }
-        await this.pausarDevolvendo(c, todos, 'modelo', `a Meta recusou o arquivo do modelo (erro ${erro.codigo ?? '—'})`, `A Meta recusou o arquivo do modelo desta campanha: ${erro.traduzido.titulo}. O restante da fila ficou guardado.`);
+        if (pausa === 'conta_meta') {
+          await this.pausarDevolvendo(c, todos, 'conta_meta', `a Meta recusou pela conta (erro ${erro.codigo})`, `${erro.traduzido.titulo}. ${erro.traduzido.acao}`, guardar);
+          return;
+        }
+        await this.pausarDevolvendo(c, todos, 'modelo', `a Meta recusou o arquivo do modelo (erro ${erro.codigo ?? '—'})`, `A Meta recusou o arquivo do modelo desta campanha: ${erro.traduzido.titulo}. O restante da fila ficou guardado.`, guardar);
         return;
       }
       await this.adiarRodada(campanhaId, todos, 60);
@@ -1758,17 +1836,41 @@ export class CampanhaService {
         campanhaId,
         { plano, midias },
       );
-      // A Meta recusou o MODELO: a mensagem seguinte teria a mesma resposta. A
-      // campanha para aqui, com o resto da fila intacto, em vez de marcar um
-      // por um como falha.
-      if (resultado.tipo === 'modelo') {
-        await this.pausarDevolvendo(
-          c,
-          reivindicados.slice(i + 1).map((r) => r.id),
-          'modelo',
-          `a Meta recusou o modelo (erro ${resultado.codigo})`,
-          'A Meta recusou o modelo desta campanha. O restante da fila ficou guardado: confira o modelo e retome.',
-        );
+      // A Meta recusou o MODELO ou a CONTA: a mensagem seguinte teria a mesma
+      // resposta. A campanha para aqui, com o resto da fila intacto, em vez de
+      // marcar um por um como falha.
+      if (resultado.tipo === 'pausar') {
+        const erro = traduzirErroMeta(resultado.codigo, resultado.daMeta);
+        const restantes = reivindicados.slice(i + 1).map((r) => r.id);
+        const guardar = { codigo: resultado.codigo, daMeta: resultado.daMeta };
+        if (resultado.motivo === 'modelo') {
+          await this.pausarDevolvendo(
+            c,
+            restantes,
+            'modelo',
+            `a Meta recusou o modelo (erro ${resultado.codigo})`,
+            'A Meta recusou o modelo desta campanha. O restante da fila ficou guardado: confira o modelo e retome.',
+            guardar,
+          );
+        } else if (resultado.motivo === 'conexao') {
+          await this.pausarDevolvendo(
+            c,
+            restantes,
+            'conexao',
+            `a Meta recusou a credencial (erro ${resultado.codigo})`,
+            'A conexão com o WhatsApp caiu antes de terminar. Reconecte pelo site e retome a campanha.',
+            guardar,
+          );
+        } else {
+          await this.pausarDevolvendo(
+            c,
+            restantes,
+            'conta_meta',
+            `a Meta recusou pela conta (erro ${resultado.codigo}: ${erro.titulo})`,
+            `${erro.titulo}. ${erro.acao}`,
+            guardar,
+          );
+        }
         return;
       }
       // A Meta pediu calma: continuar a rodada seria bater no mesmo muro com
@@ -1784,15 +1886,18 @@ export class CampanhaService {
 
   /**
    * Pausa a campanha e devolve à fila quem a rodada tinha pego e ainda não
-   * recebeu — pelo modelo (a Meta o recusou, ou o arquivo dele sumiu) ou pela
-   * conexão. Ninguém é marcado como falha por um problema que não é dele.
+   * recebeu — pelo modelo (a Meta o recusou, ou o arquivo dele sumiu), pela
+   * conta na Meta (pagamento, restrição, registro) ou pela conexão. Ninguém é
+   * marcado como falha por um problema que não é dele. `erro` guarda o código e
+   * a frase da Meta, para a tela dizer o motivo e o que fazer.
    */
   private async pausarDevolvendo(
     c: { id: string; contaId: string; nome: string },
     restantes: string[],
-    motivo: 'modelo' | 'conexao',
+    motivo: PausaPorErro,
     porQue: string,
     aviso: string,
+    erro?: { codigo: number; daMeta: string },
   ): Promise<void> {
     const pausou = await this.ctx.comEscopoSistema('campanha.worker.pausar', async (db) => {
       if (restantes.length) {
@@ -1803,7 +1908,12 @@ export class CampanhaService {
       }
       const r = await db
         .update(campanha)
-        .set({ status: 'pausada', pausaMotivo: motivo })
+        .set({
+          status: 'pausada',
+          pausaMotivo: motivo,
+          pausaErroCodigo: erro?.codigo ?? null,
+          pausaErroMeta: erro?.daMeta || null,
+        })
         .where(and(eq(campanha.id, c.id), inArray(campanha.status, [...ESTADOS_ATIVOS])))
         .returning({ id: campanha.id });
       return r.length > 0;
@@ -2071,6 +2181,22 @@ export class CampanhaService {
           : { tipo: 'nova_tentativa' };
       }
 
+      const pausa = g && g.codigo !== null ? pausaPorErro(g.traduzido) : null;
+      const daMeta = g ? limparMensagemDaMeta(mensagemDoErroMeta(g.corpo)) : '';
+
+      // A Meta recusou pela CONTA (pagamento, restrição, credencial): não é
+      // desta pessoa, e ela receberia se a conta estivesse em ordem. Volta para
+      // a fila; quem chama para a rodada e pausa a campanha com o motivo.
+      if (pausa && pausa !== 'modelo') {
+        await this.ctx.comConta(contaId, (db) =>
+          db
+            .update(campanhaDestinatario)
+            .set({ status: 'pendente' })
+            .where(eq(campanhaDestinatario.id, destinatario.id)),
+        );
+        return { tipo: 'pausar', motivo: pausa, codigo: g!.codigo!, daMeta };
+      }
+
       await this.ctx.comConta(contaId, async (db) => {
         await db
           .update(campanhaDestinatario)
@@ -2079,16 +2205,18 @@ export class CampanhaService {
             falhouEm: new Date(),
             erroCodigo: g?.codigo ?? null,
             erroTitulo: g?.traduzido.titulo ?? 'Falha no envio',
-            // A explicação é o que a tela mostra; o detalhe técnico fica no log.
+            // O que houve, na frase do dia; o que fazer sai do catálogo, na
+            // leitura. O detalhe técnico fica no log.
             erroDetalhe: detalheDaFalha(g, feitas),
+            erroMeta: daMeta || null,
           })
           .where(eq(campanhaDestinatario.id, destinatario.id));
         // Número sem WhatsApp em duas campanhas: sai sozinho dos próximos envios.
         if (g?.codigo === ERRO_SEM_WHATSAPP) await registrarFalhaSemWhatsapp(db, contaId, destinatario.telefone);
       });
-      // O erro fica gravado neste destinatário (é por ele que a tela mostra o
-      // motivo); quem chama para a rodada e pausa a campanha.
-      return ehErroDeModelo(g?.codigo) ? { tipo: 'modelo', codigo: g!.codigo! } : { tipo: 'falhou' };
+      // Recusa do MODELO: o erro fica gravado neste destinatário (pode ser um
+      // valor dele que não fecha com o modelo), e quem chama para a rodada.
+      return pausa === 'modelo' ? { tipo: 'pausar', motivo: 'modelo', codigo: g!.codigo!, daMeta } : { tipo: 'falhou' };
     }
   }
 
@@ -2173,7 +2301,36 @@ export class CampanhaService {
 
   async detalhe(contaId: string, campanhaId: string): Promise<ResumoCampanha> {
     const [resumo] = await this.comContagens([await this.buscar(contaId, campanhaId)]);
-    return resumo;
+    return { ...resumo!, falhasPorMotivo: await this.falhasPorMotivo(campanhaId) };
+  }
+
+  /**
+   * As falhas da campanha agrupadas pelo motivo, do mais comum para o menos.
+   *
+   * Pelo CÓDIGO da Meta quando há um (o título gravado pode ter mudado entre
+   * versões do catálogo); pelo título quando a falha é nossa. Uma consulta,
+   * sobre o índice da campanha.
+   */
+  private async falhasPorMotivo(campanhaId: string): Promise<Array<{ total: number; erro: ErroParaTela }>> {
+    const r = (await this.ctx.db.execute(sql`
+      select erro_codigo as "erroCodigo",
+             case when erro_codigo is null then erro_titulo end as "erroTitulo",
+             max(erro_detalhe) as "erroDetalhe",
+             max(erro_meta) as "erroMeta",
+             count(*)::int as total
+        from campanha_destinatario
+       where campanha_id = ${campanhaId} and status = 'falhou'
+       group by 1, 2
+       order by total desc, 1
+       limit ${LIMITE_MOTIVOS_DE_FALHA}
+    `)) as {
+      rows: Array<{ erroCodigo: number | null; erroTitulo: string | null; erroDetalhe: string | null; erroMeta: string | null; total: number }>;
+    };
+
+    return r.rows.flatMap((l) => {
+      const erro = erroDoDestinatario({ status: 'falhou', ...l });
+      return erro ? [{ total: Number(l.total), erro }] : [];
+    });
   }
 
   /**
@@ -2186,13 +2343,15 @@ export class CampanhaService {
   async destinatarios(contaId: string, campanhaId: string) {
     await this.buscar(contaId, campanhaId);
 
-    return this.ctx.db
+    const linhas = await this.ctx.db
       .select({
         id: campanhaDestinatario.id,
         telefone: campanhaDestinatario.telefoneE164,
         status: campanhaDestinatario.status,
+        erroCodigo: campanhaDestinatario.erroCodigo,
         erroTitulo: campanhaDestinatario.erroTitulo,
         erroDetalhe: campanhaDestinatario.erroDetalhe,
+        erroMeta: campanhaDestinatario.erroMeta,
         enviadaEm: campanhaDestinatario.enviadaEm,
         entregueEm: campanhaDestinatario.entregueEm,
         lidaEm: campanhaDestinatario.lidaEm,
@@ -2202,6 +2361,18 @@ export class CampanhaService {
       .where(eq(campanhaDestinatario.campanhaId, campanhaId))
       .orderBy(sql`(${campanhaDestinatario.status} = 'falhou') desc`, campanhaDestinatario.criadoEm)
       .limit(LIMITE_DESTINATARIOS_TELA);
+
+    return linhas.map(({ erroCodigo, erroMeta, ...l }) => {
+      const erro = erroDoDestinatario({ ...l, erroCodigo, erroMeta });
+      return {
+        ...l,
+        // `erroTitulo` e `erroDetalhe` seguem para o app que ainda não lê
+        // `erro`: já com o texto do catálogo, e o que fazer junto.
+        erroTitulo: erro?.titulo ?? l.erroTitulo,
+        erroDetalhe: erro ? frasesDoErro(erro) : l.erroDetalhe,
+        erro,
+      };
+    });
   }
 
   private async buscar(contaId: string, campanhaId: string) {
@@ -2300,6 +2471,10 @@ export class CampanhaService {
       modeloIdioma: c.modeloIdioma,
       status: c.status,
       pausaMotivo: c.status === 'pausada' ? c.pausaMotivo : null,
+      pausaErro:
+        c.status === 'pausada' && c.pausaErroCodigo != null && PAUSAS_POR_ERRO.includes(c.pausaMotivo ?? '')
+          ? erroParaTela(traduzirErroMeta(c.pausaErroCodigo, c.pausaErroMeta))
+          : null,
       variavelCabecalho: variavelDoTitulo(lerPlano(c.envio)),
       criadoEm: c.criadoEm,
       iniciadaEm: c.iniciadaEm,

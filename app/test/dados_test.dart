@@ -100,6 +100,94 @@ void main() {
     });
   });
 
+  group('erro da Meta que guia', () {
+    test('lê o que houve, o que fazer, quem resolve e o endereço', () {
+      final e = ErroQueGuia.deJson({
+        'codigo': 131042,
+        'titulo': 'Falta acertar o pagamento na Meta',
+        'explicacao': 'O pagamento não está em ordem.',
+        'acao': 'Acerte o pagamento.',
+        'quem': 'voce',
+        'tela': null,
+        'link': {
+          'rotulo': 'Abrir o pagamento na Meta',
+          'url': 'https://business.facebook.com/x',
+        },
+        'daMeta': 'Message failed',
+      })!;
+      expect(e.codigo, 131042);
+      expect(e.linkUrl, 'https://business.facebook.com/x');
+      expect(e.linkRotulo, 'Abrir o pagamento na Meta');
+      expect(e.linkDePagamento, isTrue);
+      expect(e.daMeta, 'Message failed');
+    });
+
+    test('endereço que não é https não vira botão', () {
+      final e = ErroQueGuia.deJson({
+        'codigo': 999,
+        'titulo': 'A Meta recusou a mensagem (código 999)',
+        'explicacao': 'x',
+        'link': {'rotulo': 'Abrir', 'url': 'javascript:alert(1)'},
+      })!;
+      expect(e.linkUrl, isNull);
+      expect(e.linkDePagamento, isFalse);
+    });
+
+    test('falha nossa vem sem código; lixo e servidor antigo viram nulo', () {
+      final e = ErroQueGuia.deJson({
+        'codigo': null,
+        'titulo': 'Sem valor para o título',
+        'explicacao': 'Nada foi enviado.',
+      })!;
+      expect(e.codigo, isNull);
+      expect(e.acao, isNull);
+      expect(ErroQueGuia.deJson(null), isNull);
+      expect(ErroQueGuia.deJson('lixo'), isNull);
+      expect(ErroQueGuia.deJson({'explicacao': 'sem título'}), isNull);
+    });
+
+    test('a campanha traz o erro da pausa e as falhas por motivo', () {
+      final c = ResumoCampanha.deJson({
+        'id': 'c1',
+        'nome': 'x',
+        'modeloNome': 'm',
+        'status': 'pausada',
+        'pausaMotivo': 'conta_meta',
+        'porStatus': {'pendente': 3},
+        'total': 3,
+        'pausaErro': {
+          'codigo': 131042,
+          'titulo': 'Falta acertar o pagamento na Meta',
+          'explicacao': 'x',
+        },
+        'falhasPorMotivo': [
+          {
+            'total': 2,
+            'erro': {
+              'codigo': 131026,
+              'titulo': 'Número não recebe no WhatsApp',
+              'explicacao': 'y',
+            },
+          },
+          {'total': 1},
+        ],
+      });
+      expect(c.pausaErro!.codigo, 131042);
+      expect(c.falhasPorMotivo.single.total, 2);
+      // Servidor antigo: nada disso vem, e nada quebra.
+      final antiga = ResumoCampanha.deJson({
+        'id': 'c2',
+        'nome': 'x',
+        'modeloNome': 'm',
+        'status': 'pausada',
+        'porStatus': <String, int>{},
+        'total': 0,
+      });
+      expect(antiga.pausaErro, isNull);
+      expect(antiga.falhasPorMotivo, isEmpty);
+    });
+  });
+
   group('formato brasileiro', () {
     test(
       'números com ponto de milhar',

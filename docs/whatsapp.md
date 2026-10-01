@@ -493,9 +493,48 @@ mensagens.
 ## Erros e retentativa
 
 O catálogo em [`erros-meta.ts`](../backend/src/modules/meta/erros-meta.ts)
-traduz 25 códigos da Meta para pt-BR e classifica cada um em `transitorio`,
-`limite`, `destinatario`, `config`, `credencial` ou `politica`. É o catálogo —
-não um `catch` genérico — que decide o que volta.
+cobre a lista oficial de códigos da Cloud API (conferida em 01/10/2026: 68
+códigos, mais a faixa de 200 a 299) e diz três coisas de cada um. É o catálogo — não um `catch` genérico —
+que decide o que volta.
+
+| O que o catálogo diz | Para quê |
+| --- | --- |
+| `classe` (`transitorio`, `limite`, `destinatario`, `config`, `credencial`, `politica`) | Se a mensagem é tentada de novo |
+| `alcance` (`destinatario`, `modelo`, `conta`, `passageiro`) | Se a campanha segue, espera ou **para** |
+| `titulo`, `explicacao`, `acao`, `quem`, `tela` | O que a tela mostra: o que houve, o que fazer, quem resolve e em que tela |
+
+**O erro que guia (migration 038).** Achado no teste do dono (01/10/2026): o
+131042 (pagamento da conta do WhatsApp não configurado) não estava no catálogo,
+e a tela mostrou a frase da Meta em inglês, com um endereço de 200 caracteres,
+e "registre para investigarmos".
+
+- **A frase da Meta nunca é a explicação.** Ela fica guardada à parte
+  (`campanha_destinatario.erro_meta`) e a tela a mostra recolhida, em "O que a
+  Meta respondeu". O endereço que ela traz para resolver (pagamento, termos)
+  vira um botão de rótulo curto — só endereço `https` da própria Meta.
+- **A explicação sai do catálogo na leitura, pelo código** — não da frase
+  gravada no dia da falha. A falha antiga ganha o texto de hoje, inclusive a que
+  foi gravada como "código não mapeado". A exceção é a recusa passageira que
+  desistiu: fica a frase que diz quantas vezes tentamos, e a ação não promete
+  nova tentativa.
+- **Código fora da lista** ganha texto honesto: diz que não conhecemos, manda
+  falar com o suporte informando o código e guarda o que a Meta respondeu.
+- **Erro da conta para a campanha na primeira recusa** (`alcance = conta`:
+  pagamento, conta restrita, registro do número, credencial), como já acontecia
+  com o modelo. No envio, ninguém vira falha: quem a rodada tinha pego volta
+  para a fila, inclusive o da primeira recusa. Quando a recusa chega depois,
+  pelo aviso de entrega (a Meta aceita e recusa em seguida — foi o caso do
+  131042), quem já tinha sido aceito fica como falha, com o motivo, e a
+  campanha que ainda está saindo pausa. `pausa_motivo = conta_meta` (ou
+  `conexao`, na credencial), com `pausa_erro_codigo` e `pausa_erro_meta` para a
+  tela dizer o motivo e o que fazer. Retomar limpa os três.
+- **"Por que falhou"**: `GET /campanhas/:id` traz `falhasPorMotivo`, as falhas
+  agrupadas pelo código, do motivo mais comum para o menos, cada um com o que
+  fazer. `GET /campanhas/:id/destinatarios` traz `erro` em cada falha;
+  `erroTitulo` e `erroDetalhe` seguem, já com o texto do catálogo, para o app
+  que ainda não lê `erro`.
+- **No app da Play**, o botão que abre o pagamento na Meta não aparece (nada
+  ali leva a uma página de pagamento fora do app); a explicação fica.
 
 No envio da campanha:
 

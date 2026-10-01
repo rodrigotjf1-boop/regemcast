@@ -247,9 +247,15 @@ export interface ResumoCampanha {
   status: string;
   /**
    * Por que pausou: a conexão com a Meta caiu, acabaram os disparos do plano,
-   * falta pagamento, o dono pausou, ou a Meta recusou o modelo (`modelo`).
+   * falta pagamento do plano, o dono pausou, a Meta recusou o modelo (`modelo`)
+   * ou recusou por um problema da conta do WhatsApp na Meta (`conta_meta`:
+   * pagamento, restrição, registro do número).
    */
-  pausaMotivo: 'conexao' | 'teto_plano' | 'inadimplencia' | 'manual' | 'modelo' | null;
+  pausaMotivo: 'conexao' | 'teto_plano' | 'inadimplencia' | 'manual' | 'modelo' | 'conta_meta' | null;
+  /** O erro da Meta que pausou a campanha, quando a pausa nasceu de um. */
+  pausaErro?: ErroQueGuia | null;
+  /** Por que as mensagens falharam, do motivo mais comum para o menos. Só em `GET /campanhas/:id`. */
+  falhasPorMotivo?: Array<{ total: number; erro: ErroQueGuia }>;
   /** De onde sai a variável do título do modelo; nulo quando o modelo não tem. */
   variavelCabecalho?: { origem: VariavelDeLista['origem']; valor: string } | null;
   criadoEm: string;
@@ -305,6 +311,25 @@ export interface ResultadoExclusaoCampanha {
 }
 
 /**
+ * Um erro da Meta do jeito que a tela mostra: o que houve, o que fazer, quem
+ * resolve e por onde. O servidor monta a partir do código — a tela não traduz.
+ */
+export interface ErroQueGuia {
+  /** O código da Meta; nulo quando a falha é nossa (rede, valor que faltou). */
+  codigo: number | null;
+  titulo: string;
+  explicacao: string;
+  acao: string | null;
+  quem: 'voce' | 'nos' | 'ninguem' | null;
+  /** A tela do Regemcast onde se resolve. */
+  tela: 'whatsapp' | 'modelos' | 'contatos' | 'bloqueios' | null;
+  /** O endereço que a própria Meta mandou para resolver (pagamento, termos). */
+  link: { rotulo: string; url: string } | null;
+  /** A frase da Meta, crua. */
+  daMeta: string | null;
+}
+
+/**
  * `GET /campanhas/:id/destinatarios`
  *
  * `enviada` e `entregue` são estados diferentes: o primeiro diz que a Meta
@@ -317,6 +342,8 @@ export interface DestinatarioCampanha {
   status: string;
   erroTitulo: string | null;
   erroDetalhe: string | null;
+  /** A falha, com o que fazer. Nulo em quem não falhou. */
+  erro?: ErroQueGuia | null;
   enviadaEm: string | null;
   entregueEm: string | null;
   lidaEm: string | null;

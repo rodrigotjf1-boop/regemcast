@@ -13,6 +13,7 @@ import '../componentes/categoria.dart';
 import '../config.dart';
 import '../tema/cores.dart';
 import '../util/formato.dart' as f;
+import 'bloqueios.dart';
 import 'campanha_formulario.dart';
 import 'casca.dart';
 import 'plano.dart';
@@ -311,6 +312,10 @@ class _TelaCampanhaDetalheState extends ConsumerState<TelaCampanhaDetalhe> {
               ..._alertas(camp, c),
               _Metricas(campanha: camp),
               const SizedBox(height: 14),
+              if (camp.falhasPorMotivo.isNotEmpty) ...[
+                _PorQueFalhou(falhas: camp.falhasPorMotivo),
+                const SizedBox(height: 14),
+              ],
               if (camp.temJanela) ...[
                 _Janela(campanha: camp),
                 const SizedBox(height: 14),
@@ -461,6 +466,21 @@ class _TelaCampanhaDetalheState extends ConsumerState<TelaCampanhaDetalhe> {
               ),
             ),
           );
+        case 'conta_meta':
+          // A Meta recusou por um problema da CONTA do WhatsApp (pagamento,
+          // restrição, registro): a mensagem seguinte teria a mesma resposta.
+          lista.add(
+            const Aviso(
+              key: ValueKey('cd-pausa-conta'),
+              tom: TomPilula.erro,
+              icone: Icons.report_gmailerrorred_rounded,
+              texto:
+                  'Pausada: a Meta recusou o envio por um problema da conta do WhatsApp, e a mensagem seguinte teria a mesma resposta. A campanha parou — quem faltava continua na fila e sai quando você retomar.',
+            ),
+          );
+          if (camp.pausaErro != null) {
+            lista.add(Cartao(child: BlocoDoErro(erro: camp.pausaErro!)));
+          }
         case 'modelo':
           lista.add(
             const Aviso(
@@ -475,6 +495,9 @@ class _TelaCampanhaDetalheState extends ConsumerState<TelaCampanhaDetalhe> {
               ),
             ),
           );
+          if (camp.pausaErro != null) {
+            lista.add(Cartao(child: BlocoDoErro(erro: camp.pausaErro!)));
+          }
       }
     }
     return lista.map(embrulhar).toList();
@@ -546,6 +569,194 @@ class _Cabecalho extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// Por que as mensagens falharam, do motivo mais comum para o menos. Quem tem
+/// 300 falhas lê três motivos, cada um com o que fazer — e não 300 linhas.
+class _PorQueFalhou extends StatelessWidget {
+  const _PorQueFalhou({required this.falhas});
+  final List<FalhaPorMotivo> falhas;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Cores.de(context);
+    return Cartao(
+      key: const ValueKey('cd-por-que-falhou'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Por que falhou',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            falhas.length == 1
+                ? 'Um motivo, com o que fazer.'
+                : '${falhas.length} motivos, do mais comum para o menos, cada um com o que fazer.',
+            style: TextStyle(color: c.tintaSuave, fontSize: 12.5),
+          ),
+          for (final (i, falha) in falhas.indexed) ...[
+            if (i > 0)
+              Divider(height: 28, color: c.borda)
+            else
+              const SizedBox(height: 14),
+            Text(
+              f.plural(falha.total, 'mensagem', 'mensagens'),
+              style: TextStyle(
+                color: c.erro,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            BlocoDoErro(erro: falha.erro),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Um erro da Meta do jeito que guia: o que houve, o que fazer, quem resolve e
+/// por onde. O texto vem pronto do servidor. A frase da Meta, em inglês, nunca
+/// é a explicação: fica recolhida em "O que a Meta respondeu".
+class BlocoDoErro extends StatefulWidget {
+  const BlocoDoErro({super.key, required this.erro});
+  final ErroQueGuia erro;
+
+  @override
+  State<BlocoDoErro> createState() => _BlocoDoErroState();
+}
+
+class _BlocoDoErroState extends State<BlocoDoErro> {
+  bool _aberto = false;
+
+  static const _quem = {
+    'voce': ('Depende de você', TomPilula.atencao),
+    'nos': ('É conosco', TomPilula.acento),
+    'ninguem': ('Sem ação sua', TomPilula.neutro),
+  };
+
+  /// A tela do app onde se resolve. Contatos é uma aba: não tem atalho daqui.
+  (String, Widget)? get _tela => switch (widget.erro.tela) {
+    'whatsapp' => ('Abrir WhatsApp', const TelaWhatsapp()),
+    'modelos' => ('Ver modelos', const TelaModelosAvulsa()),
+    'bloqueios' => ('Ver bloqueios', const TelaBloqueios()),
+    _ => null,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Cores.de(context);
+    final erro = widget.erro;
+    final quem = _quem[erro.quem];
+    final tela = _tela;
+    // No app da Play nada leva a uma página de pagamento fora dele — nem a da
+    // Meta. A explicação fica; o atalho, não.
+    final link = erro.linkUrl != null && (compraNoApp || !erro.linkDePagamento)
+        ? erro.linkUrl
+        : null;
+    final daMeta = erro.daMeta;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(
+              erro.titulo,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            ),
+            if (quem != null) Pilula(quem.$1, tom: quem.$2, ponto: false),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          erro.explicacao,
+          style: TextStyle(color: c.tintaSuave, height: 1.45),
+        ),
+        if (erro.acao != null) ...[
+          const SizedBox(height: 6),
+          Text.rich(
+            TextSpan(
+              children: [
+                const TextSpan(
+                  text: 'O que fazer: ',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                TextSpan(text: erro.acao),
+              ],
+            ),
+            style: const TextStyle(height: 1.45),
+          ),
+        ],
+        if (link != null || tela != null) ...[
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (link != null)
+                OutlinedButton.icon(
+                  key: const ValueKey('erro-link'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 40),
+                  ),
+                  onPressed: () => launchUrl(
+                    Uri.parse(link),
+                    mode: LaunchMode.externalApplication,
+                  ),
+                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                  label: Text(erro.linkRotulo ?? 'Abrir na Meta'),
+                ),
+              if (tela != null)
+                OutlinedButton(
+                  key: const ValueKey('erro-tela'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 40),
+                  ),
+                  onPressed: () => Navigator.of(
+                    context,
+                  ).push(MaterialPageRoute<void>(builder: (_) => tela.$2)),
+                  child: Text(tela.$1),
+                ),
+            ],
+          ),
+        ],
+        if (daMeta != null) ...[
+          const SizedBox(height: 4),
+          TextButton(
+            key: const ValueKey('erro-da-meta'),
+            style: TextButton.styleFrom(
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(0, 36),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            onPressed: () => setState(() => _aberto = !_aberto),
+            child: Text(
+              _aberto
+                  ? 'Esconder o que a Meta respondeu'
+                  : 'O que a Meta respondeu',
+              style: TextStyle(color: c.tintaSuave, fontSize: 12.5),
+            ),
+          ),
+          if (_aberto)
+            Text(
+              '${erro.codigo != null ? 'Código ${erro.codigo}. ' : ''}$daMeta',
+              style: TextStyle(
+                color: c.tintaSuave,
+                fontSize: 12.5,
+                height: 1.4,
+              ),
+            ),
+        ],
+      ],
     );
   }
 }

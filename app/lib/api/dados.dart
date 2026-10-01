@@ -309,6 +309,74 @@ class EsperaCampanha {
   }
 }
 
+/// Um erro da Meta do jeito que a tela mostra: o que houve, o que fazer, quem
+/// resolve e por onde. O servidor monta a partir do código — o app não traduz.
+class ErroQueGuia {
+  const ErroQueGuia({
+    required this.titulo,
+    required this.explicacao,
+    this.codigo,
+    this.acao,
+    this.quem,
+    this.tela,
+    this.linkRotulo,
+    this.linkUrl,
+    this.daMeta,
+  });
+
+  /// O código da Meta; nulo quando a falha é nossa (rede, valor que faltou).
+  final int? codigo;
+  final String titulo;
+  final String explicacao;
+  final String? acao;
+
+  /// `voce`, `nos` ou `ninguem`.
+  final String? quem;
+
+  /// A tela onde se resolve: `whatsapp`, `modelos`, `contatos` ou `bloqueios`.
+  final String? tela;
+
+  /// O endereço que a própria Meta mandou para resolver (pagamento, termos).
+  final String? linkRotulo;
+  final String? linkUrl;
+
+  /// A frase da Meta, crua.
+  final String? daMeta;
+
+  /// O endereço leva a uma página de pagamento (da conta do WhatsApp, na Meta).
+  bool get linkDePagamento => codigo == 131042 || codigo == 134011;
+
+  static ErroQueGuia? deJson(Object? v) {
+    if (v is! Map<String, dynamic>) return null;
+    final titulo = _txt(v['titulo']);
+    if (titulo.isEmpty) return null;
+    final link = v['link'];
+    final url = link is Map<String, dynamic> ? _txt(link['url']) : '';
+    final codigo = v['codigo'];
+    return ErroQueGuia(
+      codigo: codigo is num ? codigo.toInt() : null,
+      titulo: titulo,
+      explicacao: _txt(v['explicacao']),
+      acao: _txtOuNulo(v['acao']),
+      quem: _txtOuNulo(v['quem']),
+      tela: _txtOuNulo(v['tela']),
+      // Só `https`: o endereço abre fora do app.
+      linkUrl: url.startsWith('https://') ? url : null,
+      linkRotulo: link is Map<String, dynamic>
+          ? _txtOuNulo(link['rotulo'])
+          : null,
+      daMeta: _txtOuNulo(v['daMeta']),
+    );
+  }
+}
+
+/// Um motivo de falha da campanha, com quantas mensagens falharam por ele.
+class FalhaPorMotivo {
+  const FalhaPorMotivo({required this.total, required this.erro});
+  final int total;
+  final ErroQueGuia erro;
+}
+
 /// De onde sai a variável do título do modelo: `origem` (`fixo`, `nome` ou
 /// `primeiro_nome`) e o texto — o valor fixo, ou o que usar sem nome.
 class VariavelDoTitulo {
@@ -357,6 +425,8 @@ class ResumoCampanha {
     this.respondidas = 0,
     this.descansoDias,
     this.variavelCabecalho,
+    this.pausaErro,
+    this.falhasPorMotivo = const [],
   });
 
   final String id;
@@ -385,9 +455,17 @@ class ResumoCampanha {
   /// `rascunho`, `agendada`, `enviando`, `pausada`, `concluida` ou `cancelada`.
   final String status;
 
-  /// `conexao`, `teto_plano`, `inadimplencia`, `manual` ou `modelo` (a Meta
-  /// recusou o modelo, ou o arquivo dele sumiu) — só quando pausada.
+  /// `conexao`, `teto_plano`, `inadimplencia`, `manual`, `modelo` (a Meta
+  /// recusou o modelo, ou o arquivo dele sumiu) ou `conta_meta` (a Meta recusou
+  /// por um problema da conta do WhatsApp: pagamento, restrição, registro) —
+  /// só quando pausada.
   final String? pausaMotivo;
+
+  /// O erro da Meta que pausou a campanha, quando a pausa nasceu de um.
+  final ErroQueGuia? pausaErro;
+
+  /// Por que as mensagens falharam, do motivo mais comum para o menos.
+  final List<FalhaPorMotivo> falhasPorMotivo;
 
   /// A variável do título do modelo; nulo quando o modelo não tem.
   final VariavelDoTitulo? variavelCabecalho;
@@ -484,6 +562,16 @@ class ResumoCampanha {
     respondidas: _int(j['respondidas']),
     descansoDias: _intOuNulo(j['descansoDias']),
     variavelCabecalho: VariavelDoTitulo.deJson(j['variavelCabecalho']),
+    pausaErro: ErroQueGuia.deJson(j['pausaErro']),
+    falhasPorMotivo: [
+      for (final f
+          in (j['falhasPorMotivo'] is List
+                  ? j['falhasPorMotivo'] as List
+                  : const [])
+              .whereType<Map<String, dynamic>>())
+        if (ErroQueGuia.deJson(f['erro']) case final erro?)
+          FalhaPorMotivo(total: _int(f['total']), erro: erro),
+    ],
   );
 }
 

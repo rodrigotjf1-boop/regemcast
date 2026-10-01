@@ -13,6 +13,7 @@ import {
   IconeRaio,
   IconeVoltar,
 } from '@/components/app/icones';
+import { ErroQueGuia } from '@/components/app/erro-que-guia';
 import { FormularioCampanha } from '@/components/app/formulario-campanha';
 import { BadgeCampanha, BadgeDestinatario, BarraStatus } from '@/components/app/status-campanha';
 import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
@@ -422,13 +423,32 @@ export default function PaginaCampanha() {
         </Alerta>
       )}
 
-      {campanha.status === 'pausada' && campanha.pausaMotivo === 'modelo' && (
+      {campanha.status === 'pausada' && campanha.pausaMotivo === 'modelo' && campanha.pausaErro && (
+        <div role="alert" className="space-y-3 rounded-lg border border-erro/30 bg-erro/10 px-3 py-3 text-sm">
+          <p className="leading-relaxed text-erro">
+            Pausada: a Meta recusou o modelo desta campanha. A campanha parou na primeira recusa —
+            quem faltava continua na fila, sem ser marcado como falha.
+          </p>
+          <div className="rounded-lg border border-borda bg-superficie p-3">
+            <ErroQueGuia
+              erro={campanha.pausaErro}
+              acoes={
+                <Button tamanho="sm" onClick={() => void retomar()} carregando={retomando}>
+                  Retomar envio
+                </Button>
+              }
+            />
+          </div>
+        </div>
+      )}
+
+      {campanha.status === 'pausada' && campanha.pausaMotivo === 'modelo' && !campanha.pausaErro && (
         <Alerta tom="erro">
           <span className="block space-y-2">
             <span className="block">
               Pausada: a Meta recusou o modelo desta campanha, ou o arquivo dele não está mais
               disponível. A campanha parou na primeira recusa — quem faltava continua na fila, sem
-              ser marcado como falha. Veja o motivo na lista abaixo, confira o modelo e retome.
+              ser marcado como falha. Veja o motivo abaixo, confira o modelo e retome.
             </span>
             <span className="flex flex-wrap gap-2">
               <Link href="/modelos">
@@ -442,6 +462,37 @@ export default function PaginaCampanha() {
             </span>
           </span>
         </Alerta>
+      )}
+
+      {/*
+        A Meta recusou por um problema da CONTA do WhatsApp (pagamento, restrição,
+        registro do número): a mensagem seguinte teria a mesma resposta, então a
+        campanha parou. O motivo e o que fazer vêm do catálogo, pelo código.
+      */}
+      {campanha.status === 'pausada' && campanha.pausaMotivo === 'conta_meta' && (
+        <div role="alert" className="space-y-3 rounded-lg border border-erro/30 bg-erro/10 px-3 py-3 text-sm">
+          <p className="leading-relaxed text-erro">
+            Pausada: a Meta recusou o envio por um problema da conta do WhatsApp, e a mensagem
+            seguinte teria a mesma resposta. A campanha parou — quem faltava continua na fila e sai
+            quando você retomar.
+          </p>
+          {campanha.pausaErro ? (
+            <div className="rounded-lg border border-borda bg-superficie p-3">
+              <ErroQueGuia
+                erro={campanha.pausaErro}
+                acoes={
+                  <Button tamanho="sm" onClick={() => void retomar()} carregando={retomando}>
+                    Retomar envio
+                  </Button>
+                }
+              />
+            </div>
+          ) : (
+            <Button tamanho="sm" onClick={() => void retomar()} carregando={retomando}>
+              Retomar envio
+            </Button>
+          )}
+        </div>
       )}
 
       {confirmarExclusao && (
@@ -509,9 +560,38 @@ export default function PaginaCampanha() {
           valor={falhas}
           tom={falhas > 0 ? 'erro' : 'neutro'}
           icone={<IconeAlerta className="h-5 w-5" />}
-          apoio={falhas > 0 ? 'Motivo de cada uma na lista abaixo' : 'Nenhuma até agora'}
+          apoio={falhas > 0 ? 'O motivo e o que fazer estão abaixo' : 'Nenhuma até agora'}
         />
       </section>
+
+      {/*
+        Por que falhou, do motivo mais comum para o menos. Quem tem 300 falhas lê
+        três motivos, cada um com o que fazer — e não trezentas linhas.
+      */}
+      {campanha.falhasPorMotivo?.length ? (
+        <Card className="anima-entrada">
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-base font-semibold text-tinta">Por que falhou</h2>
+              <p className="text-xs text-tinta-suave">
+                {campanha.falhasPorMotivo.length === 1
+                  ? 'Um motivo, com o que fazer.'
+                  : `${campanha.falhasPorMotivo.length} motivos, do mais comum para o menos, cada um com o que fazer.`}
+              </p>
+            </div>
+            <ul className="divide-y divide-borda">
+              {campanha.falhasPorMotivo.map((f, i) => (
+                <li key={`${f.erro.codigo ?? 's'}-${i}`} className="flex gap-3 py-3 first:pt-0 last:pb-0">
+                  <span className="numerico mt-0.5 shrink-0 self-start rounded-md bg-erro/10 px-2 py-0.5 text-sm font-semibold text-erro">
+                    {formatarNumero(f.total)}
+                  </span>
+                  <ErroQueGuia erro={f.erro} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Card>
+      ) : null}
 
       <Card className="anima-entrada">
         <div className="space-y-3">
@@ -586,8 +666,10 @@ export default function PaginaCampanha() {
                   <td className="px-3 py-3">
                     <BadgeDestinatario status={d.status} />
                   </td>
-                  <td className="px-5 py-3 text-tinta-suave">
-                    {d.status === 'falhou' && d.erroDetalhe ? (
+                  <td className="px-5 py-3 text-tinta-suave [overflow-wrap:anywhere]">
+                    {d.status === 'falhou' && d.erro ? (
+                      <ErroQueGuia erro={d.erro} compacto />
+                    ) : d.status === 'falhou' && d.erroDetalhe ? (
                       <>
                         <span className="font-medium text-erro">{d.erroTitulo}</span>
                         <br />
