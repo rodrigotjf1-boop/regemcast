@@ -513,6 +513,35 @@ with customers through WhatsApp", e nele o caminho é
 **Casos de uso → Personalizar → Configuração** — não o `WhatsApp → Configuration`
 clássico.
 
+## Tarifa da Meta por mensagem (migration 036)
+
+Quem paga a mensagem é a conta do cliente, direto à Meta. O Regemcast não cobra
+nem repassa esse valor; ele só precisa **saber** quanto foi, para o orçamento de
+disparos e o custo por campanha (roteiro da IA, 01/10/2026).
+
+- **De onde vem.** Cada aviso de status traz o objeto `pricing`
+  (`billable`, `pricing_model`, `type`, `category`). Ele vem no aviso de envio
+  (`sent`) e em **mais um** — entrega ou leitura —, não nos três.
+- **O que é guardado.** `type` e `category`, como vieram, em
+  `campanha_destinatario.tarifa_tipo` e `tarifa_categoria`
+  (`meta/tarifa.regras.ts`). A Meta manda usar os dois juntos; `billable` está
+  marcado para sair numa versão futura e por isso não é lido. A cobrança antiga,
+  por conversa (`pricing_model: "CBP"`), é ignorada: lá o campo tinha outro
+  significado.
+- **Vale a primeira.** O segundo aviso da mesma mensagem, ou um reenvio, não
+  reescreve a tarifa. Aviso fora de ordem (o `sent` depois do `read`) não mexe
+  no status, mas a tarifa que ele traz é guardada.
+- **Mensagem cobrada** = `tarifa_tipo = 'regular'` **e** status `entregue` ou
+  `lida`. A Meta cobra na entrega, não no envio; e a conta é pelo status, não por
+  `entregue_em`, porque a leitura pode chegar sem o aviso de entrega. Os tipos
+  `free_customer_service` e `free_entry_point` saem de graça.
+- **O valor em dinheiro não vem no aviso.** Ele sai da tabela de tarifas da
+  Meta, por categoria e pelo país de quem recebe — entra com o orçamento de
+  disparos. O relatório `pricing_analytics` da Meta (custo aproximado, na moeda
+  da conta) fica como conferência.
+- **Lista aberta.** `marketing_lite` e `referral_conversion` entraram na lista
+  de categorias depois; valor novo é guardado como veio, sem `check` no banco.
+
 ## O que ainda falta
 
 - **Acesso Avançado — e ele bloqueia a coexistência inteira.** Testado em
@@ -536,6 +565,7 @@ clássico.
 
 - [Revisão de modelos — motivos de recusa](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/template-review/) · [Componentes de modelo](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/components/) (conferidas em 25/09/2026)
 
+- [Status messages webhook reference (objeto `pricing`)](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/messages/status) · [Pricing (cobrança por mensagem, na entrega)](https://developers.facebook.com/docs/whatsapp/pricing) (conferidas em 01/10/2026)
 - [Messaging limits (limite de envio, portfólio)](https://developers.facebook.com/documentation/business-messaging/whatsapp/messaging-limits/)
 - [`business_capability_update` webhook](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/business_capability_update/)
 - [Per-user marketing template limits (131049)](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/per-user-limits/)
