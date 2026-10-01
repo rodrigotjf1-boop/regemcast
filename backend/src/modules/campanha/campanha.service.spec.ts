@@ -13,7 +13,15 @@ import { BadRequestException, Logger } from '@nestjs/common';
 
 jest.mock('../../config/env', () => ({ env: { mercadoPago: { carenciaDias: 5 } } }));
 
-import { CampanhaService, MAX_TENTATIVAS_ENVIO, detalheDaFalha, esperaDaNovaTentativa } from './campanha.service';
+import { MidiaIndisponivel } from '../midia/midia.service';
+import {
+  CampanhaService,
+  MAX_TENTATIVAS_ENVIO,
+  detalheDaFalha,
+  ehErroDeModelo,
+  esperaDaNovaTentativa,
+} from './campanha.service';
+import { exigenciasDoEnvio } from '../meta/envio.regras';
 import { ErroGraph } from '../meta/graph.service';
 import { traduzirErroMeta } from '../meta/erros-meta';
 
@@ -75,6 +83,7 @@ const MODELO_PROMO = {
   rodape: null,
   variaveis: 0,
   botoes: [],
+  exige: exigenciasDoEnvio([]),
 };
 
 function montar() {
@@ -100,6 +109,11 @@ function montar() {
 
   const registrar = jest.fn().mockResolvedValue(undefined);
   const telemetria = { registrar: jest.fn().mockResolvedValue(undefined) };
+  // A mídia do modelo: existe, e a Meta devolve um id quando ela sobe.
+  const midias = {
+    disponivelParaEnvio: jest.fn().mockResolvedValue(true),
+    paraEnvio: jest.fn().mockResolvedValue({ id: 'MEDIA-1', nomeArquivo: 'promo.jpg' }),
+  };
 
   const ctx = {
     db,
@@ -121,9 +135,10 @@ function montar() {
     { avisar: jest.fn().mockResolvedValue(undefined) } as unknown as ConstructorParameters<
       typeof CampanhaService
     >[5],
+    midias as unknown as ConstructorParameters<typeof CampanhaService>[6],
   );
 
-  return { service, db, meta, graph, registrar, telemetria, diario, consulta: (l: unknown[]) => consulta(l, diario) };
+  return { service, db, meta, graph, midias, registrar, telemetria, diario, consulta: (l: unknown[]) => consulta(l, diario) };
 }
 
 beforeAll(() => {
@@ -925,6 +940,297 @@ describe('rodada do worker', () => {
 
     expect(m.graph.enviarModelo).not.toHaveBeenCalled();
     expect(m.db.execute).toHaveBeenCalledTimes(1);
+  });
+
+  // ------------------------------------------------ o que o modelo exige no envio
+
+  /** A campanha com o plano gravado ao montar: imagem no cabeçalho. */
+  const COM_IMAGEM = { ...ATIVA, nome: 'Promo', envio: { cabecalho: { tipo: 'image', midia: 'midia:aaa' } } };
+  const DOIS = [
+    { id: 'd1', telefone_e164: '5521999998888', variaveis: ['Ana'], tentativas: 0, variavel_cabecalho: null },
+    { id: 'd2', telefone_e164: '5521777776666', variaveis: ['Bia'], tentativas: 0, variavel_cabecalho: null },
+  ];
+  const pausa = (m: ReturnType<typeof montar>) => m.diario.find((e) => e.valores.status === 'pausada')?.valores;
+  const voltaramParaAFila = (m: ReturnType<typeof montar>) => m.diario.some((e) => e.valores.status === 'pendente');
+
+  it('modelo com imagem: a mídia sobe UMA vez por rodada e cada mensagem leva o cabeçalho', async () => {
+    const m = montar();
+    prepararRodada(m, DOIS, COM_IMAGEM);
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(m.midias.paraEnvio).toHaveBeenCalledTimes(1);
+    expect(m.midias.paraEnvio).toHaveBeenCalledWith(CONTA, 'PN1', 'EAA-token', 'midia:aaa');
+    expect(m.graph.enviarModelo).toHaveBeenCalledTimes(2);
+    expect(m.graph.enviarModelo.mock.calls[0][1].componentes).toEqual([
+      { type: 'header', parameters: [{ type: 'image', image: { id: 'MEDIA-1' } }] },
+      { type: 'body', parameters: [{ type: 'text', text: 'Ana' }] },
+    ]);
+  });
+
+  it('sem plano, o envio não leva `componentes`: campanha antiga sai como sempre saiu', async () => {
+    const m = montar();
+    prepararRodada(m, DOIS);
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(m.midias.paraEnvio).not.toHaveBeenCalled();
+    expect(m.graph.enviarModelo.mock.calls[0][1]).not.toHaveProperty('componentes');
+  });
+
+  it('a Meta recusa o MODELO (132012): só a primeira falha, a rodada para e a campanha pausa pelo modelo', async () => {
+    const m = montar();
+    prepararRodada(m, DOIS, COM_IMAGEM);
+    m.graph.enviarModelo.mockRejectedValue(
+      new ErroGraph({ status: 400, codigo: 132012, traduzido: traduzirErroMeta(132012) }),
+    );
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    // Sem a parada, cada destinatário viraria "falhou", um por um, até a fila acabar.
+    expect(m.graph.enviarModelo).toHaveBeenCalledTimes(1);
+    expect(m.diario.filter((e) => e.valores.status === 'falhou')).toHaveLength(1);
+    expect(pausa(m)?.pausaMotivo).toBe('modelo');
+    expect(voltaramParaAFila(m)).toBe(true);
+  });
+
+  it('erro que é da PESSOA (131026) não pausa: a rodada segue para o próximo', async () => {
+    const m = montar();
+    prepararRodada(m, DOIS, COM_IMAGEM);
+    m.graph.enviarModelo.mockRejectedValueOnce(
+      new ErroGraph({ status: 400, codigo: 131026, traduzido: traduzirErroMeta(131026) }),
+    );
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(m.graph.enviarModelo).toHaveBeenCalledTimes(2);
+    expect(pausa(m)).toBeUndefined();
+  });
+
+  it('o arquivo do modelo sumiu: ninguém é enviado nem queimado, e a campanha pausa pelo modelo', async () => {
+    const m = montar();
+    prepararRodada(m, DOIS, COM_IMAGEM);
+    m.midias.paraEnvio.mockRejectedValue(new MidiaIndisponivel('O arquivo do modelo não está mais disponível.'));
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(m.graph.enviarModelo).not.toHaveBeenCalled();
+    expect(m.diario.some((e) => e.valores.status === 'falhou')).toBe(false);
+    expect(pausa(m)?.pausaMotivo).toBe('modelo');
+    expect(voltaramParaAFila(m)).toBe(true);
+  });
+
+  it('a rede cai ao subir o arquivo: a rodada volta à fila e a campanha espera, SEM pausar', async () => {
+    const m = montar();
+    prepararRodada(m, DOIS, COM_IMAGEM);
+    m.midias.paraEnvio.mockRejectedValue(
+      new ErroGraph({
+        status: 0,
+        codigo: null,
+        traduzido: { codigo: 0, classe: 'transitorio', titulo: 'Sem conexão', explicacao: 'x', esperaSegundos: 60 },
+      }),
+    );
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(m.graph.enviarModelo).not.toHaveBeenCalled();
+    expect(pausa(m)).toBeUndefined();
+    expect(m.diario.some((e) => 'retomarEm' in e.valores)).toBe(true);
+    expect(voltaramParaAFila(m)).toBe(true);
+  });
+
+  it('a autorização venceu ao subir o arquivo (190): pausa pela conexão, não pelo modelo', async () => {
+    const m = montar();
+    prepararRodada(m, DOIS, COM_IMAGEM);
+    m.midias.paraEnvio.mockRejectedValue(new ErroGraph({ status: 401, codigo: 190, traduzido: traduzirErroMeta(190) }));
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(m.graph.enviarModelo).not.toHaveBeenCalled();
+    expect(pausa(m)?.pausaMotivo).toBe('conexao');
+  });
+
+  it('variável do título: quem ficou sem valor falha com o motivo dito, e os outros recebem', async () => {
+    const m = montar();
+    prepararRodada(
+      m,
+      [
+        { id: 'd1', telefone_e164: '5521999998888', variaveis: [], tentativas: 0, variavel_cabecalho: '  ' },
+        { id: 'd2', telefone_e164: '5521777776666', variaveis: [], tentativas: 0, variavel_cabecalho: 'Bia' },
+      ],
+      { ...ATIVA, nome: 'Promo', envio: { cabecalho: { tipo: 'texto', origem: 'nome', valor: 'cliente' } } },
+    );
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(m.diario.find((e) => e.valores.status === 'falhou')?.valores.erroTitulo).toBe('Sem valor para o título');
+    expect(m.graph.enviarModelo).toHaveBeenCalledTimes(1);
+    expect(m.graph.enviarModelo.mock.calls[0][1].componentes).toEqual([
+      { type: 'header', parameters: [{ type: 'text', text: 'Bia' }] },
+    ]);
+    expect(pausa(m)).toBeUndefined();
+  });
+});
+
+describe('ehErroDeModelo', () => {
+  it.each([132000, 132001, 132005, 132007, 132012, 132015, 132016])('%d é do modelo: a campanha para', (codigo) => {
+    expect(ehErroDeModelo(codigo)).toBe(true);
+  });
+
+  it.each([131026, 131049, 130429, 190, 131999, 132017, null, undefined])('%p não é: a rodada segue', (codigo) => {
+    expect(ehErroDeModelo(codigo)).toBe(false);
+  });
+});
+
+/**
+ * O plano de envio é montado ao CRIAR a campanha: a forma vem da Meta, os
+ * valores vêm do modelo como foi criado no Regemcast. Faltando a origem de
+ * alguma coisa, a recusa vem antes de gravar — e não depois do disparo.
+ */
+describe('criar — o que o modelo exige no envio', () => {
+  const pedido = { nome: 'Promo', modeloNome: 'promo', modeloIdioma: 'pt_BR', destinatarios: [{ telefone: '5521999998888' }] };
+  const naMeta = (componentes: unknown[]) => ({ ...MODELO_PROMO, exige: exigenciasDoEnvio(componentes) });
+  const IMAGEM = [{ type: 'HEADER', format: 'IMAGE' }, { type: 'BODY', text: 'Olha!' }];
+  const criarCom = async (m: ReturnType<typeof montar>, extra: Record<string, unknown> = {}) => {
+    m.db.insert.mockReturnValueOnce(consulta([{ id: CAMPANHA }], m.diario, 'insert'));
+    return m.service.criar(CONTA, USUARIO, { ...pedido, ...extra });
+  };
+  const gravada = (m: ReturnType<typeof montar>) => m.diario.find((e) => e.tipo === 'insert')?.valores;
+  /** O modelo como foi criado no Regemcast — é a primeira leitura do banco na criação. */
+  const local = (m: ReturnType<typeof montar>, linha: Record<string, unknown> | null) =>
+    m.db.select.mockReturnValueOnce(m.consulta(linha ? [{ metaTemplateId: '1', botoes: [], cartoes: [], ltoHoras: null, ...linha }] : []));
+
+  it('modelo só de texto não ganha plano', async () => {
+    const m = montar();
+    await criarCom(m);
+    expect(gravada(m)?.envio).toBeNull();
+  });
+
+  it('imagem no cabeçalho: o plano guarda a mídia do próprio modelo', async () => {
+    const m = montar();
+    m.meta.modelos.mockResolvedValue([naMeta(IMAGEM)]);
+    local(m, { cabecalhoMidia: 'midia:aaa' });
+
+    await criarCom(m);
+
+    expect(m.midias.disponivelParaEnvio).toHaveBeenCalledWith(CONTA, 'midia:aaa');
+    expect(gravada(m)?.envio).toEqual({ cabecalho: { tipo: 'image', midia: 'midia:aaa' } });
+  });
+
+  it('modelo com imagem criado direto na Meta: não temos o arquivo, e a recusa diz isso', async () => {
+    const m = montar();
+    m.meta.modelos.mockResolvedValue([naMeta(IMAGEM)]);
+    local(m, null);
+
+    const erro = await criarCom(m).catch((e: unknown) => e);
+
+    expect(erro).toBeInstanceOf(BadRequestException);
+    expect((erro as BadRequestException).message).toContain('não foi criado pelo Regemcast');
+    expect(m.db.insert).not.toHaveBeenCalled();
+  });
+
+  it('o arquivo do modelo não está mais guardado: recusa mandando enviar de novo', async () => {
+    const m = montar();
+    m.meta.modelos.mockResolvedValue([naMeta(IMAGEM)]);
+    local(m, { cabecalhoMidia: 'midia:aaa' });
+    m.midias.disponivelParaEnvio.mockResolvedValue(false);
+
+    const erro = await criarCom(m).catch((e: unknown) => e);
+
+    expect((erro as BadRequestException).message).toContain('não está mais disponível');
+    expect(m.db.insert).not.toHaveBeenCalled();
+  });
+
+  it('cupom: o código sai do modelo, a posição sai da Meta', async () => {
+    const m = montar();
+    m.meta.modelos.mockResolvedValue([
+      naMeta([{ type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Pedir', url: 'https://x.example' }, { type: 'COPY_CODE', example: 'VOLTA10' }] }]),
+    ]);
+    local(m, { botoes: [{ tipo: 'URL', texto: 'Pedir' }, { tipo: 'COPY_CODE', texto: ' VOLTA10 ' }] });
+
+    await criarCom(m);
+
+    expect(gravada(m)?.envio).toEqual({ cupom: { indice: 1, codigo: 'VOLTA10' } });
+  });
+
+  it('carrossel: uma mídia por cartão, na ordem; número de cartões diferente é recusado', async () => {
+    const cartao = { components: [{ type: 'HEADER', format: 'IMAGE' }, { type: 'BODY', text: 'X' }] };
+    const m = montar();
+    m.meta.modelos.mockResolvedValue([naMeta([{ type: 'BODY', text: 'Veja' }, { type: 'CAROUSEL', cards: [cartao, cartao] }])]);
+    local(m, { cartoes: [{ imagem: 'midia:c0' }, { imagem: 'midia:c1' }] });
+    await criarCom(m);
+    expect(gravada(m)?.envio).toEqual({
+      cartoes: [
+        { tipo: 'image', midia: 'midia:c0', respostas: [] },
+        { tipo: 'image', midia: 'midia:c1', respostas: [] },
+      ],
+    });
+
+    const outro = montar();
+    outro.meta.modelos.mockResolvedValue([naMeta([{ type: 'CAROUSEL', cards: [cartao, cartao] }])]);
+    local(outro, { cartoes: [{ imagem: 'midia:c0' }] });
+    await expect(criarCom(outro)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('oferta por tempo limitado: as horas do modelo; sem elas (ou sem o modelo aqui), 3', async () => {
+    const OFERTA = [{ type: 'LIMITED_TIME_OFFER', limited_time_offer: { text: 'Só hoje', has_expiration: true } }, { type: 'BODY', text: 'Corre' }];
+    const com = montar();
+    com.meta.modelos.mockResolvedValue([naMeta(OFERTA)]);
+    local(com, { ltoHoras: 12 });
+    await criarCom(com);
+    expect(gravada(com)?.envio).toEqual({ oferta: { horas: 12 } });
+
+    const sem = montar();
+    sem.meta.modelos.mockResolvedValue([naMeta(OFERTA)]);
+    local(sem, null);
+    await criarCom(sem);
+    expect(gravada(sem)?.envio).toEqual({ oferta: { horas: 3 } });
+  });
+
+  describe('variável no título', () => {
+    const TITULO = [{ type: 'HEADER', format: 'TEXT', text: 'Oi, {{1}}!' }, { type: 'BODY', text: 'Novidade.' }];
+
+    it('sem o valor, recusa pedindo para preencher', async () => {
+      const m = montar();
+      m.meta.modelos.mockResolvedValue([naMeta(TITULO)]);
+      const erro = await criarCom(m).catch((e: unknown) => e);
+      expect((erro as BadRequestException).message).toContain('variável no título');
+      expect(m.db.insert).not.toHaveBeenCalled();
+    });
+
+    it('com texto fixo, o plano guarda de onde ela sai e cada número digitado leva o valor', async () => {
+      const m = montar();
+      m.meta.modelos.mockResolvedValue([naMeta(TITULO)]);
+      await criarCom(m, { variavelCabecalho: { origem: 'fixo', valor: ' Pessoal ' } });
+
+      expect(gravada(m)?.envio).toEqual({ cabecalho: { tipo: 'texto', origem: 'fixo', valor: 'Pessoal' } });
+      const fila = m.diario.filter((e) => e.tipo === 'insert').at(-1)?.valores as unknown as Array<{ variavelCabecalho: string }>;
+      expect(fila[0]?.variavelCabecalho).toBe('Pessoal');
+    });
+
+    it.each([
+      ['nome do contato com números digitados', { origem: 'nome', valor: 'cliente' }, 'texto fixo'],
+      ['cashback', { origem: 'cashback_saldo', valor: '' }, 'texto fixo ou o nome'],
+      ['valor vazio', { origem: 'fixo', valor: '   ' }, 'Preencha'],
+      ['mais de 60 caracteres', { origem: 'fixo', valor: 'x'.repeat(61) }, '60 caracteres'],
+    ])('recusa %s', async (_caso, variavelCabecalho, trecho) => {
+      const m = montar();
+      m.meta.modelos.mockResolvedValue([naMeta(TITULO)]);
+      const erro = await criarCom(m, { variavelCabecalho }).catch((e: unknown) => e);
+      expect(erro).toBeInstanceOf(BadRequestException);
+      expect((erro as BadRequestException).message).toContain(trecho);
+      expect(m.db.insert).not.toHaveBeenCalled();
+    });
+  });
+
+  it('o que o disparo ainda não sabe mandar é recusado com o motivo', async () => {
+    const m = montar();
+    m.meta.modelos.mockResolvedValue([
+      naMeta([{ type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Ver', url: 'https://x.example/{{1}}' }] }]),
+    ]);
+    const erro = await criarCom(m).catch((e: unknown) => e);
+    expect((erro as BadRequestException).message).toContain('link com variável');
+    expect(m.db.insert).not.toHaveBeenCalled();
   });
 });
 

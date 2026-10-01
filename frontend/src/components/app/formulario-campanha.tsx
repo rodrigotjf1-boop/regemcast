@@ -40,6 +40,33 @@ const ROTULO_ORIGEM: Record<VariavelDeLista['origem'], string> = {
   cashback_validade: 'Validade do cashback',
 };
 
+/** De onde a variável do título pode sair: o cashback fica de fora (o servidor recusa). */
+const ORIGENS_DO_TITULO = ['fixo', 'nome', 'primeiro_nome'] as const;
+type OrigemDoTitulo = (typeof ORIGENS_DO_TITULO)[number];
+/** O título de um modelo aceita até 60 caracteres. */
+const LIMITE_DO_TITULO = 60;
+
+const NOME_DA_MIDIA = { image: 'a imagem', video: 'o vídeo', document: 'o documento' } as const;
+
+function ehMidia(tipo: string | null | undefined): tipo is keyof typeof NOME_DA_MIDIA {
+  return tipo === 'image' || tipo === 'video' || tipo === 'document';
+}
+
+/**
+ * O que a mensagem leva além do texto, e de onde sai — para a pessoa saber,
+ * antes de disparar, que a imagem e o cupom são os do próprio modelo.
+ */
+function oQueVaiDoModelo(modelo: ModeloDeMensagem): string[] {
+  const pede = modelo.exige;
+  if (!pede) return [];
+  const linhas: string[] = [];
+  if (ehMidia(pede.cabecalho)) linhas.push(`Vai com ${NOME_DA_MIDIA[pede.cabecalho]} do modelo no topo da mensagem.`);
+  if (pede.cartoes.length) linhas.push(`Carrossel com ${pede.cartoes.length} cartões: cada um vai com a imagem do modelo.`);
+  if (pede.cupomNoBotao !== null) linhas.push('O botão de copiar código leva o código cadastrado no modelo.');
+  if (pede.oferta) linhas.push('Oferta por tempo limitado: vale a partir do envio, pelas horas definidas no modelo (3 se não houver).');
+  return linhas;
+}
+
 /** As que saem do cashback do Cardápio Web: só aparecem em conta que tem saldo lido. */
 const DE_CASHBACK: VariavelDeLista['origem'][] = ['cashback_saldo', 'cashback_validade'];
 const ehDeCashback = (o: VariavelDeLista['origem']) => DE_CASHBACK.includes(o);
@@ -148,6 +175,13 @@ export function FormularioCampanha({
   const { sessao } = useSessao();
   const ehDono = sessao.usuario.papel === 'dono';
   const [origens, setOrigens] = useState<VariavelDeLista['origem'][]>([]);
+  /** A variável do TÍTULO do modelo (cabeçalho de texto com `{{1}}`): de onde sai e o valor. */
+  const [tituloOrigem, setTituloOrigem] = useState<OrigemDoTitulo>(
+    ORIGENS_DO_TITULO.includes(campanha?.variavelCabecalho?.origem as OrigemDoTitulo)
+      ? (campanha!.variavelCabecalho!.origem as OrigemDoTitulo)
+      : 'fixo',
+  );
+  const [tituloValor, setTituloValor] = useState(campanha?.variavelCabecalho?.valor ?? '');
   /** A conta tem saldo de cashback lido do Cardápio Web: as variáveis de cashback aparecem. */
   const [cashbackNaConta, setCashbackNaConta] = useState(false);
   const [erro, setErro] = useState('');
@@ -366,6 +400,22 @@ export function FormularioCampanha({
       }
     }
 
+    const naoSabeMandar = escolhido!.exige?.semSuporte ?? [];
+    if (naoSabeMandar.length) {
+      setErro(`Este modelo ainda não pode ser disparado por aqui: ${naoSabeMandar.join('; ')}.`);
+      return;
+    }
+    const temTitulo = escolhido!.exige?.cabecalho === 'texto';
+    const origemDoTitulo: OrigemDoTitulo = publico === 'numeros' ? 'fixo' : tituloOrigem;
+    if (temTitulo && !tituloValor.trim()) {
+      setErro(
+        origemDoTitulo === 'fixo'
+          ? 'Preencha a variável do título do modelo.'
+          : 'Preencha o que usar no título quando o contato não tiver nome.',
+      );
+      return;
+    }
+
     const problemaJanela = janela.ativa ? problemaDosTetos(janela) : null;
     if (problemaJanela) {
       setErro(problemaJanela);
@@ -381,6 +431,7 @@ export function FormularioCampanha({
         modeloIdioma: escolhido!.idioma,
         modeloId: escolhido!.id,
         modeloCategoria: escolhido!.categoria,
+        ...(temTitulo ? { variavelCabecalho: { origem: origemDoTitulo, valor: tituloValor.trim() } } : {}),
         ...(!editando && ehDono && ignorarDescanso ? { ignorarDescanso: true } : {}),
         ...(publico !== 'numeros'
           ? {
@@ -486,6 +537,8 @@ export function FormularioCampanha({
                 setModeloId(e.target.value);
                 setVariaveis([]);
                 setOrigens([]);
+                setTituloOrigem('fixo');
+                setTituloValor('');
               }}
             >
               <option value="">Escolha…</option>
@@ -504,11 +557,60 @@ export function FormularioCampanha({
           </div>
         </div>
 
+        {escolhido && (escolhido.exige?.semSuporte.length ?? 0) > 0 && (
+          <Alerta tom="atencao">
+            Este modelo ainda não pode ser disparado por aqui: {escolhido.exige!.semSuporte.join('; ')}. Escolha
+            outro modelo.
+          </Alerta>
+        )}
+
         {escolhido && (
           <div className="space-y-3 rounded-card border border-borda bg-superficie-2 p-3">
+            {escolhido.cabecalho && !ehMidia(escolhido.exige?.cabecalho) && (
+              <p className="text-sm font-semibold leading-relaxed text-tinta">{escolhido.cabecalho}</p>
+            )}
             <p className="whitespace-pre-wrap text-sm leading-relaxed text-tinta">
               {escolhido.corpo}
             </p>
+
+            {oQueVaiDoModelo(escolhido).length > 0 && (
+              <ul className="space-y-0.5 text-xs leading-relaxed text-tinta-suave">
+                {oQueVaiDoModelo(escolhido).map((linha) => (
+                  <li key={linha}>{linha}</li>
+                ))}
+              </ul>
+            )}
+
+            {escolhido.exige?.cabecalho === 'texto' && (
+              <div className="space-y-1.5 rounded-lg border border-borda bg-superficie p-2.5">
+                <Label htmlFor="var-titulo">Variável do título</Label>
+                {publico !== 'numeros' ? (
+                  <Select
+                    aria-label="De onde vem a variável do título"
+                    value={tituloOrigem}
+                    onChange={(e) => setTituloOrigem(e.target.value as OrigemDoTitulo)}
+                  >
+                    {ORIGENS_DO_TITULO.map((o) => (
+                      <option key={o} value={o}>
+                        {ROTULO_ORIGEM[o]}
+                      </option>
+                    ))}
+                  </Select>
+                ) : null}
+                <Input
+                  id="var-titulo"
+                  value={tituloValor}
+                  maxLength={LIMITE_DO_TITULO}
+                  placeholder={ajudaDaOrigem(publico === 'numeros' ? 'fixo' : tituloOrigem).placeholder}
+                  onChange={(e) => setTituloValor(e.target.value)}
+                />
+                <p className="text-xs text-tinta-suave">
+                  {publico !== 'numeros' && tituloOrigem !== 'fixo'
+                    ? 'Usado quando o contato não tem nome cadastrado. Até 60 caracteres.'
+                    : 'Entra no lugar da variável do título do modelo. Até 60 caracteres.'}
+                </p>
+              </div>
+            )}
 
             {escolhido.variaveis > 0 && (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

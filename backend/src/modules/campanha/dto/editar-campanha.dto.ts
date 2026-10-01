@@ -94,6 +94,13 @@ export class EditarCampanhaDto {
   @Type(() => VariavelDeListaDto)
   variaveisLista?: VariavelDeListaDto[];
 
+  /** A variável do título do modelo, como na criação. */
+  @ApiProperty({ required: false, type: VariavelDeListaDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => VariavelDeListaDto)
+  variavelCabecalho?: VariavelDeListaDto;
+
   // ---- janela e ritmo: valem em qualquer situação editável
 
   @ApiProperty({ required: false, type: [Number] })

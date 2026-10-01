@@ -377,9 +377,23 @@ export class GraphService {
       modelo: string;
       idioma: string;
       variaveis: string[];
+      /**
+       * O `components` já montado (`envio.regras.ts`), quando o modelo exige
+       * mais que as variáveis do corpo: mídia, cupom, oferta, carrossel. Com
+       * ele, `variaveis` não é lido — o corpo já está lá dentro.
+       */
+      componentes?: Record<string, unknown>[];
     },
     tokenDoCliente: string,
   ): Promise<string> {
+    // Componente de corpo só entra quando há variável: mandar `parameters`
+    // vazio num modelo sem variável faz a Meta recusar com 132000.
+    const componentes =
+      dados.componentes ??
+      (dados.variaveis.length > 0
+        ? [{ type: 'body', parameters: dados.variaveis.map((v) => ({ type: 'text', text: v })) }]
+        : []);
+
     const corpo: Record<string, unknown> = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
@@ -388,18 +402,7 @@ export class GraphService {
       template: {
         name: dados.modelo,
         language: { code: dados.idioma },
-        // Componente de corpo só entra quando há variável: mandar `parameters`
-        // vazio num modelo sem variável faz a Meta recusar com 132000.
-        ...(dados.variaveis.length > 0
-          ? {
-              components: [
-                {
-                  type: 'body',
-                  parameters: dados.variaveis.map((v) => ({ type: 'text', text: v })),
-                },
-              ],
-            }
-          : {}),
+        ...(componentes.length > 0 ? { components: componentes } : {}),
       },
     };
 
@@ -529,6 +532,73 @@ export class GraphService {
       throw new ErroMidia('Arquivo grande demais para abrir aqui. Veja no WhatsApp Business do celular.');
     }
     return { conteudo, tipoMime: meta.mime_type ?? resposta.headers.get('content-type') ?? 'application/octet-stream' };
+  }
+
+  /**
+   * Entrega um arquivo à Meta para ENVIAR numa mensagem, e devolve o id dele.
+   *
+   * Não é o upload da criação do modelo (`enviarMidiaParaModelo`, que devolve
+   * um `header_handle`): são duas rotas e dois identificadores que não servem
+   * um no lugar do outro. Este é `POST /{numero}/media`, em multipart, com o
+   * token do cliente; o id vale 30 dias.
+   *
+   * Uma tentativa só: quem chama é a rodada do disparo, que volta sozinha.
+   */
+  async subirMidiaParaEnvio(
+    phoneNumberId: string,
+    arquivo: { conteudo: Buffer; tipoMime: string; nome: string },
+    tokenDoCliente: string,
+  ): Promise<string> {
+    const formulario = new FormData();
+    formulario.set('messaging_product', 'whatsapp');
+    formulario.set('type', arquivo.tipoMime);
+    formulario.set('file', new Blob([new Uint8Array(arquivo.conteudo)], { type: arquivo.tipoMime }), arquivo.nome);
+
+    let resposta: Response;
+    try {
+      resposta = await fetch(`${this.base}/${phoneNumberId}/media`, {
+        method: 'POST',
+        // Sem `Content-Type`: o fetch põe o do multipart, com a fronteira.
+        headers: { Authorization: `Bearer ${tokenDoCliente}`, Accept: 'application/json' },
+        body: formulario,
+        signal: AbortSignal.timeout(60_000),
+      });
+    } catch (erro) {
+      const e = erro as Error;
+      throw new ErroGraph({
+        status: 0,
+        codigo: null,
+        traduzido: {
+          codigo: 0,
+          classe: 'transitorio',
+          titulo: 'Não conseguimos enviar o arquivo à Meta',
+          explicacao: 'A conexão caiu durante o envio do arquivo do modelo. Vamos tentar de novo automaticamente.',
+          esperaSegundos: 60,
+        },
+        corpo: { error: { message: `${e?.name ?? 'Erro'}: ${e?.message ?? String(erro)}` } },
+      });
+    }
+
+    const texto = await resposta.text().catch(() => '');
+    let dados: { id?: unknown } & Record<string, unknown> = {};
+    try {
+      dados = texto ? JSON.parse(texto) : {};
+    } catch {
+      dados = { error: { message: texto.slice(0, 500) } };
+    }
+
+    if (!resposta.ok || typeof dados.id !== 'string' || !dados.id) {
+      const codigo = codigoDoErro(dados);
+      throw new ErroGraph({
+        status: resposta.status,
+        codigo,
+        traduzido: traduzirErroMeta(codigo, mensagemDoErroMeta(dados)),
+        traceId: resposta.headers.get('x-fb-trace-id') ?? undefined,
+        corpo: dados,
+      });
+    }
+
+    return dados.id;
   }
 
   /**

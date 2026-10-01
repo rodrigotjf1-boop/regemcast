@@ -14,12 +14,13 @@
  * Nos dois casos quem sobe para a Meta somos nós, e o que volta é um handle.
  */
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 
 import { baixarPublico, DownloadFalhou, EnderecoRecusado, type ArquivoBaixado } from '../../common/baixar-publico';
 import { ContextoDb } from '../../db/contexto';
-import { midia } from '../../db/schema';
+import { midia, midiaEnvio } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import type { MidiaNaMeta } from '../meta/envio.regras';
 import { GraphService } from '../meta/graph.service';
 
 /**
@@ -41,6 +42,20 @@ export const TIPOS_ACEITOS: Record<string, { formato: 'IMAGE' | 'VIDEO' | 'DOCUM
 const TETO_ENDERECO = Math.max(...Object.values(TIPOS_ACEITOS).map((t) => t.maxBytes));
 
 export const PREFIXO_MIDIA = 'midia:';
+
+/**
+ * Por quanto tempo confiamos no id que a Meta devolve para envio. Ela o guarda
+ * por 30 dias; paramos de usar antes, para a campanha que atravessa o
+ * vencimento não mandar um id que acabou de morrer.
+ */
+const VALIDADE_DO_ENVIO_DIAS = 25;
+
+/**
+ * O arquivo que o modelo usa não pode ser enviado: sumiu, perdeu os bytes ou a
+ * referência não é de um arquivo. Não se conserta tentando de novo — quem
+ * chama (o disparo) pausa a campanha e aponta o modelo.
+ */
+export class MidiaIndisponivel extends Error {}
 
 /** O arquivo como chega do upload. */
 export interface ArquivoRecebido {
@@ -149,6 +164,102 @@ export class MidiaService {
         .where(and(eq(midia.contaId, contaId), inArray(midia.id, ids))),
     );
     return new Map(linhas.map((l) => [l.id, TIPOS_ACEITOS[l.tipoMime]?.formato ?? '']));
+  }
+
+  /**
+   * A mídia de um modelo pronta para ENVIAR numa mensagem.
+   *
+   * Arquivo guardado: sobe à Meta por `POST /{numero}/media` e guarda o id
+   * (`midia_envio`) — a campanha de 5 mil pessoas sobe a imagem uma vez. O id
+   * é de quem subiu, por isso o cache é por número. Endereço público: vai como
+   * `link`, e é a Meta que busca.
+   *
+   * Duas rodadas ao mesmo tempo podem subir o mesmo arquivo duas vezes; a
+   * última gravada fica, e as duas mensagens saem com um id válido.
+   */
+  async paraEnvio(
+    contaId: string,
+    phoneNumberId: string,
+    tokenDoCliente: string,
+    referencia: string,
+  ): Promise<MidiaNaMeta> {
+    if (/^https?:\/\//i.test(referencia)) return { link: referencia };
+    if (!referencia.startsWith(PREFIXO_MIDIA)) {
+      throw new MidiaIndisponivel('A referência do arquivo do modelo não é válida.');
+    }
+    const id = referencia.slice(PREFIXO_MIDIA.length);
+
+    // Primeiro sem os bytes: na maioria das rodadas o id já está guardado.
+    const pronta = await this.ctx.comConta(contaId, async (db) => {
+      const [arquivo] = await db
+        .select({ nome: midia.nomeArquivo, tipoMime: midia.tipoMime })
+        .from(midia)
+        .where(and(eq(midia.contaId, contaId), eq(midia.id, id)))
+        .limit(1);
+      if (!arquivo) return null;
+      const [enviada] = await db
+        .select({ mediaId: midiaEnvio.mediaId })
+        .from(midiaEnvio)
+        .where(
+          and(
+            eq(midiaEnvio.contaId, contaId),
+            eq(midiaEnvio.midiaId, id),
+            eq(midiaEnvio.phoneNumberId, phoneNumberId),
+            gt(midiaEnvio.expiraEm, new Date()),
+          ),
+        )
+        .limit(1);
+      return { ...arquivo, mediaId: enviada?.mediaId ?? null };
+    });
+
+    if (!pronta) throw new MidiaIndisponivel('O arquivo do modelo não foi encontrado.');
+    if (pronta.mediaId) return { id: pronta.mediaId, nomeArquivo: pronta.nome };
+
+    const { conteudo } = await this.ler(contaId, id).catch(() => {
+      throw new MidiaIndisponivel('O arquivo do modelo não está mais disponível.');
+    });
+
+    // Fora de transação: o upload pode levar segundos, e segurar a conexão de
+    // banco durante isso é o que esgota o pool sob carga.
+    const mediaId = await this.graph.subirMidiaParaEnvio(
+      phoneNumberId,
+      { conteudo, tipoMime: pronta.tipoMime, nome: pronta.nome },
+      tokenDoCliente,
+    );
+
+    const expiraEm = new Date(Date.now() + VALIDADE_DO_ENVIO_DIAS * 24 * 3_600_000);
+    await this.ctx.comConta(contaId, (db) =>
+      db
+        .insert(midiaEnvio)
+        .values({ contaId, midiaId: id, phoneNumberId, mediaId, expiraEm })
+        .onConflictDoUpdate({
+          target: [midiaEnvio.midiaId, midiaEnvio.phoneNumberId],
+          set: { mediaId, expiraEm },
+        }),
+    );
+
+    return { id: mediaId, nomeArquivo: pronta.nome };
+  }
+
+  /**
+   * Dá para enviar esta mídia? Conferido ao MONTAR a campanha, para a recusa
+   * vir antes do disparo: endereço público serve; arquivo guardado precisa
+   * existir e ainda ter os bytes.
+   */
+  async disponivelParaEnvio(contaId: string, referencia: string): Promise<boolean> {
+    if (/^https?:\/\//i.test(referencia)) return true;
+    if (!referencia.startsWith(PREFIXO_MIDIA)) return false;
+    const id = referencia.slice(PREFIXO_MIDIA.length);
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return false;
+    const [achada] = await this.ctx.comConta(contaId, (db) =>
+      db
+        // Só a pergunta "tem bytes?": trazer o arquivo inteiro para responder sim ou não custaria até 16 MB.
+        .select({ temBytes: sql<boolean>`${midia.conteudo} is not null` })
+        .from(midia)
+        .where(and(eq(midia.contaId, contaId), eq(midia.id, id)))
+        .limit(1),
+    );
+    return achada?.temBytes === true;
   }
 
   /** As mídias da conta, sem os bytes. */

@@ -34,22 +34,41 @@ import { paraCloudApi } from '../../common/telefone';
 import { formasDosContatos, gemeoEmSql } from '../../common/telefone-sql';
 import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
-import { assinatura, campanha, campanhaDestinatario, conta, contatoLista, waNumero } from '../../db/schema';
+import { assinatura, campanha, campanhaDestinatario, conta, contatoLista, modelo as modeloLocal, waNumero } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { AvisoService } from '../aviso/aviso.service';
 import { cashbackValido, hojeDaConta, hojeNoFuso } from '../contato/cashback';
 import { PERIODOS, sugerirHorario, type Periodo, type SugestaoDeHorario } from '../contato/habitos';
 import { origemDoPublico, type PedidoDeOrigem } from '../contato/origem-do-publico';
 import { ERRO_SEM_WHATSAPP, marcarSemWhatsappNaFila, registrarFalhaSemWhatsapp } from '../contato/sem-whatsapp';
+import {
+  CabecalhoSemValor,
+  componentesDoEnvio,
+  HORAS_DA_OFERTA_PADRAO,
+  lerPlano,
+  midiasDoPlano,
+  soPedeOCorpo,
+  type MidiaNaMeta,
+  type PlanoDeEnvio,
+} from '../meta/envio.regras';
 import { ErroGraph, GraphService } from '../meta/graph.service';
 import { MetaService, MODELO_APROVADO, type ModeloDeMensagem } from '../meta/meta.service';
+import { MidiaIndisponivel, MidiaService } from '../midia/midia.service';
 import { TelemetriaService } from '../telemetria/telemetria.service';
 import type { CriarCampanhaDto } from './dto/criar-campanha.dto';
 import type { EditarCampanhaDto } from './dto/editar-campanha.dto';
 import { conferirCashbackDaFila } from './cashback-da-fila';
 import { decidir, momentoNoFuso, type RegraDeEnvio } from './janela';
 import { rotuloDoPublico, type OrigemDaCampanha } from './rotulo-do-publico';
-import { lerVariaveis, normalizarVariaveis, usaCashback, variaveisEmSql, type VariavelDaLista } from './variaveis';
+import {
+  ehDeCashback,
+  lerVariaveis,
+  normalizarVariaveis,
+  usaCashback,
+  valorDaVariavel,
+  variaveisEmSql,
+  type VariavelDaLista,
+} from './variaveis';
 
 type Executor = { execute: (q: SQL) => Promise<unknown> };
 
@@ -276,7 +295,25 @@ type ResultadoEnvio =
   | { tipo: 'enviada' }
   | { tipo: 'falhou' }
   | { tipo: 'nova_tentativa' }
-  | { tipo: 'desacelerar'; esperaSegundos: number };
+  | { tipo: 'desacelerar'; esperaSegundos: number }
+  /** A Meta recusou o MODELO: a rodada para e a campanha pausa. */
+  | { tipo: 'modelo'; codigo: number };
+
+/**
+ * Recusas da Meta que são do MODELO, e não de quem recebe (132000 a 132016:
+ * parâmetro que não fecha, modelo que não existe, pausado, desativado). A
+ * próxima mensagem teria a mesma resposta: a campanha para na primeira, em vez
+ * de marcar a fila inteira como falha, um destinatário por vez.
+ */
+export function ehErroDeModelo(codigo: number | null | undefined): codigo is number {
+  return typeof codigo === 'number' && codigo >= 132000 && codigo <= 132016;
+}
+
+/** O título de um modelo aceita até 60 caracteres — o valor da variável também não passa disso. */
+const LIMITE_VARIAVEL_DO_TITULO = 60;
+
+/** De onde a variável do título pode sair. Cashback fica de fora: o valor muda entre a montagem e o envio. */
+const ORIGENS_DO_TITULO: readonly string[] = ['fixo', 'nome', 'primeiro_nome'];
 
 /** A campanha ativa que está esperando, e até quando. */
 export interface EsperaDaCampanha {
@@ -342,6 +379,14 @@ interface PublicoMontado {
   variaveis: VariavelDaLista[] | null;
 }
 
+/** O que o modelo exige no envio, resolvido para esta campanha. */
+interface EnvioDaCampanha {
+  /** O que vai para `campanha.envio`; nulo = só as variáveis do corpo. */
+  plano: PlanoDeEnvio | null;
+  /** De onde sai a variável do título, quando o modelo tem uma. */
+  variavelCabecalho: VariavelDaLista | null;
+}
+
 /** A prévia de "Quem recebe": quantos podem receber, quantos estão em descanso e em que período pedem. */
 export interface PreviaDoPublico {
   total: number;
@@ -360,8 +405,10 @@ export interface ResumoCampanha {
   modeloNome: string;
   modeloIdioma: string;
   status: string;
-  /** conexao | teto_plano — só quando pausada. */
+  /** conexao | teto_plano | inadimplencia | manual | modelo — só quando pausada. */
   pausaMotivo: string | null;
+  /** De onde sai a variável do título do modelo; nulo quando o modelo não tem. */
+  variavelCabecalho: { origem: string; valor: string } | null;
   criadoEm: Date;
   iniciadaEm: Date | null;
   concluidaEm: Date | null;
@@ -396,6 +443,12 @@ export interface ResumoCampanha {
   descansoDias: number | null;
 }
 
+/** A variável do título gravada no plano, para a tela reabrir o rascunho preenchido. */
+function variavelDoTitulo(plano: PlanoDeEnvio | null): { origem: string; valor: string } | null {
+  const cab = plano?.cabecalho;
+  return cab?.tipo === 'texto' && cab.origem ? { origem: cab.origem, valor: cab.valor ?? '' } : null;
+}
+
 @Injectable()
 export class CampanhaService {
   private readonly log = new Logger('Campanha');
@@ -407,6 +460,7 @@ export class CampanhaService {
     private readonly auditoria: AuditoriaService,
     private readonly telemetria: TelemetriaService,
     private readonly avisos: AvisoService,
+    private readonly midias: MidiaService,
   ) {}
 
   /** Cria a campanha com os destinatários em `pendente`. Nada é enviado aqui. */
@@ -449,6 +503,9 @@ export class CampanhaService {
         ? dto.destinatarios.map((d) => d.variaveis?.length ?? 0)
         : [dto.variaveisLista?.length ?? 0],
     );
+    // E o que o modelo pede além do texto: a mídia, o cupom, a oferta, a
+    // variável do título. Faltando a origem de um deles, recusa aqui.
+    const envio = await this.envioDoModelo(contaId, modelo, dto.variavelCabecalho, Boolean(dto.destinatarios?.length));
 
     // Descanso entre campanhas: o número da conta é COPIADO para a campanha
     // agora — mudar o da conta depois não mexe em campanha já criada. Só para
@@ -475,6 +532,7 @@ export class CampanhaService {
         modeloNome: modelo.nome,
         modeloIdioma: modelo.idioma,
         modeloCategoria: modelo.categoria,
+        envio: envio.plano,
         status: 'rascunho',
         criadaPor: usuarioId,
         janelaDias: dto.janelaDias ?? [],
@@ -491,7 +549,7 @@ export class CampanhaService {
       })
       .returning({ id: campanha.id });
 
-    const publico = await this.montarPublico(contaId, criada!.id, dto);
+    const publico = await this.montarPublico(contaId, criada!.id, { ...dto, variavelCabecalho: envio.variavelCabecalho });
     const totalDestinatarios = publico.total;
 
     await this.ctx.db
@@ -605,6 +663,161 @@ export class CampanhaService {
   }
 
   /**
+   * O que o modelo pede no envio além das variáveis do corpo, com a origem de
+   * cada coisa já resolvida — é o que fica em `campanha.envio`.
+   *
+   * A FORMA vem da Meta (`modelo.exige`): tem imagem no cabeçalho, em que
+   * posição está o botão do cupom, quantos cartões. Os VALORES vêm do modelo
+   * como foi criado no Regemcast: a mídia que o dono subiu, o código do cupom,
+   * as horas da oferta (decisões do dono, 01/10/2026). Modelo criado direto na
+   * Meta não deixou esses valores aqui — e a recusa diz isso, em vez de a
+   * campanha sair e a Meta recusar todas as mensagens.
+   */
+  private async envioDoModelo(
+    contaId: string,
+    modelo: ModeloDeMensagem,
+    variavelCabecalho: VariavelDaLista | undefined,
+    numerosDigitados: boolean,
+  ): Promise<EnvioDaCampanha> {
+    const pede = modelo.exige;
+    if (pede.semSuporte.length) {
+      throw new BadRequestException(
+        `O modelo "${modelo.nome}" ainda não pode ser disparado por aqui: ${pede.semSuporte.join('; ')}.`,
+      );
+    }
+    if (soPedeOCorpo(pede)) return { plano: null, variavelCabecalho: null };
+
+    const plano: PlanoDeEnvio = {};
+    let variavel: VariavelDaLista | null = null;
+
+    const pedeMidiaOuCupom =
+      (pede.cabecalho !== null && pede.cabecalho !== 'texto') || pede.cupomNoBotao !== null || pede.cartoes.length > 0;
+    const local = pedeMidiaOuCupom || pede.oferta ? await this.modeloDoRegemcast(contaId, modelo) : null;
+    if (pedeMidiaOuCupom && !local) {
+      const oQue =
+        pede.cartoes.length > 0
+          ? 'é um carrossel'
+          : pede.cabecalho !== null && pede.cabecalho !== 'texto'
+            ? 'tem imagem, vídeo ou documento no cabeçalho'
+            : 'tem botão de copiar código';
+      throw new BadRequestException(
+        `O modelo "${modelo.nome}" ${oQue} e não foi criado pelo Regemcast, então não temos o que enviar no lugar. Crie o modelo em Modelos para disparar por aqui.`,
+      );
+    }
+
+    if (pede.cabecalho === 'texto') {
+      variavel = this.variavelDoTituloConferida(modelo, variavelCabecalho, numerosDigitados);
+      plano.cabecalho = { tipo: 'texto', origem: variavel.origem, valor: variavel.valor };
+    } else if (pede.cabecalho !== null) {
+      const midia = (local!.cabecalhoMidia ?? '').trim();
+      if (!midia || !(await this.midias.disponivelParaEnvio(contaId, midia))) {
+        throw new BadRequestException(
+          `O arquivo do cabeçalho do modelo "${modelo.nome}" não está mais disponível. Edite o modelo e envie o arquivo de novo.`,
+        );
+      }
+      plano.cabecalho = { tipo: pede.cabecalho, midia };
+    }
+
+    if (pede.oferta) plano.oferta = { horas: local?.ltoHoras ?? HORAS_DA_OFERTA_PADRAO };
+
+    if (pede.cupomNoBotao !== null) {
+      const botoes = Array.isArray(local!.botoes) ? (local!.botoes as Array<{ tipo?: string; texto?: string }>) : [];
+      const codigo = (botoes.find((b) => b?.tipo === 'COPY_CODE')?.texto ?? '').trim();
+      if (!codigo) {
+        throw new BadRequestException(
+          `O modelo "${modelo.nome}" tem botão de copiar código, mas o código não está no modelo. Edite o modelo e preencha o código.`,
+        );
+      }
+      plano.cupom = { indice: pede.cupomNoBotao, codigo };
+    }
+
+    if (pede.cartoes.length) {
+      const cartoes = Array.isArray(local!.cartoes) ? (local!.cartoes as Array<{ imagem?: string }>) : [];
+      if (cartoes.length !== pede.cartoes.length) {
+        throw new BadRequestException(
+          `O carrossel "${modelo.nome}" tem ${pede.cartoes.length} cartões na Meta e ${cartoes.length} aqui. Abra o modelo e salve de novo antes de disparar.`,
+        );
+      }
+      plano.cartoes = [];
+      for (let i = 0; i < pede.cartoes.length; i++) {
+        const midia = (cartoes[i]?.imagem ?? '').trim();
+        if (!midia || !(await this.midias.disponivelParaEnvio(contaId, midia))) {
+          throw new BadRequestException(
+            `A imagem do cartão ${i + 1} do carrossel "${modelo.nome}" não está mais disponível. Edite o modelo e envie a imagem de novo.`,
+          );
+        }
+        plano.cartoes.push({ tipo: pede.cartoes[i]!.tipo, midia, respostas: pede.cartoes[i]!.respostas });
+      }
+    }
+
+    return { plano, variavelCabecalho: variavel };
+  }
+
+  /**
+   * A variável do título, conferida: o mesmo texto para todos, ou o nome do
+   * contato com um texto reserva. Números digitados não têm contato, então só
+   * aceitam texto fixo. O valor não pode ser vazio (a Meta recusa variável
+   * vazia) nem passar do tamanho do título.
+   */
+  private variavelDoTituloConferida(
+    modelo: ModeloDeMensagem,
+    variavel: VariavelDaLista | undefined,
+    numerosDigitados: boolean,
+  ): VariavelDaLista {
+    if (!variavel) {
+      throw new BadRequestException(
+        `O modelo "${modelo.nome}" tem uma variável no título. Preencha o valor dela para montar a campanha.`,
+      );
+    }
+    if (ehDeCashback(variavel) || !ORIGENS_DO_TITULO.includes(variavel.origem)) {
+      throw new BadRequestException('A variável do título aceita um texto fixo ou o nome do contato.');
+    }
+    if (numerosDigitados && variavel.origem !== 'fixo') {
+      throw new BadRequestException(
+        'Com números digitados, a variável do título é um texto fixo: não há cadastro de onde tirar o nome.',
+      );
+    }
+    const valor = (variavel.valor ?? '').trim();
+    if (!valor) {
+      throw new BadRequestException(
+        variavel.origem === 'fixo'
+          ? 'Preencha o texto da variável do título.'
+          : 'Preencha o que usar na variável do título quando o contato não tiver nome.',
+      );
+    }
+    if (valor.length > LIMITE_VARIAVEL_DO_TITULO) {
+      throw new BadRequestException(
+        `A variável do título aceita até ${LIMITE_VARIAVEL_DO_TITULO} caracteres.`,
+      );
+    }
+    return { origem: variavel.origem, valor };
+  }
+
+  /**
+   * O modelo como foi criado no Regemcast: é dele que saem a mídia, o cupom e
+   * as horas da oferta. Pelo id da Meta quando casa; senão por nome e idioma.
+   */
+  private async modeloDoRegemcast(contaId: string, modelo: ModeloDeMensagem) {
+    const linhas = await this.ctx.db
+      .select({
+        metaTemplateId: modeloLocal.metaTemplateId,
+        cabecalhoMidia: modeloLocal.cabecalhoMidia,
+        botoes: modeloLocal.botoes,
+        cartoes: modeloLocal.cartoes,
+        ltoHoras: modeloLocal.ltoHoras,
+      })
+      .from(modeloLocal)
+      .where(
+        and(
+          eq(modeloLocal.contaId, contaId),
+          sql`(${modeloLocal.metaTemplateId} = ${modelo.id} or (${modeloLocal.nome} = ${modelo.nome} and ${modeloLocal.idioma} = ${modelo.idioma}))`,
+        ),
+      )
+      .limit(5);
+    return linhas.find((l) => l.metaTemplateId === modelo.id) ?? linhas[0] ?? null;
+  }
+
+  /**
    * Normaliza os números digitados e recusa repetição.
    *
    * Separado da gravação porque a recusa precisa acontecer ANTES de a campanha
@@ -654,6 +867,8 @@ export class CampanhaService {
       daBase?: PedidoDeOrigem;
       destinatarios?: { telefone: string; variaveis?: string[] }[];
       variaveisLista?: VariavelDaLista[];
+      /** De onde sai a variável do título, quando o modelo tem uma. */
+      variavelCabecalho?: VariavelDaLista | null;
     },
   ): Promise<PublicoMontado> {
     // Uma lista escolhida pelo caminho "da base" é uma lista como outra qualquer.
@@ -670,6 +885,9 @@ export class CampanhaService {
     const hoje = hojeDaConta(contaId);
     const comCashback = usaCashback(lista);
     const soComCashback = (apelido: 'c' | 'contato') => (comCashback ? sql`and ${cashbackValido(apelido, hoje)}` : sql``);
+    // A variável do título de cada pessoa, resolvida agora como as do corpo.
+    const titulo = (apelido: 'c' | 'contato') =>
+      dto.variavelCabecalho ? valorDaVariavel(dto.variavelCabecalho, apelido, hoje) : sql`null::text`;
 
     if (listaId) {
       const [escolhida] = await this.ctx.db
@@ -686,8 +904,8 @@ export class CampanhaService {
       // Node só para contá-los custa segundos de rede e memória.
       const r = await this.ctx.db.execute(sql`
         with inseridos as (
-        insert into campanha_destinatario (conta_id, campanha_id, telefone_e164, variaveis)
-        select ${contaId}, ${campanhaId}, c.telefone_e164, ${variaveisEmSql(lista, 'c', hoje)}
+        insert into campanha_destinatario (conta_id, campanha_id, telefone_e164, variaveis, variavel_cabecalho)
+        select ${contaId}, ${campanhaId}, c.telefone_e164, ${variaveisEmSql(lista, 'c', hoje)}, ${titulo('c')}
           from contato_lista_item i
           join contato c on c.id = i.contato_id and c.conta_id = i.conta_id
          where i.conta_id = ${contaId}
@@ -720,8 +938,8 @@ export class CampanhaService {
       const rotulo = rotuloDoPublico(daBase.origem, o.nome);
       const r = await this.ctx.db.execute(sql`
         with inseridos as (
-        insert into campanha_destinatario (conta_id, campanha_id, telefone_e164, variaveis)
-        select ${contaId}, ${campanhaId}, contato.telefone_e164, ${variaveisEmSql(lista, 'contato', hoje)}
+        insert into campanha_destinatario (conta_id, campanha_id, telefone_e164, variaveis, variavel_cabecalho)
+        select ${contaId}, ${campanhaId}, contato.telefone_e164, ${variaveisEmSql(lista, 'contato', hoje)}, ${titulo('contato')}
           from contato
          where contato.conta_id = ${contaId}
            and contato.opt_out = false
@@ -751,6 +969,8 @@ export class CampanhaService {
         campanhaId,
         telefoneE164: d.telefoneE164,
         variaveis: d.variaveis,
+        // Números digitados só aceitam texto fixo no título: o mesmo para todos.
+        variavelCabecalho: dto.variavelCabecalho?.valor ?? null,
       })),
     );
 
@@ -826,7 +1046,13 @@ export class CampanhaService {
     }
 
     const mexeNoConteudo = Boolean(
-      dto.modeloNome || dto.modeloId || dto.listaId || dto.daBase || dto.destinatarios?.length || dto.variaveisLista,
+      dto.modeloNome ||
+        dto.modeloId ||
+        dto.listaId ||
+        dto.daBase ||
+        dto.destinatarios?.length ||
+        dto.variaveisLista ||
+        dto.variavelCabecalho,
     );
     if (mexeNoConteudo && alvo.status !== 'rascunho') {
       throw new BadRequestException(
@@ -842,6 +1068,7 @@ export class CampanhaService {
 
     const mudancas: Record<string, unknown> = {};
     if (dto.nome !== undefined) mudancas.nome = dto.nome.trim();
+    let variavelCabecalho: VariavelDaLista | null = null;
 
     // Mexeu no modelo ou no público (só em rascunho): o modelo é conferido na
     // Meta como na criação, e as variáveis têm de fechar com ele — as que vêm
@@ -866,6 +1093,27 @@ export class CampanhaService {
       mudancas.modeloNome = modelo.nome;
       mudancas.modeloIdioma = modelo.idioma;
       mudancas.modeloCategoria = modelo.categoria;
+
+      // O plano de envio é refeito com o modelo de agora. A variável do título
+      // mora em cada destinatário: se ela muda (ou o modelo passa a ter uma) e
+      // o público não vem junto, a fila ficaria com o valor antigo — ou sem
+      // nenhum. Aí o pedido tem de trazer o público de novo.
+      const antes = variavelDoTitulo(lerPlano(alvo.envio));
+      const envio = await this.envioDoModelo(
+        contaId,
+        modelo,
+        dto.variavelCabecalho ?? (antes as VariavelDaLista | null) ?? undefined,
+        trocaPublico ? Boolean(dto.destinatarios?.length) : alvo.publicoOrigem === 'numeros',
+      );
+      const depois = envio.variavelCabecalho;
+      const tituloMudou = (antes?.origem ?? null) !== (depois?.origem ?? null) || (antes?.valor ?? null) !== (depois?.valor ?? null);
+      if (tituloMudou && !trocaPublico) {
+        throw new BadRequestException(
+          'A variável do título mudou. Escolha de novo quem recebe para a campanha ser montada com ela.',
+        );
+      }
+      mudancas.envio = envio.plano;
+      variavelCabecalho = depois;
     }
     if (dto.pausaSegundos !== undefined) mudancas.pausaSegundos = dto.pausaSegundos;
     if (dto.maxPorDia !== undefined) mudancas.maxPorDia = dto.maxPorDia;
@@ -907,6 +1155,7 @@ export class CampanhaService {
         daBase: dto.daBase,
         destinatarios: dto.destinatarios,
         variaveisLista: dto.variaveisLista,
+        variavelCabecalho,
       });
       await this.ctx.db
         .update(campanha)
@@ -1200,6 +1449,7 @@ export class CampanhaService {
           retomarEm: campanha.retomarEm,
           descansoDias: campanha.descansoDias,
           variaveisLista: campanha.variaveisLista,
+          envio: campanha.envio,
           fuso: conta.timezone,
           // O ciclo em que o disparo conta. É o MESMO campo que a tela de Conta
           // usa para ler o consumo — duas definições de ciclo divergiriam.
@@ -1369,9 +1619,15 @@ export class CampanhaService {
           from alvo
          where d.id = alvo.id
            ${dias > 0 ? sql`and d.id not in (select id from descanso)` : sql``}
-        returning d.id, d.telefone_e164, d.variaveis, d.tentativas
+        returning d.id, d.telefone_e164, d.variaveis, d.tentativas, d.variavel_cabecalho
       `);
-      return r.rows as { id: string; telefone_e164: string; variaveis: unknown; tentativas: number | null }[];
+      return r.rows as {
+        id: string;
+        telefone_e164: string;
+        variaveis: unknown;
+        tentativas: number | null;
+        variavel_cabecalho: string | null;
+      }[];
     });
 
     if (reivindicados === null) {
@@ -1447,17 +1703,74 @@ export class CampanhaService {
       return;
     }
 
+    // O que o modelo pede além do texto (`campanha.envio`). As mídias sobem à
+    // Meta UMA vez, antes da rodada — não uma por destinatário — e o id fica
+    // guardado para as próximas rodadas.
+    const plano = lerPlano(c.envio);
+    const midias = new Map<string, MidiaNaMeta>();
+    try {
+      for (const referencia of midiasDoPlano(plano)) {
+        midias.set(
+          referencia,
+          await this.midias.paraEnvio(c.contaId, acesso.phoneNumberId, acesso.credencial.token, referencia),
+        );
+      }
+    } catch (erro) {
+      // Ninguém recebeu nada ainda: a rodada inteira volta para a fila, intacta.
+      const todos = reivindicados.map((d) => d.id);
+      if (erro instanceof MidiaIndisponivel) {
+        await this.pausarDevolvendo(c, todos, 'modelo', erro.message, 'O arquivo do modelo desta campanha não está mais disponível. Edite o modelo, envie o arquivo de novo e retome a campanha.');
+        return;
+      }
+      if (erro instanceof ErroGraph) {
+        this.log.warn(`Campanha ${campanhaId}: o arquivo do modelo não subiu à Meta: ${erro.detalheParaLog}`);
+        if (erro.status === 0 || erro.retentavel) {
+          // Rede ou instabilidade da Meta: a campanha espera e tenta de novo sozinha.
+          await this.adiarRodada(campanhaId, todos, Math.max(60, erro.traduzido.esperaSegundos ?? 60));
+          return;
+        }
+        if (erro.classe === 'credencial') {
+          await this.pausarDevolvendo(c, todos, 'conexao', 'a autorização do WhatsApp venceu', 'A conexão com o WhatsApp caiu antes de terminar. Reconecte pelo site e retome a campanha.');
+          return;
+        }
+        await this.pausarDevolvendo(c, todos, 'modelo', `a Meta recusou o arquivo do modelo (erro ${erro.codigo ?? '—'})`, `A Meta recusou o arquivo do modelo desta campanha: ${erro.traduzido.titulo}. O restante da fila ficou guardado.`);
+        return;
+      }
+      await this.adiarRodada(campanhaId, todos, 60);
+      throw erro;
+    }
+
     for (let i = 0; i < reivindicados.length; i++) {
       const d = reivindicados[i]!;
       const resultado = await this.enviarUm(
         c.contaId,
-        { id: d.id, telefone: d.telefone_e164, variaveis: d.variaveis, tentativas: Number(d.tentativas ?? 0) },
+        {
+          id: d.id,
+          telefone: d.telefone_e164,
+          variaveis: d.variaveis,
+          tentativas: Number(d.tentativas ?? 0),
+          cabecalho: d.variavel_cabecalho,
+        },
         c,
         acesso.phoneNumberId,
         acesso.credencial.token,
         c.cicloInicio,
         campanhaId,
+        { plano, midias },
       );
+      // A Meta recusou o MODELO: a mensagem seguinte teria a mesma resposta. A
+      // campanha para aqui, com o resto da fila intacto, em vez de marcar um
+      // por um como falha.
+      if (resultado.tipo === 'modelo') {
+        await this.pausarDevolvendo(
+          c,
+          reivindicados.slice(i + 1).map((r) => r.id),
+          'modelo',
+          `a Meta recusou o modelo (erro ${resultado.codigo})`,
+          'A Meta recusou o modelo desta campanha. O restante da fila ficou guardado: confira o modelo e retome.',
+        );
+        return;
+      }
       // A Meta pediu calma: continuar a rodada seria bater no mesmo muro com
       // os próximos. Eles voltam para a fila e a campanha espera.
       if (resultado.tipo === 'desacelerar') {
@@ -1467,6 +1780,59 @@ export class CampanhaService {
     }
 
     await this.concluirSeTerminou(campanhaId);
+  }
+
+  /**
+   * Pausa a campanha e devolve à fila quem a rodada tinha pego e ainda não
+   * recebeu — pelo modelo (a Meta o recusou, ou o arquivo dele sumiu) ou pela
+   * conexão. Ninguém é marcado como falha por um problema que não é dele.
+   */
+  private async pausarDevolvendo(
+    c: { id: string; contaId: string; nome: string },
+    restantes: string[],
+    motivo: 'modelo' | 'conexao',
+    porQue: string,
+    aviso: string,
+  ): Promise<void> {
+    const pausou = await this.ctx.comEscopoSistema('campanha.worker.pausar', async (db) => {
+      if (restantes.length) {
+        await db
+          .update(campanhaDestinatario)
+          .set({ status: 'pendente' })
+          .where(and(inArray(campanhaDestinatario.id, restantes), eq(campanhaDestinatario.status, 'enviando')));
+      }
+      const r = await db
+        .update(campanha)
+        .set({ status: 'pausada', pausaMotivo: motivo })
+        .where(and(eq(campanha.id, c.id), inArray(campanha.status, [...ESTADOS_ATIVOS])))
+        .returning({ id: campanha.id });
+      return r.length > 0;
+    });
+
+    this.log.warn(`Campanha ${c.id} pausada (${motivo}): ${porQue}.`);
+    if (pausou) {
+      void this.avisos.avisar(c.contaId, 'campanhas', {
+        titulo: `Campanha pausada: ${c.nome}`,
+        corpo: aviso,
+        dados: { campanhaId: c.id },
+      });
+    }
+  }
+
+  /** Devolve a rodada à fila e faz a campanha esperar um pouco, sem pausar: volta sozinha. */
+  private async adiarRodada(campanhaId: string, restantes: string[], esperaSegundos: number): Promise<void> {
+    await this.ctx.comEscopoSistema('campanha.worker.desacelerar', async (db) => {
+      await db
+        .update(campanha)
+        .set({ retomarEm: sql`now() + make_interval(secs => ${esperaSegundos})` })
+        .where(eq(campanha.id, campanhaId));
+      if (restantes.length) {
+        await db
+          .update(campanhaDestinatario)
+          .set({ status: 'pendente' })
+          .where(and(inArray(campanhaDestinatario.id, restantes), eq(campanhaDestinatario.status, 'enviando')));
+      }
+    });
   }
 
   /**
@@ -1572,16 +1938,49 @@ export class CampanhaService {
    */
   private async enviarUm(
     contaId: string,
-    destinatario: { id: string; telefone: string; variaveis: unknown; tentativas?: number },
+    destinatario: { id: string; telefone: string; variaveis: unknown; tentativas?: number; cabecalho?: string | null },
     alvo: { modeloNome: string; modeloIdioma: string },
     phoneNumberId: string,
     token: string,
     cicloInicio: Date | null,
     campanhaId: string,
+    envio: { plano: PlanoDeEnvio | null; midias: ReadonlyMap<string, MidiaNaMeta> } = { plano: null, midias: new Map() },
   ): Promise<ResultadoEnvio> {
     const variaveis = Array.isArray(destinatario.variaveis)
       ? destinatario.variaveis.map((v) => String(v))
       : [];
+
+    // Sem plano, o envio é o de sempre (só o corpo). Com plano, o `components`
+    // sai inteiro de `envio.regras.ts`.
+    let componentes: Record<string, unknown>[] | undefined;
+    if (envio.plano) {
+      try {
+        componentes =
+          componentesDoEnvio(envio.plano, {
+            variaveis,
+            cabecalhoTexto: destinatario.cabecalho,
+            midias: envio.midias,
+            agora: new Date(),
+          }) ?? [];
+      } catch (erro) {
+        if (!(erro instanceof CabecalhoSemValor)) throw erro;
+        // Só esta pessoa ficou sem valor para o título: a Meta recusaria a
+        // mensagem dela. Ela falha com o motivo dito; a rodada segue.
+        await this.ctx.comConta(contaId, (db) =>
+          db
+            .update(campanhaDestinatario)
+            .set({
+              status: 'falhou',
+              falhouEm: new Date(),
+              erroCodigo: null,
+              erroTitulo: 'Sem valor para o título',
+              erroDetalhe: 'O modelo tem uma variável no título e este destinatário ficou sem valor para ela. Nada foi enviado.',
+            })
+            .where(eq(campanhaDestinatario.id, destinatario.id)),
+        );
+        return { tipo: 'falhou' };
+      }
+    }
 
     try {
       const wamid = await this.graph.enviarModelo(
@@ -1591,6 +1990,7 @@ export class CampanhaService {
           modelo: alvo.modeloNome,
           idioma: alvo.modeloIdioma,
           variaveis,
+          ...(componentes ? { componentes } : {}),
         },
         token,
       );
@@ -1686,7 +2086,9 @@ export class CampanhaService {
         // Número sem WhatsApp em duas campanhas: sai sozinho dos próximos envios.
         if (g?.codigo === ERRO_SEM_WHATSAPP) await registrarFalhaSemWhatsapp(db, contaId, destinatario.telefone);
       });
-      return { tipo: 'falhou' };
+      // O erro fica gravado neste destinatário (é por ele que a tela mostra o
+      // motivo); quem chama para a rodada e pausa a campanha.
+      return ehErroDeModelo(g?.codigo) ? { tipo: 'modelo', codigo: g!.codigo! } : { tipo: 'falhou' };
     }
   }
 
@@ -1898,6 +2300,7 @@ export class CampanhaService {
       modeloIdioma: c.modeloIdioma,
       status: c.status,
       pausaMotivo: c.status === 'pausada' ? c.pausaMotivo : null,
+      variavelCabecalho: variavelDoTitulo(lerPlano(c.envio)),
       criadoEm: c.criadoEm,
       iniciadaEm: c.iniciadaEm,
       concluidaEm: c.concluidaEm,

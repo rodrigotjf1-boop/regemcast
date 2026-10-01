@@ -245,8 +245,13 @@ export interface ResumoCampanha {
   modeloNome: string;
   modeloIdioma: string;
   status: string;
-  /** Por que pausou: conexão com a Meta caiu, ou acabaram os disparos do plano. */
-  pausaMotivo: 'conexao' | 'teto_plano' | 'inadimplencia' | 'manual' | null;
+  /**
+   * Por que pausou: a conexão com a Meta caiu, acabaram os disparos do plano,
+   * falta pagamento, o dono pausou, ou a Meta recusou o modelo (`modelo`).
+   */
+  pausaMotivo: 'conexao' | 'teto_plano' | 'inadimplencia' | 'manual' | 'modelo' | null;
+  /** De onde sai a variável do título do modelo; nulo quando o modelo não tem. */
+  variavelCabecalho?: { origem: VariavelDeLista['origem']; valor: string } | null;
   criadoEm: string;
   iniciadaEm: string | null;
   concluidaEm: string | null;
@@ -344,6 +349,8 @@ export interface NovaCampanha {
   daBase?: PublicoDaCampanha;
   /** Variáveis, em ordem, quando o público sai da base (lista ou público da base). */
   variaveisLista?: VariavelDeLista[];
+  /** A variável do título, quando o modelo tem uma. */
+  variavelCabecalho?: VariavelDeLista;
   /** 0 = domingo … 6 = sábado. Vazio = qualquer dia. */
   janelaDias?: number[];
   /** HH:MM, no fuso da conta. */
@@ -379,6 +386,19 @@ export interface ModeloDeMensagem {
   /** Quantas variáveis o corpo espera — o maior `{{n}}`, não as ocorrências. */
   variaveis: number;
   botoes: string[];
+  /**
+   * O que o modelo pede no envio além das variáveis do texto. A mídia, o cupom
+   * e a validade da oferta saem do próprio modelo; a variável do título é
+   * preenchida na campanha.
+   */
+  exige?: {
+    cabecalho: 'image' | 'video' | 'document' | 'texto' | null;
+    oferta: boolean;
+    cupomNoBotao: number | null;
+    cartoes: unknown[];
+    /** O que o disparo ainda não sabe mandar; vazio = sabe tudo. */
+    semSuporte: string[];
+  };
 }
 
 /** `POST /whatsapp/conectar` */

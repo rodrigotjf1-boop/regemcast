@@ -5,9 +5,12 @@ import {
   IsArray,
   IsBoolean,
   IsIn,
+  IsInt,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
 
@@ -160,4 +163,16 @@ export class SalvarModeloDto {
   @IsString()
   @MaxLength(64)
   ltoTexto?: string;
+
+  /**
+   * Por quantas horas a oferta vale depois de ENVIADA. Fica só aqui — a Meta
+   * recebe o instante do vencimento a cada mensagem, não no modelo. Horas, e
+   * não uma data: o modelo aprovado serve para sempre. Sem valor, 3 horas.
+   */
+  @ApiProperty({ required: false, description: 'Oferta por tempo limitado: validade em horas depois do envio (1 a 720). Padrão: 3.' })
+  @IsOptional()
+  @IsInt({ message: 'Informe a validade da oferta em horas inteiras.' })
+  @Min(1, { message: 'A oferta precisa valer pelo menos 1 hora.' })
+  @Max(720, { message: 'A oferta pode valer no máximo 720 horas (30 dias).' })
+  ltoHoras?: number;
 }

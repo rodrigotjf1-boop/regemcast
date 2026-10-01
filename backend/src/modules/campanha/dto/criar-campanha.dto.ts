@@ -158,6 +158,17 @@ export class CriarCampanhaDto {
   @Type(() => VariavelDeListaDto)
   variaveisLista?: VariavelDeListaDto[];
 
+  /**
+   * De onde sai a variável do TÍTULO, quando o modelo tem uma (cabeçalho de
+   * texto com `{{1}}`): o mesmo texto para todos, ou o nome do contato com um
+   * texto reserva. Sem ela, a Meta recusaria todas as mensagens (132000).
+   */
+  @ApiProperty({ required: false, type: VariavelDeListaDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => VariavelDeListaDto)
+  variavelCabecalho?: VariavelDeListaDto;
+
   // ---- janela de envio (opcional)
   //
   // Sem nada disso a campanha sai assim que disparada. Com janela, o worker só
