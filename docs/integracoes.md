@@ -314,6 +314,34 @@ servidor devolve), **Atualizar agora** e **Desligar do Regem**; sem ligação,
 ele pede a ligação ao suporte. No console da distribuição, a aba **Regem** liga
 uma conta (conta + token), troca o token, desliga e mostra o que espera por nós.
 
+### Quem usa o Regem não paga o Regemcast
+
+Decisão do dono (30/09/2026). A conta **ligada** ao Regem é grátis enquanto a
+integração estiver ativa — a regra mora num lugar só
+(`backend/src/common/gratuidade-regem.ts`) e é calculada na hora, não gravada
+na assinatura:
+
+- **Sem teto do plano.** Vale só o limite da própria conta do WhatsApp na Meta
+  (o nível do número). `saldoDoPlano` devolve "sem teto".
+- **Sem cobrança.** Os disparos não param por falta de pagamento
+  (`motivoDeBloqueio`), a conta não vira inadimplente e não recebe os avisos de
+  fim do grátis (`CobrancaJob`).
+- **Ao ligar**, as campanhas que estavam paradas por falta de saldo ou de
+  pagamento voltam à fila.
+- **Nas telas** (site e app): o Plano e o Painel dizem "Grátis pelo Regem" e
+  escondem a lista de planos; quem ainda tem assinatura paga é avisado de que
+  pode cancelar a renovação — nada é cancelado sozinho no Mercado Pago. Quem
+  NÃO usa o Regem vê o informativo: 30 dias grátis para toda conta nova, e quem
+  usa o Regem não paga, é só ativar a integração.
+- **Ao desligar** a integração (o dono ou a distribuição), a gratuidade acaba:
+  quem tem plano pago ou ainda está no grátis de entrada segue como está; os
+  demais ganham a **carência** (`CARENCIA_DIAS`, 5) — o grátis termina naquele
+  instante, sai o aviso por e-mail com a frase própria, e os disparos param
+  depois da carência se a conta não tiver plano. O teto do plano volta junto.
+- Só a distribuição liga uma conta, então só cliente de verdade do Regem
+  recebe a gratuidade. O console mostra quantas contas estão "grátis pelo
+  Regem" e tira essas contas das contagens de "em grátis" e "inadimplentes".
+
 ### Clientes
 
 O dono declara o consentimento e começa (`POST /integracoes/regem/importar`).

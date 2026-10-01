@@ -32,6 +32,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { and, desc, eq, sql } from 'drizzle-orm';
 
 import type { UsuarioAutenticado } from '../../common/auth.guard';
+import { ligadaAoRegem } from '../../common/gratuidade-regem';
 import { env } from '../../config/env';
 import { ContextoDb, type Db } from '../../db/contexto';
 import { assinatura, cobranca, eventoMercadopago, plano, usoCiclo } from '../../db/schema';
@@ -60,6 +61,11 @@ export interface SituacaoCobranca {
   disparosParamEm: string | null;
   /** Os disparos já estão parados por falta de pagamento. */
   bloqueado: boolean;
+  /**
+   * A conta está ligada ao Regem: não paga e não tem teto do plano enquanto a
+   * integração estiver ativa (`common/gratuidade-regem.ts`).
+   */
+  gratisPeloRegem: boolean;
   carenciaDias: number;
   planoAtual: PlanoOferta | null;
   planoProximoCiclo: PlanoOferta | null;
@@ -147,12 +153,17 @@ export class CobrancaService {
       .orderBy(desc(cobranca.criadoEm))
       .limit(24);
 
+    const [regem] = (await db.execute(sql`select ${ligadaAoRegem(sql`${contaId}::uuid`)} as gratis`)).rows as { gratis: boolean }[];
+    const gratisPeloRegem = regem?.gratis === true;
+
     const carencia = env.mercadoPago.carenciaDias;
     const somaDias = (d: Date, dias: number) => new Date(d.getTime() + dias * 86_400_000);
     let disparosParamEm: Date | null = null;
     if (a.status === 'cortesia' && a.gratisAte && a.mpStatus !== 'authorized') disparosParamEm = somaDias(a.gratisAte, carencia);
     if (a.status === 'inadimplente') disparosParamEm = somaDias(a.inadimplenteDesde ?? new Date(), carencia);
     if (a.status === 'ativa' && (a.mpStatus === 'cancelled' || a.mpStatus === 'paused')) disparosParamEm = a.cicloFim;
+    // Ligada ao Regem: nada para por cobrança.
+    if (gratisPeloRegem) disparosParamEm = null;
 
     const bloqueado = (await motivoDeBloqueio(db, contaId)) !== null;
     const recontratarEm = mesPagoAposCancelar(a) ? a.cicloFim : null;
@@ -165,6 +176,7 @@ export class CobrancaService {
       inadimplenteDesde: iso(a.inadimplenteDesde),
       disparosParamEm: iso(disparosParamEm),
       bloqueado,
+      gratisPeloRegem,
       carenciaDias: carencia,
       planoAtual: oferta(a.planoId),
       planoProximoCiclo: oferta(a.planoProximoCicloId),
@@ -173,7 +185,10 @@ export class CobrancaService {
         a.mpStatus === 'pending' && a.mpCheckoutUrl ? { url: a.mpCheckoutUrl, plano: oferta(a.planoContratadoId) } : null,
       cobrancaDisponivel: this.mp.configurado(),
       recontratarEm: iso(recontratarEm),
-      uso: { disparos: Number(uso?.disparos ?? 0), teto: oferta(a.planoId)?.disparosMes ?? null },
+      uso: {
+        disparos: Number(uso?.disparos ?? 0),
+        teto: gratisPeloRegem ? null : (oferta(a.planoId)?.disparosMes ?? null),
+      },
       planos: planosTodos
         .filter((p) => p.publico && p.ativo && p.precoCentavos > 0)
         .sort((x, y) => x.ordem - y.ordem)

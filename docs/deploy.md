@@ -98,6 +98,32 @@ META_TOKEN_CHAVE=<openssl rand -base64 32>
 
 **Domains:** `castapi.dmsregem.com` · porta `3000` · HTTPS ligado.
 
+### Variáveis que os recursos pedem (a API sobe sem elas)
+
+O bloco acima é o mínimo para a API **subir**. As de baixo são opcionais para o
+processo e **obrigatórias para o recurso**: sem elas a API não cai — o recurso
+é que responde 503 dizendo qual variável falta, só quando alguém o usa. Foi
+assim que a `INTEGRACOES_CHAVE` passou despercebida em produção até o dia de
+ligar a primeira conta ao Regem (ERR-033). Ao criar o serviço, confira a lista
+inteira; **variável nova no código entra aqui no mesmo PR**.
+
+| Variável | Para quê | Como gerar / de onde vem |
+| --- | --- | --- |
+| `INTEGRACOES_CHAVE` | Cifra as credenciais das integrações (token da loja do Cardápio Web, token do Regem). Sem ela nenhuma integração liga. **Não trocar depois de usar**: o que foi guardado deixa de abrir. | `openssl rand -base64 32` (32 bytes em base64) |
+| `REGEM_API_URL` | Base da API de integração do Regem. | Padrão `https://api.dmsregem.com/api/v1`; só definir para apontar a outro ambiente |
+| `CARDAPIOWEB_API_URL` | Base da API do Cardápio Web. | Padrão `https://integracao.cardapioweb.com` |
+| `META_APP_ID`, `META_APP_SECRET`, `META_CONFIG_ID`, `META_VERIFY_TOKEN` | Conexão do WhatsApp (Embedded Signup) e webhook da Meta. | Painel do app na Meta — ver [`whatsapp.md`](whatsapp.md) |
+| `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SEGREDO` | Assinaturas pelo Mercado Pago. Sem o token, contratar responde 503; sem o segredo, os avisos são gravados e nunca processados. | Painel do Mercado Pago (conta da SISTER TECNOLOGIA) |
+| `CARENCIA_DIAS` | Dias sem pagamento até os disparos pararem (fim do grátis, cobrança recusada, integração com o Regem desligada). | Padrão `5` |
+| `RESEND_API_KEY`, `EMAIL_REMETENTE` | E-mails do sistema (códigos, convites, fim do grátis). Em produção, sem a chave o envio recusa com 503. | Painel do Resend |
+| `CONTA_TOTP_CHAVE` | Cifra o segredo do aplicativo autenticador dos clientes. | `openssl rand -base64 32` |
+| `DIST_TOTP_CHAVE`, `DIST_COOKIE_NOME`, `DIST_TTL_HORAS` | Console de distribuição: duas etapas dos operadores, cookie e validade da sessão. | Chave: `openssl rand -base64 32`; os outros têm padrão (`regemcast_dist`, `8`) |
+| `FIREBASE_CONTA_SERVICO` | Avisos (push) do app Android. Sem ela o push fica desligado e nada mais muda. | JSON da conta de serviço do Firebase, em texto ou base64 |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_BUCKET` | Arquivo de mídia dos modelos e das conversas. | Supabase → Project Settings → API; bucket padrão `regemcast-midia` |
+| `JWT_TTL_APP_DIAS` | Validade da sessão do aplicativo. | Padrão `30` |
+| `TETO_CLIENTES_NOVOS_7D` | Quantas contas novas por semana a lista de espera libera. | Padrão `10` |
+| `DATABASE_CA_CERT`, `DATABASE_POOL_MAX` | Ajustes da conexão com o banco. | Só em caso especial; ver abaixo |
+
 ### Por que `DATABASE_SSL=supabase`, e não `require`
 
 O Postgres do Supabase — direto ou pelo pooler — apresenta certificado

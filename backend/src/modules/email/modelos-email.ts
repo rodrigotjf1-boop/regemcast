@@ -131,14 +131,24 @@ export function emailFimDoGratis(
   gratisAte: Date,
   disparosParamEm: Date,
   link: string,
+  /** `regemDesligado`: o grátis terminou porque a integração com o Regem foi desligada. */
+  opcoes: { regemDesligado?: boolean } = {},
 ): EmailParaEnviar {
   const fmt = (d: Date) => d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   const hoje = gratisAte.getTime() <= Date.now();
-  const titulo = hoje ? 'Seu mês grátis terminou' : `Seu mês grátis termina em ${fmt(gratisAte)}`;
-  const frase = hoje
-    ? `O mês grátis de ${nomeConta} no RegemCast terminou. Escolha um plano para continuar disparando.`
-    : `O mês grátis de ${nomeConta} no RegemCast termina em ${fmt(gratisAte)}. Escolha um plano para os disparos não pararem.`;
-  const corte = `Sem plano pago, os disparos param em ${fmt(disparosParamEm)}. Contatos, modelos e histórico continuam na sua conta.`;
+  const titulo = opcoes.regemDesligado
+    ? 'A gratuidade do Regem terminou'
+    : hoje
+      ? 'Seu mês grátis terminou'
+      : `Seu mês grátis termina em ${fmt(gratisAte)}`;
+  const frase = opcoes.regemDesligado
+    ? `A integração de ${nomeConta} com o Regem foi desligada, e com ela a gratuidade do RegemCast. Escolha um plano para continuar disparando — ou ligue a integração de novo.`
+    : hoje
+      ? `O mês grátis de ${nomeConta} no RegemCast terminou. Escolha um plano para continuar disparando.`
+      : `O mês grátis de ${nomeConta} no RegemCast termina em ${fmt(gratisAte)}. Escolha um plano para os disparos não pararem.`;
+  const corte =
+    `Sem plano pago, os disparos param em ${fmt(disparosParamEm)}. Contatos, modelos e histórico continuam na sua conta.` +
+    (opcoes.regemDesligado ? '' : ' Usa o Regem? Quem usa o Regem não paga o RegemCast: é só ativar a integração (fale com o suporte).');
 
   return {
     para,

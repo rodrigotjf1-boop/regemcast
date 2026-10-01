@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
 import { EVENTO_PLANO_ALTERADO } from '@/components/app/casca';
@@ -127,6 +128,9 @@ export default function PaginaPlano() {
     }
   }
 
+  // Ligada ao Regem e sem assinatura no Mercado Pago: não há o que contratar.
+  const semCobranca = Boolean(s?.gratisPeloRegem) && s?.mpStatus !== 'authorized' && s?.mpStatus !== 'pending';
+
   return (
     <div className="space-y-6 lg:space-y-8">
       <CabecalhoPagina
@@ -150,6 +154,7 @@ export default function PaginaPlano() {
           ) : null}
 
           <SituacaoAtual s={s} />
+          {s.gratisPeloRegem ? null : <InformativoRegem />}
 
           {aviso ? <Alerta tom="sucesso">{aviso}</Alerta> : null}
           {acaoErro ? <Alerta tom="erro">{acaoErro}</Alerta> : null}
@@ -170,7 +175,7 @@ export default function PaginaPlano() {
           <section className="anima-entrada rounded-card border border-borda bg-superficie p-5 shadow-card">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h2 className="text-base font-semibold text-tinta">
-                {s.planoAtual ? `Plano ${s.planoAtual.nome}` : 'Sem plano'}
+                {semCobranca ? 'Grátis pelo Regem' : s.planoAtual ? `Plano ${s.planoAtual.nome}` : 'Sem plano'}
               </h2>
               <p className="text-sm text-tinta-suave">
                 Ciclo de {formatarData(s.cicloInicio)} a {formatarData(s.cicloFim)}
@@ -196,6 +201,11 @@ export default function PaginaPlano() {
                   />
                 </div>
               </>
+            ) : s.gratisPeloRegem ? (
+              <p className="mt-3 text-sm text-tinta-suave">
+                <span className="numerico text-2xl font-semibold text-tinta">{formatarNumero(s.uso.disparos)}</span>{' '}
+                disparos neste ciclo, sem teto do plano — vale o limite da sua conta do WhatsApp.
+              </p>
             ) : null}
             {s.planoProximoCiclo ? (
               <p className="mt-3 text-sm text-tinta-suave">
@@ -204,112 +214,114 @@ export default function PaginaPlano() {
             ) : null}
           </section>
 
-          {/* Planos */}
-          <section className="space-y-3">
-            <h2 className="text-base font-semibold text-tinta">Planos</h2>
-            {!s.cobrancaDisponivel ? (
-              <Alerta tom="informacao">
-                A contratação pelo Mercado Pago ainda não está disponível. Fale com o suporte do RegemCast.
-              </Alerta>
-            ) : null}
-            {!ehDono ? (
-              <p className="text-sm text-tinta-suave">Só o dono da conta pode contratar ou trocar de plano.</p>
-            ) : null}
+          {/* Planos: quem usa o Regem não precisa de um (a não ser que já pague). */}
+          {semCobranca ? null : (
+            <section className="space-y-3">
+              <h2 className="text-base font-semibold text-tinta">Planos</h2>
+              {!s.cobrancaDisponivel ? (
+                <Alerta tom="informacao">
+                  A contratação pelo Mercado Pago ainda não está disponível. Fale com o suporte do RegemCast.
+                </Alerta>
+              ) : null}
+              {!ehDono ? (
+                <p className="text-sm text-tinta-suave">Só o dono da conta pode contratar ou trocar de plano.</p>
+              ) : null}
 
-            <ul className="escalonado grid grid-cols-1 gap-4 md:grid-cols-3">
-              {s.planos.map((p) => {
-                const pago = s.mpStatus === 'authorized';
-                const atual = pago && s.planoAtual?.id === p.id;
-                const agendado = s.planoProximoCiclo?.id === p.id;
-                const maior = !s.planoAtual || p.precoCentavos >= s.planoAtual.precoCentavos;
-                const rotulo = atual
-                  ? s.planoProximoCiclo
-                    ? 'Continuar neste plano'
-                    : 'Seu plano'
-                  : agendado
-                    ? 'Começa no próximo ciclo'
-                    : pago
-                      ? maior
-                        ? 'Mudar para este'
-                        : 'Reduzir no próximo ciclo'
-                      : 'Contratar';
-                const desabilitado =
-                  !ehDono ||
-                  !s.cobrancaDisponivel ||
-                  ocupado !== null ||
-                  (atual && !s.planoProximoCiclo) ||
-                  agendado ||
-                  Boolean(s.recontratarEm);
+              <ul className="escalonado grid grid-cols-1 gap-4 md:grid-cols-3">
+                {s.planos.map((p) => {
+                  const pago = s.mpStatus === 'authorized';
+                  const atual = pago && s.planoAtual?.id === p.id;
+                  const agendado = s.planoProximoCiclo?.id === p.id;
+                  const maior = !s.planoAtual || p.precoCentavos >= s.planoAtual.precoCentavos;
+                  const rotulo = atual
+                    ? s.planoProximoCiclo
+                      ? 'Continuar neste plano'
+                      : 'Seu plano'
+                    : agendado
+                      ? 'Começa no próximo ciclo'
+                      : pago
+                        ? maior
+                          ? 'Mudar para este'
+                          : 'Reduzir no próximo ciclo'
+                        : 'Contratar';
+                  const desabilitado =
+                    !ehDono ||
+                    !s.cobrancaDisponivel ||
+                    ocupado !== null ||
+                    (atual && !s.planoProximoCiclo) ||
+                    agendado ||
+                    Boolean(s.recontratarEm);
 
-                return (
-                  <li
-                    key={p.id}
-                    className={cn(
-                      'cartao-interativo flex flex-col gap-4 rounded-card border bg-superficie p-5 shadow-card',
-                      atual ? 'border-acento shadow-brilho' : 'border-borda',
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-lg font-semibold text-tinta">{p.nome}</p>
-                      {atual ? <Badge tom="sucesso" ponto>Atual</Badge> : null}
-                    </div>
-                    <p className="flex items-baseline gap-1">
-                      <span className="numerico text-3xl font-semibold text-tinta">{reais(p.precoCentavos)}</span>
-                      <span className="text-sm text-tinta-suave">/mês</span>
-                    </p>
-                    <p className="flex items-center gap-2 text-sm text-tinta">
-                      <IconeRaio className="h-4 w-4 text-tinta-suave" />
-                      <span className="numerico font-semibold">{formatarNumero(p.disparosMes)}</span> disparos por mês
-                    </p>
-                    <p className="text-xs text-tinta-suave">
-                      {reais(Math.round((p.precoCentavos / p.disparosMes) * 1000))} a cada mil disparos
-                    </p>
-                    <Button
-                      className="mt-auto"
-                      variante={atual ? 'secundario' : 'primario'}
-                      disabled={desabilitado}
-                      carregando={ocupado === p.id}
-                      onClick={() => void contratar(p)}
+                  return (
+                    <li
+                      key={p.id}
+                      className={cn(
+                        'cartao-interativo flex flex-col gap-4 rounded-card border bg-superficie p-5 shadow-card',
+                        atual ? 'border-acento shadow-brilho' : 'border-borda',
+                      )}
                     >
-                      {atual && !s.planoProximoCiclo ? <IconeCheck /> : null}
-                      {rotulo}
-                    </Button>
-                  </li>
-                );
-              })}
-            </ul>
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-lg font-semibold text-tinta">{p.nome}</p>
+                        {atual ? <Badge tom="sucesso" ponto>Atual</Badge> : null}
+                      </div>
+                      <p className="flex items-baseline gap-1">
+                        <span className="numerico text-3xl font-semibold text-tinta">{reais(p.precoCentavos)}</span>
+                        <span className="text-sm text-tinta-suave">/mês</span>
+                      </p>
+                      <p className="flex items-center gap-2 text-sm text-tinta">
+                        <IconeRaio className="h-4 w-4 text-tinta-suave" />
+                        <span className="numerico font-semibold">{formatarNumero(p.disparosMes)}</span> disparos por mês
+                      </p>
+                      <p className="text-xs text-tinta-suave">
+                        {reais(Math.round((p.precoCentavos / p.disparosMes) * 1000))} a cada mil disparos
+                      </p>
+                      <Button
+                        className="mt-auto"
+                        variante={atual ? 'secundario' : 'primario'}
+                        disabled={desabilitado}
+                        carregando={ocupado === p.id}
+                        onClick={() => void contratar(p)}
+                      >
+                        {atual && !s.planoProximoCiclo ? <IconeCheck /> : null}
+                        {rotulo}
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
 
-            {ehDono && s.cobrancaDisponivel && s.mpStatus !== 'authorized' && !s.recontratarEm ? (
-              <div className="space-y-2 text-sm">
-                <label className="inline-flex items-center gap-2 text-tinta-suave">
-                  <input
-                    type="checkbox"
-                    checked={outroEmail}
-                    onChange={(e) => setOutroEmail(e.target.checked)}
-                    className="h-4 w-4 accent-[rgb(var(--cor-acento))]"
-                  />
-                  Vou pagar com uma conta do Mercado Pago de outro e-mail
-                </label>
-                {outroEmail ? (
-                  <div className="max-w-sm space-y-1.5">
-                    <Label htmlFor="email-pagador">E-mail da conta do Mercado Pago</Label>
-                    <Input
-                      id="email-pagador"
-                      type="email"
-                      value={emailPagador}
-                      onChange={(e) => setEmailPagador(e.target.value)}
-                      placeholder="financeiro@suaempresa.com.br"
+              {ehDono && s.cobrancaDisponivel && s.mpStatus !== 'authorized' && !s.recontratarEm ? (
+                <div className="space-y-2 text-sm">
+                  <label className="inline-flex items-center gap-2 text-tinta-suave">
+                    <input
+                      type="checkbox"
+                      checked={outroEmail}
+                      onChange={(e) => setOutroEmail(e.target.checked)}
+                      className="h-4 w-4 accent-[rgb(var(--cor-acento))]"
                     />
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
+                    Vou pagar com uma conta do Mercado Pago de outro e-mail
+                  </label>
+                  {outroEmail ? (
+                    <div className="max-w-sm space-y-1.5">
+                      <Label htmlFor="email-pagador">E-mail da conta do Mercado Pago</Label>
+                      <Input
+                        id="email-pagador"
+                        type="email"
+                        value={emailPagador}
+                        onChange={(e) => setEmailPagador(e.target.value)}
+                        placeholder="financeiro@suaempresa.com.br"
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
-            <p className="text-xs text-tinta-suave">
-              O pagamento é feito pelo Mercado Pago e renova todo mês. A cobrança das mensagens enviadas pelo WhatsApp é
-              da Meta, na conta da sua empresa, e é separada do plano.
-            </p>
-          </section>
+              <p className="text-xs text-tinta-suave">
+                O pagamento é feito pelo Mercado Pago e renova todo mês. A cobrança das mensagens enviadas pelo WhatsApp é
+                da Meta, na conta da sua empresa, e é separada do plano.
+              </p>
+            </section>
+          )}
 
           {/* Histórico */}
           <section className="anima-entrada overflow-hidden rounded-card border border-borda bg-superficie shadow-card">
@@ -394,6 +406,18 @@ export default function PaginaPlano() {
 }
 
 function SituacaoAtual({ s }: { s: SituacaoCobranca }) {
+  if (s.gratisPeloRegem) {
+    return (
+      <Alerta tom="sucesso">
+        Você usa o Regem: o Regemcast é <strong>grátis</strong> para a sua empresa enquanto a integração estiver
+        ativa, sem teto de disparos do plano.
+        {s.mpStatus === 'authorized'
+          ? ` Você ainda tem o plano ${s.planoAtual?.nome ?? ''} contratado — pode cancelar a renovação abaixo.`
+          : null}
+      </Alerta>
+    );
+  }
+
   if (s.bloqueado) {
     return (
       <Alerta tom="erro">
@@ -408,7 +432,7 @@ function SituacaoAtual({ s }: { s: SituacaoCobranca }) {
     const perto = s.gratisAte && new Date(s.gratisAte).getTime() - Date.now() < 7 * 86_400_000;
     return (
       <Alerta tom={perto ? 'atencao' : 'informacao'}>
-        Primeiro mês grátis até <strong>{formatarData(s.gratisAte)}</strong>. Escolha um plano antes de{' '}
+        Você está nos 30 dias grátis, até <strong>{formatarData(s.gratisAte)}</strong>. Escolha um plano antes de{' '}
         <strong>{formatarData(s.disparosParamEm)}</strong> para os disparos não pararem.
       </Alerta>
     );
@@ -443,4 +467,19 @@ function SituacaoAtual({ s }: { s: SituacaoCobranca }) {
   }
 
   return null;
+}
+
+/** A cobrança em duas frases: o grátis de entrada e o que muda para quem usa o Regem. */
+function InformativoRegem() {
+  return (
+    <p className="rounded-card border border-borda bg-superficie p-4 text-sm leading-relaxed text-tinta-suave shadow-card">
+      Toda conta começa com <strong className="text-tinta">30 dias grátis</strong>.{' '}
+      <strong className="text-tinta">Usa o Regem?</strong> Você não paga o Regemcast: é só ativar a integração com o Regem
+      em{' '}
+      <Link href="/integracoes" className="font-medium text-acento-forte underline-offset-2 hover:underline">
+        Integrações
+      </Link>
+      .
+    </p>
+  );
 }

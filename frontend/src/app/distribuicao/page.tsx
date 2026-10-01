@@ -232,10 +232,11 @@ function Indicadores({
       </div>
 
       {/* Dinheiro: o que entra todo mês e quem está atrasado. */}
-      <div className="escalonado grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="escalonado grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <Cartao rotulo="Receita mensal" valor={r.receita.mrrCentavos} moeda tom="sucesso" ajuda="assinaturas pagas e em dia" />
         <Cartao rotulo="Pagantes" valor={r.receita.pagantes} />
         <Cartao rotulo="Em grátis" valor={r.receita.emGratis} />
+        <Cartao rotulo="Grátis pelo Regem" valor={r.receita.gratisPeloRegem ?? 0} ajuda="integração ativa" />
         <Cartao
           rotulo="Inadimplentes"
           valor={r.receita.inadimplentes}
@@ -364,7 +365,9 @@ function TabelaContas({
                 <td className="px-3 py-2.5">
                   <p className="font-medium text-tinta">{c.nome}</p>
                   <p className="text-xs text-tinta-suave">
-                    {c.planoNome ?? 'sem plano'} · {c.assinaturaStatus ?? 'sem assinatura'}
+                    {c.gratisPeloRegem
+                      ? `grátis pelo Regem${c.assinaturaStatus === 'ativa' ? ` · também paga ${c.planoNome ?? ''}` : ''}`
+                      : `${c.planoNome ?? 'sem plano'} · ${c.assinaturaStatus ?? 'sem assinatura'}`}
                   </p>
                 </td>
                 <td className="px-3 py-2.5">
@@ -395,7 +398,7 @@ function TabelaContas({
                     >
                       {acessosAbertos === c.id ? 'Fechar acessos' : 'Acessos'}
                     </Button>
-                    {c.assinaturaStatus && c.assinaturaStatus !== 'ativa' ? (
+                    {c.assinaturaStatus && c.assinaturaStatus !== 'ativa' && !c.gratisPeloRegem ? (
                       <EstenderGratis contaId={c.id} nome={c.nome} aoConcluir={aoAtualizar} />
                     ) : null}
                   </div>

@@ -23,6 +23,7 @@ import 'package:regemcast/telas/conta.dart';
 import 'package:regemcast/telas/entrar.dart';
 import 'package:regemcast/telas/importar_contatos.dart';
 import 'package:regemcast/telas/lista_espera.dart';
+import 'package:regemcast/telas/integracoes.dart';
 import 'package:regemcast/telas/painel.dart';
 import 'package:regemcast/telas/plano.dart';
 import 'package:regemcast/telas/recuperar_senha.dart';
@@ -1115,6 +1116,109 @@ void main() {
       await _transicao(t);
       expect(find.byType(TelaPlano), findsOneWidget);
       expect(s.quantos('GET /plano'), 1, reason: 'o plano do app, não o site');
+    },
+  );
+
+  testWidgets(
+    'quem usa o Regem: o Painel não avisa de cobrança e mostra "grátis pelo Regem"',
+    (t) async {
+      final s = _Servidor();
+      s.respostas['GET /conta'] = (_) async => _json({
+        'conta': s.conta,
+        'plano': {
+          'codigo': 'cortesia',
+          'nome': 'Primeiro mês',
+          'disparosMes': 5000,
+        },
+        'assinatura': {
+          'status': 'inadimplente',
+          'cicloInicio': '2026-09-17T00:00:00Z',
+          'cicloFim': '2026-10-17T00:00:00Z',
+          'gratisAte': '2026-09-01T00:00:00Z',
+        },
+        'uso': {'disparos': 6000, 'teto': null, 'restantes': null},
+        'gratisPeloRegem': true,
+        'conversasHabilitadas': false,
+      });
+      await _abrir(t, s, const Scaffold(body: TelaPainel()));
+
+      expect(_chave('ver-plano'), findsNothing);
+      expect(_chave('aviso-gratis'), findsNothing);
+      expect(find.text('GRÁTIS PELO REGEM'), findsOneWidget);
+      expect(find.text('Sem teto do plano'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'tela Plano de quem usa o Regem: grátis, sem a lista de planos nem o informativo',
+    (t) async {
+      final s = _Servidor();
+      s.respostas['GET /plano'] = (_) async => _json({
+        'status': 'cortesia',
+        'gratisAte': '2026-09-01T00:00:00Z',
+        'cicloFim': '2026-10-17T00:00:00Z',
+        'gratisPeloRegem': true,
+        'cobrancaDisponivel': true,
+        'planos': [
+          {
+            'id': 'p1',
+            'nome': 'Essencial',
+            'disparosMes': 5000,
+            'precoCentavos': 3000,
+          },
+        ],
+        'cobrancas': <Object>[],
+        'uso': {'disparos': 6000, 'teto': null},
+      });
+      await _abrir(t, s, const TelaPlano());
+
+      expect(find.textContaining('Você usa o Regem'), findsOneWidget);
+      expect(find.text('Grátis pelo Regem'), findsOneWidget);
+      expect(find.textContaining('sem teto do plano'), findsOneWidget);
+      expect(find.text('Planos'), findsNothing);
+      expect(find.text('Essencial'), findsNothing);
+      expect(_chave('informativo-regem'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'tela Plano de quem não usa o Regem: o informativo dos 30 dias e do Regem leva às Integrações',
+    (t) async {
+      final s = _Servidor();
+      s.respostas['GET /plano'] = (_) async => _json({
+        'status': 'cortesia',
+        'gratisAte': '2026-10-20T00:00:00Z',
+        'disparosParamEm': '2026-10-25T00:00:00Z',
+        'cicloFim': '2026-10-17T00:00:00Z',
+        'cobrancaDisponivel': true,
+        'planos': [
+          {
+            'id': 'p1',
+            'nome': 'Essencial',
+            'disparosMes': 5000,
+            'precoCentavos': 3000,
+          },
+        ],
+        'cobrancas': <Object>[],
+        'uso': {'disparos': 10, 'teto': 5000},
+      });
+      await _abrir(t, s, const TelaPlano());
+
+      final informativo = _chave('informativo-regem');
+      expect(informativo, findsOneWidget);
+      expect(
+        find.descendant(
+          of: informativo,
+          matching: find.textContaining(
+            'Toda conta começa com 30 dias grátis. Usa o Regem? Você não paga o Regemcast',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Planos'), findsOneWidget);
+      await _tocar(t, _chave('ver-integracoes'));
+      await _transicao(t);
+      expect(find.byType(TelaIntegracoes), findsOneWidget);
     },
   );
 

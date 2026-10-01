@@ -57,6 +57,7 @@ Map<String, dynamic> _rg({
   'consentimentoEm': clientes == 'parado' ? null : '2026-09-28T12:00:00Z',
   'listaId': null,
   'cardapioWebDireto': cardapioWebDireto,
+  'carenciaDias': 7,
   'clientes': {
     'status': clientes,
     'lidos': lidos,
@@ -229,6 +230,10 @@ void main() {
     expect(find.text('Não ligada'), findsOneWidget);
     expect(find.byKey(const ValueKey('pedir-ligacao-regem')), findsOneWidget);
     expect(find.text('suporte@dmsregem.com'), findsOneWidget);
+    expect(
+      find.textContaining('quem usa o Regem não paga o Regemcast'),
+      findsOneWidget,
+    );
     expect(find.textContaining('você não copia nenhum token'), findsOneWidget);
     expect(find.byKey(const ValueKey('importar-regem')), findsNothing);
   });
@@ -304,6 +309,10 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('4.870'), findsOneWidget);
+    expect(
+      find.textContaining('o Regemcast é grátis para a sua empresa, sem teto'),
+      findsOneWidget,
+    );
     expect(find.text('1.480'), findsOneWidget);
     expect(
       find.textContaining('Ficam de fora as vendas do iFood'),
@@ -426,6 +435,13 @@ void main() {
 
     await _tocar(t, find.byKey(const ValueKey('desligar-regem')));
     expect(find.text('Desligar do Regem?'), findsOneWidget);
+    // A confirmação diz o que se perde: a gratuidade, com a carência do servidor.
+    expect(
+      find.textContaining(
+        'a gratuidade acaba: sem plano pago, os disparos param em 7 dias',
+      ),
+      findsWidgets,
+    );
     await _tocar(t, find.widgetWithText(FilledButton, 'Desligar'));
     expect(s.pedidos, contains('DELETE /integracoes/regem'));
     expect(find.text('Desligado do Regem.'), findsOneWidget);

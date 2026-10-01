@@ -116,8 +116,9 @@ export function IntegracaoRegem() {
         ) : !s.ligado ? (
           <div className="space-y-3">
             <p className="max-w-prose text-sm leading-relaxed text-tinta-suave">
-              Usa o Regem na sua empresa? Os clientes e o histórico de compras de cada um chegam direto, sem planilha.
-              Quem liga é a nossa equipe — você não copia nenhum token.
+              Usa o Regem na sua empresa? Os clientes e o histórico de compras de cada um chegam direto, sem planilha —
+              e <strong className="text-tinta">quem usa o Regem não paga o Regemcast</strong>. Quem liga é a nossa equipe:
+              você não copia nenhum token.
             </p>
             <p className="text-sm text-tinta">
               Peça a ligação em{' '}
@@ -141,6 +142,10 @@ export function IntegracaoRegem() {
                   · {s.lojas.length === 1 ? '1 loja' : `${s.lojas.length} lojas`} ({s.lojas.map((l) => l.nome).join(', ')})
                 </span>
               )}
+            </p>
+            <p className="text-sm text-tinta-suave">
+              Com a integração ativa, o Regemcast é <strong className="text-tinta">grátis</strong> para a sua empresa, sem
+              teto de disparos do plano.
             </p>
             {s.cardapioWebDireto && (
               <Alerta tom="informacao">
@@ -172,8 +177,8 @@ export function IntegracaoRegem() {
             {ehDono && (
               <div className="flex flex-col gap-3 border-t border-borda pt-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="max-w-prose text-xs leading-relaxed text-tinta-suave">
-                  Desligar para de trazer clientes e compras do Regem. O que já está na sua base fica. Para ligar de novo,
-                  fale com o suporte.
+                  Desligar para de trazer clientes e compras do Regem, e a gratuidade acaba: sem plano pago, os disparos
+                  param em {s.carenciaDias ?? 5} dias. O que já está na sua base fica. Para ligar de novo, fale com o suporte.
                 </p>
                 {desligando ? (
                   <div className="flex flex-wrap items-center gap-2 sm:shrink-0">

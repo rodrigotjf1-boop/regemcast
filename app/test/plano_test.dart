@@ -41,6 +41,65 @@ void main() {
       },
     };
 
+    test(
+      'quem usa o Regem: grátis, sem teto — e vence qualquer outro aviso',
+      () {
+        for (final compra in [true, false]) {
+          final aviso = avisoDoPlano(
+            _situacao({
+              ...datas,
+              'status': 'inadimplente',
+              'bloqueado': false,
+              'gratisPeloRegem': true,
+            }),
+            compra: compra,
+          )!;
+          expect(aviso.$1, contains('Você usa o Regem'));
+          expect(aviso.$1, contains('grátis'));
+          expect(aviso.$1, contains('sem teto de disparos do plano'));
+          expect(aviso.$1, isNot(contains('pagamento')));
+        }
+      },
+    );
+
+    test('quem usa o Regem e ainda paga: avisa do plano contratado', () {
+      final s = _situacao({
+        ...datas,
+        'gratisPeloRegem': true,
+        'mpStatus': 'authorized',
+        'planoAtual': _plano('p2', 200),
+      });
+      expect(s.semCobranca, isFalse);
+      expect(
+        avisoDoPlano(s, compra: true)!.$1,
+        contains('pode cancelar a renovação abaixo'),
+      );
+      // Build da Play: informa, sem apontar para a cobrança.
+      expect(avisoDoPlano(s, compra: false)!.$1, isNot(contains('cancelar')));
+    });
+
+    test('sem cobrança = ligada ao Regem e sem assinatura no Mercado Pago', () {
+      expect(
+        _situacao({'gratisPeloRegem': true, 'status': 'cortesia'}).semCobranca,
+        isTrue,
+      );
+      expect(_situacao({'status': 'cortesia'}).semCobranca, isFalse);
+      expect(
+        _situacao({'gratisPeloRegem': true, 'mpStatus': 'pending'}).semCobranca,
+        isFalse,
+      );
+    });
+
+    test('o grátis de entrada diz que são 30 dias', () {
+      expect(
+        avisoDoPlano(
+          _situacao({...datas, 'status': 'cortesia'}),
+          compra: true,
+        )!.$1,
+        contains('30 dias grátis'),
+      );
+    });
+
     test('APK direto: as frases do site, com o convite para contratar', () {
       String texto(Map<String, dynamic> caso) =>
           avisoDoPlano(_situacao({...datas, ...caso}), compra: true)!.$1;

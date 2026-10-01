@@ -102,6 +102,7 @@ class ResumoConta {
     required this.teto,
     required this.restantes,
     this.conversasHabilitadas = false,
+    this.gratisPeloRegem = false,
   });
 
   final String nomeConta;
@@ -116,6 +117,10 @@ class ResumoConta {
   /// Nulo = sem plano, sem teto.
   final int? teto;
   final int? restantes;
+
+  /// A conta está ligada ao Regem: não paga e não tem teto do plano. As telas
+  /// não mostram "grátis acabando" nem cobrança.
+  final bool gratisPeloRegem;
 
   /// Algum número guarda conversas (coexistência + resposta "sim"): a aba
   /// Conversas aparece. As rotas de conversa conferem de novo.
@@ -144,6 +149,7 @@ class ResumoConta {
       teto: _intOuNulo(uso['teto']),
       restantes: _intOuNulo(uso['restantes']),
       conversasHabilitadas: j['conversasHabilitadas'] == true,
+      gratisPeloRegem: j['gratisPeloRegem'] == true,
     );
   }
 }

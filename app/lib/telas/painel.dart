@@ -213,7 +213,9 @@ class _BlocoAlertas extends ConsumerWidget {
     // (`compraNoApp` desligado) eles só informam: a Google proíbe chamar para
     // pagar fora do faturamento dela — nada de "escolha um plano" nem de link
     // para o site.
-    if (resumo?.statusAssinatura == 'inadimplente') {
+    // Ligada ao Regem, a conta não paga: nada de aviso de cobrança.
+    final gratisPeloRegem = resumo?.gratisPeloRegem ?? false;
+    if (!gratisPeloRegem && resumo?.statusAssinatura == 'inadimplente') {
       avisos.add(
         Aviso(
           tom: TomPilula.erro,
@@ -231,7 +233,9 @@ class _BlocoAlertas extends ConsumerWidget {
     }
 
     final gratis = resumo?.gratisAte;
-    if (resumo?.statusAssinatura == 'cortesia' && gratis != null) {
+    if (!gratisPeloRegem &&
+        resumo?.statusAssinatura == 'cortesia' &&
+        gratis != null) {
       final dias = gratis.difference(DateTime.now()).inDays;
       if (dias <= 7) {
         final String texto;
@@ -561,7 +565,9 @@ class _BlocoPlano extends ConsumerWidget {
       data: (r) {
         final fracao = r.fracao;
         final porcento = fracao == null ? '—' : '${(fracao * 100).round()}%';
-        final rodape = r.statusAssinatura == 'cortesia' && r.gratisAte != null
+        final rodape = r.gratisPeloRegem
+            ? 'Sem teto do plano'
+            : r.statusAssinatura == 'cortesia' && r.gratisAte != null
             ? 'Grátis até ${f.data(r.gratisAte)}'
             : r.cicloFim != null
             ? 'Renova em ${f.data(r.cicloFim)}'
@@ -596,7 +602,9 @@ class _BlocoPlano extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'PLANO ${(r.planoNome ?? 'sem plano').toUpperCase()}',
+                      r.gratisPeloRegem
+                          ? 'GRÁTIS PELO REGEM'
+                          : 'PLANO ${(r.planoNome ?? 'sem plano').toUpperCase()}',
                       style: TextStyle(
                         fontSize: 11,
                         letterSpacing: 1.2,

@@ -113,7 +113,7 @@ class _CartaoRegemState extends ConsumerState<CartaoRegem> {
       context,
       titulo: 'Desligar do Regem?',
       texto:
-          'Para de trazer clientes e compras do Regem. O que já está na sua base fica. Para ligar de novo, fale com o suporte.',
+          'Para de trazer clientes e compras do Regem, e a gratuidade acaba: sem plano pago, os disparos param em ${_s?.carenciaDias ?? 5} dias. O que já está na sua base fica. Para ligar de novo, fale com o suporte.',
       botao: 'Desligar',
       perigo: true,
     );
@@ -145,7 +145,7 @@ class _CartaoRegemState extends ConsumerState<CartaoRegem> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Usa o Regem na sua empresa? Os clientes e o histórico de compras de cada um chegam direto, sem planilha. Quem liga é a nossa equipe — você não copia nenhum token.',
+            'Usa o Regem na sua empresa? Os clientes e o histórico de compras de cada um chegam direto, sem planilha — e quem usa o Regem não paga o Regemcast. Quem liga é a nossa equipe: você não copia nenhum token.',
             style: TextStyle(color: c.tintaSuave, height: 1.45),
           ),
           const SizedBox(height: 10),
@@ -190,6 +190,11 @@ class _CartaoRegemState extends ConsumerState<CartaoRegem> {
                   ),
               ],
             ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Com a integração ativa, o Regemcast é grátis para a sua empresa, sem teto de disparos do plano.',
+            style: TextStyle(color: c.tintaSuave, fontSize: 13, height: 1.45),
           ),
           if (s.cardapioWebDireto) ...[
             const SizedBox(height: 10),
@@ -238,7 +243,7 @@ class _CartaoRegemState extends ConsumerState<CartaoRegem> {
             Divider(height: 1, color: c.borda),
             const SizedBox(height: 12),
             Text(
-              'Desligar para de trazer clientes e compras do Regem. O que já está na sua base fica. Para ligar de novo, fale com o suporte.',
+              'Desligar para de trazer clientes e compras do Regem, e a gratuidade acaba: sem plano pago, os disparos param em ${s.carenciaDias} dias. O que já está na sua base fica. Para ligar de novo, fale com o suporte.',
               style: TextStyle(
                 color: c.tintaSuave,
                 fontSize: 12.5,
