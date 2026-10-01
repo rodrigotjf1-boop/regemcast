@@ -1172,6 +1172,86 @@ final _api = ClienteApi(
           {'id': 'z2', 'telefone': '5521977123456', 'status': 'pendente'},
           {'id': 'z3', 'telefone': '5521966554433', 'status': 'pendente'},
         ]);
+      case '/campanhas/5':
+        return _json({
+          'id': '5',
+          'nome': 'Oferta relâmpago de sexta',
+          'modeloNome': 'oferta_relampago',
+          'modeloIdioma': 'pt_BR',
+          'modeloCategoria': 'marketing',
+          'listaNome': 'Clientes 2026',
+          'status': 'pausada',
+          'pausaMotivo': 'conta_meta',
+          'pausaErro': _erroDoPagamento,
+          'criadoEm': '2026-10-01T22:00:00Z',
+          'iniciadaEm': '2026-10-01T22:05:00Z',
+          'porStatus': {'pendente': 4820},
+          'total': 4820,
+        });
+      case '/campanhas/5/destinatarios':
+        return _json([
+          {'id': 'w1', 'telefone': '5521988771234', 'status': 'pendente'},
+          {'id': 'w2', 'telefone': '5521977123456', 'status': 'pendente'},
+        ]);
+      case '/campanhas/6':
+        return _json({
+          'id': '6',
+          'nome': 'Sexta do Smash',
+          'modeloNome': 'promo_sexta_smash',
+          'modeloIdioma': 'pt_BR',
+          'modeloCategoria': 'marketing',
+          'listaNome': 'Clientes 2026',
+          'status': 'concluida',
+          'criadoEm': '2026-09-26T14:00:00Z',
+          'iniciadaEm': '2026-09-26T14:05:00Z',
+          'concluidaEm': '2026-09-26T14:42:00Z',
+          'porStatus': {'lida': 3100, 'entregue': 1620, 'falhou': 100},
+          'total': 4820,
+          'falhasPorMotivo': [
+            {
+              'total': 62,
+              'erro': {
+                'codigo': 131026,
+                'titulo': 'Número não recebe no WhatsApp',
+                'explicacao':
+                    'Este número não tem WhatsApp, não aceitou os termos do aplicativo ou usa uma versão muito antiga.',
+                'acao':
+                    'Confira o número com o contato. Reenviar para o mesmo número não adianta.',
+                'quem': 'voce',
+                'tela': 'contatos',
+                'link': null,
+                'daMeta': null,
+              },
+            },
+            {
+              'total': 38,
+              'erro': {
+                'codigo': 131050,
+                'titulo': 'Parou o marketing pelo WhatsApp',
+                'explicacao':
+                    'A pessoa escolheu, no próprio WhatsApp, não receber mais mensagens de marketing da sua empresa.',
+                'acao':
+                    'Não precisa fazer nada, e reenviar não adianta: ela sai dos envios sozinha e aparece em Contatos, na aba Bloqueios.',
+                'quem': 'ninguem',
+                'tela': 'bloqueios',
+                'link': null,
+                'daMeta': null,
+              },
+            },
+          ],
+        });
+      case '/campanhas/6/destinatarios':
+        return _json([
+          {
+            'id': 'v1',
+            'telefone': '5521988771234',
+            'status': 'falhou',
+            'erroTitulo': 'Número não recebe no WhatsApp',
+            'erroDetalhe':
+                'Este número não tem WhatsApp, não aceitou os termos do aplicativo ou usa uma versão muito antiga. Confira o número com o contato. Reenviar para o mesmo número não adianta.',
+          },
+          {'id': 'v2', 'telefone': '5521977123456', 'status': 'lida'},
+        ]);
       case '/campanhas':
         if (_contaNova) return _json([]);
         final agora = DateTime.now().toUtc();
@@ -1588,6 +1668,24 @@ final _modelosMeta = [
   },
 ];
 
+/// O 131042 (pagamento da conta do WhatsApp na Meta) como o servidor manda.
+const _erroDoPagamento = {
+  'codigo': 131042,
+  'titulo': 'Falta acertar o pagamento na Meta',
+  'explicacao':
+      'A Meta não entregou porque o pagamento da conta do WhatsApp Business não está em ordem: falta cadastrar a forma de pagamento (com a moeda e o fuso horário), o cartão foi recusado ou a conta de pagamento está suspensa.',
+  'acao':
+      'Acerte o pagamento da conta do WhatsApp na Meta. Nenhuma mensagem sai até lá; depois, retome a campanha ou monte outra para quem não recebeu.',
+  'quem': 'voce',
+  'tela': null,
+  'link': {
+    'rotulo': 'Abrir o pagamento na Meta',
+    'url': 'https://business.facebook.com/billing_hub/accounts/details/',
+  },
+  'daMeta':
+      'Message failed to send because your WhatsApp Business account currency is not configured.',
+};
+
 /// Um modelo aprovado, com oferta por tempo limitado, que já está na Meta.
 final _ofertaNaMeta = ModeloSalvo.deJson({
   'id': 'm11',
@@ -1908,6 +2006,28 @@ void main() {
         nomeInicial: 'Oferta relâmpago de sexta',
       ),
       '60-campanha-pausada-modelo',
+    );
+  }, skip: !ativo);
+
+  testWidgets('campanha — pausada pela conta na Meta', (t) async {
+    await _capturar(
+      t,
+      const TelaCampanhaDetalhe(
+        id: '5',
+        nomeInicial: 'Oferta relâmpago de sexta',
+      ),
+      '62-campanha-pausada-conta',
+      antes: (t) => rolarAte(t, find.byKey(const ValueKey('cd-pausa-conta'))),
+    );
+  }, skip: !ativo);
+
+  testWidgets('campanha — por que falhou', (t) async {
+    await _capturar(
+      t,
+      const TelaCampanhaDetalhe(id: '6', nomeInicial: 'Sexta do Smash'),
+      '63-campanha-por-que-falhou',
+      antes: (t) =>
+          rolarAte(t, find.byKey(const ValueKey('cd-por-que-falhou'))),
     );
   }, skip: !ativo);
 

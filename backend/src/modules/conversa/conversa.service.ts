@@ -19,6 +19,7 @@ import { conta, contato, conversa, mensagem, usuario, waConta, waNumero } from '
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { resumoDaMensagem } from '../meta/conversas.regras';
 import { decifrarToken } from '../meta/cripto';
+import { tituloDoErroMeta } from '../meta/erros-meta';
 import { ErroGraph, ErroMidia, GraphService } from '../meta/graph.service';
 
 /** A janela de texto livre: 24 horas desde a última mensagem do cliente. */
@@ -245,6 +246,8 @@ export class ConversaService {
 
     return linhas.reverse().map((l) => ({
       ...l,
+      // O título gravado é o da Meta, em inglês: a bolha mostra o do catálogo.
+      erroTitulo: tituloDoErroMeta(l.erroCodigo, l.erroTitulo),
       direcao: l.direcao as MensagemDaConversa['direcao'],
       criadaEm: l.criadaEm.toISOString(),
     }));

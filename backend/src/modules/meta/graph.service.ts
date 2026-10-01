@@ -28,6 +28,8 @@ import {
   ErroMetaTraduzido,
   codigoDoErro,
   deveRetentar,
+  erroSemCodigo,
+  frasesDoErro,
   mensagemDoErroMeta,
   traduzirErroMeta,
 } from './erros-meta';
@@ -88,9 +90,9 @@ export class ErroGraph extends Error {
     return deveRetentar(this.traduzido);
   }
 
-  /** O que o usuário lê. */
+  /** O que o usuário lê: o que houve e o que fazer. */
   get mensagemParaUsuario(): string {
-    return this.traduzido.explicacao;
+    return frasesDoErro(this.traduzido);
   }
 
   /** O que vai para o log: tudo. */
@@ -225,14 +227,15 @@ export class GraphService {
         codigo: eTimeout ? 131016 : null,
         traduzido: eTimeout
           ? traduzirErroMeta(131016)
-          : {
-              codigo: 0,
+          : erroSemCodigo({
               classe: 'transitorio',
               titulo: 'Não conseguimos falar com a Meta',
-              explicacao:
-                'A conexão com a Meta falhou. Vamos tentar de novo automaticamente.',
+              explicacao: 'A conexão com a Meta falhou.',
+              // Quem chama decide se tenta de novo (a campanha não reenvia o
+              // que pode ter chegado): aqui não se promete nova tentativa.
+              acao: 'Tente de novo em instantes.',
               esperaSegundos: 60,
-            },
+            }),
         corpo: { error: { message: `${e?.name ?? 'Erro'}: ${e?.message ?? String(erro)}` } },
       });
     }
@@ -419,14 +422,14 @@ export class GraphService {
       throw new ErroGraph({
         status: 200,
         codigo: null,
-        traduzido: {
-          codigo: 0,
+        traduzido: erroSemCodigo({
           classe: 'transitorio',
           titulo: 'A Meta aceitou sem devolver o identificador',
           explicacao:
-            'A Meta respondeu sem o identificador da mensagem, então não temos como acompanhar a entrega. Vamos tentar de novo.',
+            'A Meta respondeu sem o identificador da mensagem, então não temos como acompanhar a entrega.',
+          acao: 'Não precisa fazer nada: tentamos de novo sozinhos.',
           esperaSegundos: 30,
-        },
+        }),
         corpo: r,
       });
     }
@@ -463,13 +466,14 @@ export class GraphService {
       throw new ErroGraph({
         status: 200,
         codigo: null,
-        traduzido: {
-          codigo: 0,
+        traduzido: erroSemCodigo({
           classe: 'transitorio',
           titulo: 'A Meta aceitou sem devolver o identificador',
-          explicacao: 'A Meta respondeu sem o identificador da mensagem. Confira no celular se ela chegou antes de mandar de novo.',
+          explicacao: 'A Meta respondeu sem o identificador da mensagem.',
+          acao: 'Confira no celular se ela chegou antes de mandar de novo.',
+          quem: 'voce',
           esperaSegundos: 30,
-        },
+        }),
         corpo: r,
       });
     }
@@ -568,13 +572,13 @@ export class GraphService {
       throw new ErroGraph({
         status: 0,
         codigo: null,
-        traduzido: {
-          codigo: 0,
+        traduzido: erroSemCodigo({
           classe: 'transitorio',
           titulo: 'Não conseguimos enviar o arquivo à Meta',
-          explicacao: 'A conexão caiu durante o envio do arquivo do modelo. Vamos tentar de novo automaticamente.',
+          explicacao: 'A conexão caiu durante o envio do arquivo do modelo.',
+          acao: 'Não precisa fazer nada: tentamos de novo sozinhos.',
           esperaSegundos: 60,
-        },
+        }),
         corpo: { error: { message: `${e?.name ?? 'Erro'}: ${e?.message ?? String(erro)}` } },
       });
     }
@@ -747,14 +751,14 @@ export class GraphService {
       throw new ErroGraph({
         status: 0,
         codigo: null,
-        traduzido: {
-          codigo: 0,
+        traduzido: erroSemCodigo({
           classe: 'config',
           titulo: 'Envio de mídia indisponível',
-          explicacao:
-            'O envio de arquivos à Meta não está configurado neste servidor. Use o endereço da imagem por enquanto.',
+          explicacao: 'O envio de arquivos à Meta não está configurado neste servidor.',
+          acao: 'Use o endereço da imagem por enquanto.',
+          quem: 'nos',
           esperaSegundos: 0,
-        },
+        }),
         corpo: { error: { message: 'META_APP_ID ou META_APP_SECRET ausentes' } },
       });
     }
@@ -770,7 +774,13 @@ export class GraphService {
       throw new ErroGraph({
         status: 0,
         codigo: null,
-        traduzido: traduzirErroMeta(null, 'A Meta não abriu a sessão de upload.'),
+        traduzido: erroSemCodigo({
+          classe: 'config',
+          titulo: 'A Meta não abriu o envio do arquivo',
+          explicacao: 'A Meta não abriu a sessão para receber o arquivo.',
+          acao: 'Tente de novo. Se repetir, fale com o suporte.',
+          quem: 'voce',
+        }),
         corpo: sessao,
       });
     }
@@ -795,13 +805,14 @@ export class GraphService {
       throw new ErroGraph({
         status: 0,
         codigo: null,
-        traduzido: {
-          codigo: 0,
+        traduzido: erroSemCodigo({
           classe: 'transitorio',
           titulo: 'Não conseguimos enviar o arquivo à Meta',
-          explicacao: 'A conexão caiu durante o envio do arquivo. Tente de novo.',
+          explicacao: 'A conexão caiu durante o envio do arquivo.',
+          acao: 'Tente de novo.',
+          quem: 'voce',
           esperaSegundos: 30,
-        },
+        }),
         corpo: { error: { message: `${e?.name ?? 'Erro'}: ${e?.message ?? String(erro)}` } },
       });
     }

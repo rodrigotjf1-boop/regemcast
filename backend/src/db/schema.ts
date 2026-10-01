@@ -411,10 +411,15 @@ export const campanha = pgTable('campanha', {
   maxPorMes: integer('max_por_mes'),
   /**
    * Por que está pausada: conexao | teto_plano | inadimplencia | manual | modelo
-   * (a Meta recusou o modelo, ou o arquivo dele sumiu — migration 037). Nulo
-   * quando não está.
+   * (a Meta recusou o modelo, ou o arquivo dele sumiu — migration 037) |
+   * conta_meta (a Meta recusou por um problema da conta ou do número:
+   * pagamento, restrição, registro — migration 038). Nulo quando não está.
    */
   pausaMotivo: text('pausa_motivo'),
+  /** O código da Meta que pausou a campanha (modelo, conta_meta ou conexao); nulo nas outras pausas. */
+  pausaErroCodigo: integer('pausa_erro_codigo'),
+  /** A frase da Meta, crua, do erro que pausou — dela sai o endereço para resolver. */
+  pausaErroMeta: text('pausa_erro_meta'),
   /**
    * O que o modelo exige no envio além das variáveis do corpo, com os valores
    * já resolvidos (`meta/envio.regras.ts`, migration 037). Foto tirada ao criar
@@ -474,6 +479,8 @@ export const campanhaDestinatario = pgTable('campanha_destinatario', {
   erroCodigo: integer('erro_codigo'),
   erroTitulo: text('erro_titulo'),
   erroDetalhe: text('erro_detalhe'),
+  /** A frase da Meta, crua (migration 038). A explicação da tela sai do catálogo, pelo código. */
+  erroMeta: text('erro_meta'),
   enviadaEm: timestamp('enviada_em', { withTimezone: true }),
   entregueEm: timestamp('entregue_em', { withTimezone: true }),
   lidaEm: timestamp('lida_em', { withTimezone: true }),

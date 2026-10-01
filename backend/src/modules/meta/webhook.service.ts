@@ -23,12 +23,19 @@ import { motivoDoModelo } from './motivos-modelo';
 import { ERRO_SEM_WHATSAPP, registrarFalhaSemWhatsapp } from '../contato/sem-whatsapp';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { AvisoService } from '../aviso/aviso.service';
-import { campanhaDestinatario, modelo, waEvento, waNumero } from '../../db/schema';
+import { campanha, campanhaDestinatario, modelo, waEvento, waNumero } from '../../db/schema';
 import type { DestinoDoEvento } from './agenda.regras';
 import { AgendaService } from './agenda.service';
 import { ConversasService } from './conversas.service';
 import { historicoRecusado, sincronizacaoConcluida } from './coexistencia.regras';
-import { codigoDoErro, mensagemDoErroMeta, traduzirErroMeta } from './erros-meta';
+import {
+  codigoDoErro,
+  limparMensagemDaMeta,
+  mensagemDoErroMeta,
+  pausaPorErro,
+  traduzirErroMeta,
+  type ErroMetaTraduzido,
+} from './erros-meta';
 import { limiteInformado } from './limite.regras';
 import { ERRO_MARKETING_PARADO, ORIGEM_PREFERENCIA, preferenciasDoAviso } from './preferencias.regras';
 import { type TarifaDaMensagem, tarifaDoStatus } from './tarifa.regras';
@@ -391,17 +398,23 @@ export class WebhookService {
 
       if (bruto === 'failed') {
         const codigo = codigoDoErro(s);
-        const traduzido = traduzirErroMeta(codigo, mensagemDoErroMeta(s));
+        const daMeta = limparMensagemDaMeta(mensagemDoErroMeta(s));
+        const traduzido = traduzirErroMeta(codigo, daMeta);
         this.log.warn(
           `Mensagem ${String(s.id ?? '?').slice(-8)} falhou — ` +
-            `código ${codigo ?? '—'} · ${traduzido.titulo} · classe ${traduzido.classe}`,
+            `código ${codigo ?? '—'} · ${traduzido.titulo} · classe ${traduzido.classe} · alcance ${traduzido.alcance}`,
         );
         if (wamid) {
-          await this.aplicarStatus(wamid, 'falhou', {
+          const campanhas = await this.aplicarStatus(wamid, 'falhou', {
             erroCodigo: codigo,
             erroTitulo: traduzido.titulo,
             erroDetalhe: traduzido.explicacao,
+            erroMeta: daMeta || null,
           });
+          // A Meta aceitou e recusou depois, por algo que não é desta pessoa (o
+          // pagamento da conta, uma restrição, o modelo): as próximas teriam a
+          // mesma resposta. A campanha para, com a fila guardada.
+          if (codigo !== null) await this.pausarPorErro(campanhas, traduzido, daMeta);
         }
         continue;
       }
@@ -664,9 +677,9 @@ export class WebhookService {
   private async aplicarStatus(
     wamid: string,
     novo: 'enviada' | 'entregue' | 'lida' | 'falhou',
-    erro: { erroCodigo?: number | null; erroTitulo?: string; erroDetalhe?: string },
+    erro: { erroCodigo?: number | null; erroTitulo?: string; erroDetalhe?: string; erroMeta?: string | null },
     tarifa: TarifaDaMensagem | null = null,
-  ): Promise<void> {
+  ): Promise<string[]> {
     const agora = new Date();
     const carimbo: Record<string, Date> = {
       enviada: agora,
@@ -689,6 +702,7 @@ export class WebhookService {
                 erroCodigo: erro.erroCodigo ?? null,
                 erroTitulo: erro.erroTitulo ?? null,
                 erroDetalhe: erro.erroDetalhe ?? null,
+                erroMeta: erro.erroMeta ?? null,
               }
             : {}),
           // A tarifa vai no mesmo `update` do status: uma escrita por aviso na
@@ -701,7 +715,11 @@ export class WebhookService {
             inArray(campanhaDestinatario.status, ANTERIORES_VALIDOS[novo]),
           ),
         )
-        .returning({ contaId: campanhaDestinatario.contaId, telefone: campanhaDestinatario.telefoneE164 });
+        .returning({
+          contaId: campanhaDestinatario.contaId,
+          telefone: campanhaDestinatario.telefoneE164,
+          campanhaId: campanhaDestinatario.campanhaId,
+        });
 
       // O status não andou (aviso repetido, ou fora de ordem: o `sent` chegou
       // depois do `read`), mas a tarifa que ele traz ainda vale.
@@ -720,6 +738,43 @@ export class WebhookService {
     // `user_preferences` (que pode não estar assinado, ou ter chegado antes).
     if (novo === 'falhou' && erro.erroCodigo === ERRO_MARKETING_PARADO) {
       for (const a of alterados) await this.bloquearNaConta(a.contaId, a.telefone, ORIGEM_PREFERENCIA);
+    }
+    return [...new Set(alterados.map((a) => a.campanhaId))];
+  }
+
+  /**
+   * Pausa a campanha quando a recusa que chegou pelo aviso é do MODELO ou da
+   * CONTA (pagamento não configurado, conta restrita, credencial), e não de
+   * quem recebe.
+   *
+   * A Meta aceita a mensagem no envio e só recusa depois, no aviso de entrega —
+   * foi assim que o 131042 (pagamento) apareceu em 01/10/2026. Sem isto a
+   * campanha seguiria mandando: cada mensagem seria aceita e recusada em
+   * seguida, e a fila inteira viraria falha, uma pessoa por vez. Quem já tinha
+   * sido aceito e recusado fica como falha, com o motivo; quem estava na fila
+   * continua nela, e sai quando a campanha for retomada.
+   *
+   * Só pausa campanha que ainda está saindo: a que terminou não muda.
+   */
+  private async pausarPorErro(campanhaIds: string[], erro: ErroMetaTraduzido, daMeta: string): Promise<void> {
+    const motivo = pausaPorErro(erro);
+    if (!motivo || !campanhaIds.length) return;
+
+    const pausadas = await this.ctx.comEscopoSistema('meta.webhook.pausar', (db) =>
+      db
+        .update(campanha)
+        .set({ status: 'pausada', pausaMotivo: motivo, pausaErroCodigo: erro.codigo, pausaErroMeta: daMeta || null })
+        .where(and(inArray(campanha.id, campanhaIds), inArray(campanha.status, ['agendada', 'enviando'])))
+        .returning({ id: campanha.id, contaId: campanha.contaId, nome: campanha.nome }),
+    );
+
+    for (const c of pausadas) {
+      this.log.warn(`Campanha ${c.id} pausada (${motivo}): a Meta recusou depois de aceitar (erro ${erro.codigo}: ${erro.titulo}).`);
+      void this.avisos.avisar(c.contaId, 'campanhas', {
+        titulo: `Campanha pausada: ${c.nome}`,
+        corpo: `${erro.titulo}. ${erro.acao}`,
+        dados: { campanhaId: c.id },
+      });
     }
   }
 

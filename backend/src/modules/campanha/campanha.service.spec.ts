@@ -18,12 +18,12 @@ import {
   CampanhaService,
   MAX_TENTATIVAS_ENVIO,
   detalheDaFalha,
-  ehErroDeModelo,
+  erroDoDestinatario,
   esperaDaNovaTentativa,
 } from './campanha.service';
 import { exigenciasDoEnvio } from '../meta/envio.regras';
 import { ErroGraph } from '../meta/graph.service';
-import { traduzirErroMeta } from '../meta/erros-meta';
+import { ACAO_SEM_NOVA_TENTATIVA, erroSemCodigo, traduzirErroMeta } from '../meta/erros-meta';
 
 const CONTA = '11111111-1111-4111-8111-111111111111';
 const USUARIO = '22222222-2222-4222-8222-222222222222';
@@ -903,7 +903,7 @@ describe('rodada do worker', () => {
       new ErroGraph({
         status: 0,
         codigo: null,
-        traduzido: { codigo: 0, classe: 'transitorio', titulo: 'Não conseguimos falar com a Meta', explicacao: 'x', esperaSegundos: 60 },
+        traduzido: erroSemCodigo({ classe: 'transitorio', titulo: 'Não conseguimos falar com a Meta', explicacao: 'x', acao: 'y', esperaSegundos: 60 }),
       }),
     );
 
@@ -991,7 +991,47 @@ describe('rodada do worker', () => {
     expect(m.graph.enviarModelo).toHaveBeenCalledTimes(1);
     expect(m.diario.filter((e) => e.valores.status === 'falhou')).toHaveLength(1);
     expect(pausa(m)?.pausaMotivo).toBe('modelo');
+    // O código fica na campanha: é por ele que a tela diz o que fazer.
+    expect(pausa(m)?.pausaErroCodigo).toBe(132012);
     expect(voltaramParaAFila(m)).toBe(true);
+  });
+
+  it('a Meta recusa pela CONTA (131042, pagamento): ninguém falha, todos voltam para a fila e a campanha pausa', async () => {
+    const m = montar();
+    prepararRodada(m, DOIS, COM_IMAGEM);
+    const frase =
+      'Message failed to send because your WhatsApp Business account currency is not configured. Visit https://business.facebook.com/billing_hub/accounts/details/?business_id=111 to resolve this issue.';
+    m.graph.enviarModelo.mockRejectedValue(
+      new ErroGraph({
+        status: 400,
+        codigo: 131042,
+        traduzido: traduzirErroMeta(131042, frase),
+        corpo: { error: { code: 131042, message: frase } },
+      }),
+    );
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    // A segunda mensagem teria a mesma resposta: a rodada para na primeira.
+    expect(m.graph.enviarModelo).toHaveBeenCalledTimes(1);
+    // Não é culpa de quem ia receber: ninguém vira "falhou", nem o primeiro.
+    expect(m.diario.some((e) => e.valores.status === 'falhou')).toBe(false);
+    expect(voltaramParaAFila(m)).toBe(true);
+    expect(pausa(m)).toMatchObject({ pausaMotivo: 'conta_meta', pausaErroCodigo: 131042, pausaErroMeta: frase });
+  });
+
+  it('a credencial cai no meio do envio (190): pausa pela conexão, sem queimar ninguém', async () => {
+    const m = montar();
+    prepararRodada(m, DOIS, COM_IMAGEM);
+    m.graph.enviarModelo.mockRejectedValue(
+      new ErroGraph({ status: 401, codigo: 190, traduzido: traduzirErroMeta(190) }),
+    );
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(m.graph.enviarModelo).toHaveBeenCalledTimes(1);
+    expect(m.diario.some((e) => e.valores.status === 'falhou')).toBe(false);
+    expect(pausa(m)).toMatchObject({ pausaMotivo: 'conexao', pausaErroCodigo: 190 });
   });
 
   it('erro que é da PESSOA (131026) não pausa: a rodada segue para o próximo', async () => {
@@ -1027,7 +1067,7 @@ describe('rodada do worker', () => {
       new ErroGraph({
         status: 0,
         codigo: null,
-        traduzido: { codigo: 0, classe: 'transitorio', titulo: 'Sem conexão', explicacao: 'x', esperaSegundos: 60 },
+        traduzido: erroSemCodigo({ classe: 'transitorio', titulo: 'Sem conexão', explicacao: 'x', acao: 'y', esperaSegundos: 60 }),
       }),
     );
 
@@ -1069,16 +1109,6 @@ describe('rodada do worker', () => {
       { type: 'header', parameters: [{ type: 'text', text: 'Bia' }] },
     ]);
     expect(pausa(m)).toBeUndefined();
-  });
-});
-
-describe('ehErroDeModelo', () => {
-  it.each([132000, 132001, 132005, 132007, 132012, 132015, 132016])('%d é do modelo: a campanha para', (codigo) => {
-    expect(ehErroDeModelo(codigo)).toBe(true);
-  });
-
-  it.each([131026, 131049, 130429, 190, 131999, 132017, null, undefined])('%p não é: a rodada segue', (codigo) => {
-    expect(ehErroDeModelo(codigo)).toBe(false);
   });
 });
 
@@ -1249,7 +1279,96 @@ describe('nova tentativa', () => {
 
   it('a falha definitiva não promete o que não vai acontecer', () => {
     const recusa = new ErroGraph({ status: 400, codigo: 131026, traduzido: traduzirErroMeta(131026) });
-    expect(detalheDaFalha(recusa, 0)).toBe(recusa.mensagemParaUsuario);
+    // Só o que houve: o que fazer sai do catálogo, na leitura.
+    expect(detalheDaFalha(recusa, 0)).toBe(recusa.traduzido.explicacao);
     expect(detalheDaFalha(null, 0)).toBe('Não conseguimos enviar esta mensagem.');
+  });
+});
+
+/**
+ * A falha de um destinatário como a tela mostra. A explicação sai do catálogo
+ * na LEITURA, pelo código: a falha antiga ganha o texto de hoje, e a frase da
+ * Meta em inglês nunca é a explicação.
+ */
+describe('erroDoDestinatario — o que a tela diz de cada falha', () => {
+  const falha = (campos: Partial<Parameters<typeof erroDoDestinatario>[0]>) =>
+    erroDoDestinatario({ status: 'falhou', erroCodigo: null, erroTitulo: null, erroDetalhe: null, erroMeta: null, ...campos });
+
+  it('a falha do teste do dono, gravada antes de o catálogo conhecer o 131042', () => {
+    const erro = falha({
+      erroCodigo: 131042,
+      erroTitulo: 'Erro 131042 da Meta',
+      erroDetalhe:
+        'A Meta respondeu: "Message failed to send because your WhatsApp Business account currency is not configured. Visit https://business.facebook.com/billing_hub/accounts/details/?business_id=111&asset_id=222 to resolve this issue.". Este código ainda não está mapeado — registre para investigarmos.',
+    })!;
+
+    expect(erro.titulo).toBe('Falta acertar o pagamento na Meta');
+    expect(erro.explicacao).not.toMatch(/Message failed|https?:|mapeado/);
+    expect(erro.acao).toMatch(/Acerte o pagamento/);
+    expect(erro.link).toEqual({
+      rotulo: 'Abrir o pagamento na Meta',
+      url: 'https://business.facebook.com/billing_hub/accounts/details/?business_id=111&asset_id=222',
+    });
+    // A frase dela fica à parte, para quem quiser ler.
+    expect(erro.daMeta).toMatch(/^Message failed to send/);
+    expect(erro.daMeta).not.toMatch(/mapeado/);
+  });
+
+  it('a falha nova guarda a frase da Meta na coluna própria', () => {
+    const erro = falha({
+      erroCodigo: 131042,
+      erroTitulo: 'Falta acertar o pagamento na Meta',
+      erroDetalhe: 'frase do dia',
+      erroMeta: 'Visit https://business.facebook.com/billing_hub/x to resolve.',
+    })!;
+    expect(erro.link?.url).toBe('https://business.facebook.com/billing_hub/x');
+    // Com código, vale a explicação do catálogo de hoje, não a gravada.
+    expect(erro.explicacao).toBe(traduzirErroMeta(131042).explicacao);
+  });
+
+  it('código conhecido: o texto é o de hoje, com o que fazer e onde', () => {
+    const erro = falha({ erroCodigo: 131026, erroTitulo: 'título antigo', erroDetalhe: 'explicação antiga' })!;
+    expect(erro.titulo).toBe('Número não recebe no WhatsApp');
+    expect(erro.explicacao).toBe(traduzirErroMeta(131026).explicacao);
+    expect(erro.acao).toMatch(/Confira o número/);
+    expect(erro.tela).toBe('contatos');
+    expect(erro.quem).toBe('voce');
+    expect(erro.daMeta).toBeNull();
+    expect(erro.link).toBeNull();
+  });
+
+  it('recusa passageira que desistiu: fica a frase que diz quantas vezes tentamos, sem prometer nova tentativa', () => {
+    const erro = falha({
+      erroCodigo: 130429,
+      erroTitulo: 'Ritmo acima do permitido',
+      erroDetalhe: 'A Meta recusou 4 vezes seguidas (ritmo acima do permitido). Para não insistir, esta mensagem não foi reenviada.',
+    })!;
+    expect(erro.explicacao).toBe('A Meta recusou 4 vezes seguidas (ritmo acima do permitido).');
+    expect(erro.acao).toBe(ACAO_SEM_NOVA_TENTATIVA);
+  });
+
+  it('recusa passageira que chegou pelo aviso da Meta: não diz "tentamos de novo sozinhos"', () => {
+    const erro = falha({ erroCodigo: 131016, erroTitulo: 'Serviço da Meta indisponível', erroDetalhe: 'frase antiga, que prometia tentar de novo' })!;
+    expect(erro.explicacao).toBe(traduzirErroMeta(131016).explicacao);
+    expect(erro.acao).toBe(ACAO_SEM_NOVA_TENTATIVA);
+  });
+
+  it('falha nossa, sem código (sem valor para o título, rede que caiu): a frase gravada é a explicação', () => {
+    const erro = falha({ erroTitulo: 'Sem valor para o título', erroDetalhe: 'O modelo tem uma variável no título e este destinatário ficou sem valor para ela. Nada foi enviado.' })!;
+    expect(erro).toMatchObject({ codigo: null, titulo: 'Sem valor para o título', acao: null, link: null, daMeta: null });
+    expect(erro.explicacao).toMatch(/ficou sem valor/);
+  });
+
+  it('código desconhecido: texto honesto, com a frase da Meta à parte', () => {
+    const erro = falha({ erroCodigo: 999999, erroTitulo: 'x', erroDetalhe: 'y', erroMeta: 'Something new happened' })!;
+    expect(erro.titulo).toBe('A Meta recusou a mensagem (código 999999)');
+    expect(erro.acao).toMatch(/suporte informando o código 999999/);
+    expect(erro.daMeta).toBe('Something new happened');
+  });
+
+  it('quem não falhou não tem erro — nem o "descanso", que usa o detalhe para outra coisa', () => {
+    expect(erroDoDestinatario({ status: 'descanso', erroCodigo: null, erroTitulo: null, erroDetalhe: 'Recebeu outra campanha.', erroMeta: null })).toBeNull();
+    expect(erroDoDestinatario({ status: 'lida', erroCodigo: null, erroTitulo: null, erroDetalhe: null, erroMeta: null })).toBeNull();
+    expect(falha({})).toBeNull();
   });
 });
