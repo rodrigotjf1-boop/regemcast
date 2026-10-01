@@ -422,6 +422,28 @@ export default function PaginaCampanha() {
         </Alerta>
       )}
 
+      {campanha.status === 'pausada' && campanha.pausaMotivo === 'modelo' && (
+        <Alerta tom="erro">
+          <span className="block space-y-2">
+            <span className="block">
+              Pausada: a Meta recusou o modelo desta campanha, ou o arquivo dele não está mais
+              disponível. A campanha parou na primeira recusa — quem faltava continua na fila, sem
+              ser marcado como falha. Veja o motivo na lista abaixo, confira o modelo e retome.
+            </span>
+            <span className="flex flex-wrap gap-2">
+              <Link href="/modelos">
+                <Button tamanho="sm" variante="secundario">
+                  Ver modelos
+                </Button>
+              </Link>
+              <Button tamanho="sm" onClick={() => void retomar()} carregando={retomando}>
+                Retomar envio
+              </Button>
+            </span>
+          </span>
+        </Alerta>
+      )}
+
       {confirmarExclusao && (
         <Alerta tom="atencao">
           <span className="block space-y-2">

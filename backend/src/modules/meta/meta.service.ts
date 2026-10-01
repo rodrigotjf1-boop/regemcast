@@ -31,6 +31,7 @@ import { AuditoriaService } from '../auditoria/auditoria.service';
 import { DECLARACAO_INTEGRACAO } from './agenda.regras';
 import { AgendaService } from './agenda.service';
 import { cifrarToken, decifrarToken } from './cripto';
+import { exigenciasDoEnvio, type ExigenciasDoEnvio } from './envio.regras';
 import { ErroGraph, GraphService, type ModeloBruto } from './graph.service';
 import { limiteInformado, type LimiteDaMeta } from './limite.regras';
 import { motivoDoModelo } from './motivos-modelo';
@@ -113,6 +114,13 @@ export interface ModeloDeMensagem {
    */
   variaveis: number;
   botoes: string[];
+  /**
+   * O que o modelo pede no envio além das variáveis do corpo: mídia ou
+   * variável no cabeçalho, oferta com validade, cupom, cartões
+   * (`envio.regras.ts`). É por aqui que a campanha sabe o que resolver, e que
+   * a tela sabe se mostra o campo da variável do título.
+   */
+  exige: ExigenciasDoEnvio;
 }
 
 /** O único status com que a Meta deixa um modelo ser disparado. */
@@ -171,6 +179,7 @@ function traduzirModelo(m: ModeloBruto): ModeloDeMensagem {
     rodape: typeof rodape?.text === 'string' ? rodape.text : null,
     variaveis: maiorIndiceDeVariavel(texto),
     botoes: rotulosDosBotoes(botoes?.buttons),
+    exige: exigenciasDoEnvio(componentes),
   };
 }
 

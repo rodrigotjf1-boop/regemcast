@@ -432,9 +432,49 @@ lê a lista de modelos da conta na Meta (a mesma que alimenta a tela) e confere:
 - **Sem a Meta no ar, a campanha não é criada** — a tela também não teria
   modelos para mostrar. O erro dela chega traduzido.
 
-O que esta conferência ainda **não** cobre: o que o modelo exige no ENVIO além
-das variáveis do corpo (mídia no cabeçalho, variável no cabeçalho, oferta por
-tempo limitado, copiar código, carrossel). O disparo hoje só preenche o corpo.
+O que o modelo exige no ENVIO além das variáveis do corpo é a seção seguinte.
+
+## O que o modelo exige no envio (migration 037)
+
+Criar um modelo e enviar um modelo são dois formatos diferentes. Na criação a
+Meta recebe um EXEMPLO de cada parte; no envio, o valor de verdade vai de novo,
+a cada mensagem. Faltando um, ela recusa a mensagem (132000 / 132012). Até a
+migration 037 o disparo só preenchia as variáveis do corpo — modelo com imagem,
+cupom, oferta ou carrossel era aceito na campanha e recusado em todas as
+mensagens.
+
+**A forma vem da Meta; os valores, do modelo como foi criado no Regemcast**
+(`meta/envio.regras.ts`, decisões do dono em 01/10/2026):
+
+| O que o modelo tem | O que vai no envio | De onde sai |
+| --- | --- | --- |
+| Imagem, vídeo ou documento no cabeçalho | `header` com a mídia | A mídia do próprio modelo (`modelo.cabecalho_midia`) |
+| Variável no título (cabeçalho de texto) | `header` com o texto | Campo da campanha (`variavelCabecalho`): texto fixo, ou o nome do contato com um reserva. Resolvido na montagem, por pessoa (`campanha_destinatario.variavel_cabecalho`) |
+| Oferta por tempo limitado | `limited_time_offer` com o vencimento | Agora + as horas do modelo (`modelo.lto_horas`; sem valor, 3). Instante ABSOLUTO em milissegundos — o exemplo da própria Meta traz uma duração e contradiz a descrição do campo |
+| Botão de copiar código | `button` / `copy_code` na posição que a Meta deu ao botão | O código cadastrado no modelo |
+| Carrossel | `carousel` com um cartão por imagem, na ordem | A imagem de cada cartão do modelo; a resposta rápida do cartão vai com o próprio texto como `payload` |
+
+- **É uma foto tirada ao criar a campanha** (`campanha.envio`), como o público:
+  editar o modelo depois não muda campanha montada. Nulo = só o corpo, e o
+  envio sai pelo caminho de sempre (toda campanha antiga).
+- **Recusa antes de gravar**, com a frase dizendo o que falta: modelo com mídia
+  ou cupom que não foi criado pelo Regemcast (não temos o arquivo nem o código),
+  arquivo que não está mais guardado, variável do título sem valor. E o que o
+  disparo ainda não sabe mandar: botão de link com variável, cabeçalho de
+  localização, cartão com variável no texto, modelo de código de verificação.
+- **A mídia sobe à Meta uma vez, não uma por destinatário.** Enviar exige o id
+  de `POST /{numero}/media` — outra rota, e outro identificador, que o
+  `header_handle` da criação. O id vale 30 dias e fica em `midia_envio`, por
+  número (usamos por 25). Endereço público vai como `link`.
+- **A Meta recusou o MODELO (132000 a 132016): a campanha para na primeira
+  recusa** e pausa com `pausa_motivo = modelo`. Só aquela mensagem falha; o
+  resto da rodada volta para a fila, intacto. Antes, cada destinatário virava
+  "falhou", um por um, até a fila acabar. O mesmo vale quando o arquivo do
+  modelo some depois de a campanha ser montada. Rede caída ao subir o arquivo
+  não pausa: a rodada volta à fila e a campanha tenta de novo sozinha.
+- **Tipo de botão que não conhecemos não é recusado de antemão.** Se ele não
+  pedir nada, o envio funciona; se pedir, a Meta recusa a primeira mensagem e a
+  campanha pausa pelo modelo.
 
 ## Erros e retentativa
 
@@ -565,6 +605,7 @@ disparos e o custo por campanha (roteiro da IA, 01/10/2026).
 
 - [Revisão de modelos — motivos de recusa](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/template-review/) · [Componentes de modelo](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/components/) (conferidas em 25/09/2026)
 
+- Envio de modelo: [Media card carousel templates](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/media-card-carousel-templates) · [Coupon code templates](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/coupon-templates) · [Limited-time offer templates](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/limited-time-offer-templates) · [Custom marketing templates](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/custom-marketing-templates) · [Media (upload para envio)](https://developers.facebook.com/documentation/business-messaging/whatsapp/business-phone-numbers/media) (conferidas em 01/10/2026)
 - [Status messages webhook reference (objeto `pricing`)](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/messages/status) · [Pricing (cobrança por mensagem, na entrega)](https://developers.facebook.com/docs/whatsapp/pricing) (conferidas em 01/10/2026)
 - [Messaging limits (limite de envio, portfólio)](https://developers.facebook.com/documentation/business-messaging/whatsapp/messaging-limits/)
 - [`business_capability_update` webhook](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/business_capability_update/)

@@ -409,8 +409,18 @@ export const campanha = pgTable('campanha', {
   maxPorDia: integer('max_por_dia'),
   maxPorSemana: integer('max_por_semana'),
   maxPorMes: integer('max_por_mes'),
-  /** Por que está pausada: conexao | teto_plano. Nulo quando não está (migration 015). */
+  /**
+   * Por que está pausada: conexao | teto_plano | inadimplencia | manual | modelo
+   * (a Meta recusou o modelo, ou o arquivo dele sumiu — migration 037). Nulo
+   * quando não está.
+   */
   pausaMotivo: text('pausa_motivo'),
+  /**
+   * O que o modelo exige no envio além das variáveis do corpo, com os valores
+   * já resolvidos (`meta/envio.regras.ts`, migration 037). Foto tirada ao criar
+   * a campanha. Nulo = só o corpo.
+   */
+  envio: jsonb('envio'),
   /** Lista de contatos de onde saiu o público (migration 017). Nulo = números digitados. */
   listaId: uuid('lista_id'),
   /** Campanha encerrada que o cliente tirou da lista (migration 018). O histórico fica. */
@@ -482,6 +492,8 @@ export const campanhaDestinatario = pgTable('campanha_destinatario', {
   tarifaTipo: text('tarifa_tipo'),
   /** O `pricing.category` do aviso da Meta (migration 036): a tabela de preço em que a mensagem caiu. */
   tarifaCategoria: text('tarifa_categoria'),
+  /** O valor da variável do título para esta pessoa, resolvido na montagem (migration 037). */
+  variavelCabecalho: text('variavel_cabecalho'),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
@@ -677,6 +689,8 @@ export const modelo = pgTable('modelo', {
   /** Oferta por tempo limitado: só MARKETING, e proíbe rodapé e cabeçalho de texto. */
   ltoAtivo: boolean('lto_ativo').notNull().default(false),
   ltoTexto: text('lto_texto'),
+  /** Por quantas horas a oferta vale depois de enviada (migration 037). Nulo = 3. */
+  ltoHoras: integer('lto_horas'),
   /** Os cartões do carrossel, em ordem: { imagem, corpo, botoes[] }. */
   cartoes: jsonb('cartoes').notNull().default(sql`'[]'::jsonb`),
   status: text('status').notNull().default('rascunho'),
@@ -729,6 +743,27 @@ export const midia = pgTable('midia', {
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   contaIdx: index('idx_midia_conta').on(t.contaId, t.criadoEm),
+}));
+
+/**
+ * A mídia do modelo já entregue à Meta para ENVIO (migration 037).
+ *
+ * Mandar um modelo com imagem exige o id que a Meta devolve em
+ * `POST /{numero}/media` — outro caminho, e outro id, que o `header_handle` da
+ * criação do modelo. O id vale 30 dias e é de quem subiu: fica guardado por
+ * número, para a campanha subir o arquivo uma vez e não uma por destinatário.
+ */
+export const midiaEnvio = pgTable('midia_envio', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contaId: uuid('conta_id').notNull(),
+  midiaId: uuid('midia_id').notNull(),
+  phoneNumberId: text('phone_number_id').notNull(),
+  mediaId: text('media_id').notNull(),
+  expiraEm: timestamp('expira_em', { withTimezone: true }).notNull(),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  unicoUq: uniqueIndex('idx_midia_envio_unico').on(t.midiaId, t.phoneNumberId),
 }));
 
 /**

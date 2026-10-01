@@ -59,6 +59,8 @@ export interface ResumoModelo {
   cartoes: unknown[];
   ltoAtivo: boolean;
   ltoTexto: string | null;
+  /** Por quantas horas a oferta vale depois de enviada; nulo = 3 (o padrão). */
+  ltoHoras: number | null;
   /** Id na Meta. Preenchido = o modelo existe lá, e editar/excluir chega até ela. */
   metaTemplateId: string | null;
   /** Quando a última edição foi aceita pela Meta. Aprovado aceita 1 a cada 24h. */
@@ -277,6 +279,7 @@ export class ModeloService {
         cartoes: (l.cartoes as unknown[]) ?? [],
         ltoAtivo: l.ltoAtivo,
         ltoTexto: l.ltoTexto,
+        ltoHoras: l.ltoHoras,
         metaTemplateId: l.metaTemplateId,
         editadoMetaEm: l.editadoMetaEm,
         variaveis: quantasVariaveis(l.corpo),
@@ -342,6 +345,8 @@ export class ModeloService {
         botoes: dto.botoes ?? [],
         ltoAtivo: dto.ltoAtivo ?? false,
         ltoTexto: dto.ltoTexto ?? null,
+        // As horas só existem com a oferta ligada.
+        ltoHoras: dto.ltoAtivo ? (dto.ltoHoras ?? null) : null,
       };
 
       if (id) {
@@ -675,6 +680,7 @@ export class ModeloService {
           botoes: dto.botoes ?? [],
           ltoAtivo: dto.ltoAtivo ?? false,
           ltoTexto: dto.ltoTexto ?? null,
+          ltoHoras: dto.ltoAtivo ? (dto.ltoHoras ?? null) : null,
           status,
           categoriaMeta,
           motivo: null,
