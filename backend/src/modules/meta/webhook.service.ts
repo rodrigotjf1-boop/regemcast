@@ -18,7 +18,7 @@ import { createHash } from 'node:crypto';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { doWhatsapp, gemeoDoCelular } from '../../common/telefone';
-import { ContextoDb } from '../../db/contexto';
+import { ContextoDb, type Db } from '../../db/contexto';
 import { motivoDoModelo } from './motivos-modelo';
 import { ERRO_SEM_WHATSAPP, registrarFalhaSemWhatsapp } from '../contato/sem-whatsapp';
 import { AuditoriaService } from '../auditoria/auditoria.service';
@@ -31,6 +31,7 @@ import { historicoRecusado, sincronizacaoConcluida } from './coexistencia.regras
 import { codigoDoErro, mensagemDoErroMeta, traduzirErroMeta } from './erros-meta';
 import { limiteInformado } from './limite.regras';
 import { ERRO_MARKETING_PARADO, ORIGEM_PREFERENCIA, preferenciasDoAviso } from './preferencias.regras';
+import { type TarifaDaMensagem, tarifaDoStatus } from './tarifa.regras';
 
 /** Quantos eventos processar por passada. */
 const LOTE = 50;
@@ -385,6 +386,8 @@ export class WebhookService {
       const wamid = typeof s.id === 'string' ? s.id : null;
       const bruto = typeof s.status === 'string' ? s.status : '';
       const nosso = ESTADO_DA_META[bruto];
+      // A tarifa vem no aviso de envio e em mais um (entrega ou leitura).
+      const tarifa = tarifaDoStatus(s);
 
       if (bruto === 'failed') {
         const codigo = codigoDoErro(s);
@@ -403,7 +406,9 @@ export class WebhookService {
         continue;
       }
 
-      if (wamid && nosso) await this.aplicarStatus(wamid, nosso, {});
+      if (wamid && nosso) await this.aplicarStatus(wamid, nosso, {}, tarifa);
+      // Status que não muda o nosso estado ainda pode trazer a tarifa.
+      else if (wamid && tarifa) await this.guardarTarifaAvulsa(wamid, tarifa);
     }
   }
 
@@ -660,6 +665,7 @@ export class WebhookService {
     wamid: string,
     novo: 'enviada' | 'entregue' | 'lida' | 'falhou',
     erro: { erroCodigo?: number | null; erroTitulo?: string; erroDetalhe?: string },
+    tarifa: TarifaDaMensagem | null = null,
   ): Promise<void> {
     const agora = new Date();
     const carimbo: Record<string, Date> = {
@@ -685,6 +691,9 @@ export class WebhookService {
                 erroDetalhe: erro.erroDetalhe ?? null,
               }
             : {}),
+          // A tarifa vai no mesmo `update` do status: uma escrita por aviso na
+          // tabela mais quente do sistema, não duas.
+          ...(tarifa ? this.tarifaSeAindaNaoTem(tarifa) : {}),
         })
         .where(
           and(
@@ -693,6 +702,10 @@ export class WebhookService {
           ),
         )
         .returning({ contaId: campanhaDestinatario.contaId, telefone: campanhaDestinatario.telefoneE164 });
+
+      // O status não andou (aviso repetido, ou fora de ordem: o `sent` chegou
+      // depois do `read`), mas a tarifa que ele traz ainda vale.
+      if (tarifa && !mudados.length) await this.guardarTarifa(db, wamid, tarifa);
 
       // Número sem WhatsApp (131026) em duas campanhas: sai sozinho dos
       // próximos envios. O `update` acima já achou a conta do destinatário.
@@ -708,6 +721,34 @@ export class WebhookService {
     if (novo === 'falhou' && erro.erroCodigo === ERRO_MARKETING_PARADO) {
       for (const a of alterados) await this.bloquearNaConta(a.contaId, a.telefone, ORIGEM_PREFERENCIA);
     }
+  }
+
+  /**
+   * Os dois campos da tarifa, para o `set` de um `update`. Vale a primeira que
+   * chegar: o `pricing` vem em dois avisos da mesma mensagem, e o segundo (ou
+   * um reenvio) não reescreve o que já está guardado.
+   */
+  private tarifaSeAindaNaoTem(tarifa: TarifaDaMensagem) {
+    return {
+      tarifaTipo: sql`coalesce(${campanhaDestinatario.tarifaTipo}, ${tarifa.tipo})`,
+      tarifaCategoria: sql`coalesce(${campanhaDestinatario.tarifaCategoria}, ${tarifa.categoria})`,
+    };
+  }
+
+  /** Guarda a tarifa sem mexer no status. Só em quem ainda não tem: não vira escrita à toa. */
+  private async guardarTarifa(db: Db, wamid: string, tarifa: TarifaDaMensagem): Promise<void> {
+    await db
+      .update(campanhaDestinatario)
+      .set({ tarifaTipo: tarifa.tipo, tarifaCategoria: tarifa.categoria })
+      .where(and(eq(campanhaDestinatario.waMessageId, wamid), isNull(campanhaDestinatario.tarifaTipo)));
+  }
+
+  /**
+   * A tarifa de um aviso cujo status não muda o nosso estado. O aviso chega
+   * pelo `wamid`, sem conta (motivo A de `docs/rls.md`, como o status).
+   */
+  private async guardarTarifaAvulsa(wamid: string, tarifa: TarifaDaMensagem): Promise<void> {
+    await this.ctx.comEscopoSistema('meta.webhook.status', (db) => this.guardarTarifa(db, wamid, tarifa));
   }
 
   /**

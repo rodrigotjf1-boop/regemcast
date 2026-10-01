@@ -474,6 +474,14 @@ export const campanhaDestinatario = pgTable('campanha_destinatario', {
   proximaTentativaEm: timestamp('proxima_tentativa_em', { withTimezone: true }),
   /** A pessoa respondeu a esta mensagem (migration 031). Só o fato; o texto não é guardado. */
   respondidaEm: timestamp('respondida_em', { withTimezone: true }),
+  /**
+   * O `pricing.type` do aviso da Meta (migration 036): `regular` = cobrada, na
+   * entrega (status `entregue` ou `lida`); `free_*` = de graça. Nulo = a Meta
+   * ainda não disse. Valor da Meta, guardado como veio (`meta/tarifa.regras.ts`).
+   */
+  tarifaTipo: text('tarifa_tipo'),
+  /** O `pricing.category` do aviso da Meta (migration 036): a tabela de preço em que a mensagem caiu. */
+  tarifaCategoria: text('tarifa_categoria'),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
