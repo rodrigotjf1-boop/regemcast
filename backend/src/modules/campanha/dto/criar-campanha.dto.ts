@@ -114,7 +114,9 @@ export class CriarCampanhaDto {
   @MaxLength(64)
   modeloId?: string;
 
-  @ApiProperty({ required: false, description: 'Categoria do modelo.' })
+  // Aceita para não quebrar o site e o app, que a enviam — mas NÃO é usada:
+  // a categoria que vale é a que a Meta diz do modelo (ela decide o descanso).
+  @ApiProperty({ required: false, description: 'Ignorada: a categoria vem da Meta.' })
   @IsOptional()
   @IsString()
   @MaxLength(64)

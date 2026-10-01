@@ -125,6 +125,11 @@ interface OpcoesChamada {
 
 const TIMEOUT_PADRAO_MS = 15_000;
 const TENTATIVAS_PADRAO = 2;
+/**
+ * Até onde a lista de modelos segue o cursor: 30 páginas de 200 = 6.000, o
+ * maior teto de modelos que a Meta dá a uma conta.
+ */
+const MAX_PAGINAS_DE_MODELOS = 30;
 
 @Injectable()
 export class GraphService {
@@ -533,19 +538,43 @@ export class GraphService {
    * madura passa fácil dos 25 padrão. Buscar de 25 em 25 numa tela que só lista
    * transformaria um request em cinco — e a Meta cobra rate limit por app, não
    * por cliente.
+   *
+   * Segue o cursor até o fim: a campanha confere o modelo escolhido contra esta
+   * lista, e parar na primeira página faria o modelo nº 201 de uma conta grande
+   * "não existir". O teto de páginas é só a trava contra um cursor que não
+   * acaba — passar dele é registrado, não escondido.
    */
   async modelosDaWaba(
     wabaId: string,
     tokenDoCliente: string,
     limite = 200,
   ): Promise<{ data: ModeloBruto[] }> {
-    return this.chamar(`${wabaId}/message_templates`, {
-      token: tokenDoCliente,
-      query: {
-        fields: 'id,name,language,status,category,components,rejected_reason',
-        limit: limite,
-      },
-    });
+    const data: ModeloBruto[] = [];
+    let depois: string | undefined;
+
+    for (let pagina = 0; pagina < MAX_PAGINAS_DE_MODELOS; pagina++) {
+      const r = await this.chamar<{
+        data?: ModeloBruto[];
+        paging?: { cursors?: { after?: string }; next?: string };
+      }>(`${wabaId}/message_templates`, {
+        token: tokenDoCliente,
+        query: {
+          fields: 'id,name,language,status,category,components,rejected_reason',
+          limit: limite,
+          after: depois,
+        },
+      });
+      data.push(...(r.data ?? []));
+
+      // `next` só vem quando há mais; o cursor `after` sozinho vem sempre.
+      depois = r.paging?.next ? r.paging.cursors?.after : undefined;
+      if (!depois) return { data };
+    }
+
+    this.log.warn(
+      `A lista de modelos da conta passou de ${MAX_PAGINAS_DE_MODELOS} páginas; paramos em ${data.length} modelos.`,
+    );
+    return { data };
   }
 
   /**

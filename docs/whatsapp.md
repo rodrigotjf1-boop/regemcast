@@ -410,6 +410,32 @@ Mensagem com variável de cashback só vai para quem tem cashback válido:
 - **As opções só aparecem em conta com saldo lido** (a mesma marca que mostra o
   cashback em Contatos).
 
+## O modelo da campanha é o que a Meta diz
+
+A tela só oferece modelo aprovado, mas a tela não é a trava. Ao criar a
+campanha — e ao editar um rascunho mexendo no modelo ou no público — o servidor
+lê a lista de modelos da conta na Meta (a mesma que alimenta a tela) e confere:
+
+- **Existe e está aprovado.** Achado pelo id quando ele vem; senão por nome e
+  idioma (o mesmo nome em outro idioma é outro modelo). Modelo em análise,
+  recusado, pausado ou desativado é recusado com o estado na frase.
+- **Nome, idioma, id e categoria gravados são os da Meta.** O que a tela manda
+  nesses campos não é usado. Importa porque a **categoria decide o descanso**
+  entre promoções: marketing dito "utilidade" pelo pedido descansa do mesmo
+  jeito.
+- **As variáveis fecham com o texto.** Um valor para cada variável do corpo —
+  `{{1}}` repetido conta uma vez. A mais ou a menos, a Meta recusaria TODAS as
+  mensagens (132000) depois do disparo; a recusa passa a vir antes de gravar.
+  Trocar só o modelo de um rascunho confere as variáveis que a campanha já tem.
+- **A lista segue o cursor da Graph até o fim** (`modelosDaWaba`): conta com
+  mais de 200 modelos não perde os da segunda página.
+- **Sem a Meta no ar, a campanha não é criada** — a tela também não teria
+  modelos para mostrar. O erro dela chega traduzido.
+
+O que esta conferência ainda **não** cobre: o que o modelo exige no ENVIO além
+das variáveis do corpo (mídia no cabeçalho, variável no cabeçalho, oferta por
+tempo limitado, copiar código, carrossel). O disparo hoje só preenche o corpo.
+
 ## Erros e retentativa
 
 O catálogo em [`erros-meta.ts`](../backend/src/modules/meta/erros-meta.ts)
