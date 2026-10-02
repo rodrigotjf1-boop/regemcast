@@ -341,6 +341,43 @@ export class GraphService {
     return typeof id === 'string' && /^\d{5,30}$/.test(id) ? id : null;
   }
 
+  /**
+   * O `health_status` de um nó — a WABA ou o número: se dá para enviar e, se
+   * não, o que está por trás. Sem nova tentativa e com prazo curto: quem chama
+   * é a tela, o disparo e a rotina, e nenhum deles pode ficar esperando.
+   */
+  async saudeDe(noId: string, tokenDoCliente: string): Promise<unknown> {
+    const r = await this.chamar<{ health_status?: unknown }>(noId, {
+      token: tokenDoCliente,
+      query: { fields: 'health_status' },
+      timeoutMs: 6_000,
+      tentativas: 0,
+    });
+    return r?.health_status;
+  }
+
+  /**
+   * A cobrança da WABA: moeda, fuso, forma de pagamento e verificação da
+   * empresa. Chamada à parte da saúde: um campo recusado aqui não pode esconder
+   * o veredito de envio.
+   */
+  async cobrancaDaWaba(
+    wabaId: string,
+    tokenDoCliente: string,
+  ): Promise<{
+    currency?: string;
+    timezone_id?: string;
+    primary_funding_id?: string;
+    business_verification_status?: string;
+  }> {
+    return this.chamar(wabaId, {
+      token: tokenDoCliente,
+      query: { fields: 'currency,timezone_id,primary_funding_id,business_verification_status' },
+      timeoutMs: 6_000,
+      tentativas: 0,
+    });
+  }
+
   /** Números da WABA, com qualidade e tier. */
   async numerosDaWaba(
     wabaId: string,

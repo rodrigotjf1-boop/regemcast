@@ -71,6 +71,84 @@ Map<String, dynamic> _situacaoWhatsapp({
   'numeros': conectado ? (numeros ?? [_numero()]) : <Object>[],
 };
 
+/// A saúde da conta como o servidor manda (`GET /whatsapp/saude`).
+Map<String, dynamic> _saude({
+  String sinal = 'pode_enviar',
+  String titulo = 'Pode enviar',
+  String resumo = 'A Meta não aponta nada que impeça o envio.',
+  List<Map<String, dynamic>>? itens,
+}) => {
+  'sinal': sinal,
+  'titulo': titulo,
+  'resumo': resumo,
+  'lidaEm': '2026-10-01T22:10:00Z',
+  'itens':
+      itens ??
+      [
+        {
+          'chave': 'conta',
+          'rotulo': 'Conta do WhatsApp',
+          'sinal': 'pode_enviar',
+          'resumo': 'Pode enviar.',
+          'problemas': <Object>[],
+        },
+        {
+          'chave': 'numero:1111',
+          'rotulo': 'Número +55 21 99999-8888',
+          'sinal': 'pode_enviar',
+          'resumo': 'Pode enviar.',
+          'problemas': <Object>[],
+        },
+      ],
+};
+
+/// A conta bloqueada pela Meta, com o que ela respondeu.
+const _contaBloqueada = {
+  'chave': 'conta',
+  'rotulo': 'Conta do WhatsApp',
+  'sinal': 'bloqueado',
+  'resumo': 'Bloqueado para enviar.',
+  'problemas': [
+    {
+      'codigo': 141006,
+      'titulo': 'A Meta bloqueou o envio por um problema da conta do WhatsApp',
+      'explicacao':
+          'Enquanto isso não for resolvido, a Meta recusa as mensagens desta conta.',
+      'acao':
+          'A Meta diz o que ela pede em "O que a Meta respondeu", logo abaixo.',
+      'quem': 'voce',
+      'tela': null,
+      'link': null,
+      'daMeta': 'There is an error with the payment method.',
+    },
+  ],
+};
+
+/// O pagamento a conferir: aviso nosso, com o atalho para a Meta.
+const _pagamentoAConferir = {
+  'chave': 'pagamento',
+  'rotulo': 'Pagamento na Meta',
+  'sinal': 'com_restricao',
+  'resumo': 'A Meta não informa a forma de pagamento desta conta.',
+  'problemas': [
+    {
+      'codigo': null,
+      'titulo': 'Confira o pagamento da conta na Meta',
+      'explicacao':
+          'A Meta cobra as mensagens direto da conta do WhatsApp, e não informa a forma de pagamento desta conta.',
+      'acao': 'Abra o pagamento da conta na Meta e confira o cartão.',
+      'quem': 'voce',
+      'tela': null,
+      'link': {
+        'rotulo': 'Abrir o pagamento na Meta',
+        'url':
+            'https://business.facebook.com/billing_hub/accounts/details/?business_id=1&asset_id=2',
+      },
+      'daMeta': null,
+    },
+  ],
+};
+
 Map<String, dynamic> _cw({
   bool conectado = true,
   String clientes = 'concluida',
@@ -135,6 +213,13 @@ class _Servidor {
   Map<String, dynamic> whatsapp;
   List<Map<String, dynamic>> cardapioWeb;
   bool conversasNaConta = false;
+
+  /// A saúde da conta; nulo = o servidor não devolve sinal nenhum.
+  Map<String, dynamic>? saude;
+
+  /// O que a Meta responde no "Conferir agora" (`?atualizar=1`).
+  Map<String, dynamic>? saudeConferida;
+  bool saudeForaDoAr = false;
   final pedidos = <String>[];
   final corpos = <String, Object?>{};
 
@@ -147,6 +232,13 @@ class _Servidor {
       switch (chave) {
         case 'GET /whatsapp/situacao':
           return _json(whatsapp);
+        case 'GET /whatsapp/saude':
+          if (saudeForaDoAr) return _json({'message': 'Fora do ar'}, 503);
+          if (req.url.query == 'atualizar=1') {
+            pedidos.add('GET /whatsapp/saude?atualizar=1');
+            if (saudeConferida != null) saude = saudeConferida;
+          }
+          return _json(saude ?? {});
         case 'GET /whatsapp/config':
           return _json({
             'appId': '1',
@@ -513,6 +605,173 @@ void main() {
         expect(find.byKey(const ValueKey('salvar-resposta')), findsOneWidget);
         await _tocar(t, find.text('Cancelar'));
         expect(find.text('Não trazemos'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'saúde: tudo certo — o sinal, quando foi conferida e cada item',
+      (t) async {
+        final s = _Servidor()..saude = _saude();
+        await _abrir(t, s, const TelaWhatsapp());
+
+        expect(find.byKey(const ValueKey('saude')), findsOneWidget);
+        expect(find.text('Pode enviar'), findsOneWidget);
+        expect(find.text('Tudo certo'), findsOneWidget);
+        expect(find.textContaining('Conferida em'), findsOneWidget);
+        expect(find.byKey(const ValueKey('saude-conta')), findsOneWidget);
+        expect(find.byKey(const ValueKey('saude-numero:1111')), findsOneWidget);
+        expect(find.text('O que fazer: '), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'saúde: conta bloqueada — o motivo, o que fazer e a frase da Meta recolhida',
+      (t) async {
+        final s = _Servidor()
+          ..saude = _saude(
+            sinal: 'bloqueado',
+            titulo: 'Não pode enviar agora',
+            resumo:
+                'Há 1 ponto a resolver — veja abaixo o que fazer em cada um.',
+            itens: [_contaBloqueada],
+          );
+        await _abrir(t, s, const TelaWhatsapp());
+
+        expect(find.text('Não pode enviar agora'), findsOneWidget);
+        expect(find.text('Bloqueado'), findsOneWidget);
+        expect(
+          find.text(
+            'A Meta bloqueou o envio por um problema da conta do WhatsApp',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Depende de você'), findsOneWidget);
+        // A frase da Meta, em inglês, nunca é a explicação: só ao abrir.
+        expect(find.textContaining('payment method'), findsNothing);
+        await _tocar(t, find.byKey(const ValueKey('erro-da-meta')));
+        expect(
+          find.text(
+            'Código 141006. There is an error with the payment method.',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'saúde: pagamento a conferir — o atalho para a Meta só fora do app da Play',
+      (t) async {
+        final s = _Servidor()
+          ..saude = _saude(
+            sinal: 'com_restricao',
+            titulo: 'Envia com restrição',
+            resumo: 'Há 1 ponto de atenção — o envio sai, mas vale resolver.',
+            itens: [_pagamentoAConferir],
+          );
+        await _abrir(t, s, const TelaWhatsapp());
+
+        expect(find.text('Atenção'), findsOneWidget);
+        expect(
+          find.text('Confira o pagamento da conta na Meta'),
+          findsOneWidget,
+        );
+        // No app da Play nada leva a uma página de pagamento fora dele.
+        expect(
+          find.byKey(const ValueKey('erro-link')),
+          compraNoApp ? findsOneWidget : findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'saúde: a conexão que vence fica só na linha — o botão é o do aviso abaixo',
+      (t) async {
+        final s =
+            _Servidor(
+                whatsapp: _situacaoWhatsapp(
+                  expiraEm: DateTime.now().add(const Duration(days: 3)),
+                ),
+              )
+              ..saude = _saude(
+                sinal: 'com_restricao',
+                titulo: 'Envia com restrição',
+                itens: [
+                  {
+                    'chave': 'conexao',
+                    'rotulo': 'Conexão com o Regemcast',
+                    'sinal': 'com_restricao',
+                    'resumo': 'A autorização vence em 3 dias.',
+                    'problemas': [
+                      {
+                        'codigo': null,
+                        'titulo': 'A autorização da conta está para vencer',
+                        'explicacao': 'A autorização tem prazo.',
+                        'acao': 'Reconecte o WhatsApp.',
+                        'quem': 'voce',
+                        'tela': 'whatsapp',
+                        'link': null,
+                        'daMeta': null,
+                      },
+                    ],
+                  },
+                ],
+              );
+        await _abrir(t, s, const TelaWhatsapp());
+
+        expect(find.text('A autorização vence em 3 dias.'), findsOneWidget);
+        expect(
+          find.text('A autorização da conta está para vencer'),
+          findsNothing,
+        );
+        expect(find.byKey(const ValueKey('erro-tela')), findsNothing);
+        expect(find.byKey(const ValueKey('vencimento')), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'saúde: "Conferir agora" pergunta de novo à Meta e mostra o novo',
+      (t) async {
+        final s = _Servidor()
+          ..saude = _saude(
+            sinal: 'bloqueado',
+            titulo: 'Não pode enviar agora',
+            itens: [_contaBloqueada],
+          )
+          ..saudeConferida = _saude();
+        await _abrir(t, s, const TelaWhatsapp());
+        expect(find.text('Não pode enviar agora'), findsOneWidget);
+
+        await _tocar(t, find.byKey(const ValueKey('saude-conferir')));
+
+        expect(s.quantos('GET /whatsapp/saude?atualizar=1'), 1);
+        expect(find.text('Pode enviar'), findsOneWidget);
+        expect(find.text('Não pode enviar agora'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'saúde: sem resposta do servidor não afirma nada — nem "pode", nem "não pode"',
+      (t) async {
+        final s = _Servidor()..saudeForaDoAr = true;
+        await _abrir(t, s, const TelaWhatsapp());
+
+        expect(find.byKey(const ValueKey('saude-erro')), findsOneWidget);
+        expect(find.text('Pode enviar'), findsNothing);
+        expect(find.text('Não pode enviar agora'), findsNothing);
+        // O resto da tela continua: a saúde é uma leitura à parte.
+        expect(find.text('Mister Burgers Ltda'), findsOneWidget);
+        expect(find.text('Pronto para enviar'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'saúde: servidor sem o sinal (versão antiga) — o cartão não aparece',
+      (t) async {
+        final s = _Servidor();
+        await _abrir(t, s, const TelaWhatsapp());
+
+        expect(find.byKey(const ValueKey('saude')), findsNothing);
+        expect(find.byKey(const ValueKey('saude-erro')), findsNothing);
       },
     );
 

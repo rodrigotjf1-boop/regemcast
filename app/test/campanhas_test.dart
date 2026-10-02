@@ -63,6 +63,9 @@ class _Servidor {
 
   Map<String, dynamic> campanha;
   List<Map<String, dynamic>>? destinatarios;
+
+  /// A saúde da conta na Meta; nulo = o servidor não devolve sinal nenhum.
+  Map<String, dynamic>? saude;
   final pedidos = <String>[];
   Map<String, dynamic>? ultimoCorpo;
 
@@ -74,6 +77,7 @@ class _Servidor {
         ultimoCorpo = jsonDecode(req.body) as Map<String, dynamic>;
       }
       final p = req.url.path;
+      if (p == '/whatsapp/saude') return _json(saude ?? {});
       if (p == '/campanhas/c1/destinatarios' && destinatarios != null) {
         return _json(destinatarios!);
       }
@@ -218,6 +222,91 @@ void main() {
       await t.tap(find.widgetWithText(FilledButton, 'Disparar'));
       await _assentar(t);
       expect(s.pedidos, contains('POST /campanhas/c1/disparar'));
+    });
+
+    testWidgets(
+      'rascunho com a conta bloqueada na Meta: avisa antes do disparo e leva ao WhatsApp',
+      (t) async {
+        _telaAlta(t);
+        final s = _Servidor(_campanha('rascunho'))
+          ..saude = {
+            'sinal': 'bloqueado',
+            'titulo': 'Não pode enviar agora',
+            'resumo': 'Há 1 ponto a resolver.',
+            'lidaEm': '2026-10-01T22:10:00Z',
+            'itens': [
+              {
+                'chave': 'conta',
+                'rotulo': 'Conta do WhatsApp',
+                'sinal': 'bloqueado',
+                'resumo': 'Bloqueado para enviar.',
+                'problemas': [
+                  {
+                    'codigo': 141006,
+                    'titulo':
+                        'A Meta bloqueou o envio por um problema da conta do WhatsApp',
+                    'explicacao':
+                        'Enquanto isso não for resolvido, a Meta recusa as mensagens desta conta.',
+                    'acao': 'Veja o motivo em WhatsApp.',
+                    'quem': 'voce',
+                    'tela': null,
+                    'link': null,
+                    'daMeta': null,
+                  },
+                ],
+              },
+            ],
+          };
+        await t.pumpWidget(_app(s.api, const TelaCampanhaDetalhe(id: 'c1')));
+        await _assentar(t);
+
+        expect(find.byKey(const ValueKey('cd-saude')), findsOneWidget);
+        expect(
+          find.text(
+            'A Meta não deixa esta conta enviar agora. Resolva o ponto abaixo antes de disparar.',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.text(
+            'A Meta bloqueou o envio por um problema da conta do WhatsApp',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Abrir WhatsApp'), findsOneWidget);
+      },
+    );
+
+    testWidgets('rascunho com a conta em dia: nenhum aviso da saúde', (
+      t,
+    ) async {
+      _telaAlta(t);
+      final s = _Servidor(_campanha('rascunho'))
+        ..saude = {
+          'sinal': 'pode_enviar',
+          'titulo': 'Pode enviar',
+          'resumo': 'A Meta não aponta nada que impeça o envio.',
+          'lidaEm': '2026-10-01T22:10:00Z',
+          'itens': <Object>[],
+        };
+      await t.pumpWidget(_app(s.api, const TelaCampanhaDetalhe(id: 'c1')));
+      await _assentar(t);
+
+      expect(find.byKey(const ValueKey('cd-saude')), findsNothing);
+      expect(s.pedidos, contains('GET /whatsapp/saude'));
+    });
+
+    testWidgets('enviando: a saúde nem é pedida — não há o que decidir agora', (
+      t,
+    ) async {
+      _telaAlta(t);
+      final s = _Servidor(
+        _campanha('enviando', porStatus: {'entregue': 40, 'pendente': 60}),
+      );
+      await t.pumpWidget(_app(s.api, const TelaCampanhaDetalhe(id: 'c1')));
+      await _assentar(t);
+
+      expect(s.pedidos, isNot(contains('GET /whatsapp/saude')));
     });
 
     testWidgets('enviando: o botão é pausar, e o menu não oferece excluir', (

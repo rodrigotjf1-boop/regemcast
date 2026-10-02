@@ -169,6 +169,27 @@ final _api = ClienteApi(
             },
           ],
         });
+      case '/whatsapp/saude':
+        if (_contaNova) return _json({'conectado': false});
+        return _json(_saudes[_saudeDaConta]!);
+      case '/campanhas/7':
+        return _json({
+          'id': '7',
+          'nome': 'Oferta relâmpago de sexta',
+          'modeloNome': 'oferta_relampago',
+          'modeloIdioma': 'pt_BR',
+          'modeloCategoria': 'marketing',
+          'listaNome': 'Clientes 2026',
+          'status': 'rascunho',
+          'criadoEm': '2026-10-01T22:00:00Z',
+          'porStatus': {'pendente': 4820},
+          'total': 4820,
+        });
+      case '/campanhas/7/destinatarios':
+        return _json([
+          {'id': 'v1', 'telefone': '5521988771234', 'status': 'pendente'},
+          {'id': 'v2', 'telefone': '5521977123456', 'status': 'pendente'},
+        ]);
       case '/integracoes/cardapioweb':
         return _json({
           'conectado': true,
@@ -1463,6 +1484,109 @@ late final List<Uint8List> _fotos;
 /// mostra o caminho até o disparo.
 var _contaNova = false;
 
+/// A saúde da conta na Meta que o servidor de exemplo devolve: `certa`,
+/// `bloqueada` ou `pagamento`.
+var _saudeDaConta = 'certa';
+
+Map<String, dynamic> _itemCerto(String chave, String rotulo, String resumo) => {
+  'chave': chave,
+  'rotulo': rotulo,
+  'sinal': 'pode_enviar',
+  'resumo': resumo,
+  'problemas': <Object>[],
+};
+
+final _itensCertos = [
+  _itemCerto('conta', 'Conta do WhatsApp', 'Pode enviar.'),
+  _itemCerto('empresa', 'Empresa na Meta', 'Pode enviar.'),
+  _itemCerto('aplicativo', 'Aplicativo Regemcast', 'Pode enviar.'),
+  _itemCerto('numero:987654321', 'Número +55 21 99999-8888', 'Pode enviar.'),
+  _itemCerto(
+    'pagamento',
+    'Pagamento na Meta',
+    'Cobrança em BRL, com forma de pagamento cadastrada.',
+  ),
+  _itemCerto(
+    'conexao',
+    'Conexão com o Regemcast',
+    'Autorização em dia: vence em 41 dias.',
+  ),
+];
+
+final _saudes = <String, Map<String, dynamic>>{
+  'certa': {
+    'sinal': 'pode_enviar',
+    'titulo': 'Pode enviar',
+    'resumo': 'A Meta não aponta nada que impeça o envio.',
+    'lidaEm': '2026-10-01T22:10:00Z',
+    'itens': _itensCertos,
+  },
+  'bloqueada': {
+    'sinal': 'bloqueado',
+    'titulo': 'Não pode enviar agora',
+    'resumo': 'Há 1 ponto a resolver — veja abaixo o que fazer em cada um.',
+    'lidaEm': '2026-10-01T22:10:00Z',
+    'itens': [
+      {
+        'chave': 'conta',
+        'rotulo': 'Conta do WhatsApp',
+        'sinal': 'bloqueado',
+        'resumo': 'Bloqueado para enviar.',
+        'problemas': [
+          {
+            'codigo': 141006,
+            'titulo':
+                'A Meta bloqueou o envio por um problema da conta do WhatsApp',
+            'explicacao':
+                'Enquanto isso não for resolvido, a Meta recusa as mensagens desta conta.',
+            'acao':
+                'A Meta diz o que ela pede em "O que a Meta respondeu", logo abaixo. Resolvido lá, confira de novo aqui. Se precisar de ajuda, informe o código 141006 ao suporte.',
+            'quem': 'voce',
+            'tela': null,
+            'link': null,
+            'daMeta':
+                'There is an error with the payment method. This will block business initiated conversations.',
+          },
+        ],
+      },
+      ..._itensCertos.skip(1),
+    ],
+  },
+  'pagamento': {
+    'sinal': 'com_restricao',
+    'titulo': 'Envia com restrição',
+    'resumo': 'Há 1 ponto de atenção — o envio sai, mas vale resolver.',
+    'lidaEm': '2026-10-01T22:10:00Z',
+    'itens': [
+      {
+        'chave': 'pagamento',
+        'rotulo': 'Pagamento na Meta',
+        'sinal': 'com_restricao',
+        'resumo': 'A Meta não informa a forma de pagamento desta conta.',
+        'problemas': [
+          {
+            'codigo': null,
+            'titulo': 'Confira o pagamento da conta na Meta',
+            'explicacao':
+                'A Meta cobra as mensagens direto da conta do WhatsApp, e não informa a forma de pagamento desta conta. Sem o pagamento em ordem, ela aceita a mensagem e recusa em seguida.',
+            'acao':
+                'Abra o pagamento da conta na Meta e confira a moeda, o fuso horário e o cartão antes de disparar.',
+            'quem': 'voce',
+            'tela': null,
+            'link': {
+              'rotulo': 'Abrir o pagamento na Meta',
+              'url':
+                  'https://business.facebook.com/billing_hub/accounts/details/?business_id=1&asset_id=2&account_type=whatsapp-business-account',
+            },
+            'daMeta': null,
+          },
+        ],
+      },
+      ..._itensCertos.where((i) => i['chave'] != 'pagamento'),
+    ],
+  },
+};
+
 Future<Uint8List> _desenharBurger(
   Color fundoA,
   Color fundoB,
@@ -2419,6 +2543,41 @@ void main() {
       const _ComSessao(child: TelaWhatsapp()),
       '50-whatsapp-escuro',
       brilho: Brightness.dark,
+    );
+  }, skip: !ativo);
+
+  testWidgets('whatsapp — conta bloqueada pela Meta', (t) async {
+    _saudeDaConta = 'bloqueada';
+    addTearDown(() => _saudeDaConta = 'certa');
+    await _capturar(
+      t,
+      const _ComSessao(child: TelaWhatsapp()),
+      '64-whatsapp-saude-bloqueada',
+      antes: (t) => rolarAte(t, find.byKey(const ValueKey('saude'))),
+    );
+  }, skip: !ativo);
+
+  testWidgets('whatsapp — pagamento a conferir', (t) async {
+    _saudeDaConta = 'pagamento';
+    addTearDown(() => _saudeDaConta = 'certa');
+    await _capturar(
+      t,
+      const _ComSessao(child: TelaWhatsapp()),
+      '65-whatsapp-saude-pagamento',
+      antes: (t) => rolarAte(t, find.byKey(const ValueKey('saude'))),
+    );
+  }, skip: !ativo);
+
+  testWidgets('campanha — conta bloqueada antes do disparo', (t) async {
+    _saudeDaConta = 'bloqueada';
+    addTearDown(() => _saudeDaConta = 'certa');
+    await _capturar(
+      t,
+      const TelaCampanhaDetalhe(
+        id: '7',
+        nomeInicial: 'Oferta relâmpago de sexta',
+      ),
+      '66-campanha-saude-bloqueada',
     );
   }, skip: !ativo);
 

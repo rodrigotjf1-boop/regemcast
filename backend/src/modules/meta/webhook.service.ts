@@ -23,7 +23,7 @@ import { motivoDoModelo } from './motivos-modelo';
 import { ERRO_SEM_WHATSAPP, registrarFalhaSemWhatsapp } from '../contato/sem-whatsapp';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { AvisoService } from '../aviso/aviso.service';
-import { campanha, campanhaDestinatario, modelo, waEvento, waNumero } from '../../db/schema';
+import { campanha, campanhaDestinatario, modelo, waConta, waEvento, waNumero } from '../../db/schema';
 import type { DestinoDoEvento } from './agenda.regras';
 import { AgendaService } from './agenda.service';
 import { ConversasService } from './conversas.service';
@@ -38,7 +38,23 @@ import {
 } from './erros-meta';
 import { limiteInformado } from './limite.regras';
 import { ERRO_MARKETING_PARADO, ORIGEM_PREFERENCIA, preferenciasDoAviso } from './preferencias.regras';
+import { SaudeService } from './saude.service';
 import { type TarifaDaMensagem, tarifaDoStatus } from './tarifa.regras';
+
+/**
+ * Mudanças na conta que não mexem no envio (tarifa, país, termos, parceiro
+ * acrescentado): ficam no log, sem reler a saúde.
+ */
+const SO_INFORMATIVOS = new Set([
+  'AD_ACCOUNT_LINKED',
+  'AUTH_INTL_PRICE_ELIGIBILITY_UPDATE',
+  'BUSINESS_PRIMARY_LOCATION_COUNTRY_UPDATE',
+  'MM_LITE_TERMS_SIGNED',
+  'PARTNER_ADDED',
+  'PARTNER_APP_INSTALLED',
+  'PARTNER_CLIENT_CERTIFICATION_STATUS_UPDATE',
+  'VOLUME_BASED_PRICING_TIER_UPDATE',
+]);
 
 /** Quantos eventos processar por passada. */
 const LOTE = 50;
@@ -145,6 +161,7 @@ export class WebhookService {
     private readonly avisos: AvisoService,
     private readonly agenda: AgendaService,
     private readonly conversas: ConversasService,
+    private readonly saude: SaudeService,
   ) {}
 
   /** Grava cada mudança do payload como um evento próprio. */
@@ -888,11 +905,39 @@ export class WebhookService {
     });
   }
 
+  /**
+   * A Meta mudou algo na conta: restringiu, apontou violação, desativou,
+   * reativou, decidiu a revisão — ou o cliente tirou o acesso do aplicativo.
+   *
+   * O aviso diz QUE mudou; o que isso faz com o envio quem diz é o
+   * `health_status`. Por isso o tratamento é reler a saúde da conta na hora: a
+   * tela passa a mostrar o motivo e a saída, e o aviso no celular sai se o
+   * envio ficou bloqueado. Até 01/10/2026 este aviso só ia para o log.
+   *
+   * De passagem, guarda o negócio dono da conta quando o aviso o traz — é com
+   * ele que se monta o endereço do pagamento na Meta.
+   */
   private async contaAtualizada(m: Mudanca): Promise<void> {
     const v = m.value ?? {};
-    this.log.log(
-      `Conta atualizada pela Meta: ${JSON.stringify(v).slice(0, 300)}`,
-    );
+    const evento = String(v.event ?? v.decision ?? '').toUpperCase();
+    this.log.log(`Conta atualizada pela Meta (${evento || 'sem evento'}): ${JSON.stringify(v).slice(0, 300)}`);
+
+    const info = (v.waba_info ?? {}) as { waba_id?: unknown; owner_business_id?: unknown };
+    const wabaId = m.entrada ?? (typeof info.waba_id === 'string' ? info.waba_id : '');
+    if (!wabaId) return;
+
+    const dono = typeof info.owner_business_id === 'string' && /^\d{5,30}$/.test(info.owner_business_id) ? info.owner_business_id : null;
+    if (dono) {
+      await this.ctx.comEscopoSistema('meta.webhook.conta', (db) =>
+        db
+          .update(waConta)
+          .set({ businessId: dono })
+          .where(and(eq(waConta.wabaId, wabaId), isNull(waConta.businessId))),
+      );
+    }
+
+    if (SO_INFORMATIVOS.has(evento)) return;
+    await this.saude.atualizarDoSistema({ wabaId });
   }
 
   // ------------------------------------------------------------------ apoio

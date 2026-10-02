@@ -15,6 +15,7 @@ import {
 } from '@/components/app/icones';
 import { ErroQueGuia } from '@/components/app/erro-que-guia';
 import { FormularioCampanha } from '@/components/app/formulario-campanha';
+import { AvisoDaSaude } from '@/components/app/saude-da-conta';
 import { BadgeCampanha, BadgeDestinatario, BarraStatus } from '@/components/app/status-campanha';
 import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
 import { LoaderDisparo } from '@/components/marca/loader-disparo';
@@ -532,6 +533,9 @@ export default function PaginaCampanha() {
           para desfazer.
         </Alerta>
       )}
+
+      {/* Antes de disparar ou de retomar: o que a Meta aponta na conta, se aponta. */}
+      {(podeDisparar || podeRetomar) && <AvisoDaSaude />}
 
       <section aria-label="Resultado" className="escalonado grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Estatistica

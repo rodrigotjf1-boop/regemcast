@@ -100,7 +100,7 @@ function montar() {
       currency: 'BRL',
       account_review_status: 'APPROVED',
     }),
-    negocioDaWaba: jest.fn().mockResolvedValue('3237068579769279'),
+    negocioDaWaba: jest.fn().mockResolvedValue('3237000000000001'),
     assinarWebhook: jest.fn().mockResolvedValue(undefined),
     numerosDaWaba: jest.fn().mockResolvedValue({
       data: [
@@ -657,7 +657,7 @@ describe('retomarSincronizacao', () => {
  */
 describe('o negócio dono da conta e o endereço do pagamento', () => {
   const lida = (extra: Record<string, unknown> = {}) => ({
-    wabaId: '1578591514280771',
+    wabaId: '1578000000000001',
     nome: 'Padaria Aurora',
     moeda: null,
     statusRevisao: 'APPROVED',
@@ -668,7 +668,7 @@ describe('o negócio dono da conta e o endereço do pagamento', () => {
     ...extra,
   });
   const ENDERECO =
-    'https://business.facebook.com/billing_hub/accounts/details/?business_id=3237068579769279&asset_id=1578591514280771&account_type=whatsapp-business-account';
+    'https://business.facebook.com/billing_hub/accounts/details/?business_id=3237000000000001&asset_id=1578000000000001&account_type=whatsapp-business-account';
 
   it('a conexão guarda o negócio que o Embedded Signup devolveu, sem perguntar à Meta', async () => {
     const { service, graph, diario } = montar();
@@ -698,7 +698,7 @@ describe('o negócio dono da conta e o endereço do pagamento', () => {
   it('situação: com o negócio guardado, devolve o endereço e não chama a Meta', async () => {
     const { service, db, graph, diario } = montar();
     db.select
-      .mockReturnValueOnce(consulta([lida({ businessId: '3237068579769279' })], diario))
+      .mockReturnValueOnce(consulta([lida({ businessId: '3237000000000001' })], diario))
       .mockReturnValueOnce(consulta([], diario));
 
     const r = await service.situacao(CONTA);
@@ -713,13 +713,13 @@ describe('o negócio dono da conta e o endereço do pagamento', () => {
     const { service, db, graph, diario } = montar();
     db.select
       .mockReturnValueOnce(consulta([lida()], diario)) // a conta
-      .mockReturnValueOnce(consulta([{ tokenCifrado: cifrarToken(TOKEN, Buffer.alloc(32, 7).toString('base64')), wabaId: '1578591514280771' }], diario)) // o token
+      .mockReturnValueOnce(consulta([{ tokenCifrado: cifrarToken(TOKEN, Buffer.alloc(32, 7).toString('base64')), wabaId: '1578000000000001' }], diario)) // o token
       .mockReturnValueOnce(consulta([], diario)); // os números
 
     const r = await service.situacao(CONTA);
 
-    expect(graph.negocioDaWaba).toHaveBeenCalledWith('1578591514280771', TOKEN);
-    expect(ultimaEscritaCom(diario, 'businessId')?.businessId).toBe('3237068579769279');
+    expect(graph.negocioDaWaba).toHaveBeenCalledWith('1578000000000001', TOKEN);
+    expect(ultimaEscritaCom(diario, 'businessId')?.businessId).toBe('3237000000000001');
     expect(r.conectado && r.conta.pagamentoUrl).toBe(ENDERECO);
   });
 
@@ -728,7 +728,7 @@ describe('o negócio dono da conta e o endereço do pagamento', () => {
     graph.negocioDaWaba.mockRejectedValue(new Error('tempo esgotado'));
     db.select
       .mockReturnValueOnce(consulta([lida()], diario))
-      .mockReturnValueOnce(consulta([{ tokenCifrado: cifrarToken(TOKEN, Buffer.alloc(32, 7).toString('base64')), wabaId: '1578591514280771' }], diario))
+      .mockReturnValueOnce(consulta([{ tokenCifrado: cifrarToken(TOKEN, Buffer.alloc(32, 7).toString('base64')), wabaId: '1578000000000001' }], diario))
       .mockReturnValueOnce(consulta([], diario));
 
     const r = await service.situacao(CONTA);
@@ -740,10 +740,10 @@ describe('o negócio dono da conta e o endereço do pagamento', () => {
 
   it('pagamentoUrl (para o erro da campanha): só o que está guardado, sem chamar a Meta', async () => {
     const { service, db, graph, diario } = montar();
-    db.select.mockReturnValueOnce(consulta([{ wabaId: '1578591514280771', businessId: '3237068579769279' }], diario));
+    db.select.mockReturnValueOnce(consulta([{ wabaId: '1578000000000001', businessId: '3237000000000001' }], diario));
     expect(await service.pagamentoUrl(CONTA)).toBe(ENDERECO);
 
-    db.select.mockReturnValueOnce(consulta([{ wabaId: '1578591514280771', businessId: null }], diario));
+    db.select.mockReturnValueOnce(consulta([{ wabaId: '1578000000000001', businessId: null }], diario));
     expect(await service.pagamentoUrl(CONTA)).toBeNull();
 
     db.select.mockReturnValueOnce(consulta([], diario));

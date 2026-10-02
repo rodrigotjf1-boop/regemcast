@@ -124,6 +124,9 @@ function montar() {
     comConta: <T>(_conta: string, fn: (d: typeof db) => Promise<T>) => fn(db),
   };
 
+  // A saúde da conta na Meta: por padrão, nada impede o envio.
+  const saude = { conferirAntesDeEnviar: jest.fn().mockResolvedValue(undefined) };
+
   const service = new CampanhaService(
     ctx as unknown as ConstructorParameters<typeof CampanhaService>[0],
     meta as unknown as ConstructorParameters<typeof CampanhaService>[1],
@@ -136,9 +139,10 @@ function montar() {
       typeof CampanhaService
     >[5],
     midias as unknown as ConstructorParameters<typeof CampanhaService>[6],
+    saude as unknown as ConstructorParameters<typeof CampanhaService>[7],
   );
 
-  return { service, db, meta, graph, midias, registrar, telemetria, diario, consulta: (l: unknown[]) => consulta(l, diario) };
+  return { service, db, meta, graph, midias, saude, registrar, telemetria, diario, consulta: (l: unknown[]) => consulta(l, diario) };
 }
 
 beforeAll(() => {
@@ -459,6 +463,35 @@ describe('disparar', () => {
       BadRequestException,
     );
     expect(m.graph.enviarModelo).not.toHaveBeenCalled();
+  });
+
+  it('a Meta diz que a conta está bloqueada: recusa ANTES de agendar, com o motivo dela', async () => {
+    // Sem isto a campanha saía, a Meta aceitava cada mensagem e recusava em
+    // seguida — e o dono só via o problema depois (foi o 131042 de 01/10/2026).
+    const m = montar();
+    m.db.select
+      .mockReturnValueOnce(m.consulta([CAMPANHA_RASCUNHO]))
+      .mockReturnValueOnce(m.consulta([{ phoneNumberId: 'PN1', status: 'registrado' }]));
+    m.saude.conferirAntesDeEnviar.mockRejectedValue(
+      new BadRequestException('Não dá para enviar agora. A Meta bloqueou o envio por um problema da conta do WhatsApp.'),
+    );
+
+    await expect(m.service.disparar(CONTA, USUARIO, CAMPANHA)).rejects.toThrow(/A Meta bloqueou o envio/);
+    expect(m.saude.conferirAntesDeEnviar).toHaveBeenCalledWith(CONTA);
+    expect(m.diario.some((e) => e.valores.status === 'agendada')).toBe(false);
+  });
+
+  it('a saúde é conferida em todo disparo', async () => {
+    const m = montar();
+    m.db.select
+      .mockReturnValueOnce(m.consulta([CAMPANHA_RASCUNHO]))
+      .mockReturnValueOnce(m.consulta([{ phoneNumberId: 'PN1', status: 'registrado' }]))
+      .mockReturnValueOnce(m.consulta([{ total: 1 }]))
+      .mockReturnValueOnce(m.consulta([{ ...CAMPANHA_RASCUNHO, status: 'agendada' }]))
+      .mockReturnValueOnce(m.consulta([]));
+
+    await m.service.disparar(CONTA, USUARIO, CAMPANHA);
+    expect(m.saude.conferirAntesDeEnviar).toHaveBeenCalledTimes(1);
   });
 });
 

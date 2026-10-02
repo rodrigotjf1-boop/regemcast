@@ -291,6 +291,18 @@ export const waConta = pgTable('wa_conta', {
   moeda: text('moeda'),
   statusRevisao: text('status_revisao'),
   restricoes: jsonb('restricoes').notNull().default(sql`'[]'::jsonb`),
+  /**
+   * A saúde da conta na Meta (`health_status`, migration 039): `disponivel`,
+   * `limitado` ou `bloqueado`; a lista do que está por trás (`saude`) e quando
+   * foi lida. Nulo = ainda não lida. Regras em `meta/saude.regras.ts`.
+   */
+  saudeEstado: text('saude_estado'),
+  saude: jsonb('saude'),
+  saudeEm: timestamp('saude_em', { withTimezone: true }),
+  /** O fuso da cobrança, a forma de pagamento e a verificação da empresa, lidos junto da saúde. */
+  fuso: text('fuso'),
+  pagamentoId: text('pagamento_id'),
+  verificacaoNegocio: text('verificacao_negocio'),
   webhookAssinadoEm: timestamp('webhook_assinado_em', { withTimezone: true }),
   onboardadaEm: timestamp('onboardada_em', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
@@ -318,6 +330,10 @@ export const waNumero = pgTable('wa_numero', {
   tierLimite: integer('tier_limite'),
   tierNome: text('tier_nome'),
   tierEm: timestamp('tier_em', { withTimezone: true }),
+  /** A saúde do número na Meta (`health_status`, migration 039), como a da conta. */
+  saudeEstado: text('saude_estado'),
+  saude: jsonb('saude'),
+  saudeEm: timestamp('saude_em', { withTimezone: true }),
   /** pendente | registrado | suspenso | removido. Sem registro, todo envio dá 133010. */
   status: text('status').notNull().default('pendente'),
   registradoEm: timestamp('registrado_em', { withTimezone: true }),

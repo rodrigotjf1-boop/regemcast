@@ -9,7 +9,7 @@
 // O serviço de avisos lê o ambiente no import; aqui o banco e os avisos são simulados.
 jest.mock('../../config/env', () => ({ env: { push: { contaServico: '' } } }));
 
-import { campanha, campanhaDestinatario } from '../../db/schema';
+import { campanha, campanhaDestinatario, waConta } from '../../db/schema';
 import { WebhookService } from './webhook.service';
 
 const FRASE =
@@ -37,7 +37,7 @@ function montar(campanhasAtivas: Array<{ id: string; contaId: string; nome: stri
 
   const ctx = { comEscopoSistema: <T>(_motivo: string, fn: (d: typeof db) => Promise<T>) => fn(db) };
   const avisos = { avisar: jest.fn().mockResolvedValue(undefined) };
-  const service = new WebhookService(ctx as never, {} as never, avisos as never, {} as never, {} as never);
+  const service = new WebhookService(ctx as never, {} as never, avisos as never, {} as never, {} as never, {} as never);
 
   const falhar = (codigo: number, detalhes: string) =>
     (service as unknown as { mensagens(m: unknown): Promise<void> }).mensagens({
@@ -109,5 +109,78 @@ describe('recusa que chega pelo aviso da Meta', () => {
     expect(m.doDestinatario()).toMatchObject({ status: 'falhou', erroCodigo: codigo });
     expect(m.daCampanha()).toBeUndefined();
     expect(m.avisos.avisar).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * O aviso `account_update`. Até 01/10/2026 só ia para o log: a Meta restringia
+ * a conta e a tela continuava dizendo "Conectada".
+ */
+describe('mudança na conta (account_update)', () => {
+  function montarConta() {
+    const gravados: Array<{ tabela: unknown; valores: Record<string, unknown> }> = [];
+    const db = {
+      update: (tabela: unknown) => {
+        const cadeia: Record<string, unknown> = {};
+        cadeia.set = (valores: Record<string, unknown>) => {
+          gravados.push({ tabela, valores });
+          return cadeia;
+        };
+        cadeia.where = () => cadeia;
+        cadeia.then = (r: (v: unknown[]) => void) => r([]);
+        return cadeia;
+      },
+    };
+    const ctx = { comEscopoSistema: <T>(_m: string, fn: (d: typeof db) => Promise<T>) => fn(db) };
+    const saude = { atualizarDoSistema: jest.fn().mockResolvedValue({ leu: true, credencial: false }) };
+    const service = new WebhookService(ctx as never, {} as never, {} as never, {} as never, {} as never, saude as never);
+    const avisar = (value: Record<string, unknown>, entrada: string | undefined = '1578000000000001') =>
+      (service as unknown as { contaAtualizada(m: unknown): Promise<void> }).contaAtualizada({ field: 'account_update', value, entrada });
+    return { avisar, saude, gravados };
+  }
+
+  it.each(['ACCOUNT_RESTRICTION', 'ACCOUNT_VIOLATION', 'DISABLED_UPDATE', 'ACCOUNT_DELETED', 'PARTNER_REMOVED', 'PARTNER_APP_UNINSTALLED'])(
+    '%s: relê a saúde da conta na hora — é ela que diz se dá para enviar',
+    async (event) => {
+      const m = montarConta();
+      await m.avisar({ event });
+      expect(m.saude.atualizarDoSistema).toHaveBeenCalledWith({ wabaId: '1578000000000001' });
+    },
+  );
+
+  it('a decisão da revisão da conta (account_review_update) também relê', async () => {
+    const m = montarConta();
+    await m.avisar({ decision: 'REJECTED' });
+    expect(m.saude.atualizarDoSistema).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['VOLUME_BASED_PRICING_TIER_UPDATE', 'BUSINESS_PRIMARY_LOCATION_COUNTRY_UPDATE', 'PARTNER_ADDED', 'AUTH_INTL_PRICE_ELIGIBILITY_UPDATE'])(
+    '%s é só informativo: não gasta uma leitura',
+    async (event) => {
+      const m = montarConta();
+      await m.avisar({ event });
+      expect(m.saude.atualizarDoSistema).not.toHaveBeenCalled();
+    },
+  );
+
+  it('guarda o negócio dono da conta quando o aviso o traz (é com ele que se monta o link do pagamento)', async () => {
+    const m = montarConta();
+    await m.avisar({ event: 'PARTNER_APP_INSTALLED', waba_info: { waba_id: '1578000000000001', owner_business_id: '3237000000000001' } });
+
+    expect(m.gravados).toEqual([{ tabela: waConta, valores: { businessId: '3237000000000001' } }]);
+    // E, sendo informativo, não relê a saúde.
+    expect(m.saude.atualizarDoSistema).not.toHaveBeenCalled();
+  });
+
+  it('identificador de negócio que não é número não entra', async () => {
+    const m = montarConta();
+    await m.avisar({ event: 'PARTNER_APP_INSTALLED', waba_info: { owner_business_id: '123/../x' } });
+    expect(m.gravados).toHaveLength(0);
+  });
+
+  it('sem saber de qual conta é, não faz nada', async () => {
+    const m = montarConta();
+    await m.avisar({ event: 'ACCOUNT_RESTRICTION' }, '');
+    expect(m.saude.atualizarDoSistema).not.toHaveBeenCalled();
   });
 });
