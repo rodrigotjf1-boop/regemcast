@@ -15,6 +15,7 @@ import {
 } from '@/components/app/icones';
 import { ErroQueGuia } from '@/components/app/erro-que-guia';
 import { FormularioCampanha } from '@/components/app/formulario-campanha';
+import { CartaoDoCusto } from '@/components/app/custo-na-meta';
 import { AvisoDaSaude } from '@/components/app/saude-da-conta';
 import { BadgeCampanha, BadgeDestinatario, BarraStatus } from '@/components/app/status-campanha';
 import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
@@ -567,6 +568,9 @@ export default function PaginaCampanha() {
           apoio={falhas > 0 ? 'O motivo e o que fazer estão abaixo' : 'Nenhuma até agora'}
         />
       </section>
+
+      {/* Quanto custa na Meta: a estimativa antes de disparar, o gasto depois. */}
+      <CartaoDoCusto custo={campanha.custo} />
 
       {/*
         Por que falhou, do motivo mais comum para o menos. Quem tem 300 falhas lê

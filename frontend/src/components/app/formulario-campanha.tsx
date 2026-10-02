@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
+import { CustoDaPrevia } from '@/components/app/custo-na-meta';
 import { JANELA_VAZIA, JanelaEnvio, janelaParaEnvio, problemaDosTetos, type Janela } from '@/components/app/janela-envio';
 import { IconeMais } from '@/components/app/icones';
 import { PublicoDaBase } from '@/components/app/publico-da-base';
@@ -265,18 +266,21 @@ export function FormularioCampanha({
   // prévia conta do mesmo jeito que a montagem vai montar.
   const nVarsEscolhido = modelos?.find((m) => m.id === modeloId)?.variaveis ?? 0;
   const comCashback = publico !== 'numeros' && origens.slice(0, nVarsEscolhido).some(ehDeCashback);
+  // A categoria do modelo escolhido decide o preço da mensagem na Meta: com
+  // ela, a prévia traz o custo estimado. O servidor faz a conta.
+  const categoriaEscolhida = modelos?.find((m) => m.id === modeloId)?.categoria ?? '';
   useEffect(() => {
     setPrevia(null);
     if (!chaveDoAlvo) return;
     let vivo = true;
     campanhas
-      .previa(JSON.parse(chaveDoAlvo) as PublicoDaCampanha, comCashback)
+      .previa(JSON.parse(chaveDoAlvo) as PublicoDaCampanha, comCashback, categoriaEscolhida)
       .then((r) => vivo && setPrevia(r))
       .catch(() => vivo && setPrevia(null));
     return () => {
       vivo = false;
     };
-  }, [chaveDoAlvo, comCashback]);
+  }, [chaveDoAlvo, comCashback, categoriaEscolhida]);
   const alcance = previa ? previa.total : null;
 
   useEffect(() => {
@@ -795,6 +799,8 @@ export function FormularioCampanha({
               )}
             </div>
           )}
+
+          {publico !== 'numeros' && alvo && <CustoDaPrevia custo={previa?.custo} />}
 
           {publico !== 'numeros' && !editando && alvo && (
             <SugestaoHorario

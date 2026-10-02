@@ -10,6 +10,7 @@ import '../api/modelos.dart';
 import '../api/publicos.dart';
 import '../componentes/basicos.dart';
 import '../componentes/categoria.dart';
+import '../componentes/custo_na_meta.dart';
 import '../componentes/dialogos.dart';
 import '../componentes/escolha.dart';
 import '../sessao/sessao.dart';
@@ -582,7 +583,15 @@ class _TelaFormularioCampanhaState
         : null;
     final previa = alvo == null
         ? null
-        : ref.watch(previaDoPublicoProvider((alvo, comCashback))).value;
+        : ref
+              .watch(
+                previaDoPublicoProvider((
+                  alvo,
+                  comCashback,
+                  modelo?.categoria ?? '',
+                )),
+              )
+              .value;
 
     return PopScope(
       canPop: _saindo || !_mexeu,
@@ -1093,6 +1102,13 @@ class _TelaFormularioCampanhaState
           descanso.emDescanso > 0) ...[
         const SizedBox(height: 14),
         _descanso(c, descanso, ehDono),
+      ],
+      // O custo estimado na Meta para este público, pela categoria do modelo.
+      if (quem != _Quem.numeros &&
+          alvo != null &&
+          (previa?.custo?.temOQueMostrar ?? false)) ...[
+        const SizedBox(height: 14),
+        CustoDaPrevia(custo: previa!.custo!),
       ],
       if (quem != _Quem.numeros && !_editando && alvo != null)
         _SugestaoDeHorario(

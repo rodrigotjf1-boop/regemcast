@@ -290,6 +290,8 @@ export interface ResumoCampanha {
   pausaErro?: ErroQueGuia | null;
   /** Por que as mensagens falharam, do motivo mais comum para o menos. Só em `GET /campanhas/:id`. */
   falhasPorMotivo?: Array<{ total: number; erro: ErroQueGuia }>;
+  /** Quanto a campanha custa na Meta. Só em `GET /campanhas/:id`. */
+  custo?: CustoNaMeta | null;
   /** De onde sai a variável do título do modelo; nulo quando o modelo não tem. */
   variavelCabecalho?: { origem: VariavelDeLista['origem']; valor: string } | null;
   criadoEm: string;
@@ -609,6 +611,24 @@ export interface PublicoDaCampanha {
   publicoValor?: string;
 }
 
+/**
+ * O custo de uma campanha na Meta, com as frases e os valores prontos do
+ * servidor: a estimativa antes de disparar ("até R$ 96,51"), o gasto e o que
+ * ainda pode sair depois. Sem linhas e sem avisos, não há o que mostrar.
+ */
+export interface CustoNaMeta {
+  /** A moeda em que a Meta cobra a conta (ISO 4217). Nulo = a Meta ainda não informou. */
+  moeda: string | null;
+  /** O que a Meta já cobrou, em centavos. Nulo = não dá para calcular. */
+  gastoCentavos: number | null;
+  /** O teto do que ainda pode ser cobrado, em centavos. Nulo = não dá para calcular. */
+  aSairCentavos: number | null;
+  linhas: Array<{ rotulo: string; valor: string; detalhe: string | null }>;
+  /** O que falta para a conta ficar completa (tarifa, moeda, aviso de cobrança). */
+  avisos: string[];
+  nota: string | null;
+}
+
 /** `POST /campanhas/previa` — quantos podem receber, quantos estão em descanso e em que período pedem. */
 export interface PreviaDoPublico {
   total: number;
@@ -616,6 +636,8 @@ export interface PreviaDoPublico {
   horario: SugestaoDeHorario;
   /** Com variável de cashback, `total` é só quem tem cashback válido — de quantos do público. */
   cashback?: { doPublico: number } | null;
+  /** O custo estimado na Meta, quando o pedido leva a categoria do modelo escolhido. */
+  custo?: CustoNaMeta | null;
 }
 
 /** `GET /contatos/importacoes` — uma importação e quantos dela ainda podem receber. */

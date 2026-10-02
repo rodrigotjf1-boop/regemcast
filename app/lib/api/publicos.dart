@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../sessao/sessao.dart';
+import 'custo.dart';
 
 /// "Quem recebe": de onde sai o público da campanha, e a prévia dele.
 ///
@@ -112,7 +113,11 @@ class PreviaDoPublico {
     required this.emDescanso,
     this.horario,
     this.cashbackDoPublico,
+    this.custo,
   });
+
+  /// O custo estimado na Meta, quando o pedido leva a categoria do modelo.
+  final CustoNaMeta? custo;
 
   /// Quem pode receber. Com variável de cashback, só quem tem cashback válido.
   final int total;
@@ -138,6 +143,7 @@ class PreviaDoPublico {
       cashbackDoPublico: cashback is Map<String, dynamic>
           ? _int(cashback['doPublico'])
           : null,
+      custo: CustoNaMeta.deJson(j['custo']),
     );
   }
 }

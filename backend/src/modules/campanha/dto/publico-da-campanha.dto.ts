@@ -42,7 +42,7 @@ export class PublicoDaCampanhaDto {
   publicoValor?: string;
 }
 
-/** A prévia de "Quem recebe": o público e, com variável de cashback, só quem tem cashback válido. */
+/** A prévia de "Quem recebe": o público; com variável de cashback, só quem tem cashback válido; com a categoria do modelo, o custo estimado. */
 export class PreviaDoPublicoDto extends PublicoDaCampanhaDto {
   @ApiProperty({
     required: false,
@@ -51,4 +51,14 @@ export class PreviaDoPublicoDto extends PublicoDaCampanhaDto {
   @IsOptional()
   @IsBoolean({ message: 'soComCashback precisa ser verdadeiro ou falso.' })
   soComCashback?: boolean;
+
+  @ApiProperty({
+    required: false,
+    example: 'marketing',
+    description: 'A categoria do modelo escolhido. Com ela, a prévia traz o custo estimado na Meta. Nada é gravado.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  categoria?: string;
 }

@@ -243,9 +243,14 @@ export const campanhas = {
    * `POST /campanhas/previa` — antes de montar: quantos do público (lista ou
    * público da base) podem receber, quantos estão em descanso e em que
    * período do dia pedem. Com variável de cashback, só quem tem cashback válido.
+   * Com a categoria do modelo escolhido, traz também o custo estimado na Meta.
    */
-  previa: (publico: PublicoDaCampanha, soComCashback = false) =>
-    api.post<PreviaDoPublico>('/campanhas/previa', soComCashback ? { ...publico, soComCashback: true } : publico),
+  previa: (publico: PublicoDaCampanha, soComCashback = false, categoria = '') =>
+    api.post<PreviaDoPublico>('/campanhas/previa', {
+      ...publico,
+      ...(soComCashback ? { soComCashback: true } : {}),
+      ...(categoria ? { categoria } : {}),
+    }),
 
   /** `GET /campanhas/:id` */
   detalhe: (id: string) => api.get<ResumoCampanha>(`/campanhas/${id}`),
