@@ -439,11 +439,18 @@ export class WebhookService {
     const contaId = await this.ctx.comEscopoSistema('meta.webhook.nome', async (db) => {
       const [conta] = await db.select({ id: waConta.id, contaId: waConta.contaId }).from(waConta).where(eq(waConta.wabaId, wabaId)).limit(1);
       if (!conta) return null;
-      if (decisao.decisao === 'aprovado' && decisao.nome && decisao.telefoneE164) {
+      if (decisao.decisao === 'aprovado' && decisao.nome && decisao.digitos) {
+        // Pelos dígitos: a coluna guarda o telefone como a Meta o exibe, com
+        // espaços e hífen, e o aviso manda só os números.
         await db
           .update(waNumero)
           .set({ nomeExibicao: decisao.nome })
-          .where(and(eq(waNumero.waContaId, conta.id), eq(waNumero.telefoneE164, decisao.telefoneE164)));
+          .where(
+            and(
+              eq(waNumero.waContaId, conta.id),
+              sql`regexp_replace(coalesce(${waNumero.telefoneE164}, ''), '[^0-9]', '', 'g') = ${decisao.digitos}`,
+            ),
+          );
       }
       return conta.contaId;
     });

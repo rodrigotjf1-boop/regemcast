@@ -35,8 +35,12 @@ export interface DecisaoLida {
   nome: string | null;
   /** Por que foi recusado, em português. Nulo quando a Meta não disse ou não conhecemos o motivo. */
   motivo: string | null;
-  /** O telefone do número, em E.164 (`+5521…`), para achar a nossa linha. */
-  telefoneE164: string | null;
+  /**
+   * O telefone do número, SÓ os dígitos (`5521…`), para achar a nossa linha. A
+   * coluna `wa_numero.telefone_e164` guarda o telefone como a Meta o exibe
+   * ("+55 21 99999-8888", com espaços e hífen): a comparação é por dígitos.
+   */
+  digitos: string | null;
 }
 
 /** Lê o aviso. Nulo quando não traz uma decisão que reconhecemos. */
@@ -49,7 +53,7 @@ export function lerDecisaoDoNome(v: Record<string, unknown>): DecisaoLida | null
     decisao,
     nome: texto(v.requested_verified_name),
     motivo: decisao === 'recusado' ? (MOTIVO[String(v.rejection_reason ?? '').trim().toUpperCase()] ?? null) : null,
-    telefoneE164: digitos.length >= 8 && digitos.length <= 15 ? `+${digitos}` : null,
+    digitos: digitos.length >= 8 && digitos.length <= 15 ? digitos : null,
   };
 }
 

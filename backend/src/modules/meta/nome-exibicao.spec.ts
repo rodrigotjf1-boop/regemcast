@@ -38,7 +38,7 @@ describe('lerDecisaoDoNome', () => {
       decisao: 'aprovado',
       nome: 'Lucky Shrub',
       motivo: null,
-      telefoneE164: '+15550783881',
+      digitos: '15550783881',
     });
   });
 
@@ -72,10 +72,10 @@ describe('lerDecisaoDoNome', () => {
     expect(lerDecisaoDoNome({ ...APROVADO, decision: 'REJECTED', rejection_reason: 'NAME_NOVO' })?.motivo).toBeNull();
   });
 
-  it('o telefone vira E.164; o que não parece telefone fica nulo', () => {
-    expect(lerDecisaoDoNome({ ...APROVADO, display_phone_number: '+55 21 99999-8888' })?.telefoneE164).toBe('+5521999998888');
-    expect(lerDecisaoDoNome({ ...APROVADO, display_phone_number: '123' })?.telefoneE164).toBeNull();
-    expect(lerDecisaoDoNome({ ...APROVADO, display_phone_number: undefined })?.telefoneE164).toBeNull();
+  it('o telefone fica só com os dígitos; o que não parece telefone fica nulo', () => {
+    expect(lerDecisaoDoNome({ ...APROVADO, display_phone_number: '+55 21 99999-8888' })?.digitos).toBe('5521999998888');
+    expect(lerDecisaoDoNome({ ...APROVADO, display_phone_number: '123' })?.digitos).toBeNull();
+    expect(lerDecisaoDoNome({ ...APROVADO, display_phone_number: undefined })?.digitos).toBeNull();
   });
 });
 
