@@ -50,6 +50,13 @@ function tomDoStatus(status: string): 'sucesso' | 'atencao' | 'erro' | 'neutro' 
   return 'neutro';
 }
 
+/** A qualidade do modelo como a tela fala dela. Sem informação não vira crachá. */
+const QUALIDADE: Record<string, { rotulo: string; tom: 'sucesso' | 'atencao' | 'erro' }> = {
+  verde: { rotulo: 'Qualidade: Boa', tom: 'sucesso' },
+  amarela: { rotulo: 'Qualidade: Em atenção', tom: 'atencao' },
+  vermelha: { rotulo: 'Qualidade: Ruim', tom: 'erro' },
+};
+
 export default function PaginaModelos() {
   const [modelos, setModelos] = useState<ModeloDeMensagem[] | null>(null);
   const [meus, setMeus] = useState<ModeloSalvo[]>([]);
@@ -368,19 +375,51 @@ function CartaoModelo({
   aoEditar: () => void;
   aoExcluir: () => void;
 }) {
+  const qualidade = modelo.qualidade ? QUALIDADE[modelo.qualidade] : undefined;
+  const alertas = modelo.alertas ?? [];
   return (
     <article className="cartao-interativo flex h-full flex-col overflow-hidden rounded-card border border-borda bg-superficie shadow-card">
       <div className="flex items-start justify-between gap-2 p-4">
         <div className="min-w-0">
           <p className="numerico break-words text-sm font-semibold text-tinta">{modelo.nome}</p>
-          <p className="text-xs capitalize text-tinta-suave">
-            {modelo.categoria} · {modelo.idioma}
+          <p className="text-xs text-tinta-suave">
+            <span className="capitalize">{modelo.categoria}</span> · {modelo.idioma}
+            {/* A Meta reclassificou: o preço por mensagem segue a categoria de agora. */}
+            {modelo.categoriaAnterior ? ` · era ${modelo.categoriaAnterior}` : ''}
           </p>
         </div>
-        <Badge tom={tomDoStatus(modelo.status)} ponto>
-          {modelo.status}
-        </Badge>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <Badge tom={tomDoStatus(modelo.status)} ponto>
+            {modelo.status}
+          </Badge>
+          {qualidade && (
+            <Badge tom={qualidade.tom} ponto>
+              {qualidade.rotulo}
+            </Badge>
+          )}
+        </div>
       </div>
+
+      {/*
+        O que a Meta sinaliza neste modelo — qualidade caindo, categoria que vai
+        mudar. As frases vêm prontas do servidor; a tela não traduz nada.
+      */}
+      {alertas.length > 0 && (
+        <ul className="space-y-px border-t border-borda">
+          {alertas.map((a) => (
+            <li
+              key={a.texto}
+              className={
+                a.tom === 'erro'
+                  ? 'bg-erro/10 px-4 py-2.5 text-xs leading-relaxed text-erro'
+                  : 'bg-atencao/10 px-4 py-2.5 text-xs leading-relaxed text-atencao'
+              }
+            >
+              {a.texto}
+            </li>
+          ))}
+        </ul>
+      )}
 
       {/*
         A prévia mostra a mensagem como ela vai chegar, com as partes na ordem

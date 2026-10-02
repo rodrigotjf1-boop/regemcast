@@ -650,6 +650,54 @@ relê nos só informativos (`VOLUME_BASED_PRICING_TIER_UPDATE`,
 `waba_info.owner_business_id` quando a conta ainda não tem o negócio — é com ele
 que se monta o endereço do pagamento.
 
+## Qualidade e categoria do modelo
+
+Depois de aprovado, um modelo ainda recebe dois sinais da Meta, e os dois
+mexem no envio e no bolso (`meta/modelo-sinais.ts`):
+
+- **Qualidade** (`quality_score`: GREEN, YELLOW, RED, UNKNOWN). Vem do que os
+  destinatários fazem com a mensagem — bloqueio, denúncia, "parar promoções".
+  Em RED o modelo está, nas palavras dela, "em perigo de ser pausado ou
+  desativado"; pausado, nenhuma campanha com ele sai.
+- **Categoria** (`category`, `correct_category`, `previous_category`). A Meta
+  reclassifica o que considera marketing disfarçado de utilidade: avisa com 24
+  horas e muda. O preço por mensagem muda junto (marketing custa várias vezes
+  a utilidade), e as regras de envio também.
+
+**Na lista de modelos** (`GET /whatsapp/modelos`, lida da Meta a cada visita)
+cada modelo traz `qualidade` (`verde`, `amarela`, `vermelha`, `desconhecida`),
+`categoriaPrevista` (a `correct_category`, só quando difere da atual — a Meta
+devolve o campo também quando o modelo já está na categoria certa),
+`categoriaAnterior` e `alertas`, as frases prontas do que pede atenção. A tela
+(site e app) mostra o crachá da qualidade, o "era utilidade" e os alertas; não
+traduz nada. Modelo novo ou sem informação fica sem crachá — "desconhecida"
+nunca vira "boa".
+
+Os três campos são pedidos junto dos de sempre. **Se a Meta recusar os campos
+novos (#100), a lista é pedida de novo sem eles** e segue: é ela que deixa
+montar campanha, e um campo a mais não pode derrubá-la.
+
+**Pelos avisos**, que é o que permite avisar no celular na hora (categoria
+"modelos" dos avisos):
+
+| Aviso da Meta | O que acontece |
+| --- | --- |
+| `message_template_quality_update` | Só a QUEDA avisa (verde → amarela, → vermelha; ou modelo novo que já nasce amarelo ou vermelho). Melhora e "sem informação" ficam quietas. Nada é gravado: a tela lê a qualidade na lista. |
+| `template_category_update`, aviso das 24 horas (`correct_category` + `category_update_timestamp`) | Avisa de onde para onde e QUANDO, na hora do fuso da conta. O nosso registro não muda. |
+| `template_category_update`, mudança feita (`previous_category` + `new_category`) | Grava a categoria nova em `modelo.categoria_meta` (a que pedimos continua em `categoria`) e avisa. |
+
+No aviso de categoria o campo `new_category` significa coisas diferentes nos
+dois formatos — a categoria de HOJE no aviso das 24 horas, a NOVA na mudança
+feita. O código lê pelo campo que só um deles tem (`correct_category`).
+
+O dono é avisado mesmo quando o modelo foi criado fora do Regemcast: sem linha
+nossa, a conta sai da WABA do aviso (`entry.id`).
+
+**O que este PR não faz:** campanha em rascunho criada quando o modelo era de
+utilidade guarda a categoria daquele momento (e, com ela, a decisão do descanso
+de marketing). A categoria é relida da Meta ao editar a campanha, não ao
+disparar.
+
 ## Modelos: análise antes de enviar
 
 Nada vai para a Meta sem passar pela análise (`modelo/regras-modelo.ts`): o
@@ -688,8 +736,30 @@ repete a recusa.
   lentidão nossa em desassinatura dela.
 - **Idempotência** por `wamid` + status: o mesmo `wamid` chega uma vez por
   estado (`sent`, `delivered`, `read`), e colapsar os três perderia dois.
+  Aviso sem id de mensagem (conta, número, modelo) é identificado pelo conteúdo
+  MAIS o momento em que a Meta o disparou (`entry.time`): o reenvio repete os
+  dois e é descartado; o mesmo conteúdo em outro momento é outro evento. Só com
+  o conteúdo, o segundo "modelo pausado" ou a segunda queda de qualidade —
+  iguais à primeira, semanas depois — eram descartados para sempre.
 - **Rede de segurança**: `webhook.retomada.ts` reprocessa pendentes a cada
   minuto, porque senão um evento que falhou fica parado até a Meta mandar outro.
+
+### Os campos que o Regemcast trata
+
+Cada um precisa estar assinado no aplicativo da Meta; campo não assinado não
+chega, e nada avisa que falta.
+
+| Campo | Para quê |
+| --- | --- |
+| `messages` | Status de entrega, respostas, pedido de saída, conversas |
+| `message_template_status_update` | Modelo aprovado, recusado, pausado, desativado |
+| `message_template_quality_update` | Queda de qualidade do modelo |
+| `template_category_update` | A Meta vai mudar, ou mudou, a categoria do modelo |
+| `phone_number_quality_update` | Qualidade do número |
+| `business_capability_update`, `messaging_limit_update` | Limite de envio |
+| `account_update`, `account_review_update` | Restrição, desativação, mudança na conta (relê a saúde) |
+| `user_preferences` | Parou ou voltou a aceitar marketing |
+| `smb_app_state_sync`, `history`, `smb_message_echoes` | Coexistência: agenda, histórico e ecos do celular |
 
 ### Onde fica a configuração do webhook no painel da Meta
 
@@ -753,6 +823,7 @@ disparos e o custo por campanha (roteiro da IA, 01/10/2026).
 - Envio de modelo: [Media card carousel templates](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/media-card-carousel-templates) · [Coupon code templates](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/coupon-templates) · [Limited-time offer templates](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/limited-time-offer-templates) · [Custom marketing templates](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/custom-marketing-templates) · [Media (upload para envio)](https://developers.facebook.com/documentation/business-messaging/whatsapp/business-phone-numbers/media) (conferidas em 01/10/2026)
 - [Status messages webhook reference (objeto `pricing`)](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/messages/status) · [Pricing (cobrança por mensagem, na entrega)](https://developers.facebook.com/docs/whatsapp/pricing) (conferidas em 01/10/2026)
 - [Messaging and Calling Health Status (`health_status`)](https://developers.facebook.com/docs/whatsapp/cloud-api/health-status) · [`account_update` webhook](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/account_update) (conferidas em 01/10/2026)
+- [`message_template_quality_update` webhook](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/message_template_quality_update) · [`template_category_update` webhook](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/template_category_update) · [Template quality](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/template-quality) · [WhatsApp Message Template (campos `quality_score`, `correct_category`, `previous_category`)](https://developers.facebook.com/docs/graph-api/reference/whats-app-business-hsm/) (conferidas em 02/10/2026)
 - [Messaging limits (limite de envio, portfólio)](https://developers.facebook.com/documentation/business-messaging/whatsapp/messaging-limits/)
 - [`business_capability_update` webhook](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/business_capability_update/)
 - [Per-user marketing template limits (131049)](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/per-user-limits/)

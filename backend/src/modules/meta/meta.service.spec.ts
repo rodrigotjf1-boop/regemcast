@@ -608,6 +608,33 @@ describe('modelos de mensagem', () => {
     expect(m!.status).toBe('algo_que_a_meta_inventou');
   });
 
+  it('traz os sinais da Meta: qualidade e categoria que ela vai mudar, com a frase pronta', async () => {
+    const { service, db, diario, graph } = montar();
+    db.select.mockReturnValueOnce(consulta([contaConectada()], diario));
+    graph.modelosDaWaba.mockResolvedValue({
+      data: [
+        {
+          id: '1',
+          name: 'pedido_saiu',
+          status: 'APPROVED',
+          category: 'UTILITY',
+          correct_category: 'MARKETING',
+          quality_score: { score: 'YELLOW', date: 1746082800 },
+          components: [{ type: 'BODY', text: 'Seu pedido saiu.' }],
+        },
+        { id: '2', name: 'sem_sinais', status: 'APPROVED', category: 'MARKETING', components: [] },
+      ],
+    });
+
+    const [m, semSinais] = await service.modelos(CONTA);
+
+    expect(m).toMatchObject({ categoria: 'utilidade', qualidade: 'amarela', categoriaPrevista: 'marketing', categoriaAnterior: null });
+    expect(m!.alertas.map((a) => a.tom)).toEqual(['atencao', 'atencao']);
+    expect(m!.alertas[1]!.texto).toContain('de utilidade para marketing em até 24 horas');
+    // Lista sem os campos (a Meta recusou, ou o modelo é novo): nada é inventado.
+    expect(semSinais).toMatchObject({ qualidade: 'desconhecida', categoriaPrevista: null, categoriaAnterior: null, alertas: [] });
+  });
+
   it('cabeçalho de mídia diz o formato, já que não tem texto', async () => {
     const { service, db, diario, graph } = montar();
     db.select.mockReturnValueOnce(consulta([contaConectada()], diario));

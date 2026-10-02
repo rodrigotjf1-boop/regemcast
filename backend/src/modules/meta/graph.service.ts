@@ -48,6 +48,12 @@ export interface ModeloBruto {
   status?: string;
   category?: string;
   rejected_reason?: string;
+  /** A qualidade que a Meta atribui pelo que os destinatários fazem com a mensagem. */
+  quality_score?: { score?: string; date?: number } | string;
+  /** A categoria que a Meta considera certa; diferente de `category` = ela vai reclassificar. */
+  correct_category?: string;
+  /** A categoria de antes da última reclassificação. */
+  previous_category?: string;
   components?: Array<{
     type?: string;
     format?: string;
@@ -132,6 +138,10 @@ const TENTATIVAS_PADRAO = 2;
  * maior teto de modelos que a Meta dá a uma conta.
  */
 const MAX_PAGINAS_DE_MODELOS = 30;
+/** O que a lista de modelos sempre pede. */
+const CAMPOS_DO_MODELO = 'id,name,language,status,category,components,rejected_reason';
+/** Os sinais (`modelo-sinais.ts`): a qualidade e a categoria que a Meta considera certa. */
+const SINAIS_DO_MODELO = 'quality_score,correct_category,previous_category';
 
 @Injectable()
 export class GraphService {
@@ -679,19 +689,30 @@ export class GraphService {
   ): Promise<{ data: ModeloBruto[] }> {
     const data: ModeloBruto[] = [];
     let depois: string | undefined;
+    let campos = `${CAMPOS_DO_MODELO},${SINAIS_DO_MODELO}`;
 
     for (let pagina = 0; pagina < MAX_PAGINAS_DE_MODELOS; pagina++) {
-      const r = await this.chamar<{
-        data?: ModeloBruto[];
-        paging?: { cursors?: { after?: string }; next?: string };
-      }>(`${wabaId}/message_templates`, {
-        token: tokenDoCliente,
-        query: {
-          fields: 'id,name,language,status,category,components,rejected_reason',
-          limit: limite,
-          after: depois,
-        },
-      });
+      const pedir = () =>
+        this.chamar<{
+          data?: ModeloBruto[];
+          paging?: { cursors?: { after?: string }; next?: string };
+        }>(`${wabaId}/message_templates`, {
+          token: tokenDoCliente,
+          query: { fields: campos, limit: limite, after: depois },
+        });
+
+      let r: Awaited<ReturnType<typeof pedir>>;
+      try {
+        r = await pedir();
+      } catch (erro) {
+        // A lista é o que deixa montar campanha: se a Meta recusar os campos
+        // dos sinais (qualidade, categoria certa), ela vem sem eles — e não cai.
+        const recusouOCampo = erro instanceof ErroGraph && erro.codigo === 100 && campos !== CAMPOS_DO_MODELO;
+        if (!recusouOCampo) throw erro;
+        this.log.warn(`A Meta recusou os campos dos sinais do modelo; a lista segue sem eles: ${erro.detalheParaLog}`);
+        campos = CAMPOS_DO_MODELO;
+        r = await pedir();
+      }
       data.push(...(r.data ?? []));
 
       // `next` só vem quando há mais; o cursor `after` sozinho vem sempre.

@@ -110,7 +110,9 @@ class _CascaState extends ConsumerState<Casca> {
       );
       return;
     }
-    if (dados['modeloId'] is String) {
+    // `tela: modelos` vem nos avisos de qualidade e de categoria, inclusive de
+    // modelo criado fora do Regemcast (que não tem `modeloId`).
+    if (dados['modeloId'] is String || dados['tela'] == 'modelos') {
       ref
         ..invalidate(modelosSalvosProvider)
         ..invalidate(modelosNaMetaProvider);
@@ -122,6 +124,16 @@ class _CascaState extends ConsumerState<Casca> {
       } else {
         setState(() => _aba = Aba.modelos);
       }
+      return;
+    }
+    if (dados['tela'] == 'whatsapp') {
+      // "Sua conta não pode enviar agora": o motivo está na saúde da conta.
+      ref
+        ..invalidate(situacaoWhatsappProvider)
+        ..invalidate(saudeDaContaProvider);
+      Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => const TelaWhatsapp()));
       return;
     }
     if (dados['tipo'] == 'cobranca' || dados['tela'] == 'plano') {

@@ -25,6 +25,17 @@ function resposta(corpo: unknown) {
   } as unknown as Response;
 }
 
+function recusa(status: number, codigo: number, mensagem: string) {
+  const corpo = { error: { code: codigo, message: mensagem, type: 'OAuthException' } };
+  return {
+    ok: false,
+    status,
+    headers: new Headers({ 'content-type': 'application/json' }),
+    json: async () => corpo,
+    text: async () => JSON.stringify(corpo),
+  } as unknown as Response;
+}
+
 const modelo = (n: number) => ({ id: String(n), name: `modelo_${n}`, language: 'pt_BR', status: 'APPROVED' });
 
 describe('GraphService.modelosDaWaba', () => {
@@ -68,6 +79,73 @@ describe('GraphService.modelosDaWaba', () => {
 
     expect(r.data.map((m) => m.id)).toEqual(['1', '2', '3', '4']);
     expect(cursores).toEqual([null, 'c1', 'c2']);
+  });
+
+  it('pede junto os sinais do modelo: a qualidade e a categoria que a Meta considera certa', async () => {
+    const urls: URL[] = [];
+    global.fetch = jest.fn(async (url: string | URL) => {
+      urls.push(new URL(String(url)));
+      return resposta({ data: [{ ...modelo(1), quality_score: { score: 'YELLOW', date: 1746082800 }, correct_category: 'MARKETING' }] });
+    }) as unknown as typeof fetch;
+
+    const r = await new GraphService().modelosDaWaba('WABA1', TOKEN);
+
+    expect(urls[0].searchParams.get('fields')).toBe(
+      'id,name,language,status,category,components,rejected_reason,quality_score,correct_category,previous_category',
+    );
+    expect(r.data[0].quality_score).toEqual({ score: 'YELLOW', date: 1746082800 });
+  });
+
+  it('a Meta recusa os campos dos sinais (#100): a lista vem sem eles, em vez de cair', async () => {
+    // A lista é o que deixa montar campanha: um campo a mais não pode derrubá-la.
+    const aviso = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const campos: Array<string | null> = [];
+    global.fetch = jest.fn(async (url: string | URL) => {
+      const pedidos = new URL(String(url)).searchParams.get('fields');
+      campos.push(pedidos);
+      return pedidos?.includes('quality_score')
+        ? recusa(400, 100, '(#100) Tried accessing nonexisting field (quality_score)')
+        : resposta({ data: [modelo(1), modelo(2)] });
+    }) as unknown as typeof fetch;
+
+    const r = await new GraphService().modelosDaWaba('WABA1', TOKEN);
+
+    expect(r.data.map((m) => m.id)).toEqual(['1', '2']);
+    expect(campos).toEqual([
+      'id,name,language,status,category,components,rejected_reason,quality_score,correct_category,previous_category',
+      'id,name,language,status,category,components,rejected_reason',
+    ]);
+    expect(aviso).toHaveBeenCalledWith(expect.stringContaining('recusou os campos dos sinais'));
+  });
+
+  it('recusados uma vez, as páginas seguintes já pedem sem os sinais', async () => {
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const campos: Array<string | null> = [];
+    global.fetch = jest.fn(async (url: string | URL) => {
+      const u = new URL(String(url));
+      const pedidos = u.searchParams.get('fields');
+      campos.push(pedidos);
+      if (pedidos?.includes('quality_score')) return recusa(400, 100, '(#100) Tried accessing nonexisting field');
+      return u.searchParams.get('after')
+        ? resposta({ data: [modelo(2)] })
+        : resposta({ data: [modelo(1)], paging: { cursors: { after: 'c1' }, next: 'https://graph.facebook.com/proxima' } });
+    }) as unknown as typeof fetch;
+
+    const r = await new GraphService().modelosDaWaba('WABA1', TOKEN);
+
+    expect(r.data.map((m) => m.id)).toEqual(['1', '2']);
+    expect(campos.filter((c) => c?.includes('quality_score'))).toHaveLength(1);
+    expect(campos).toHaveLength(3);
+  });
+
+  it('outro erro da Meta não é engolido: sobe como antes', async () => {
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const chamada = jest.fn(async () => recusa(401, 190, 'Error validating access token'));
+    global.fetch = chamada as unknown as typeof fetch;
+
+    await expect(new GraphService().modelosDaWaba('WABA1', TOKEN)).rejects.toMatchObject({ codigo: 190 });
+    expect(chamada).toHaveBeenCalledTimes(1);
   });
 
   it('conta sem modelo nenhum devolve lista vazia', async () => {
