@@ -456,13 +456,16 @@ class SaudeDaConta {
   final DateTime? lidaEm;
   final List<ItemDaSaude> itens;
 
-  /// A Meta aponta algo: bloqueio ou restrição.
-  bool get pedeAtencao => sinal == 'bloqueado' || sinal == 'com_restricao';
+  /// A Meta (ou a autorização vencida) impede o envio agora.
+  bool get bloqueada => sinal == 'bloqueado';
 
-  /// O problema que mais pesa (os itens já vêm do pior para o melhor).
-  ErroQueGuia? get primeiroProblema {
+  /// Por que o envio está bloqueado: o problema do primeiro item bloqueado
+  /// (os itens já vêm do pior para o melhor). Nulo quando não está.
+  ErroQueGuia? get motivoDoBloqueio {
     for (final i in itens) {
-      if (i.problemas.isNotEmpty) return i.problemas.first;
+      if (i.sinal == 'bloqueado' && i.problemas.isNotEmpty) {
+        return i.problemas.first;
+      }
     }
     return null;
   }

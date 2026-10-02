@@ -277,6 +277,46 @@ void main() {
       },
     );
 
+    testWidgets(
+      'rascunho com a conta "com restrição": nenhum aviso — a mensagem sai, e a restrição fica na tela do WhatsApp',
+      (t) async {
+        _telaAlta(t);
+        final s = _Servidor(_campanha('rascunho'))
+          ..saude = {
+            'sinal': 'com_restricao',
+            'titulo': 'Envia com restrição',
+            'resumo': 'Há 1 ponto de atenção — o envio sai, mas vale resolver.',
+            'lidaEm': '2026-10-02T03:22:00Z',
+            'itens': [
+              {
+                'chave': 'numero:1',
+                'rotulo': 'Número +55 21 99999-8888',
+                'sinal': 'com_restricao',
+                'resumo': 'Envia com restrição.',
+                'problemas': [
+                  {
+                    'codigo': null,
+                    'titulo':
+                        'O nome de exibição do número ainda não foi aprovado',
+                    'explicacao': 'O número envia com um limite menor.',
+                    'acao': 'Confira o nome de exibição na Meta.',
+                    'quem': 'voce',
+                    'tela': null,
+                    'link': null,
+                    'daMeta': null,
+                  },
+                ],
+              },
+            ],
+          };
+        await t.pumpWidget(_app(s.api, const TelaCampanhaDetalhe(id: 'c1')));
+        await _assentar(t);
+
+        expect(find.byKey(const ValueKey('cd-saude')), findsNothing);
+        expect(find.text('Disparar agora'), findsOneWidget);
+      },
+    );
+
     testWidgets('rascunho com a conta em dia: nenhum aviso da saúde', (
       t,
     ) async {

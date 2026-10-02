@@ -369,11 +369,13 @@ export class GraphService {
   /**
    * A cobrança da WABA: moeda, fuso, forma de pagamento e verificação da
    * empresa. Chamada à parte da saúde: um campo recusado aqui não pode esconder
-   * o veredito de envio.
+   * o veredito de envio. Quem chama diz quais campos pedir — a Meta recusa a
+   * chamada inteira quando a autorização não alcança um deles.
    */
   async cobrancaDaWaba(
     wabaId: string,
     tokenDoCliente: string,
+    campos: readonly string[],
   ): Promise<{
     currency?: string;
     timezone_id?: string;
@@ -382,7 +384,7 @@ export class GraphService {
   }> {
     return this.chamar(wabaId, {
       token: tokenDoCliente,
-      query: { fields: 'currency,timezone_id,primary_funding_id,business_verification_status' },
+      query: { fields: campos.join(',') },
       timeoutMs: 6_000,
       tentativas: 0,
     });

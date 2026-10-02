@@ -29,10 +29,13 @@ import { decifrarToken } from './cripto';
 import { ErroGraph, GraphService } from './graph.service';
 import { linkDoPagamentoNaMeta } from './pagamento';
 import {
+  CAMPOS_DA_COBRANCA,
   lerSaude,
   oQueImpedeOEnvio,
   saudeGuardada,
   saudeParaTela,
+  type CampoDaCobranca,
+  type CampoRecusado,
   type EstadoDeEnvio,
   type SaudeLida,
   type SaudeParaTela,
@@ -44,6 +47,8 @@ const VALIDADE_NA_TELA_MS = 10 * 60_000;
 const VALIDADE_NO_DISPARO_MS = 2 * 60_000;
 /** O "Conferir agora" não pergunta à Meta mais de uma vez neste intervalo. */
 const INTERVALO_DO_CONFERIR_MS = 20_000;
+/** Campo da cobrança que a Meta recusou só volta a ser pedido depois disto. */
+const ESPERA_DO_CAMPO_RECUSADO_MS = 24 * 3_600_000;
 
 interface ContaLida {
   id: string;
@@ -69,13 +74,27 @@ interface NumeroLido {
   saude: unknown;
 }
 
-/** O que a Meta respondeu numa volta. `conta: null` = não deu para ler; nada é gravado. */
+/**
+ * A cobrança como foi lida: o valor de cada campo que a Meta deixou ler, e os
+ * que ela recusou. Campo recusado não é "vazio" — é "não sei".
+ */
+interface CobrancaLida {
+  valores: Partial<Record<CampoDaCobranca, string | null>>;
+  lidos: CampoDaCobranca[];
+  recusada: CampoRecusado[];
+  recusadaEm: Date | null;
+}
+
+/** O que a Meta respondeu numa volta. `conta: null` = não deu para ler a saúde. */
 interface Leitura {
   conta: SaudeLida | null;
-  cobranca: { moeda: string | null; fuso: string | null; pagamentoId: string | null; verificacao: string | null } | null;
+  /** Nulo = a cobrança não foi lida nesta volta (fica valendo a anterior). */
+  cobranca: CobrancaLida | null;
   numeros: Array<{ id: string; saude: SaudeLida | null }>;
   /** A autorização da conta caiu (190 e parentes): insistir não conserta. */
   credencial: boolean;
+  /** Com que código a leitura da saúde falhou. Só quando `conta` é nulo. */
+  falha: { codigo: number | null } | null;
 }
 
 @Injectable()
@@ -120,7 +139,10 @@ export class SaudeService {
       if (!lido.conta.tokenCifrado) return;
       const { conta, numeros } = lido;
       const leitura = await this.consultarMeta(conta, numeros);
-      if (!leitura.conta) return;
+      if (!leitura.conta) {
+        await this.ctx.comConta(contaId, (db) => this.gravarFalha(db, conta, leitura));
+        return;
+      }
       // Em transação PRÓPRIA: a recusa logo abaixo desfaz a transação do pedido,
       // e a leitura tem de ficar. Sem isto a tela continuava com o estado velho
       // e o aviso de "bloqueou agora" saía de novo a cada tentativa de disparo.
@@ -147,7 +169,10 @@ export class SaudeService {
     if (!lido?.conta.tokenCifrado) return { leu: false, credencial: false };
 
     const leitura = await this.consultarMeta(lido.conta, lido.numeros);
-    if (!leitura.conta) return { leu: false, credencial: leitura.credencial };
+    if (!leitura.conta) {
+      await this.ctx.comEscopoSistema('meta.saude.gravar', (db) => this.gravarFalha(db, lido.conta, leitura));
+      return { leu: false, credencial: leitura.credencial };
+    }
 
     await this.ctx.comEscopoSistema('meta.saude.gravar', (db) => this.gravar(db, lido.conta, lido.numeros, leitura));
     return { leu: true, credencial: false };
@@ -200,9 +225,33 @@ export class SaudeService {
   private async atualizar(db: Db, conta: ContaLida, numeros: NumeroLido[]): Promise<boolean> {
     if (!conta.tokenCifrado) return false;
     const leitura = await this.consultarMeta(conta, numeros);
-    if (!leitura.conta) return false;
+    if (!leitura.conta) {
+      await this.gravarFalha(db, conta, leitura);
+      return false;
+    }
     await this.gravar(db, conta, numeros, leitura);
     return true;
+  }
+
+  /**
+   * Guarda que a última conferência falhou, e com que código — sem a frase da
+   * Meta. É o que deixa a tela dizer "a conexão caiu" (190) ou "a Meta não
+   * respondeu (código N)" em vez de um "ainda não conferimos" que nunca muda.
+   * Não mexe na última leitura boa.
+   */
+  private async gravarFalha(db: Db, conta: ContaLida, leitura: Leitura): Promise<void> {
+    if (!leitura.falha) return;
+    const atual = conta.saude && typeof conta.saude === 'object' ? (conta.saude as Record<string, unknown>) : {};
+    await db
+      .update(waConta)
+      .set({
+        saude: {
+          ...atual,
+          entidades: Array.isArray(atual.entidades) ? atual.entidades : [],
+          ultimaFalha: { codigo: leitura.falha.codigo, em: new Date().toISOString() },
+        },
+      })
+      .where(eq(waConta.id, conta.id));
   }
 
   /**
@@ -211,7 +260,7 @@ export class SaudeService {
    * de cada número. Nenhuma falha sobe.
    */
   private async consultarMeta(conta: ContaLida, numeros: NumeroLido[]): Promise<Leitura> {
-    const vazia: Leitura = { conta: null, cobranca: null, numeros: [], credencial: false };
+    const vazia: Leitura = { conta: null, cobranca: null, numeros: [], credencial: false, falha: null };
     let token: string;
     try {
       token = decifrarToken(conta.tokenCifrado!, env.meta.tokenChave);
@@ -235,24 +284,10 @@ export class SaudeService {
       this.log.warn(
         `Não consegui ler a saúde da WABA ${this.mascarar(conta.wabaId)}: ${erro instanceof ErroGraph ? erro.detalheParaLog : String(erro)}`,
       );
-      return { ...vazia, credencial };
+      return { ...vazia, credencial, falha: { codigo: erro instanceof ErroGraph ? erro.codigo : null } };
     }
 
-    let cobranca: Leitura['cobranca'] = null;
-    try {
-      const c = await this.graph.cobrancaDaWaba(conta.wabaId, token);
-      const so = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
-      cobranca = {
-        moeda: so(c.currency),
-        fuso: so(c.timezone_id),
-        pagamentoId: so(c.primary_funding_id),
-        verificacao: so(c.business_verification_status),
-      };
-    } catch (erro) {
-      this.log.warn(
-        `Não consegui ler a cobrança da WABA ${this.mascarar(conta.wabaId)}: ${erro instanceof ErroGraph ? erro.detalheParaLog : String(erro)}`,
-      );
-    }
+    const cobranca = await this.lerCobranca(conta, token);
 
     const dosNumeros: Leitura['numeros'] = [];
     for (const n of numeros) {
@@ -266,12 +301,89 @@ export class SaudeService {
       }
     }
 
-    return { conta: saudeDaConta, cobranca, numeros: dosNumeros, credencial: false };
+    return { conta: saudeDaConta, cobranca, numeros: dosNumeros, credencial: false, falha: null };
+  }
+
+  /**
+   * A cobrança, campo a campo quando preciso.
+   *
+   * A Meta recusa a chamada INTEIRA quando a autorização não alcança um dos
+   * campos (foi o que aconteceu na primeira leitura real, em 02/10/2026): pedir
+   * os quatro juntos e desistir deixava a tela sem a moeda por causa de um
+   * campo que nem era ela. Então: os quatro juntos; recusou, um de cada vez. O
+   * que ela recusa fica anotado e só volta a ser pedido no dia seguinte.
+   *
+   * Nulo = nada foi lido nem recusado (rede, tempo esgotado): vale a leitura
+   * anterior.
+   */
+  private async lerCobranca(conta: ContaLida, token: string): Promise<CobrancaLida | null> {
+    const anterior = saudeGuardada(conta.saude);
+    const recusadaHaPouco =
+      anterior?.cobrancaRecusadaEm && Date.now() - anterior.cobrancaRecusadaEm.getTime() < ESPERA_DO_CAMPO_RECUSADO_MS
+        ? anterior.cobrancaRecusada
+        : [];
+    const pedir = CAMPOS_DA_COBRANCA.filter((c) => !recusadaHaPouco.some((r) => r.campo === c));
+    const lida: CobrancaLida = {
+      valores: {},
+      lidos: [],
+      recusada: [...recusadaHaPouco],
+      recusadaEm: recusadaHaPouco.length ? (anterior?.cobrancaRecusadaEm ?? null) : null,
+    };
+    if (!pedir.length) return lida;
+
+    const so = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+    const guardar = (campos: readonly CampoDaCobranca[], r: Record<string, unknown>) => {
+      for (const c of campos) {
+        lida.valores[c] = so(r[c]);
+        lida.lidos.push(c);
+      }
+    };
+    /** A Meta respondeu, e recusou: é dela, não da rede. */
+    const recusou = (erro: unknown): erro is ErroGraph => erro instanceof ErroGraph && erro.status >= 400 && erro.status < 500;
+
+    try {
+      guardar(pedir, await this.graph.cobrancaDaWaba(conta.wabaId, token, pedir));
+      return lida;
+    } catch (erro) {
+      if (!recusou(erro)) {
+        this.log.warn(`Não consegui ler a cobrança da WABA ${this.mascarar(conta.wabaId)}: ${String(erro)}`);
+        return null;
+      }
+      if (pedir.length === 1) {
+        lida.recusada.push({ campo: pedir[0], codigo: erro.codigo });
+        lida.recusadaEm = new Date();
+        return lida;
+      }
+    }
+
+    for (const campo of pedir) {
+      try {
+        guardar([campo], await this.graph.cobrancaDaWaba(conta.wabaId, token, [campo]));
+      } catch (erro) {
+        if (!recusou(erro)) continue;
+        lida.recusada.push({ campo, codigo: erro.codigo });
+        lida.recusadaEm = new Date();
+      }
+    }
+    if (lida.recusada.length > recusadaHaPouco.length) {
+      this.log.warn(
+        `A Meta recusou campos da cobrança da WABA ${this.mascarar(conta.wabaId)}: ${lida.recusada.map((r) => `${r.campo} (${r.codigo ?? 'sem código'})`).join(', ')}.`,
+      );
+    }
+    return lida;
   }
 
   private async gravar(db: Db, conta: ContaLida, numeros: NumeroLido[], leitura: Leitura): Promise<void> {
     const agora = new Date();
-    const cobrancaLida = leitura.cobranca !== null || saudeGuardada(conta.saude)?.cobrancaLida === true;
+    // Sem cobrança lida nesta volta (rede), vale o que a leitura anterior sabia.
+    const anterior = saudeGuardada(conta.saude);
+    const c = leitura.cobranca;
+    const cobranca = {
+      cobrancaLidos: c ? c.lidos : (anterior?.cobrancaLidos ?? []),
+      cobrancaRecusada: c ? c.recusada : (anterior?.cobrancaRecusada ?? []),
+      cobrancaRecusadaEm: (c ? c.recusadaEm : (anterior?.cobrancaRecusadaEm ?? null))?.toISOString() ?? null,
+    };
+    const lido = (campo: CampoDaCobranca) => Boolean(c?.lidos.includes(campo));
     // Virou bloqueado AGORA (não "continua bloqueado"): comparado antes de gravar.
     const contaBloqueou = leitura.conta!.estado === 'bloqueado' && conta.saudeEstado !== 'bloqueado';
     const numeroBloqueou = leitura.numeros.some(
@@ -282,16 +394,14 @@ export class SaudeService {
       .update(waConta)
       .set({
         saudeEstado: leitura.conta!.estado,
-        saude: { entidades: leitura.conta!.entidades, cobrancaLida },
+        // Sem `ultimaFalha`: a leitura deu certo.
+        saude: { entidades: leitura.conta!.entidades, ...cobranca },
         saudeEm: agora,
-        ...(leitura.cobranca
-          ? {
-              moeda: leitura.cobranca.moeda,
-              fuso: leitura.cobranca.fuso,
-              pagamentoId: leitura.cobranca.pagamentoId,
-              verificacaoNegocio: leitura.cobranca.verificacao,
-            }
-          : {}),
+        // Só o campo que a Meta deixou ler é gravado: recusado não vira "vazio".
+        ...(lido('currency') ? { moeda: c!.valores.currency ?? null } : {}),
+        ...(lido('timezone_id') ? { fuso: c!.valores.timezone_id ?? null } : {}),
+        ...(lido('primary_funding_id') ? { pagamentoId: c!.valores.primary_funding_id ?? null } : {}),
+        ...(lido('business_verification_status') ? { verificacaoNegocio: c!.valores.business_verification_status ?? null } : {}),
       })
       .where(eq(waConta.id, conta.id));
 
@@ -328,13 +438,15 @@ export class SaudeService {
         };
       }),
       cobranca: {
-        lida: guardada?.cobrancaLida === true,
+        moedaLida: Boolean(guardada?.cobrancaLidos.includes('currency')),
+        pagamentoLido: Boolean(guardada?.cobrancaLidos.includes('primary_funding_id')),
         moeda: conta.moeda,
         fuso: conta.fuso,
         pagamentoId: conta.pagamentoId,
         url: linkDoPagamentoNaMeta(conta.wabaId, conta.businessId),
       },
       tokenExpiraEm: conta.tokenExpiraEm,
+      falha: guardada?.ultimaFalha ?? null,
       agora: new Date(),
     });
   }

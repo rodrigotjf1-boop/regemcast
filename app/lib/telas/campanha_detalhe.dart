@@ -509,35 +509,36 @@ class _TelaCampanhaDetalheState extends ConsumerState<TelaCampanhaDetalhe> {
 
 // ----------------------------------------------------------------- blocos
 
-/// O aviso curto antes de disparar ou de retomar: se a Meta aponta um problema
-/// na conta, diz qual e leva à tela do WhatsApp, onde está o que fazer. Quieto
-/// quando está tudo certo e quando não deu para conferir — o servidor confere
-/// de novo na hora do disparo.
+/// O aviso curto antes de disparar ou de retomar: se a Meta BLOQUEOU o envio,
+/// diz por quê e leva à tela do WhatsApp, onde está o que fazer. Quieto quando
+/// está tudo certo e quando não deu para conferir — o servidor confere de novo
+/// na hora do disparo.
+///
+/// Só o bloqueio aparece aqui. "Envia com restrição" pode durar semanas (um
+/// nome de exibição aguardando aprovação) e a mensagem sai: um aviso amarelo em
+/// toda campanha ensinaria a ignorar o vermelho. A restrição fica na tela do
+/// WhatsApp.
 class AvisoDaSaude extends ConsumerWidget {
   const AvisoDaSaude({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final saude = ref.watch(saudeDaContaProvider).value;
-    final problema = saude?.primeiroProblema;
-    if (saude == null || !saude.pedeAtencao || problema == null) {
+    final problema = saude?.motivoDoBloqueio;
+    if (saude == null || !saude.bloqueada || problema == null) {
       return const SizedBox.shrink();
     }
-    final bloqueado = saude.sinal == 'bloqueado';
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         key: const ValueKey('cd-saude'),
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Aviso(
-            tom: bloqueado ? TomPilula.erro : TomPilula.atencao,
-            icone: bloqueado
-                ? Icons.block_rounded
-                : Icons.warning_amber_rounded,
-            texto: bloqueado
-                ? 'A Meta não deixa esta conta enviar agora. Resolva o ponto abaixo antes de disparar.'
-                : 'A Meta aponta um ponto de atenção nesta conta. O envio sai, mas vale resolver antes.',
+          const Aviso(
+            tom: TomPilula.erro,
+            icone: Icons.block_rounded,
+            texto:
+                'A Meta não deixa esta conta enviar agora. Resolva o ponto abaixo antes de disparar.',
           ),
           const SizedBox(height: 10),
           Cartao(child: BlocoDoErro(erro: problema.comTela('whatsapp'))),
