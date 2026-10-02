@@ -909,6 +909,40 @@ disparos e o custo por campanha (roteiro da IA, 01/10/2026).
 - **Lista aberta.** `marketing_lite` e `referral_conversion` entraram na lista
   de categorias depois; valor novo é guardado como veio, sem `check` no banco.
 
+## Tabela de tarifas da Meta (migration 041)
+
+Etapa 3 do roteiro (orçamento de disparos), primeira parte. O aviso de entrega
+diz SE a mensagem foi cobrada e em que categoria (seção acima); o **preço** sai
+desta tabela.
+
+- **O que define o preço** (página de preços da Meta, conferida em
+  02/10/2026): a moeda em que a conta é cobrada, o país de quem recebe — pelo
+  código do país do telefone — e a categoria do modelo. Só se paga a mensagem
+  de modelo **entregue**; utilidade dentro da janela de atendimento sai de
+  graça.
+- **Quando muda.** A Meta só altera os valores no primeiro dia de um trimestre
+  (1º de janeiro, abril, julho e outubro). Cada linha de `tarifa_meta` tem a
+  data em que passa a valer (`vigente_de`), e a anterior fica: o gasto de uma
+  mensagem de setembro é calculado com a tarifa de setembro.
+- **Quem cadastra.** O operador, no console de distribuição (aba "Tarifas da
+  Meta"), a partir do arquivo oficial de tarifas. **Nenhum valor vem embutido
+  no produto**: preço de terceiro cravado em código envelhece calado. Sem
+  tarifa cadastrada, a tela do cliente diz que não sabe estimar.
+- **Tarifa não se apaga.** Valor novo é linha nova. Numa linha existente só
+  mudam o valor e a fonte, para corrigir erro de digitação; a moeda, o país, a
+  categoria e a data são a identidade dela.
+- **Sem ponto flutuante.** O valor é `numeric(12,6)`, trafega como texto e a
+  conta é feita em micros — milionésimos da moeda, inteiros
+  (`orcamento/tarifa.regras.ts`). Só o total vira centavos, arredondado uma
+  vez.
+- **RLS.** Tabela da distribuição, como `plano`: leitura liberada em qualquer
+  escopo (o preço da Meta é público, e a campanha do cliente precisa dele na
+  transação do pedido); escrita só no escopo de sistema.
+
+Fica para os próximos PRs da etapa: o custo estimado antes de disparar, o gasto
+de cada campanha, os tetos em reais e a conferência com o relatório de custo
+da Meta.
+
 ## O que ainda falta
 
 - **Acesso Avançado — e ele bloqueia a coexistência inteira.** Testado em
@@ -933,6 +967,7 @@ disparos e o custo por campanha (roteiro da IA, 01/10/2026).
 - [Revisão de modelos — motivos de recusa](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/template-review/) · [Componentes de modelo](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/components/) (conferidas em 25/09/2026)
 
 - Envio de modelo: [Media card carousel templates](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/media-card-carousel-templates) · [Coupon code templates](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/coupon-templates) · [Limited-time offer templates](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/limited-time-offer-templates) · [Custom marketing templates](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/custom-marketing-templates) · [Media (upload para envio)](https://developers.facebook.com/documentation/business-messaging/whatsapp/business-phone-numbers/media) (conferidas em 01/10/2026)
+- [Pricing on the WhatsApp Business Platform (o que define o preço, calendário de mudanças, arquivos de tarifas por moeda)](https://developers.facebook.com/docs/whatsapp/pricing) (conferida em 02/10/2026; os arquivos de tarifas não puderam ser lidos por ferramenta — o valor entra pelo console)
 - [Status messages webhook reference (objeto `pricing`)](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/messages/status) · [Pricing (cobrança por mensagem, na entrega)](https://developers.facebook.com/docs/whatsapp/pricing) (conferidas em 01/10/2026)
 - [Messaging and Calling Health Status (`health_status`)](https://developers.facebook.com/docs/whatsapp/cloud-api/health-status) · [`account_update` webhook](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/account_update) (conferidas em 01/10/2026)
 - [`message_template_quality_update` webhook](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/message_template_quality_update) · [`template_category_update` webhook](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/template_category_update) · [Template quality](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/template-quality) · [WhatsApp Message Template (campos `quality_score`, `correct_category`, `previous_category`)](https://developers.facebook.com/docs/graph-api/reference/whats-app-business-hsm/) (conferidas em 02/10/2026)

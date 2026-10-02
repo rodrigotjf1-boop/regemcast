@@ -635,6 +635,35 @@ export interface PlanoNoConsole {
 
 export type DadosPlano = Partial<Omit<PlanoNoConsole, 'id' | 'contas'>>;
 
+/** Uma tarifa da Meta no console: o preço de uma mensagem entregue. */
+export interface TarifaNoConsole {
+  id: string;
+  /** A moeda de cobrança da conta (ISO 4217). */
+  moeda: string;
+  /** O código do país de quem recebe, só dígitos. */
+  ddi: string;
+  /** Como a Meta escreve: marketing, utility, authentication… */
+  categoria: string;
+  /** Texto, como o banco guarda: "0.321700". A tela não faz conta com ele. */
+  valor: string;
+  /** `AAAA-MM-DD`. */
+  vigenteDe: string;
+  fonte: string | null;
+  criadoPor: string | null;
+  /** É a que vale hoje para a moeda, o país e a categoria dela. */
+  vigente: boolean;
+}
+
+/** O que o console manda ao cadastrar: tudo texto, o servidor confere. */
+export interface DadosTarifa {
+  moeda: string;
+  ddi: string;
+  categoria: string;
+  valor: string;
+  vigenteDe: string;
+  fonte?: string;
+}
+
 /** Uma conta ligada ao Regem, vista pelo console. */
 export interface LigacaoRegemNoConsole {
   contaId: string;
@@ -742,6 +771,11 @@ export const distribuicao = {
     api.post<{ id: string }>('/distribuicao/planos', dados, SEM_REDIRECT_DIST),
   atualizarPlano: (id: string, dados: DadosPlano) =>
     api.patch<{ ok: boolean; campanhasRetomadas: number }>('/distribuicao/planos/' + id, dados, SEM_REDIRECT_DIST),
+  tarifas: () => api.get<TarifaNoConsole[]>('/distribuicao/tarifas', SEM_REDIRECT_DIST),
+  criarTarifa: (dados: DadosTarifa) =>
+    api.post<{ id: string; valor: string }>('/distribuicao/tarifas', dados, SEM_REDIRECT_DIST),
+  corrigirTarifa: (id: string, dados: { valor?: string; fonte?: string }) =>
+    api.patch<{ ok: boolean; valor: string }>('/distribuicao/tarifas/' + id, dados, SEM_REDIRECT_DIST),
   telemetria: (dias = 7) =>
     api.get<TelemetriaDoConsole>(`/distribuicao/telemetria?dias=${dias}`, SEM_REDIRECT_DIST),
   regem: () => api.get<LigacaoRegemNoConsole[]>('/distribuicao/regem', SEM_REDIRECT_DIST),

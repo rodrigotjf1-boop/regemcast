@@ -9,6 +9,8 @@ import { DistribuicaoLeituraService } from './distribuicao-leitura.service';
 import { DistribuicaoListaEsperaController } from './distribuicao-lista-espera.controller';
 import { DistribuicaoPlanosController } from './distribuicao-planos.controller';
 import { DistribuicaoPlanosService } from './distribuicao-planos.service';
+import { DistribuicaoTarifasController } from './distribuicao-tarifas.controller';
+import { DistribuicaoTarifasService } from './distribuicao-tarifas.service';
 import { DistribuicaoGuard } from './distribuicao.guard';
 
 /**
@@ -20,8 +22,8 @@ import { DistribuicaoGuard } from './distribuicao.guard';
  */
 @Module({
   imports: [DrizzleModule, ListaEsperaModule],
-  controllers: [DistribuicaoAuthController, DistribuicaoLeituraController, DistribuicaoListaEsperaController, DistribuicaoPlanosController],
-  providers: [DistribuicaoAuthService, DistribuicaoGuard, DistribuicaoLeituraService, DistribuicaoPlanosService],
+  controllers: [DistribuicaoAuthController, DistribuicaoLeituraController, DistribuicaoListaEsperaController, DistribuicaoPlanosController, DistribuicaoTarifasController],
+  providers: [DistribuicaoAuthService, DistribuicaoGuard, DistribuicaoLeituraService, DistribuicaoPlanosService, DistribuicaoTarifasService],
   exports: [DistribuicaoAuthService, DistribuicaoGuard],
 })
 export class DistribuicaoModule {}
