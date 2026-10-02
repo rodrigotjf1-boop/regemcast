@@ -62,7 +62,7 @@ function montar(opcoes: { local?: boolean; daWaba?: boolean; fuso?: string } = {
     },
   };
   const avisos = { avisar: jest.fn().mockResolvedValue(undefined) };
-  const service = new WebhookService(ctx as never, {} as never, avisos as never, {} as never, {} as never, {} as never);
+  const service = new WebhookService(ctx as never, {} as never, avisos as never, {} as never, {} as never, {} as never, {} as never);
   const aplicar = (field: string, value: Record<string, unknown>, entrada: string | undefined = WABA) =>
     (service as unknown as { aplicar(tipo: string, m: unknown): Promise<unknown> }).aplicar(field, { field, value, entrada });
   return { aplicar, avisos, gravados, escopos };
@@ -205,7 +205,7 @@ describe('o mesmo aviso em outro momento é outro evento', () => {
       }),
     };
     const ctx = { comEscopoSistema: <T>(_m: string, fn: (d: typeof db) => Promise<T>) => fn(db) };
-    const service = new WebhookService(ctx as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+    const service = new WebhookService(ctx as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
     return { service, chaves, payloads };
   }
 

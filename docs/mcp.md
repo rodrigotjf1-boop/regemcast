@@ -94,7 +94,8 @@ Regras (as do hub, ADR-008 do Liame):
 - nome em snake_case, até 64 caracteres, sem ponto;
 - curadas: uma tarefa, não um espelho do banco;
 - não devolvem telefone nem conteúdo de conversa, salvo a ferramenta cujo
-  escopo diz isso por extenso;
+  escopo diz isso por extenso (hoje, só `conversas_anuncio_listar`, e só o
+  telefone);
 - texto que veio de terceiro (nome de campanha, texto de modelo) é dado, não
   instrução: quem consome trata como conteúdo não confiável.
 
@@ -108,6 +109,7 @@ Regras (as do hub, ADR-008 do Liame):
 | `publico_estimar` | `publicos.ler` | quantas pessoas de um público podem receber, quantas estão em descanso e, com a categoria do modelo, o custo estimado (teto). Não cria nada. |
 | `modelos_listar` | `modelos.ler` | os modelos como a Meta os tem agora: situação, categoria, qualidade, variáveis, alertas e se o disparo sabe mandá-los. Fala com a Meta. |
 | `orcamento_ler` | `orcamento.ler` | os tetos de gasto e quanto já saiu em cada período. |
+| `conversas_anuncio_listar` | `conversas.anuncio.ler` | as conversas que começaram por um anúncio de clique para o WhatsApp: id do anúncio, identificador do clique, momento, número da loja e o **telefone** de quem escreveu. Leitura com cursor. |
 
 As de leitura ficam em `integracao/mcp.leitura.ts`. Cada uma chama o **mesmo
 serviço da tela**, dentro da conta do token, e devolve um recorte curado:
@@ -121,12 +123,112 @@ serviço da tela**, dentro da conta do token, e devolve um recorte curado:
   tela mostraria (campanha de outra conta: "Campanha não encontrada"); erro
   inesperado é registrado e sai como "erro interno", sem detalhe.
 
-As conversas por anúncio, os rascunhos e o disparo entram nos próximos PRs.
+Os rascunhos e o disparo entram nos próximos PRs.
+
+## Conversas abertas por anúncio (migration 044)
+
+Quando alguém clica num anúncio de "clique para o WhatsApp" e escreve para a
+loja, a Meta manda a origem junto da **primeira mensagem** (`referral`, no aviso
+`messages`): o id do anúncio, o tipo, o endereço e o identificador do clique
+(`ctwa_clid`). É com isso que o Liame liga o anúncio ao pedido que veio depois
+(F7 do plano dele). O contrato é o `docs/integracoes/regemcast.md` do Liame; a
+decisão 2 trocou o transporte (REST → ferramenta do MCP) e manteve o formato.
+
+Tabela `conversa_anuncio`. Regras em `meta/anuncio.regras.ts`, banco em
+`meta/anuncio.service.ts`, ferramenta em `integracao/mcp.conversas.ts`.
+
+**O que é guardado.** Uma linha por mensagem que chegou com a origem de um
+anúncio: o id e o tipo da origem (`ad` ou `post`), o endereço, o `ctwa_clid`, a
+hora da mensagem, o número da loja e o telefone de quem escreveu. **Nenhum
+conteúdo**: nem o texto da mensagem, nem o nome de perfil, nem o texto ou a
+imagem do anúncio.
+
+**Quando é guardado — nasce desligado.** Só enquanto a conta tem um
+**aplicativo conectado com a permissão `conversas.anuncio.ler`** (um token de
+integração não revogado com esse escopo). Sem aplicativo não há para que
+guardar o telefone de quem clicou, então nada é gravado — fica só uma linha no
+log, sem dado pessoal, dizendo que a mensagem chegou. Consequências:
+
+- hoje, em produção, a tabela fica vazia: não há token emitido;
+- o que chegou **antes** de o aplicativo ser conectado não existe, e a Meta não
+  manda de novo. A carga inicial do Liame (`desde`) só alcança o que entrou
+  depois da conexão;
+- revogado o token, a gravação para na mensagem seguinte. O que já entrou sai
+  pelo prazo de guarda.
+
+**Para qual número.** Qualquer número da conta — em coexistência ou não, com as
+conversas guardadas no painel ou não. A resposta do dono sobre guardar as
+conversas (migration 023) é sobre o conteúdo delas, e daqui não sai conteúdo.
+A tabela `conversa` não mudou.
+
+**Prazo de guarda:** 180 dias a partir da entrada; um job apaga de hora em hora.
+
+**Reentrega da Meta** não duplica: a mensagem é única por conta (`wamid`).
+
+**Falha ao guardar não segura o aviso.** O pedido de saída, o status de
+campanha e a conversa seguem; o erro fica no log.
+
+**O que a Meta não garante.** Em número em **coexistência**, a Meta não promete
+o `referral` — a primeira mensagem de quem clicou pode até chegar como
+"não suportada" (erro 131060). O `ctwa_clid` some em anúncio no **Status** do
+WhatsApp (a origem vem). Gravamos o que chegar; conferir com número real antes
+de prometer o resultado (decisão D-A2.5-9 do Liame).
+
+### `conversas_anuncio_listar`
+
+Entrada: `cursor`, `limite` (padrão 200, máximo 500), `desde` (instante com
+fuso; filtra pela hora da mensagem, para a carga inicial).
+
+```json
+{
+  "itens": [
+    {
+      "id": "8d9d5c1e-4b0f-4f5e-9a51-2f0a8c6f7a11",
+      "versao": 1,
+      "atualizado_em": "2026-09-24T19:12:44.382911Z",
+      "numero_loja": "+5521900000000",
+      "telefone": "+5521988887777",
+      "aberta_em": "2026-09-24T19:12:40.000Z",
+      "anuncio_id": "120215566771111",
+      "tipo_origem": "ad",
+      "ctwa_clid": "ARAkLkA…",
+      "url_origem": "https://fb.me/…"
+    }
+  ],
+  "proximo_cursor": "…",
+  "tem_mais": false
+}
+```
+
+- **Ordem** estável por (`atualizado_em`, `id`), a hora em que a linha entrou.
+- **Cursor** opaco. Vem sempre que há item, mesmo na última página: quem lê
+  guarda o cursor e volta com ele para receber só o que entrou depois. Sem nada
+  novo, volta o mesmo cursor.
+- **Só sai o que entrou há pelo menos 5 segundos**: uma transação que confirma
+  tarde não fica para trás do cursor.
+- **`versao`** é sempre 1: a linha não muda depois de entrar.
+- **`telefone`** em E.164, com o 9º dígito, como o contato do RegemCast.
+- **`tipo_origem`** diz se `anuncio_id` é de um anúncio (`ad`) ou de uma
+  publicação (`post`).
+- **`ctwa_clid`** e **`url_origem`** podem vir `null`.
+- Cursor ou `desde` que não vale volta como erro da ferramenta, com a frase.
+
+O evento opcional do contrato (`conversa_anuncio.aberta`, por webhook de saída)
+não foi feito: a leitura com cursor basta.
+
+### Antes de emitir um token com esta permissão
+
+A política de privacidade do site (`/privacidade`, seção 4) diz hoje que os
+dados recebidos da Meta não são transferidos a terceiros nem usados para
+publicidade. Ligar a origem do anúncio ao pedido, em outro produto da DMS, é
+uma finalidade nova: **o texto da política precisa ser revisto (com o
+advogado) antes de o primeiro token com `conversas.anuncio.ler` ser emitido**.
+Enquanto nenhum for emitido, nada é guardado e a política segue verdadeira.
 
 ## O que falta
 
-- Conversas abertas por anúncio: guardar a origem do anúncio na conversa e a
-  leitura que o Liame espera (contrato `docs/integracoes/regemcast.md` do Liame).
+- Rever a política de privacidade antes do primeiro token com
+  `conversas.anuncio.ler` (seção acima).
 - Rascunho de modelo e de campanha; o autor "integração" na auditoria.
 - Disparo para produto da DMS: planejar (público, custo, saldo do orçamento) e
   executar, com chave de idempotência.

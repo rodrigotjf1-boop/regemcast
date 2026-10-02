@@ -28,6 +28,7 @@ import { AvisoService } from '../aviso/aviso.service';
 import { campanha, campanhaDestinatario, conta, modelo, waConta, waEvento, waNumero } from '../../db/schema';
 import type { DestinoDoEvento } from './agenda.regras';
 import { AgendaService } from './agenda.service';
+import { ConversaAnuncioService } from './anuncio.service';
 import { ConversasService } from './conversas.service';
 import { historicoRecusado, sincronizacaoConcluida } from './coexistencia.regras';
 import {
@@ -171,6 +172,7 @@ export class WebhookService {
     private readonly agenda: AgendaService,
     private readonly conversas: ConversasService,
     private readonly saude: SaudeService,
+    private readonly anuncios: ConversaAnuncioService,
   ) {}
 
   /** Grava cada mudança do payload como um evento próprio. */
@@ -263,7 +265,11 @@ export class WebhookService {
         // depende da conversa; depois a conversa, se o número guarda.
         await this.mensagens(mudanca);
         const phoneNumberId = this.phoneNumberIdDe(mudanca);
-        return phoneNumberId ? this.conversas.recebidas(phoneNumberId, mudanca.value ?? {}) : undefined;
+        if (!phoneNumberId) return undefined;
+        // A origem do anúncio (`referral`) é guardada à parte, antes de o
+        // conteúdo do evento ser esvaziado. Não lança: não segura a conversa.
+        await this.anuncios.registrar(phoneNumberId, mudanca.value ?? {});
+        return this.conversas.recebidas(phoneNumberId, mudanca.value ?? {});
       }
       case 'account_update':
       case 'account_review_update':
