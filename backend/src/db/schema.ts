@@ -22,6 +22,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   primaryKey,
   text,
@@ -46,6 +47,34 @@ export const plano = pgTable('plano', {
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   codigoUq: uniqueIndex('plano_codigo_key').on(t.codigo),
+}));
+
+/**
+ * Tarifas da Meta por mensagem entregue (migration 041; tabela da distribuição
+ * — leitura em qualquer escopo, escrita só no de sistema).
+ *
+ * O preço depende da moeda da conta, do país de quem recebe (`ddi`) e da
+ * categoria do modelo, e só muda no primeiro dia de um trimestre: cada linha
+ * tem a data em que passa a valer, e a anterior fica como histórico.
+ * `valor` é `numeric(12,6)` — entra e sai como texto; a conta é em micros
+ * (`orcamento/tarifa.regras.ts`).
+ */
+export const tarifaMeta = pgTable('tarifa_meta', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  /** ISO 4217, a moeda de cobrança da conta (`wa_conta.moeda`). */
+  moeda: text('moeda').notNull(),
+  /** O código do país de quem recebe, só dígitos ("55" = Brasil). */
+  ddi: text('ddi').notNull(),
+  /** Como a Meta escreve em `pricing.category`: marketing, utility, authentication… */
+  categoria: text('categoria').notNull(),
+  valor: numeric('valor', { precision: 12, scale: 6 }).notNull(),
+  vigenteDe: date('vigente_de').notNull(),
+  fonte: text('fonte'),
+  criadoPor: text('criado_por'),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  vigenciaUq: uniqueIndex('idx_tarifa_meta_vigencia').on(t.moeda, t.ddi, t.categoria, t.vigenteDe),
 }));
 
 /**
