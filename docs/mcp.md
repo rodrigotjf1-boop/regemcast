@@ -319,19 +319,27 @@ fuso; filtra pela hora da mensagem, para a carga inicial).
 O evento opcional do contrato (`conversa_anuncio.aberta`, por webhook de saída)
 não foi feito: a leitura com cursor basta.
 
-### Antes de emitir um token com esta permissão
+### A política de privacidade
 
-A política de privacidade do site (`/privacidade`, seção 4) diz hoje que os
-dados recebidos da Meta não são transferidos a terceiros nem usados para
-publicidade. Ligar a origem do anúncio ao pedido, em outro produto da DMS, é
-uma finalidade nova: **o texto da política precisa ser revisto (com o
-advogado) antes de o primeiro token com `conversas.anuncio.ler` ser emitido**.
-Enquanto nenhum for emitido, nada é guardado e a política segue verdadeira.
+Revista em 02/10/2026 (dono: "políticas de privacidade ok"). A página
+`/privacidade` diz, desde então:
+
+- seção 4: a origem do anúncio, a hora e o telefone de quem escreveu só são
+  guardados com um aplicativo da DMS conectado com a permissão, e vão para ele;
+  sem o conteúdo; apagados em 180 dias;
+- seção 6: os aplicativos da DMS conectados a pedido do dono da conta, o que
+  cada permissão libera, o disparo dentro do orçamento com aviso ao dono, e
+  onde desligar;
+- seção 7: o prazo de 180 dias, e que a trilha guarda o que um aplicativo fez.
+
+**A seção 14 promete avisar o cliente antes de uma mudança relevante valer.**
+O compartilhamento só começa quando o dono da conta pede a conexão de um
+aplicativo — é nesse pedido que ele fica sabendo. Por isso: **token com
+`conversas.anuncio.ler` (ou disparo) só se emite a pedido do dono daquela
+conta**, nunca por iniciativa nossa.
 
 ## O que falta
 
-- Rever a política de privacidade antes do primeiro token com
-  `conversas.anuncio.ler` (seção acima).
 - Disparo para produto da DMS: planejar (público, custo, saldo do orçamento) e
   executar, com chave de idempotência.
 - "Aplicativos conectados" e a marca "montada pelo …" no app Android.
