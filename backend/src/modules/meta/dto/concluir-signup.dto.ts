@@ -20,6 +20,17 @@ export class ConcluirSignupDto {
   wabaId!: string;
 
   /**
+   * O portfólio de negócios do cliente, que o Embedded Signup devolve junto da
+   * conta. Serve para montar o endereço da página de pagamento da conta na
+   * Meta. Opcional: sem ele, o servidor pergunta à Meta.
+   */
+  @ApiProperty({ required: false, description: 'ID do portfólio de negócios do cliente na Meta.' })
+  @IsOptional()
+  @IsString({ message: 'Informe o identificador do negócio.' })
+  @Matches(/^\d{5,30}$/, { message: 'O identificador do negócio é inválido.' })
+  businessId?: string;
+
+  /**
    * Opcional de propósito: no fluxo de coexistência a Meta nem sempre devolve
    * o `phone_number_id` no `sessionInfo`. Quando faltar, o servidor descobre o
    * número consultando a WABA — o cliente não digita nada.

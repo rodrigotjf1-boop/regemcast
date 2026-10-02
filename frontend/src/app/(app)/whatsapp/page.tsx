@@ -136,6 +136,29 @@ export default function PaginaWhatsapp() {
                 </p>
               </div>
             </div>
+
+            {/*
+              A Meta cobra as mensagens direto desta conta do WhatsApp: o cartão,
+              a moeda e o fuso ficam lá. Sem isso em ordem ela aceita a mensagem e
+              recusa em seguida (131042) — o atalho fica aqui, antes do disparo.
+            */}
+            {situacao.conta.pagamentoUrl ? (
+              <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-white/10 pt-4">
+                <a
+                  href={situacao.conta.pagamentoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-acento/40 bg-acento/10 px-3 text-sm font-medium text-acento transition-colors hover:bg-acento/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acento"
+                >
+                  Pagamento na Meta <span aria-hidden="true">↗</span>
+                  <span className="sr-only"> (abre em outra aba)</span>
+                </a>
+                <p className="min-w-0 flex-1 text-xs leading-relaxed text-lateral-suave">
+                  A Meta cobra as mensagens direto desta conta do WhatsApp. O cartão, a moeda e o fuso
+                  horário ficam lá — sem eles em ordem, ela recusa o envio.
+                </p>
+              </div>
+            ) : null}
           </section>
 
           <AvisoExpiracao expiraEm={situacao.conta.tokenExpiraEm} />

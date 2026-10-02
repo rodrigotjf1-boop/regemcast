@@ -63,6 +63,7 @@ import {
 } from '../meta/erros-meta';
 import { ErroGraph, GraphService } from '../meta/graph.service';
 import { MetaService, MODELO_APROVADO, type ModeloDeMensagem } from '../meta/meta.service';
+import { ROTULO_DO_PAGAMENTO_NA_META } from '../meta/pagamento';
 import { MidiaIndisponivel, MidiaService } from '../midia/midia.service';
 import { TelemetriaService } from '../telemetria/telemetria.service';
 import type { CriarCampanhaDto } from './dto/criar-campanha.dto';
@@ -327,8 +328,11 @@ interface FalhaGravada {
  *
  * Sem código, a falha é nossa (sem valor para o título, pediu para sair, rede
  * que caiu no meio): a frase gravada já é a explicação.
+ *
+ * `pagamentoUrl`: a página de pagamento da conta na Meta. A Meta nem sempre
+ * manda o endereço na frase do 131042; quando não manda, o botão usa este.
  */
-export function erroDoDestinatario(l: FalhaGravada): ErroParaTela | null {
+export function erroDoDestinatario(l: FalhaGravada, pagamentoUrl: string | null = null): ErroParaTela | null {
   if (l.status !== 'falhou') return null;
   if (l.erroCodigo == null) {
     if (!l.erroTitulo && !l.erroDetalhe) return null;
@@ -345,10 +349,22 @@ export function erroDoDestinatario(l: FalhaGravada): ErroParaTela | null {
   }
   const daMeta = l.erroMeta ?? DETALHE_DE_CODIGO_SEM_CATALOGO.exec(l.erroDetalhe ?? '')?.[1] ?? null;
   const desistiu = DESISTENCIA.test(l.erroDetalhe ?? '');
-  return erroParaTela(traduzirErroMeta(l.erroCodigo, daMeta), {
-    definitivo: true,
-    explicacao: desistiu ? l.erroDetalhe!.replace(' Para não insistir, esta mensagem não foi reenviada.', '') : null,
-  });
+  return comLinkDoPagamento(
+    erroParaTela(traduzirErroMeta(l.erroCodigo, daMeta), {
+      definitivo: true,
+      explicacao: desistiu ? l.erroDetalhe!.replace(' Para não insistir, esta mensagem não foi reenviada.', '') : null,
+    }),
+    pagamentoUrl,
+  );
+}
+
+/** O código da Meta para "o pagamento da conta do WhatsApp não está em ordem". */
+const ERRO_DE_PAGAMENTO = 131042;
+
+/** O erro de pagamento sempre tem o botão: o endereço que a Meta mandou, ou o da conta. */
+function comLinkDoPagamento(erro: ErroParaTela, pagamentoUrl: string | null): ErroParaTela {
+  if (erro.codigo !== ERRO_DE_PAGAMENTO || erro.link || !pagamentoUrl) return erro;
+  return { ...erro, link: { rotulo: ROTULO_DO_PAGAMENTO_NA_META, url: pagamentoUrl } };
 }
 
 /** O que acontece com um destinatário depois da tentativa de envio. */
@@ -2301,7 +2317,7 @@ export class CampanhaService {
 
   async detalhe(contaId: string, campanhaId: string): Promise<ResumoCampanha> {
     const [resumo] = await this.comContagens([await this.buscar(contaId, campanhaId)]);
-    return { ...resumo!, falhasPorMotivo: await this.falhasPorMotivo(campanhaId) };
+    return { ...resumo!, falhasPorMotivo: await this.falhasPorMotivo(contaId, campanhaId) };
   }
 
   /**
@@ -2311,7 +2327,7 @@ export class CampanhaService {
    * versões do catálogo); pelo título quando a falha é nossa. Uma consulta,
    * sobre o índice da campanha.
    */
-  private async falhasPorMotivo(campanhaId: string): Promise<Array<{ total: number; erro: ErroParaTela }>> {
+  private async falhasPorMotivo(contaId: string, campanhaId: string): Promise<Array<{ total: number; erro: ErroParaTela }>> {
     const r = (await this.ctx.db.execute(sql`
       select erro_codigo as "erroCodigo",
              case when erro_codigo is null then erro_titulo end as "erroTitulo",
@@ -2327,8 +2343,11 @@ export class CampanhaService {
       rows: Array<{ erroCodigo: number | null; erroTitulo: string | null; erroDetalhe: string | null; erroMeta: string | null; total: number }>;
     };
 
+    const pagamentoUrl = r.rows.some((l) => l.erroCodigo === ERRO_DE_PAGAMENTO)
+      ? await this.meta.pagamentoUrl(contaId)
+      : null;
     return r.rows.flatMap((l) => {
-      const erro = erroDoDestinatario({ status: 'falhou', ...l });
+      const erro = erroDoDestinatario({ status: 'falhou', ...l }, pagamentoUrl);
       return erro ? [{ total: Number(l.total), erro }] : [];
     });
   }
@@ -2362,8 +2381,11 @@ export class CampanhaService {
       .orderBy(sql`(${campanhaDestinatario.status} = 'falhou') desc`, campanhaDestinatario.criadoEm)
       .limit(LIMITE_DESTINATARIOS_TELA);
 
+    const pagamentoUrl = linhas.some((l) => l.status === 'falhou' && l.erroCodigo === ERRO_DE_PAGAMENTO)
+      ? await this.meta.pagamentoUrl(contaId)
+      : null;
     return linhas.map(({ erroCodigo, erroMeta, ...l }) => {
-      const erro = erroDoDestinatario({ ...l, erroCodigo, erroMeta });
+      const erro = erroDoDestinatario({ ...l, erroCodigo, erroMeta }, pagamentoUrl);
       return {
         ...l,
         // `erroTitulo` e `erroDetalhe` seguem para o app que ainda não lê
@@ -2430,6 +2452,11 @@ export class CampanhaService {
     const metaCheia = meta && meta.usados >= meta.limite ? meta : null;
     const agora = new Date();
 
+    // A página de pagamento da conta na Meta só é lida quando alguma campanha
+    // pausou por ele: é o botão do aviso, quando a Meta não mandou o endereço.
+    const pausouPeloPagamento = campanhas.some((c) => c.status === 'pausada' && c.pausaErroCodigo === ERRO_DE_PAGAMENTO);
+    const pagamentoUrl = pausouPeloPagamento ? await this.meta.pagamentoUrl(campanhas[0]!.contaId) : null;
+
     return campanhas.map((c) => {
       const porStatus: Record<string, number> = {};
       let total = 0;
@@ -2452,6 +2479,7 @@ export class CampanhaService {
         c.listaId ? (nomeDaLista.get(c.listaId) ?? null) : null,
         espera,
         respondidas.get(c.id) ?? 0,
+        pagamentoUrl,
       );
     });
   }
@@ -2463,6 +2491,7 @@ export class CampanhaService {
     listaNome: string | null,
     espera: EsperaDaCampanha | null = null,
     respondidas = 0,
+    pagamentoUrl: string | null = null,
   ): ResumoCampanha {
     return {
       id: c.id,
@@ -2473,7 +2502,7 @@ export class CampanhaService {
       pausaMotivo: c.status === 'pausada' ? c.pausaMotivo : null,
       pausaErro:
         c.status === 'pausada' && c.pausaErroCodigo != null && PAUSAS_POR_ERRO.includes(c.pausaMotivo ?? '')
-          ? erroParaTela(traduzirErroMeta(c.pausaErroCodigo, c.pausaErroMeta))
+          ? comLinkDoPagamento(erroParaTela(traduzirErroMeta(c.pausaErroCodigo, c.pausaErroMeta)), pagamentoUrl)
           : null,
       variavelCabecalho: variavelDoTitulo(lerPlano(c.envio)),
       criadoEm: c.criadoEm,

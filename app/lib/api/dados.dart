@@ -241,10 +241,16 @@ class SituacaoWhatsapp {
     this.moeda,
     this.webhookAssinadoEm,
     this.tokenExpiraEm,
+    this.pagamentoUrl,
   });
 
   final bool conectado;
   final List<NumeroWhatsapp> numeros;
+
+  /// A página de pagamento desta conta na Meta (cartão, moeda, fuso): a Meta
+  /// cobra as mensagens direto da conta do WhatsApp. Nulo enquanto o servidor
+  /// não souber montar o endereço.
+  final String? pagamentoUrl;
 
   /// O nome da conta do WhatsApp Business na Meta.
   final String? contaNome;
@@ -276,6 +282,11 @@ class SituacaoWhatsapp {
     moeda: _txtOuNulo(_mapa(j['conta'])['moeda']),
     webhookAssinadoEm: _data(_mapa(j['conta'])['webhookAssinadoEm']),
     tokenExpiraEm: _data(_mapa(j['conta'])['tokenExpiraEm']),
+    // Só `https`: o endereço abre fora do app.
+    pagamentoUrl: switch (_txtOuNulo(_mapa(j['conta'])['pagamentoUrl'])) {
+      final u? when u.startsWith('https://') => u,
+      _ => null,
+    },
     numeros: (j['numeros'] is List ? j['numeros'] as List : const [])
         .whereType<Map<String, dynamic>>()
         .map(NumeroWhatsapp.deJson)
