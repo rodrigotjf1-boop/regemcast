@@ -101,13 +101,30 @@ Regras (as do hub, ADR-008 do Liame):
 | Ferramenta | Escopo | O que faz |
 | --- | --- | --- |
 | `integracao_situacao` | nenhum | diz para qual conta o token vale, o produto, a classe e as permissões. É a primeira chamada de quem integra. |
+| `conta_situacao` | `conta.ler` | se a conta pode enviar agora (a saúde na Meta, com o que resolver), o plano e o uso do ciclo. |
+| `campanhas_listar` | `campanhas.ler` | as campanhas, das mais novas para as mais antigas, com a situação e os números. Filtro por situação; até 50 por chamada. |
+| `campanha_detalhar` | `campanhas.ler` | os números de uma campanha, por que está pausada ou esperando e até quando, as falhas por motivo com o que fazer, e o custo na Meta. Não devolve quem recebeu. |
+| `publicos_listar` | `publicos.ler` | as listas, os públicos prontos (com a regra) e os perfis da base, com quantas pessoas de cada um podem receber. |
+| `publico_estimar` | `publicos.ler` | quantas pessoas de um público podem receber, quantas estão em descanso e, com a categoria do modelo, o custo estimado (teto). Não cria nada. |
+| `modelos_listar` | `modelos.ler` | os modelos como a Meta os tem agora: situação, categoria, qualidade, variáveis, alertas e se o disparo sabe mandá-los. Fala com a Meta. |
+| `orcamento_ler` | `orcamento.ler` | os tetos de gasto e quanto já saiu em cada período. |
 
-As de leitura, as conversas por anúncio, os rascunhos e o disparo entram nos
-próximos PRs.
+As de leitura ficam em `integracao/mcp.leitura.ts`. Cada uma chama o **mesmo
+serviço da tela**, dentro da conta do token, e devolve um recorte curado:
+
+- **sem telefone, sem nome de contato, sem conteúdo de conversa** — contagens e
+  situações;
+- **dinheiro em centavos inteiros**, com a frase pronta ao lado quando existe;
+- **esquema de entrada e de saída declarados**: o que foge do esquema de entrada
+  é recusado antes de rodar;
+- **recusa de regra vira erro da ferramenta**, com a frase em português que a
+  tela mostraria (campanha de outra conta: "Campanha não encontrada"); erro
+  inesperado é registrado e sai como "erro interno", sem detalhe.
+
+As conversas por anúncio, os rascunhos e o disparo entram nos próximos PRs.
 
 ## O que falta
 
-- Ferramentas de leitura (saúde, campanhas com custo, públicos, modelos, orçamento).
 - Conversas abertas por anúncio: guardar a origem do anúncio na conversa e a
   leitura que o Liame espera (contrato `docs/integracoes/regemcast.md` do Liame).
 - Rascunho de modelo e de campanha; o autor "integração" na auditoria.
