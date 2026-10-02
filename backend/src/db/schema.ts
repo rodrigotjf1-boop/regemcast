@@ -286,6 +286,13 @@ export const waConta = pgTable('wa_conta', {
    * caminho: erro 190 no meio de uma campanha, sem aviso prévio.
    */
   tokenExpiraEm: timestamp('token_expira_em', { withTimezone: true }),
+  /**
+   * A renovação automática da autorização (migration 040, `meta/renovacao.job.ts`):
+   * quando foi tentada pela última vez, e com que código a Meta recusou
+   * (-1 = sem código). Erro nulo = deu certo, ou nunca foi tentada.
+   */
+  tokenRenovacaoEm: timestamp('token_renovacao_em', { withTimezone: true }),
+  tokenRenovacaoErro: integer('token_renovacao_erro'),
   escopos: jsonb('escopos').notNull().default(sql`'[]'::jsonb`),
   /** Prazo do Brasil: toda WABA elegível precisa estar em BRL até 30/jun/2027. */
   moeda: text('moeda'),

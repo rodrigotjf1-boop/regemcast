@@ -9,6 +9,7 @@ import { GraphService } from './graph.service';
 import { LimiteJob } from './limite.job';
 import { MetaController } from './meta.controller';
 import { MetaService } from './meta.service';
+import { RenovacaoJob } from './renovacao.job';
 import { SaudeJob } from './saude.job';
 import { SaudeService } from './saude.service';
 import { WebhookController } from './webhook.controller';
@@ -29,6 +30,7 @@ import { WebhookService } from './webhook.service';
     LimiteJob,
     SaudeService,
     SaudeJob,
+    RenovacaoJob,
     DistTokenGuard,
   ],
   exports: [MetaService, GraphService, SaudeService],

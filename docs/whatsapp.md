@@ -109,6 +109,39 @@ pelo caminho do WhatsApp Business no celular (o `featureType` da coexistência).
 Para o servidor os dois são iguais. **Ainda não testado com conta real**
 (02/10/2026): falta o teste do dono com a conta que está com a conexão caída.
 
+## Renovação automática da autorização (migration 040)
+
+Reconectar é o conserto de quando a conexão **já caiu**. Para ela não cair, o
+servidor renova a autorização sozinho (`meta/renovacao.job.ts`), com a troca
+oficial da Meta para token de usuário do sistema que vence:
+
+```
+GET /oauth/access_token?grant_type=fb_exchange_token
+    &client_id=…&client_secret=…
+    &set_token_expires_in_60_days=true
+    &fb_exchange_token=<token ainda válido>
+```
+
+A cada hora, até 20 contas cuja autorização vence em **menos de 53 dias** — ou
+seja, emitida há mais de uma semana —, uma de cada vez:
+
+1. troca o token pelo novo;
+2. confere que o novo enxerga a conta (`GET /{waba}`); sem isso, não grava;
+3. grava o token novo (cifrado), a validade e `token_renovacao_em`.
+
+Renovar toda semana, e não na véspera, é a margem: se a Meta recusar, são sete
+semanas de tentativas (uma por dia) antes de vencer — e o aviso e o botão
+"Reconectar" aparecem na última.
+
+O que falha fica em `wa_conta.token_renovacao_erro` (o código da Meta; -1 = sem
+código), nunca a frase nem o token. Fica no banco, e não só no log, porque **a
+documentação não diz se essa troca vale para a autorização que o Embedded
+Signup emite**: é por essa coluna que se descobre, na primeira volta em
+produção.
+
+Fora da rotina: autorização sem prazo (não vence) e a que já venceu (a Meta só
+renova o que ainda vale — aí é reconectar).
+
 ## Coexistência: o que a Meta copia, e o prazo
 
 Duas chamadas ao mesmo endpoint, uma por tipo:
@@ -903,6 +936,7 @@ disparos e o custo por campanha (roteiro da IA, 01/10/2026).
 - [Status messages webhook reference (objeto `pricing`)](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/messages/status) · [Pricing (cobrança por mensagem, na entrega)](https://developers.facebook.com/docs/whatsapp/pricing) (conferidas em 01/10/2026)
 - [Messaging and Calling Health Status (`health_status`)](https://developers.facebook.com/docs/whatsapp/cloud-api/health-status) · [`account_update` webhook](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/account_update) (conferidas em 01/10/2026)
 - [`message_template_quality_update` webhook](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/message_template_quality_update) · [`template_category_update` webhook](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/template_category_update) · [Template quality](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/template-quality) · [WhatsApp Message Template (campos `quality_score`, `correct_category`, `previous_category`)](https://developers.facebook.com/docs/graph-api/reference/whats-app-business-hsm/) (conferidas em 02/10/2026)
+- [Renovar token de usuário do sistema que vence (`fb_exchange_token`)](https://developers.facebook.com/docs/business-management-apis/system-users/install-apps-and-generate-tokens) · [Login do Facebook para Empresas (tipos de token e validade)](https://developers.facebook.com/docs/facebook-login/facebook-login-for-business) (conferidas em 02/10/2026)
 - [Messaging limits (limite de envio, portfólio)](https://developers.facebook.com/documentation/business-messaging/whatsapp/messaging-limits/)
 - [`business_capability_update` webhook](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/business_capability_update/)
 - [Per-user marketing template limits (131049)](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/per-user-limits/)
