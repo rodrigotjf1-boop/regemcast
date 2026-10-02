@@ -11,6 +11,7 @@ import '../api/leituras.dart';
 import '../componentes/basicos.dart';
 import '../componentes/campanha.dart';
 import '../componentes/categoria.dart';
+import '../componentes/custo_na_meta.dart';
 import '../config.dart';
 import '../tema/cores.dart';
 import '../util/formato.dart' as f;
@@ -315,6 +316,11 @@ class _TelaCampanhaDetalheState extends ConsumerState<TelaCampanhaDetalhe> {
               if (camp.podeDisparar || camp.podeRetomar) const AvisoDaSaude(),
               _Metricas(campanha: camp),
               const SizedBox(height: 14),
+              // Quanto custa na Meta: a estimativa antes, o gasto depois.
+              if (camp.custo?.temOQueMostrar ?? false) ...[
+                CartaoDoCusto(custo: camp.custo!),
+                const SizedBox(height: 14),
+              ],
               if (camp.falhasPorMotivo.isNotEmpty) ...[
                 _PorQueFalhou(falhas: camp.falhasPorMotivo),
                 const SizedBox(height: 14),

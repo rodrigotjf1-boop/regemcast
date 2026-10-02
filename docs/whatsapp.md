@@ -939,9 +939,43 @@ desta tabela.
   escopo (o preço da Meta é público, e a campanha do cliente precisa dele na
   transação do pedido); escrita só no escopo de sistema.
 
-Fica para os próximos PRs da etapa: o custo estimado antes de disparar, o gasto
-de cada campanha, os tetos em reais e a conferência com o relatório de custo
-da Meta.
+## Custo da campanha na Meta
+
+Etapa 3 do roteiro, segunda parte: a tarifa cadastrada vira dinheiro na tela.
+As regras ficam em `orcamento/custo.regras.ts` (puras) e a leitura em
+`orcamento/custo.consulta.ts`.
+
+- **Onde aparece.** No detalhe da campanha (`GET /campanhas/:id`, campo
+  `custo`) e na prévia do público (`POST /campanhas/previa`, quando a tela manda
+  a `categoria` do modelo escolhido). A lista de campanhas não carrega: é uma
+  contagem da campanha inteira. Site e app só exibem — as frases e os valores
+  vêm prontos do servidor.
+- **Antes de disparar: a estimativa, e ela é teto.** Quem está na fila × a
+  tarifa de hoje, pela categoria do modelo e o país de cada telefone. A tela diz
+  "até": a Meta só cobra o que entrega, e utilidade dentro da janela de
+  atendimento sai de graça. As faixas de volume da Meta não entram na conta.
+- **Depois: o gasto.** Cobrada é a mensagem **entregue ou lida** que a Meta
+  marcou como `regular` no aviso (`tarifa_tipo`, migration 036), na categoria
+  que **ela** disse (`tarifa_categoria`, que pode não ser a do modelo), pela
+  tarifa que valia **no dia da entrega**, no fuso da conta. O que ainda está na
+  fila ou a caminho aparece à parte, como "ainda pode sair". Falha,
+  cancelamento e descanso não custam nada.
+- **"Não sei" não vira zero.** Três casos saem da soma e viram aviso, com a
+  quantidade: mensagem sem tarifa cadastrada (outro país, outra categoria, ou
+  entregue antes da primeira vigência), conta sem moeda lida na Meta, e
+  mensagem entregue sem o aviso de cobrança. Sem tarifa nenhuma, a tela não
+  mostra valor — mostra que não dá para calcular.
+- **O país sai do telefone.** A consulta agrupa pelos quatro primeiros dígitos
+  e a regra escolhe o código de país **mais longo** cadastrado que casa com o
+  começo do número (`1809` ganha de `1`).
+- **Sem ponto flutuante.** A soma é em micros e vira centavos uma vez, no fim:
+  três mensagens a 0,3217 dão 0,97, não 0,96.
+- **A categoria da prévia vem da tela**, e pode: ali nada é gravado, é a
+  estimativa que a própria pessoa lê. Na campanha criada vale a categoria lida
+  da Meta (ver "O modelo da campanha é o que a Meta diz").
+
+Fica para os próximos PRs da etapa: os tetos em reais (com a pausa e a retomada)
+e a conferência com o relatório de custo da Meta.
 
 ## O que ainda falta
 

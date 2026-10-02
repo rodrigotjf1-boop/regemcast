@@ -8,6 +8,8 @@
 /// campo novo ou ausente na API não pode derrubar o app inteiro.
 library;
 
+import 'custo.dart';
+
 int _int(Object? v) => v is num ? v.toInt() : int.tryParse('${v ?? ''}') ?? 0;
 int? _intOuNulo(Object? v) =>
     v == null ? null : (v is num ? v.toInt() : int.tryParse('$v'));
@@ -558,7 +560,11 @@ class ResumoCampanha {
     this.variavelCabecalho,
     this.pausaErro,
     this.falhasPorMotivo = const [],
+    this.custo,
   });
+
+  /// Quanto a campanha custa na Meta. Só vem em `GET /campanhas/:id`.
+  final CustoNaMeta? custo;
 
   final String id;
   final String nome;
@@ -703,6 +709,7 @@ class ResumoCampanha {
         if (ErroQueGuia.deJson(f['erro']) case final erro?)
           FalhaPorMotivo(total: _int(f['total']), erro: erro),
     ],
+    custo: CustoNaMeta.deJson(j['custo']),
   );
 }
 

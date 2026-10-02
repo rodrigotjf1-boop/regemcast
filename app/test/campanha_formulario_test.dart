@@ -81,6 +81,22 @@ class _Servidor {
   final corpos = <String, Map<String, dynamic>>{};
   final previas = <Map<String, dynamic>>[];
 
+  /// O custo estimado que a prévia devolve (valores de exemplo).
+  Map<String, dynamic>? custoDaPrevia = {
+    'moeda': 'BRL',
+    'gastoCentavos': 0,
+    'aSairCentavos': 151199,
+    'linhas': [
+      {
+        'rotulo': 'Custo estimado na Meta',
+        'valor': 'até R\$ 1.511,99',
+        'detalhe': '4.700 mensagens × R\$ 0,3217',
+      },
+    ],
+    'avisos': <String>[],
+    'nota': 'A Meta cobra só a mensagem entregue.',
+  };
+
   ClienteApi get api => ClienteApi(
     base: 'https://api.teste',
     http: MockClient((req) async {
@@ -158,6 +174,8 @@ class _Servidor {
               },
             },
             'cashback': cashback ? {'doPublico': totalDaPrevia} : null,
+            // Como o servidor: o custo só vem quando a tela manda a categoria.
+            'custo': corpo['categoria'] == null ? null : custoDaPrevia,
           }, 201);
         case 'POST /campanhas':
           return _json({'id': 'nova1'}, 201);
@@ -298,7 +316,22 @@ void main() {
 
       await _escolher(t, 'c-lista', 'Clientes 2026 · 4.820 contatos');
       expect(find.textContaining('4.700 pessoas vão receber'), findsOneWidget);
-      expect(s.previas.last, {'origem': 'lista', 'origemId': 'l1'});
+      // A categoria do modelo vai junto: é ela que decide o preço na Meta.
+      expect(s.previas.last, {
+        'origem': 'lista',
+        'origemId': 'l1',
+        'categoria': 'marketing',
+      });
+      // O custo estimado, como o servidor mandou — o app não faz a conta.
+      expect(find.byKey(const ValueKey('c-custo')), findsOneWidget);
+      expect(
+        find.textContaining(
+          'Custo estimado na Meta: até R\$ 1.511,99 (4.700 mensagens × R\$ 0,3217)',
+          findRichText: true,
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('A Meta cobra só a mensagem entregue.'), findsOneWidget);
 
       await _montar(t);
       final corpo = s.corpos['POST /campanhas']!;

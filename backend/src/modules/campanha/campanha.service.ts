@@ -66,6 +66,8 @@ import { MetaService, MODELO_APROVADO, type ModeloDeMensagem } from '../meta/met
 import { ROTULO_DO_PAGAMENTO_NA_META } from '../meta/pagamento';
 import { SaudeService } from '../meta/saude.service';
 import { MidiaIndisponivel, MidiaService } from '../midia/midia.service';
+import { custoDaCampanha, custoDoPublico } from '../orcamento/custo.consulta';
+import type { CustoParaTela } from '../orcamento/custo.regras';
 import { TelemetriaService } from '../telemetria/telemetria.service';
 import type { CriarCampanhaDto } from './dto/criar-campanha.dto';
 import type { EditarCampanhaDto } from './dto/editar-campanha.dto';
@@ -474,6 +476,11 @@ export interface PreviaDoPublico {
    * quantos do público (quem pode receber). Nulo sem variável de cashback.
    */
   cashback: { doPublico: number } | null;
+  /**
+   * O custo estimado na Meta para este público, pela categoria do modelo que a
+   * tela escolheu. Nulo enquanto não há modelo escolhido.
+   */
+  custo: CustoParaTela | null;
 }
 
 export interface ResumoCampanha {
@@ -495,6 +502,12 @@ export interface ResumoCampanha {
    * trezentas linhas.
    */
   falhasPorMotivo?: Array<{ total: number; erro: ErroParaTela }>;
+  /**
+   * Quanto a campanha custa na Meta — a estimativa antes de disparar, o gasto e
+   * o que ainda pode sair depois. Só no detalhe: é uma contagem da campanha
+   * inteira, e a lista de campanhas não paga por ela.
+   */
+  custo?: CustoParaTela;
   /** De onde sai a variável do título do modelo; nulo quando o modelo não tem. */
   variavelCabecalho: { origem: string; valor: string } | null;
   criadoEm: Date;
@@ -2269,7 +2282,7 @@ export class CampanhaService {
    */
   async previaDoPublico(
     contaId: string,
-    pedido: PedidoDeOrigem & { soComCashback?: boolean },
+    pedido: PedidoDeOrigem & { soComCashback?: boolean; categoria?: string },
   ): Promise<PreviaDoPublico> {
     return this.ctx.comConta(contaId, async (db) => {
       const o = await origemDoPublico(db, contaId, pedido);
@@ -2293,12 +2306,15 @@ export class CampanhaService {
       const periodos = PERIODOS.map(
         (p) => sql`count(*) filter (where contato.periodo_preferido = ${p})::int as ${sql.identifier(p)}`,
       );
+      // Quem entra de verdade: o público e, com variável de cashback, só quem tem.
+      const quemEntra = comCashback
+        ? sql`${quemPode} and ${cashbackValido('contato', hojeDaConta(contaId))}`
+        : quemPode;
       const r = await db.execute(sql`
         select count(*)::int as total, ${emDescanso} as em_descanso, ${sql.join(periodos, sql`, `)}
                ${comCashback ? sql`, (select count(*)::int from contato where ${quemPode}) as do_publico` : sql``}
           from contato
-         where ${quemPode}
-           ${comCashback ? sql`and ${cashbackValido('contato', hojeDaConta(contaId))}` : sql``}
+         where ${quemEntra}
       `);
       const linha = (r.rows[0] ?? {}) as Record<string, number | string | null>;
       const total = Number(linha.total ?? 0);
@@ -2308,6 +2324,8 @@ export class CampanhaService {
         descanso: { dias, emDescanso: Number(linha.em_descanso ?? 0) },
         horario: sugerirHorario(total, contagem),
         cashback: comCashback ? { doPublico: Number(linha.do_publico ?? 0) } : null,
+        // Os mesmos contatos do total acima, pela tarifa de hoje.
+        custo: await custoDoPublico(db, contaId, quemEntra, pedido.categoria),
       };
     });
   }
@@ -2324,8 +2342,13 @@ export class CampanhaService {
   }
 
   async detalhe(contaId: string, campanhaId: string): Promise<ResumoCampanha> {
-    const [resumo] = await this.comContagens([await this.buscar(contaId, campanhaId)]);
-    return { ...resumo!, falhasPorMotivo: await this.falhasPorMotivo(contaId, campanhaId) };
+    const achada = await this.buscar(contaId, campanhaId);
+    const [resumo] = await this.comContagens([achada]);
+    return {
+      ...resumo!,
+      falhasPorMotivo: await this.falhasPorMotivo(contaId, campanhaId),
+      custo: await custoDaCampanha(this.ctx.db, contaId, achada),
+    };
   }
 
   /**

@@ -620,6 +620,125 @@ void main() {
     });
   });
 
+  group('custo na Meta', () {
+    testWidgets(
+      'rascunho: a estimativa antes de disparar, como o servidor mandou',
+      (t) async {
+        _telaAlta(t);
+        final s = _Servidor({
+          ..._campanha('rascunho'),
+          'custo': {
+            'moeda': 'BRL',
+            'gastoCentavos': 0,
+            'aSairCentavos': 3217,
+            'linhas': [
+              {
+                'rotulo': 'Custo estimado na Meta',
+                'valor': 'até R\$ 32,17',
+                'detalhe': '100 mensagens × R\$ 0,3217',
+              },
+            ],
+            'avisos': <String>[],
+            'nota': 'A Meta cobra só a mensagem entregue.',
+          },
+        });
+        await t.pumpWidget(_app(s.api, const TelaCampanhaDetalhe(id: 'c1')));
+        await _assentar(t);
+
+        expect(find.byKey(const ValueKey('cd-custo')), findsOneWidget);
+        expect(find.text('Custo estimado na Meta'), findsOneWidget);
+        expect(find.text('até R\$ 32,17'), findsOneWidget);
+        expect(find.text('100 mensagens × R\$ 0,3217'), findsOneWidget);
+        expect(
+          find.text('A Meta cobra só a mensagem entregue.'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('saindo: o gasto até agora e o que ainda pode sair', (t) async {
+      _telaAlta(t);
+      final s = _Servidor({
+        ..._campanha('enviando', porStatus: {'entregue': 40, 'pendente': 60}),
+        'custo': {
+          'moeda': 'BRL',
+          'gastoCentavos': 1287,
+          'aSairCentavos': 1930,
+          'linhas': [
+            {
+              'rotulo': 'Gasto na Meta até agora',
+              'valor': 'R\$ 12,87',
+              'detalhe': '40 mensagens cobradas',
+            },
+            {
+              'rotulo': 'Ainda pode sair',
+              'valor': 'até R\$ 19,30',
+              'detalhe': '60 mensagens × R\$ 0,3217',
+            },
+          ],
+          'avisos': <String>[],
+          'nota': null,
+        },
+      });
+      await t.pumpWidget(_app(s.api, const TelaCampanhaDetalhe(id: 'c1')));
+      await _assentar(t);
+
+      expect(find.text('Gasto na Meta até agora'), findsOneWidget);
+      expect(find.text('R\$ 12,87'), findsOneWidget);
+      expect(find.text('Ainda pode sair'), findsOneWidget);
+      expect(find.text('até R\$ 19,30'), findsOneWidget);
+    });
+
+    testWidgets(
+      'sem tarifa: nenhum valor, só o aviso — "não sei" não vira R\$ 0,00',
+      (t) async {
+        _telaAlta(t);
+        const aviso =
+            'Ainda não temos a tarifa da Meta para este tipo de mensagem: não dá para estimar o custo.';
+        final s = _Servidor({
+          ..._campanha('rascunho'),
+          'custo': {
+            'moeda': 'BRL',
+            'gastoCentavos': 0,
+            'aSairCentavos': null,
+            'linhas': <Map<String, dynamic>>[],
+            'avisos': [aviso],
+            'nota': null,
+          },
+        });
+        await t.pumpWidget(_app(s.api, const TelaCampanhaDetalhe(id: 'c1')));
+        await _assentar(t);
+
+        expect(find.byKey(const ValueKey('cd-custo')), findsOneWidget);
+        expect(find.text(aviso), findsOneWidget);
+        expect(find.textContaining('R\$'), findsNothing);
+      },
+    );
+
+    testWidgets('servidor sem o custo, ou custo vazio: o cartão não aparece', (
+      t,
+    ) async {
+      _telaAlta(t);
+      final antigo = _Servidor(_campanha('rascunho'));
+      await t.pumpWidget(_app(antigo.api, const TelaCampanhaDetalhe(id: 'c1')));
+      await _assentar(t);
+      expect(find.byKey(const ValueKey('cd-custo')), findsNothing);
+
+      final vazio = _Servidor({
+        ..._campanha('rascunho'),
+        'custo': {
+          'moeda': 'BRL',
+          'linhas': <Map<String, dynamic>>[],
+          'avisos': <String>[],
+          'nota': null,
+        },
+      });
+      await t.pumpWidget(_app(vazio.api, const TelaCampanhaDetalhe(id: 'c1')));
+      await _assentar(t);
+      expect(find.byKey(const ValueKey('cd-custo')), findsNothing);
+    });
+  });
+
   group('editar', () {
     testWidgets('desligar a janela manda os campos vazios, e não "nada"', (
       t,
