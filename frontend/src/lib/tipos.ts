@@ -633,6 +633,31 @@ export interface CustoNaMeta {
   nota: string | null;
 }
 
+/** Uma permissão de integração, com o texto que o dono lê. */
+export interface PermissaoDeIntegracao {
+  id: string;
+  rotulo: string;
+  descricao: string;
+}
+
+/**
+ * `GET /integracoes/aplicativos` — um produto com acesso à conta pela
+ * integração (a porta MCP). Nunca traz o token.
+ */
+export interface AplicativoConectado {
+  id: string;
+  produto: string;
+  classe: 'dms' | 'externo';
+  nome: string;
+  prefixo: string;
+  escopos: PermissaoDeIntegracao[];
+  criadoPor: string | null;
+  criadoEm: string;
+  ultimoUsoEm: string | null;
+  revogadoEm: string | null;
+  revogadoPor: string | null;
+}
+
 export type PeriodoDoOrcamento = 'dia' | 'semana' | 'mes';
 
 /**

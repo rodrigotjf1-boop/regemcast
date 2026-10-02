@@ -31,6 +31,7 @@ import { EmailModule } from './modules/email/email.module';
 import { SegurancaModule } from './modules/seguranca/seguranca.module';
 import { CobrancaModule } from './modules/cobranca/cobranca.module';
 import { OrcamentoModule } from './modules/orcamento/orcamento.module';
+import { IntegracaoModule } from './modules/integracao/integracao.module';
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { OrcamentoModule } from './modules/orcamento/orcamento.module';
     DistribuicaoModule,
     CobrancaModule,
     OrcamentoModule,
+    IntegracaoModule,
     SaudeModule,
   ],
   providers: [

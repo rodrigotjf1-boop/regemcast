@@ -40,6 +40,8 @@ Monorepo em `C:\RegemCast`.
   `schema_migrations`.
 - **`docs/`** — [`banco.md`](docs/banco.md) (preparar o banco, passo a passo),
   [`rls.md`](docs/rls.md) (como o isolamento funciona e como provar que pega) e
+  [`mcp.md`](docs/mcp.md) (a porta MCP para outros produtos da DMS: token de
+  integração, escopos e ferramentas),
   [`whatsapp.md`](docs/whatsapp.md) (os dois caminhos de conexão, coexistência,
   prazos e erros da Meta — com as fontes) e [`integracoes.md`](docs/integracoes.md)
   (cardápio digital → clientes e compras, com os limites da API).

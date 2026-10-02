@@ -59,6 +59,31 @@ export const plano = pgTable('plano', {
  * `valor` é `numeric(12,6)` — entra e sai como texto; a conta é em micros
  * (`orcamento/tarifa.regras.ts`).
  */
+/**
+ * Token de integração por conta (migration 043): a credencial de outro produto
+ * da DMS para entrar pela porta MCP. Só o hash é guardado; o token em claro
+ * sai uma vez, na emissão. `classe` = `dms` (produto do grupo) ou `externo`
+ * (nunca dispara). Regras em `integracao/integracao.regras.ts`.
+ */
+export const integracaoToken = pgTable('integracao_token', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  contaId: uuid('conta_id').notNull().references(() => conta.id, { onDelete: 'cascade' }),
+  produto: text('produto').notNull(),
+  classe: text('classe').notNull(),
+  nome: text('nome').notNull(),
+  tokenHash: text('token_hash').notNull(),
+  prefixo: text('prefixo').notNull(),
+  escopos: jsonb('escopos').notNull().default(sql`'[]'::jsonb`),
+  criadoPor: text('criado_por'),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  ultimoUsoEm: timestamp('ultimo_uso_em', { withTimezone: true }),
+  revogadoEm: timestamp('revogado_em', { withTimezone: true }),
+  revogadoPor: text('revogado_por'),
+}, (t) => ({
+  hashUq: uniqueIndex('idx_integracao_token_hash').on(t.tokenHash),
+  contaIdx: index('idx_integracao_token_conta').on(t.contaId, t.criadoEm),
+}));
+
 export const tarifaMeta = pgTable('tarifa_meta', {
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   /** ISO 4217, a moeda de cobrança da conta (`wa_conta.moeda`). */
