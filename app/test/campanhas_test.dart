@@ -620,6 +620,60 @@ void main() {
     });
   });
 
+  group('orçamento de disparos', () {
+    testWidgets(
+      'pausada pelo orçamento: diz qual teto encheu, quando volta e leva ao orçamento',
+      (t) async {
+        _telaAlta(t);
+        final s = _Servidor({
+          ..._campanha('pausada', pausaMotivo: 'orcamento'),
+          'pausaTexto':
+              r'O orçamento de hoje está no limite: R$ 49,86 de R$ 50,00.',
+          'pausaAte': '2026-10-03T03:00:00Z',
+        });
+        await t.pumpWidget(_app(s.api, const TelaCampanhaDetalhe(id: 'c1')));
+        await _assentar(t);
+
+        expect(
+          find.byKey(const ValueKey('cd-pausa-orcamento')),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining(
+            r'Pausada pelo orçamento de disparos. O orçamento de hoje está no limite: R$ 49,86 de R$ 50,00.',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining('volta a sair sozinha em '),
+          findsOneWidget,
+          reason: 'a hora de voltar vem do servidor',
+        );
+        expect(find.textContaining('na virada do período'), findsNothing);
+        expect(find.text('Ver o orçamento'), findsOneWidget);
+        // Retomar à mão continua oferecido: o servidor recusa se não houver folga.
+        expect(find.text('Retomar envio'), findsOneWidget);
+      },
+    );
+
+    testWidgets('servidor sem a frase e sem a hora: o aviso continua inteiro', (
+      t,
+    ) async {
+      _telaAlta(t);
+      final s = _Servidor(_campanha('pausada', pausaMotivo: 'orcamento'));
+      await t.pumpWidget(_app(s.api, const TelaCampanhaDetalhe(id: 'c1')));
+      await _assentar(t);
+
+      expect(
+        find.textContaining(
+          'Pausada pelo orçamento de disparos. O teto de gasto foi atingido.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('na virada do período'), findsOneWidget);
+    });
+  });
+
   group('custo na Meta', () {
     testWidgets(
       'rascunho: a estimativa antes de disparar, como o servidor mandou',

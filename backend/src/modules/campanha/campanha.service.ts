@@ -68,6 +68,16 @@ import { SaudeService } from '../meta/saude.service';
 import { MidiaIndisponivel, MidiaService } from '../midia/midia.service';
 import { custoDaCampanha, custoDoPublico } from '../orcamento/custo.consulta';
 import type { CustoParaTela } from '../orcamento/custo.regras';
+import { estadoDoOrcamento, folgaParaACampanha, registrarAvisos } from '../orcamento/orcamento.consulta';
+import {
+  avisoDoOrcamento,
+  frasePausaPeloOrcamento,
+  fraseSemFolga,
+  niveisAtingidos,
+  periodosCheios,
+  voltaEm,
+  type NivelAtingido,
+} from '../orcamento/orcamento.regras';
 import { TelemetriaService } from '../telemetria/telemetria.service';
 import type { CriarCampanhaDto } from './dto/criar-campanha.dto';
 import type { EditarCampanhaDto } from './dto/editar-campanha.dto';
@@ -489,8 +499,14 @@ export interface ResumoCampanha {
   modeloNome: string;
   modeloIdioma: string;
   status: string;
-  /** conexao | teto_plano | inadimplencia | manual | modelo | conta_meta — só quando pausada. */
+  /** conexao | teto_plano | inadimplencia | manual | modelo | conta_meta | orcamento — só quando pausada. */
   pausaMotivo: string | null;
+  /**
+   * Só na pausa pelo orçamento de disparos: qual teto encheu, em uma frase
+   * pronta, e quando a campanha volta sozinha (a virada do período).
+   */
+  pausaTexto: string | null;
+  pausaAte: Date | null;
   /**
    * O erro da Meta que pausou a campanha (modelo, conta_meta ou conexao): o que
    * houve, o que fazer e onde. Nulo nas outras pausas.
@@ -1490,10 +1506,18 @@ export class CampanhaService {
     if (saldo !== null && saldo <= 0) {
       throw new BadRequestException(MENSAGEM_SEM_SALDO);
     }
+    // Pausada pelo orçamento: retomar sem folga só pausaria de novo na rodada seguinte.
+    if (alvo.pausaMotivo === 'orcamento') {
+      const folga = await folgaParaACampanha(this.ctx.db, contaId, alvo, LOTE_POR_RODADA);
+      if (folga.cabem !== null && folga.cabem < 1) {
+        throw new BadRequestException(fraseSemFolga(folga.estado.usos, folga.precoMicros!, folga.estado.moeda));
+      }
+    }
 
     await this.ctx.db
       .update(campanha)
-      .set({ status: 'agendada', pausaMotivo: null, pausaErroCodigo: null, pausaErroMeta: null })
+      // `retomarEm` guardava a virada do orçamento: retomada à mão, não espera mais por ela.
+      .set({ status: 'agendada', pausaMotivo: null, pausaErroCodigo: null, pausaErroMeta: null, retomarEm: null })
       .where(and(eq(campanha.id, campanhaId), eq(campanha.status, 'pausada')));
 
     await this.auditoria.registrar({
@@ -1547,6 +1571,7 @@ export class CampanhaService {
           status: campanha.status,
           modeloNome: campanha.modeloNome,
           modeloIdioma: campanha.modeloIdioma,
+          modeloCategoria: campanha.modeloCategoria,
           janelaDias: campanha.janelaDias,
           janelaInicio: campanha.janelaInicio,
           janelaFim: campanha.janelaFim,
@@ -1622,7 +1647,9 @@ export class CampanhaService {
     if (!decisao.pode) return;
 
     // Reivindicação atômica. `SKIP LOCKED` é o que impede envio duplicado.
-    let pausadaPor: 'inadimplencia' | 'teto_plano' | null = null;
+    let pausadaPor: 'inadimplencia' | 'teto_plano' | 'orcamento' | null = null;
+    // Os avisos do orçamento (80% e 100%) que esta rodada fez nascer; saem depois do commit.
+    let avisosDoOrcamento: { moeda: string; niveis: NivelAtingido[] } | null = null;
     const reivindicados = await this.ctx.comEscopoSistema('campanha.worker.reivindicar', async (db) => {
       // Quem pediu para sair DEPOIS de a campanha ser montada não recebe. A
       // conferência é feita aqui, na hora do envio, e não só na montagem: entre
@@ -1680,6 +1707,29 @@ export class CampanhaService {
       if (saldo !== null) limite = Math.min(limite, saldo);
       if (cabeNaMeta !== null) limite = Math.min(limite, cabeNaMeta);
 
+      // Orçamento de disparos (os tetos em dinheiro que o dono definiu), também
+      // dentro da trava por conta: duas campanhas não gastam a mesma folga. Sem
+      // folga para uma mensagem, a campanha pausa e volta sozinha na virada do
+      // período — os destinatários ficam na fila, intactos.
+      const folga = await folgaParaACampanha(db, c.contaId, { id: campanhaId, modeloCategoria: c.modeloCategoria }, limite);
+      const moedaDoOrcamento = folga.estado.moeda ?? 'BRL';
+      if (folga.cabem !== null && folga.cabem < 1) {
+        const cheios = periodosCheios(folga.estado.usos, folga.precoMicros!);
+        const r = await db.execute(sql`
+          update campanha set status = 'pausada', pausa_motivo = 'orcamento', retomar_em = ${voltaEm(cheios)!.toISOString()}::timestamptz
+           where id = ${campanhaId} and status in ('agendada', 'enviando')
+          returning id
+        `);
+        if (r.rows?.length) pausadaPor = 'orcamento';
+        // O teto pode ter sido baixado para menos do que já saiu: o aviso de 100% ainda não existia.
+        avisosDoOrcamento = {
+          moeda: moedaDoOrcamento,
+          niveis: await registrarAvisos(db, c.contaId, niveisAtingidos(folga.estado.usos, folga.precoMicros!, 0)),
+        };
+        return null;
+      }
+      if (folga.cabem !== null) limite = Math.min(limite, folga.cabem);
+
       /*
        * A reserva em DUAS etapas, com a primeira MATERIALIZADA. A forma antiga
        * — `update … where id in (select … for update skip locked limit N)` —
@@ -1729,6 +1779,17 @@ export class CampanhaService {
            ${dias > 0 ? sql`and d.id not in (select id from descanso)` : sql``}
         returning d.id, d.telefone_e164, d.variaveis, d.tentativas, d.variavel_cabecalho
       `);
+      // Com o que esta rodada reservou, o orçamento passou de 80% ou encheu?
+      if (folga.cabem !== null && r.rows.length) {
+        avisosDoOrcamento = {
+          moeda: moedaDoOrcamento,
+          niveis: await registrarAvisos(
+            db,
+            c.contaId,
+            niveisAtingidos(folga.estado.usos, folga.precoMicros!, r.rows.length),
+          ),
+        };
+      }
       return r.rows as {
         id: string;
         telefone_e164: string;
@@ -1738,8 +1799,18 @@ export class CampanhaService {
       }[];
     });
 
+    // Só depois do commit: aviso de uma reserva desfeita seria mentira.
+    const avisados = avisosDoOrcamento as { moeda: string; niveis: NivelAtingido[] } | null;
+    for (const nivel of avisados?.niveis ?? []) {
+      void this.avisos.avisar(c.contaId, 'campanhas', { ...avisoDoOrcamento(nivel, avisados!.moeda), dados: { tela: 'orcamento' } });
+    }
+
     if (reivindicados === null) {
-      this.log.log(`Campanha ${campanhaId} pausada: a conta ${c.contaId} está sem disparos no plano ou com o pagamento atrasado.`);
+      this.log.log(
+        pausadaPor === 'orcamento'
+          ? `Campanha ${campanhaId} pausada: o orçamento de disparos da conta ${c.contaId} não tem folga.`
+          : `Campanha ${campanhaId} pausada: a conta ${c.contaId} está sem disparos no plano ou com o pagamento atrasado.`,
+      );
       if (pausadaPor === 'teto_plano') {
         void this.avisos.avisar(c.contaId, 'campanhas', {
           titulo: `Campanha pausada: ${c.nome}`,
@@ -2488,6 +2559,11 @@ export class CampanhaService {
     const pausouPeloPagamento = campanhas.some((c) => c.status === 'pausada' && c.pausaErroCodigo === ERRO_DE_PAGAMENTO);
     const pagamentoUrl = pausouPeloPagamento ? await this.meta.pagamentoUrl(campanhas[0]!.contaId) : null;
 
+    // O orçamento é da CONTA: uma leitura serve a todas as campanhas que ele pausou.
+    const pausouPeloOrcamento = campanhas.some((c) => c.status === 'pausada' && c.pausaMotivo === 'orcamento');
+    const orcamento = pausouPeloOrcamento ? await estadoDoOrcamento(this.ctx.db, campanhas[0]!.contaId) : null;
+    const fraseDoOrcamento = orcamento ? frasePausaPeloOrcamento(orcamento.usos, orcamento.moeda) : null;
+
     return campanhas.map((c) => {
       const porStatus: Record<string, number> = {};
       let total = 0;
@@ -2511,6 +2587,7 @@ export class CampanhaService {
         espera,
         respondidas.get(c.id) ?? 0,
         pagamentoUrl,
+        fraseDoOrcamento,
       );
     });
   }
@@ -2523,7 +2600,9 @@ export class CampanhaService {
     espera: EsperaDaCampanha | null = null,
     respondidas = 0,
     pagamentoUrl: string | null = null,
+    fraseDoOrcamento: string | null = null,
   ): ResumoCampanha {
+    const peloOrcamento = c.status === 'pausada' && c.pausaMotivo === 'orcamento';
     return {
       id: c.id,
       nome: c.nome,
@@ -2531,6 +2610,8 @@ export class CampanhaService {
       modeloIdioma: c.modeloIdioma,
       status: c.status,
       pausaMotivo: c.status === 'pausada' ? c.pausaMotivo : null,
+      pausaTexto: peloOrcamento ? fraseDoOrcamento : null,
+      pausaAte: peloOrcamento ? c.retomarEm : null,
       pausaErro:
         c.status === 'pausada' && c.pausaErroCodigo != null && PAUSAS_POR_ERRO.includes(c.pausaMotivo ?? '')
           ? comLinkDoPagamento(erroParaTela(traduzirErroMeta(c.pausaErroCodigo, c.pausaErroMeta)), pagamentoUrl)

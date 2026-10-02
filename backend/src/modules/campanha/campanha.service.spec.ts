@@ -124,6 +124,9 @@ function montar() {
     comConta: <T>(_conta: string, fn: (d: typeof db) => Promise<T>) => fn(db),
   };
 
+  // Os avisos que vão para o celular do dono.
+  const avisos = { avisar: jest.fn().mockResolvedValue(undefined) };
+
   // A saúde da conta na Meta: por padrão, nada impede o envio.
   const saude = { conferirAntesDeEnviar: jest.fn().mockResolvedValue(undefined) };
 
@@ -135,14 +138,12 @@ function montar() {
       typeof CampanhaService
     >[3],
     telemetria as unknown as ConstructorParameters<typeof CampanhaService>[4],
-    { avisar: jest.fn().mockResolvedValue(undefined) } as unknown as ConstructorParameters<
-      typeof CampanhaService
-    >[5],
+    avisos as unknown as ConstructorParameters<typeof CampanhaService>[5],
     midias as unknown as ConstructorParameters<typeof CampanhaService>[6],
     saude as unknown as ConstructorParameters<typeof CampanhaService>[7],
   );
 
-  return { service, db, meta, graph, midias, saude, registrar, telemetria, diario, consulta: (l: unknown[]) => consulta(l, diario) };
+  return { service, db, meta, graph, midias, saude, avisos, registrar, telemetria, diario, consulta: (l: unknown[]) => consulta(l, diario) };
 }
 
 beforeAll(() => {
@@ -534,8 +535,129 @@ describe('rodada do worker', () => {
       .mockResolvedValueOnce({ rows: [] }) // bloqueio por inadimplência (sem assinatura: libera)
       .mockResolvedValueOnce({ rows: saldo === undefined ? [] : [{ teto: 100, usados: 100 - saldo, em_voo: 0 }] }) // saldo do plano
       .mockResolvedValueOnce({ rows: limiteDaMeta }) // limite da Meta (vazio: nunca lido, não trava)
+      .mockResolvedValueOnce({ rows: [] }) // orçamento de disparos (conta sem teto: uma consulta e segue)
       .mockResolvedValueOnce({ rows: reivindicados }); // reivindicação
   }
+
+  /** O orçamento da conta como a rodada lê: R$ 50,00 por dia, com `jaSairam` mensagens de 0,3217 hoje. */
+  function orcamentoDoDia(m: ReturnType<typeof montar>, jaSairam: number) {
+    m.db.execute
+      .mockResolvedValueOnce({
+        rows: [{
+          dia: 5000, semana: null, mes: null, hoje: '2026-09-16',
+          diaInicio: '2026-09-16T03:00:00Z', semanaInicio: '2026-09-14T03:00:00Z', mesInicio: '2026-09-01T03:00:00Z',
+          diaVira: '2026-09-17T03:00:00Z', semanaVira: '2026-09-21T03:00:00Z', mesVira: '2026-10-01T03:00:00Z',
+          semanaDia: '2026-09-14', mesDia: '2026-09-01',
+        }],
+      }) // os tetos e as janelas
+      .mockResolvedValueOnce({ rows: [{ moeda: 'BRL', ddi: '55', categoria: 'marketing', valor: '0.321700', vigenteDe: '2026-07-01' }] }) // moeda e tarifas
+      .mockResolvedValueOnce({ rows: [{ prefixo: '5521', daMeta: null, doModelo: 'marketing', dia: jaSairam, semana: jaSairam, mes: jaSairam }] }) // o que já saiu
+      .mockResolvedValueOnce({ rows: [{ prefixo: '5521' }] }); // quem está na vez
+  }
+
+  /** A rodada até o limite da Meta, sem o orçamento nem a reivindicação. */
+  function ateOOrcamento(m: ReturnType<typeof montar>) {
+    m.db.execute
+      .mockResolvedValueOnce({ rows: [{ dia: 0, semana: 0, mes: 0, ultimo: null }] }) // contagem
+      .mockResolvedValueOnce({ rows: [] }) // quem pediu para sair
+      .mockResolvedValueOnce({ rows: [] }) // sem WhatsApp
+      .mockResolvedValueOnce({ rows: [] }) // trava da conta
+      .mockResolvedValueOnce({ rows: [] }) // inadimplência
+      .mockResolvedValueOnce({ rows: [] }) // saldo do plano
+      .mockResolvedValueOnce({ rows: [] }); // limite da Meta
+  }
+
+  it('orçamento de disparos sem folga: PAUSA pelo orçamento, com a hora de voltar, e não reivindica ninguém', async () => {
+    // R$ 50,00 por dia e 155 mensagens de 0,3217 já saíram (49,86): não cabe mais uma.
+    const m = montar();
+    m.db.select.mockReturnValueOnce(m.consulta([{ ...ATIVA, modeloCategoria: 'marketing' }]));
+    ateOOrcamento(m);
+    orcamentoDoDia(m, 155);
+    m.db.execute
+      .mockResolvedValueOnce({ rows: [{ id: CAMPANHA }] }) // a pausa
+      .mockResolvedValueOnce({ rows: [{ periodo: 'dia', nivel: 80 }, { periodo: 'dia', nivel: 100 }] }); // os avisos, novos
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(m.graph.enviarModelo).not.toHaveBeenCalled();
+    expect(reivindicacao(m)).toBeUndefined();
+    const pausou = m.db.execute.mock.calls.map((c) => JSON.stringify(c[0])).find((t) => t.includes("pausa_motivo = 'orcamento'"));
+    // A hora de voltar é a virada do dia que encheu.
+    expect(pausou).toContain('2026-09-17T03:00:00.000Z');
+    expect(m.avisos.avisar).toHaveBeenCalledTimes(1);
+    expect(m.avisos.avisar).toHaveBeenCalledWith(
+      ATIVA.contaId,
+      'campanhas',
+      expect.objectContaining({
+        titulo: 'Orçamento de disparos atingido',
+        corpo: 'O orçamento de hoje (R$ 50,00) foi atingido. As campanhas pausam e voltam a sair sozinhas amanhã.',
+        dados: { tela: 'orcamento' },
+      }),
+    );
+  });
+
+  it('orçamento de disparos com folga para 3: reivindica só 3, e avisa que encheu', async () => {
+    // Já saíram 152 (48,90): cabem mais 3 (49,86); a quarta passaria dos R$ 50,00.
+    const m = montar();
+    m.db.select
+      .mockReturnValueOnce(m.consulta([{ ...ATIVA, modeloCategoria: 'marketing' }]))
+      .mockReturnValueOnce(m.consulta([{ phoneNumberId: 'PN1' }]))
+      .mockReturnValueOnce(m.consulta([{ restam: 0 }]));
+    ateOOrcamento(m);
+    orcamentoDoDia(m, 152);
+    m.db.execute
+      .mockResolvedValueOnce({ rows: [1, 2, 3].map((n) => ({ id: `d${n}`, telefone_e164: `552199999000${n}`, variaveis: [] })) }) // reivindicação
+      .mockResolvedValueOnce({ rows: [{ periodo: 'dia', nivel: 100 }] }); // o aviso de 100% é novo; o de 80% já tinha saído
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(reivindicacao(m)).toContain(',3,');
+    expect(m.graph.enviarModelo).toHaveBeenCalledTimes(3);
+    expect(pausa(m)).toBeUndefined();
+    expect(m.avisos.avisar).toHaveBeenCalledTimes(1);
+    expect(m.avisos.avisar.mock.calls[0][2].titulo).toBe('Orçamento de disparos atingido');
+  });
+
+  it('orçamento passando de 80% com a rodada: avisa uma vez, sem pausar', async () => {
+    // Já saíram 120 (38,60); com mais 10, 41,82 de 50,00 (83%).
+    const m = montar();
+    m.db.select
+      .mockReturnValueOnce(m.consulta([{ ...ATIVA, modeloCategoria: 'marketing' }]))
+      .mockReturnValueOnce(m.consulta([{ phoneNumberId: 'PN1' }]))
+      .mockReturnValueOnce(m.consulta([{ restam: 0 }]));
+    ateOOrcamento(m);
+    orcamentoDoDia(m, 120);
+    m.db.execute
+      .mockResolvedValueOnce({ rows: Array.from({ length: 10 }, (_, n) => ({ id: `d${n}`, telefone_e164: `55219999900${10 + n}`, variaveis: [] })) })
+      .mockResolvedValueOnce({ rows: [{ periodo: 'dia', nivel: 80 }] });
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(m.graph.enviarModelo).toHaveBeenCalledTimes(10);
+    expect(m.avisos.avisar).toHaveBeenCalledTimes(1);
+    expect(m.avisos.avisar.mock.calls[0][2]).toMatchObject({
+      titulo: 'Orçamento de disparos em 80%',
+      corpo: 'Você já usou R$ 41,82 dos R$ 50,00 do orçamento de hoje.',
+    });
+  });
+
+  it('aviso do orçamento que já tinha saído no período não se repete', async () => {
+    const m = montar();
+    m.db.select
+      .mockReturnValueOnce(m.consulta([{ ...ATIVA, modeloCategoria: 'marketing' }]))
+      .mockReturnValueOnce(m.consulta([{ phoneNumberId: 'PN1' }]))
+      .mockReturnValueOnce(m.consulta([{ restam: 0 }]));
+    ateOOrcamento(m);
+    orcamentoDoDia(m, 130);
+    m.db.execute
+      .mockResolvedValueOnce({ rows: [{ id: 'd1', telefone_e164: '5521999990001', variaveis: [] }] })
+      .mockResolvedValueOnce({ rows: [] }); // a chave única já tinha a linha: nada novo
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    expect(m.graph.enviarModelo).toHaveBeenCalledTimes(1);
+    expect(m.avisos.avisar).not.toHaveBeenCalled();
+  });
 
   /** A reivindicação e o limite que ela usou (o limite entra como parâmetro: ',N,'). */
   function reivindicacao(m: ReturnType<typeof montar>): string | undefined {
@@ -711,6 +833,7 @@ describe('rodada do worker', () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] }) // limite da Meta
+      .mockResolvedValueOnce({ rows: [] }) // orçamento de disparos (sem teto)
       .mockResolvedValueOnce({ rows: [{ id: 'd1', telefone_e164: '5521999998888', variaveis: [] }] });
 
     await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));

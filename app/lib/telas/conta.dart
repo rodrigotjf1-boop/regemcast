@@ -8,6 +8,7 @@ import '../api/leituras.dart';
 import '../api/seguranca.dart';
 import '../componentes/basicos.dart';
 import '../componentes/dialogos.dart';
+import '../componentes/orcamento_de_disparos.dart';
 import '../sessao/sessao.dart';
 import '../tema/cores.dart';
 import '../util/senha.dart';
@@ -71,6 +72,8 @@ class TelaConta extends ConsumerWidget {
             ),
             data: (d) => _FormularioConta(dados: d, editavel: ehDono),
           ),
+          const SizedBox(height: 26),
+          const OrcamentoDeDisparosNaConta(),
           const SizedBox(height: 26),
           const _Senha(),
           const SizedBox(height: 26),

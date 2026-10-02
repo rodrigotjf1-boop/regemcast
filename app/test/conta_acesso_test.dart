@@ -47,6 +47,36 @@ Map<String, dynamic> _seguranca({
   'appDisponivel': appDisponivel,
 };
 
+Map<String, dynamic> _periodo(
+  String periodo,
+  String rotulo,
+  String texto,
+  int percentual,
+  String sinal,
+  String zera,
+) => {
+  'periodo': periodo,
+  'rotulo': rotulo,
+  'texto': texto,
+  'percentual': percentual,
+  'sinal': sinal,
+  'zera': zera,
+};
+
+/// `GET /orcamento` como o servidor manda (valores de exemplo).
+Map<String, dynamic> _orcamento({
+  Map<String, String> campos = const {'dia': '', 'semana': '', 'mes': ''},
+  List<Map<String, dynamic>> periodos = const [],
+  List<String> avisos = const [],
+  bool podeMudar = true,
+}) => {
+  'moeda': 'BRL',
+  'campos': campos,
+  'periodos': periodos,
+  'avisos': avisos,
+  'podeMudar': podeMudar,
+};
+
 const _segredo = 'JBSWY3DPEHPK3PXP';
 const _endereco =
     'otpauth://totp/RegemCast:rodrigo%40misterburgers.com.br?secret=$_segredo&issuer=RegemCast';
@@ -71,6 +101,24 @@ class _Servidor {
     'numeros': <Object>[],
   };
   int totalContatos = 0;
+
+  /// O orçamento de disparos como o servidor devolve; o `PUT` troca por
+  /// [orcamentoSalvo].
+  Map<String, dynamic> orcamento = _orcamento();
+  Map<String, dynamic> orcamentoSalvo = _orcamento(
+    campos: {'dia': '50,00', 'semana': '', 'mes': '1.000,00'},
+    periodos: [
+      _periodo('dia', 'Hoje', r'R$ 0,00 de R$ 50,00', 0, 'ok', 'Zera amanhã'),
+      _periodo(
+        'mes',
+        'Este mês',
+        r'R$ 0,00 de R$ 1.000,00',
+        0,
+        'ok',
+        'Zera no dia 1º',
+      ),
+    ],
+  );
   List<Map<String, dynamic>> modelos = [];
   List<Map<String, dynamic>> campanhas = [];
 
@@ -108,6 +156,11 @@ class _Servidor {
         case 'PATCH /conta':
           conta = {...conta, ...(corpo as Map<String, dynamic>)};
           return _json(conta);
+        case 'GET /orcamento':
+          return _json(orcamento);
+        case 'PUT /orcamento':
+          orcamento = orcamentoSalvo;
+          return _json(orcamento);
         case 'POST /auth/senha':
           return _json({
             'mensagem':
@@ -465,6 +518,116 @@ void main() {
       expect(t.widget<TextField>(_chave('conta-nome')).enabled, isFalse);
       expect(t.widget<TextField>(_chave('conta-descanso')).enabled, isFalse);
       expect(_chave('salvar-conta'), findsNothing);
+    });
+
+    testWidgets(
+      'orçamento de disparos: o dono define, e o app manda o que foi digitado',
+      (t) async {
+        final s = _Servidor();
+        await _abrir(t, s, const TelaConta());
+
+        expect(find.text('Orçamento de disparos'), findsOneWidget);
+        expect(
+          find.text(
+            'Sem orçamento definido: as campanhas saem sem teto de gasto.',
+          ),
+          findsOneWidget,
+        );
+        await _tocar(t, find.text('Definir orçamento'));
+        expect(find.text(r'Por dia (R$)'), findsOneWidget);
+
+        await t.enterText(_chave('orcamento-dia'), '50');
+        await t.enterText(_chave('orcamento-mes'), '1000');
+        await _tocar(t, _chave('orcamento-salvar'));
+
+        // O formato é do servidor: o app manda como a pessoa digitou.
+        expect(s.ultimo('PUT /orcamento'), {
+          'dia': '50',
+          'semana': '',
+          'mes': '1000',
+        });
+        expect(find.text('Orçamento salvo.'), findsOneWidget);
+        expect(_chave('orcamento-salvar'), findsNothing);
+        expect(_chave('orcamento-periodo-dia'), findsOneWidget);
+        expect(find.text(r'R$ 0,00 de R$ 50,00'), findsOneWidget);
+        expect(find.text('Zera no dia 1º'), findsOneWidget);
+        expect(find.text('Alterar'), findsOneWidget);
+
+        // Alterar reabre com o que está gravado.
+        await _tocar(t, _chave('orcamento-alterar'));
+        expect(
+          t.widget<TextField>(_chave('orcamento-dia')).controller!.text,
+          '50,00',
+        );
+        expect(
+          t.widget<TextField>(_chave('orcamento-mes')).controller!.text,
+          '1.000,00',
+        );
+      },
+    );
+
+    testWidgets(
+      'orçamento: valor errado mostra a frase do servidor, e o formulário fica',
+      (t) async {
+        final s = _Servidor();
+        s.respostas['PUT /orcamento'] = (_) async => _json({
+          'mensagem': 'O teto do dia não pode ser maior que o da semana.',
+        }, 400);
+        await _abrir(t, s, const TelaConta());
+
+        await _tocar(t, _chave('orcamento-alterar'));
+        await t.enterText(_chave('orcamento-dia'), '500');
+        await t.enterText(_chave('orcamento-semana'), '300');
+        await _tocar(t, _chave('orcamento-salvar'));
+
+        expect(
+          find.descendant(
+            of: _chave('orcamento-erro'),
+            matching: find.text(
+              'O teto do dia não pode ser maior que o da semana.',
+            ),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          t.widget<TextField>(_chave('orcamento-dia')).controller!.text,
+          '500',
+          reason: 'o que a pessoa digitou não some',
+        );
+      },
+    );
+
+    testWidgets('orçamento: o operador vê quanto já saiu, mas não muda', (
+      t,
+    ) async {
+      final s = _Servidor()
+        ..orcamento = _orcamento(
+          podeMudar: false,
+          campos: {'dia': '50,00', 'semana': '', 'mes': ''},
+          periodos: [
+            _periodo(
+              'dia',
+              'Hoje',
+              r'R$ 41,82 de R$ 50,00',
+              83,
+              'atencao',
+              'Zera amanhã',
+            ),
+          ],
+          avisos: [
+            '3 mensagens enviadas não entram na conta do orçamento: ainda não temos a tarifa da Meta para elas.',
+          ],
+        );
+      await _abrir(t, s, const TelaConta(), papel: 'operador');
+
+      expect(find.text(r'R$ 41,82 de R$ 50,00'), findsOneWidget);
+      expect(find.text('Zera amanhã'), findsOneWidget);
+      expect(
+        find.textContaining('3 mensagens enviadas não entram na conta'),
+        findsOneWidget,
+      );
+      expect(find.text('Só o dono da conta muda o orçamento.'), findsOneWidget);
+      expect(_chave('orcamento-alterar'), findsNothing);
     });
 
     testWidgets('conta sem o campo de descanso: nem aparece, nem vai', (

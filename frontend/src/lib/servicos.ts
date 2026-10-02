@@ -14,6 +14,8 @@ import { api, enderecoDaApi } from './api';
 import type { SituacaoCardapioWeb, SituacaoRegem, Segmento, ResumoSegmentos, ParametrosSegmentacao,
   AlvoDePublico,
   ImportacaoDaBase,
+  OrcamentoDeDisparos,
+  PeriodoDoOrcamento,
   PreviaDoPublico,
   ProdutoDaBase,
   Publico,
@@ -183,6 +185,15 @@ export const listaEspera = {
   /** `POST /lista-espera` — anônimo e idempotente por e-mail. */
   entrarNaFila: (dados: DadosListaEspera) =>
     api.post<{ mensagem: string }>('/lista-espera', dados, SEM_REDIRECT),
+};
+
+/** O orçamento de disparos: os tetos de gasto na Meta. Ler é de todos; definir é só do dono. */
+export const orcamento = {
+  /** `GET /orcamento` */
+  ler: () => api.get<OrcamentoDeDisparos>('/orcamento'),
+
+  /** `PUT /orcamento` — os três campos como a pessoa digitou; vazio tira o teto. */
+  definir: (campos: Record<PeriodoDoOrcamento, string>) => api.put<OrcamentoDeDisparos>('/orcamento', campos),
 };
 
 export const conta = {

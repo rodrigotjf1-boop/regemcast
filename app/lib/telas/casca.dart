@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../api/conta.dart';
 import '../api/leituras.dart';
 import '../api/modelos.dart';
+import '../api/orcamento.dart';
 import '../componentes/avisos_celular.dart';
 import '../componentes/basicos.dart';
 import '../componentes/dialogos.dart';
@@ -134,6 +135,14 @@ class _CascaState extends ConsumerState<Casca> {
       Navigator.of(
         context,
       ).push(MaterialPageRoute<void>(builder: (_) => const TelaWhatsapp()));
+      return;
+    }
+    if (dados['tela'] == 'orcamento') {
+      // "Orçamento de disparos em 80%" / "atingido": o orçamento está na Conta.
+      ref.invalidate(orcamentoProvider);
+      Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => const TelaConta()));
       return;
     }
     if (dados['tipo'] == 'cobranca' || dados['tela'] == 'plano') {
