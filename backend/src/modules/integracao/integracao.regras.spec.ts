@@ -156,6 +156,19 @@ describe('as ferramentas de cada token', () => {
     expect(ferramentasDe({ escopos: leitura }).map((f) => f.nome)).not.toContain('conversas_anuncio_listar');
   });
 
+  it('rascunhar pede a permissão de rascunhar: quem só lê não grava', () => {
+    expect(ferramentasDe({ escopos: ['modelos.rascunhar'] }).map((f) => f.nome)).toEqual(['integracao_situacao', 'modelo_rascunhar']);
+    expect(ferramentasDe({ escopos: ['campanhas.rascunhar'] }).map((f) => f.nome)).toEqual(['integracao_situacao', 'campanha_rascunhar']);
+    const leitura = ['conta.ler', 'campanhas.ler', 'publicos.ler', 'modelos.ler', 'orcamento.ler', 'conversas.anuncio.ler'];
+    const nomes = ferramentasDe({ escopos: leitura }).map((f) => f.nome);
+    expect(nomes).not.toContain('modelo_rascunhar');
+    expect(nomes).not.toContain('campanha_rascunhar');
+  });
+
+  it('não existe ferramenta que dispare: o escopo de disparo ainda não libera nada', () => {
+    expect(ferramentasDe({ escopos: ['campanhas.disparar'] }).map((f) => f.nome)).toEqual(['integracao_situacao']);
+  });
+
   it('nenhuma ferramenta de leitura fica sem escopo: só a situação da integração é de todos', () => {
     expect(FERRAMENTAS.filter((f) => f.escopo === null).map((f) => f.nome)).toEqual(['integracao_situacao']);
   });

@@ -16,6 +16,7 @@ jest.mock('../../config/env', () => ({ env: {} }));
 
 import type { ContextoDb, Db } from '../../db/contexto';
 import { AuditoriaService } from './auditoria.service';
+import { autorDaIntegracao, comAutorDaIntegracao } from './autor-integracao';
 
 type Valores = Record<string, unknown>;
 
@@ -123,6 +124,74 @@ describe('AuditoriaService', () => {
       // A coluna é `inet`: texto inválido estouraria o insert inteiro.
       expect(inseridos[0]!.ip).toBeNull();
       expect(inseridos[1]!.ip).toBe('203.0.113.7');
+    });
+  });
+
+  describe('o autor "integração" (porta MCP)', () => {
+    const LIAME = { tokenId: '44444444-4444-4444-8444-444444444444', produto: 'liame', nome: 'Liame — piloto', classe: 'dms' };
+
+    it('o que o serviço registra como usuário, sem dizer qual, sai como integração — com o nome do token', async () => {
+      const { ctx, inseridos } = bancada({ contaId: CONTA });
+      const service = new AuditoriaService(ctx);
+
+      await comAutorDaIntegracao(LIAME, () =>
+        service.registrar({ atorTipo: 'usuario', atorUsuarioId: null, acao: 'campanha.criada', detalhe: { nome: 'Promo' } }),
+      );
+
+      expect(inseridos[0]).toMatchObject({
+        contaId: CONTA,
+        atorTipo: 'integracao',
+        atorUsuarioId: null,
+        atorNome: 'Liame — piloto (liame)',
+        acao: 'campanha.criada',
+        detalhe: { nome: 'Promo', integracao: { produto: 'liame', classe: 'dms', tokenId: LIAME.tokenId } },
+      });
+    });
+
+    it('vale também para quem nem informa o tipo de autor', async () => {
+      const { ctx, inseridos } = bancada({ contaId: CONTA });
+      await comAutorDaIntegracao(LIAME, () => new AuditoriaService(ctx).registrar({ acao: 'modelo.rascunho.criado' }));
+      expect(inseridos[0]).toMatchObject({ atorTipo: 'integracao', atorNome: 'Liame — piloto (liame)' });
+    });
+
+    it('o token nunca vai para a trilha: só o id dele', async () => {
+      const { ctx, inseridos } = bancada({ contaId: CONTA });
+      await comAutorDaIntegracao(LIAME, () => new AuditoriaService(ctx).registrar({ acao: 'campanha.criada' }));
+      expect(JSON.stringify(inseridos[0])).not.toMatch(/rct_it_/);
+    });
+
+    it('registro que já tem uma pessoa, ou é do sistema ou da distribuição, fica como veio', async () => {
+      const { ctx, inseridos } = bancada({ contaId: CONTA });
+      const service = new AuditoriaService(ctx);
+
+      await comAutorDaIntegracao(LIAME, async () => {
+        await service.registrar({ acao: 'usuario.login', atorUsuarioId: '22222222-2222-4222-8222-222222222222' });
+        await service.registrar({ acao: 'campanha.pausada', atorTipo: 'sistema' });
+        await service.registrar({ acao: 'integracao.token_revogado', atorTipo: 'distribuicao' });
+      });
+
+      expect(inseridos.map((i) => i.atorTipo)).toEqual(['usuario', 'sistema', 'distribuicao']);
+      expect(inseridos.every((i) => !('atorNome' in i) && !('integracao' in (i.detalhe as object)))).toBe(true);
+    });
+
+    it('fora de uma ferramenta do MCP nada muda', async () => {
+      const { ctx, inseridos } = bancada({ contaId: CONTA });
+      await new AuditoriaService(ctx).registrar({ acao: 'campanha.criada', detalhe: { nome: 'Promo' } });
+      expect(inseridos[0]).toMatchObject({ atorTipo: 'usuario', detalhe: { nome: 'Promo' } });
+      expect(inseridos[0]).not.toHaveProperty('atorNome');
+    });
+
+    it('o autor vive só durante a chamada, e não vaza de um pedido para outro ao mesmo tempo', async () => {
+      const REGEM = { ...LIAME, produto: 'regem', nome: 'Regem' };
+      const vistos = await Promise.all([
+        comAutorDaIntegracao(LIAME, async () => {
+          await new Promise((r) => setTimeout(r, 15));
+          return autorDaIntegracao()?.produto;
+        }),
+        comAutorDaIntegracao(REGEM, async () => autorDaIntegracao()?.produto),
+      ]);
+      expect(vistos).toEqual(['liame', 'regem']);
+      expect(autorDaIntegracao()).toBeNull();
     });
   });
 

@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { EsqueletoLista } from '@/components/ui/esqueleto';
 import { EstadoErro } from '@/components/ui/estado-erro';
+import { nomeDoAplicativo } from '@/lib/aplicativo';
 import { mensagemDoErro } from '@/lib/api';
 import { modelos as modelosSalvos, whatsapp } from '@/lib/servicos';
 import type { ModeloDeMensagem, ModeloSalvo } from '@/lib/tipos';
@@ -246,6 +247,12 @@ export default function PaginaModelos() {
                     <p className="numerico break-words text-sm font-semibold text-tinta">{m.nome}</p>
                     <p className="text-xs text-tinta-suave">
                       {m.categoria} · {m.idioma}
+                      {nomeDoAplicativo(m.integracaoProduto) ? (
+                        <>
+                          {' '}
+                          · <span className="font-medium text-tinta">criado pelo {nomeDoAplicativo(m.integracaoProduto)}</span>
+                        </>
+                      ) : null}
                     </p>
                   </div>
                   <Badge tom={m.status === 'rejeitado' ? 'erro' : 'neutro'} ponto>

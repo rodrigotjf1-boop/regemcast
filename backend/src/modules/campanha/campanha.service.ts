@@ -36,6 +36,7 @@ import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
 import { assinatura, campanha, campanhaDestinatario, conta, contatoLista, modelo as modeloLocal, waNumero } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { autorDaIntegracao } from '../auditoria/autor-integracao';
 import { AvisoService } from '../aviso/aviso.service';
 import { cashbackValido, hojeDaConta, hojeNoFuso } from '../contato/cashback';
 import { PERIODOS, sugerirHorario, type Periodo, type SugestaoDeHorario } from '../contato/habitos';
@@ -558,6 +559,8 @@ export interface ResumoCampanha {
   respondidas: number;
   /** O descanso desta campanha, em dias; nulo = sem descanso. */
   descansoDias: number | null;
+  /** O produto que montou a campanha pela porta MCP (ex.: `liame`); nulo = uma pessoa, na tela. */
+  integracaoProduto: string | null;
 }
 
 /** A variável do título gravada no plano, para a tela reabrir o rascunho preenchido. */
@@ -584,7 +587,8 @@ export class CampanhaService {
   /** Cria a campanha com os destinatários em `pendente`. Nada é enviado aqui. */
   async criar(
     contaId: string,
-    usuarioId: string,
+    // Nulo quando quem monta é um aplicativo conectado (porta MCP), e não uma pessoa.
+    usuarioId: string | null,
     dto: CriarCampanhaDto,
     papel: 'dono' | 'operador' = 'operador',
   ): Promise<{ id: string }> {
@@ -653,6 +657,7 @@ export class CampanhaService {
         envio: envio.plano,
         status: 'rascunho',
         criadaPor: usuarioId,
+        integracaoProduto: autorDaIntegracao()?.produto ?? null,
         janelaDias: dto.janelaDias ?? [],
         // Só grava a janela quando vier COMPLETA. Início sem fim não é uma
         // regra: é um formulário pela metade, e tratá-lo como janela deixaria
@@ -2638,6 +2643,7 @@ export class CampanhaService {
       espera,
       respondidas,
       descansoDias: c.descansoDias ?? null,
+      integracaoProduto: c.integracaoProduto ?? null,
     };
   }
 

@@ -19,6 +19,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { EsqueletoLista } from '@/components/ui/esqueleto';
 import { EstadoErro } from '@/components/ui/estado-erro';
 import { mensagemDoErro } from '@/lib/api';
+import { nomeDoAplicativo } from '@/lib/aplicativo';
 import { nomeDaCategoria } from '@/lib/categorias';
 import { formatarData, formatarNumero } from '@/lib/formato';
 import { campanhas } from '@/lib/servicos';
@@ -181,6 +182,12 @@ function CartaoCampanha({ campanha }: { campanha: ResumoCampanha }) {
               ) : null}
               <span className="shrink-0">{formatarData(campanha.criadoEm)}</span>
             </p>
+            {/* Quem montou não foi uma pessoa da conta: a campanha chegou por um aplicativo conectado. */}
+            {nomeDoAplicativo(campanha.integracaoProduto) ? (
+              <p className="truncate text-xs font-medium text-tinta" data-montada-por={campanha.integracaoProduto}>
+                Montada pelo {nomeDoAplicativo(campanha.integracaoProduto)}
+              </p>
+            ) : null}
           </div>
         </div>
         <BadgeCampanha status={campanha.status} />

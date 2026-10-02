@@ -44,7 +44,9 @@ Tabela `integracao_token`. Regras em `integracao/integracao.regras.ts`.
 - **Quem revoga:** a distribuição, ou o **dono da conta** em Integrações →
   "Aplicativos conectados". O token para de valer na chamada seguinte.
 - **Auditoria:** emissão e revogação ficam na trilha da conta e no livro de
-  acessos do console. Nenhum dos dois guarda o token.
+  acessos do console. Nenhum dos dois guarda o token. O que o aplicativo
+  **faz** com o token sai na trilha da conta com o autor `integracao` (seção
+  "Rascunhos").
 
 ### Escopos
 
@@ -110,6 +112,8 @@ Regras (as do hub, ADR-008 do Liame):
 | `modelos_listar` | `modelos.ler` | os modelos como a Meta os tem agora: situação, categoria, qualidade, variáveis, alertas e se o disparo sabe mandá-los. Fala com a Meta. |
 | `orcamento_ler` | `orcamento.ler` | os tetos de gasto e quanto já saiu em cada período. |
 | `conversas_anuncio_listar` | `conversas.anuncio.ler` | as conversas que começaram por um anúncio de clique para o WhatsApp: id do anúncio, identificador do clique, momento, número da loja e o **telefone** de quem escreveu. Leitura com cursor. |
+| `modelo_rascunhar` | `modelos.rascunhar` | grava um **rascunho** de modelo (título em texto, mensagem, rodapé, botões) e devolve o que barraria o envio. Não vai para a Meta. |
+| `campanha_rascunhar` | `campanhas.rascunhar` | monta uma campanha em **rascunho** (modelo aprovado, público de uma lista ou da base, variáveis, janela e ritmo) e devolve quantas pessoas entraram e o custo estimado. Não dispara. |
 
 As de leitura ficam em `integracao/mcp.leitura.ts`. Cada uma chama o **mesmo
 serviço da tela**, dentro da conta do token, e devolve um recorte curado:
@@ -123,7 +127,58 @@ serviço da tela**, dentro da conta do token, e devolve um recorte curado:
   tela mostraria (campanha de outra conta: "Campanha não encontrada"); erro
   inesperado é registrado e sai como "erro interno", sem detalhe.
 
-Os rascunhos e o disparo entram nos próximos PRs.
+O disparo entra no próximo PR.
+
+## Rascunhos (migration 045)
+
+`integracao/mcp.escrita.ts`. As duas ferramentas gravam, e nenhuma faz mensagem
+sair: o rascunho de modelo fica no RegemCast (não vai para a Meta) e a campanha
+fica em rascunho (não dispara). **Quem confere e dá o passo seguinte é uma
+pessoa da conta, na tela** — é o "planejar → aprovar → executar" da ADR-008.
+
+- **O mesmo serviço e a mesma validação da tela.** O pedido vira o DTO da rota
+  (`comoDto`, com as opções do `ValidationPipe` global) e entra em
+  `ModeloService.salvarRascunho` e `CampanhaService.criar`. Não há uma segunda
+  regra de modelo ou de campanha.
+- **Recorte menor que o da tela, de propósito:**
+  - campanha **sem números digitados** — o público sai de uma lista ou da base,
+    onde o consentimento está registrado. Número solto mandado junto é ignorado;
+  - campanha **sem "enviar para quem está em descanso"** — é decisão do dono;
+  - modelo **sem imagem, vídeo, documento, carrossel e oferta por tempo
+    limitado** (pedem arquivo ou valores que a porta não recebe), e só nas
+    categorias marketing e utilidade.
+- **O modelo da campanha é conferido na Meta**, como na tela: precisa existir e
+  estar aprovado; a categoria que vale é a dela.
+- **Alterar rascunho de modelo** (com `id`): só um que **o mesmo aplicativo**
+  criou e que ainda não foi enviado à Meta. O que uma pessoa fez na tela, ou
+  outro aplicativo, a integração não altera.
+
+### Chave de idempotência
+
+Toda ferramenta que grava exige `chaveIdempotencia` (8 a 100 caracteres).
+Tabela `integracao_idempotencia`, regras em `integracao/idempotencia.regras.ts`.
+
+- A mesma chave com o **mesmo pedido** devolve a resposta guardada, sem criar
+  de novo. Com **outro pedido**, é recusada.
+- A chave é por token e por ferramenta.
+- A linha nasce **na transação da ação**: se a ação é recusada, a chave não
+  fica, e o pedido corrigido pode usar a mesma. Dois pedidos iguais ao mesmo
+  tempo: o segundo espera no índice único e recebe a resposta do primeiro.
+- Vale **24 horas**; depois é apagada (job de hora em hora).
+
+### O autor na trilha
+
+`auditoria/autor-integracao.ts`. A porta roda toda ferramenta com a integração
+como autora, e a auditoria lê daí: o que o serviço registraria como "usuário",
+sem pessoa, sai com **`ator_tipo = integracao`**, o nome do token em
+`ator_nome` e o produto, a classe e o id do token no detalhe. Os serviços não
+precisam saber de onde foram chamados, e não há como uma ação de integração
+aparecer como se fosse de alguém da conta. O token em si nunca vai para a
+trilha. O que uma pessoa faz na tela continua saindo como `usuario`.
+
+O rascunho também guarda o produto que o criou (`campanha.integracao_produto`,
+`modelo.integracao_produto`); `criada_por` fica vazio. As telas de Campanhas e
+de Modelos do site mostram "montada pelo Liame" / "criado pelo Liame".
 
 ## Conversas abertas por anúncio (migration 044)
 
@@ -229,10 +284,9 @@ Enquanto nenhum for emitido, nada é guardado e a política segue verdadeira.
 
 - Rever a política de privacidade antes do primeiro token com
   `conversas.anuncio.ler` (seção acima).
-- Rascunho de modelo e de campanha; o autor "integração" na auditoria.
 - Disparo para produto da DMS: planejar (público, custo, saldo do orçamento) e
   executar, com chave de idempotência.
-- "Aplicativos conectados" no app Android.
+- "Aplicativos conectados" e a marca "montada pelo …" no app Android.
 - No Liame: o conector que consome estas ferramentas, e a emenda da ADR-008 e
   da ADR-019 registrando a decisão 2.
 
