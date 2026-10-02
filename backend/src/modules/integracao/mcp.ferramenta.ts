@@ -8,6 +8,7 @@ import { HttpException, Logger } from '@nestjs/common';
 import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { ContextoDb } from '../../db/contexto';
+import { comAutorDaIntegracao } from '../auditoria/autor-integracao';
 import type { CampanhaService } from '../campanha/campanha.service';
 import type { ContaService } from '../conta/conta.service';
 import type { ContatoService } from '../contato/contato.service';
@@ -15,6 +16,7 @@ import type { PublicosService } from '../contato/publicos.service';
 import type { SegmentacaoService } from '../contato/segmentacao.service';
 import type { ConversaAnuncioService } from '../meta/anuncio.service';
 import type { MetaService } from '../meta/meta.service';
+import type { ModeloService } from '../modelo/modelo.service';
 import type { SaudeService } from '../meta/saude.service';
 import type { OrcamentoService } from '../orcamento/orcamento.service';
 import type { IntegracaoAutenticada } from './integracao.service';
@@ -30,6 +32,7 @@ export interface ServicosDoMcp {
   meta: MetaService;
   orcamento: OrcamentoService;
   anuncios: ConversaAnuncioService;
+  modelos: ModeloService;
 }
 
 /** O que cada ferramenta recebe: quem chamou, a porta para a conta dele e os serviços. */
@@ -63,13 +66,15 @@ const log = new Logger('McpFerramenta');
 export const LEITURA = { readOnlyHint: true, idempotentHint: true, openWorldHint: false } as const;
 
 /**
- * Roda a ferramenta dentro da conta do token. Recusa de regra (400, 404…) vira
- * resposta de erro com a frase do serviço; o resto é registrado e sai como
- * "erro interno", sem detalhe.
+ * Roda a ferramenta dentro da conta do token, com a integração como autora de
+ * tudo que for auditado no caminho. Recusa de regra (400, 404…) vira resposta
+ * de erro com a frase do serviço; o resto é registrado e sai como "erro
+ * interno", sem detalhe.
  */
 export async function naConta<T extends Record<string, unknown>>(c: ContextoDaFerramenta, nome: string, fn: () => Promise<T>) {
   try {
-    return resposta(await c.ctx.comConta(c.quem.contaId, fn));
+    const autor = { tokenId: c.quem.tokenId, produto: c.quem.produto, nome: c.quem.nome, classe: c.quem.classe };
+    return resposta(await comAutorDaIntegracao(autor, () => c.ctx.comConta(c.quem.contaId, fn)));
   } catch (e) {
     if (e instanceof HttpException && e.getStatus() < 500) {
       const corpo = e.getResponse();
@@ -77,6 +82,6 @@ export async function naConta<T extends Record<string, unknown>>(c: ContextoDaFe
       return erroDaFerramenta(Array.isArray(mensagem) ? mensagem.join(' ') : String(mensagem));
     }
     log.error(`${nome} falhou para o token ${c.quem.tokenId}: ${(e as Error)?.message ?? String(e)}`, (e as Error)?.stack);
-    return erroDaFerramenta('Erro interno ao ler os dados da conta. Tente de novo em instantes.');
+    return erroDaFerramenta('Erro interno. Tente de novo em instantes.');
   }
 }

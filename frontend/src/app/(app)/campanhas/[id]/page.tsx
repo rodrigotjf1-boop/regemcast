@@ -27,6 +27,7 @@ import { Esqueleto, EsqueletoLista } from '@/components/ui/esqueleto';
 import { EstadoErro } from '@/components/ui/estado-erro';
 import { Estatistica } from '@/components/ui/estatistica';
 import { mensagemDoErro } from '@/lib/api';
+import { nomeDoAplicativo } from '@/lib/aplicativo';
 import { nomeDaCategoria } from '@/lib/categorias';
 import { formatarDataHora, formatarNumero } from '@/lib/formato';
 import { campanhas } from '@/lib/servicos';
@@ -280,6 +281,12 @@ export default function PaginaCampanha() {
             {campanha.listaNome ? <> · lista {campanha.listaNome}</> : null}
             {!campanha.listaNome && campanha.publicoRotulo ? <> · público {campanha.publicoRotulo}</> : null} · criada
             em {formatarDataHora(campanha.criadoEm)}
+            {nomeDoAplicativo(campanha.integracaoProduto) ? (
+              <>
+                {' '}
+                · <span className="font-medium text-tinta">montada pelo {nomeDoAplicativo(campanha.integracaoProduto)}</span>
+              </>
+            ) : null}
           </>
         }
         acao={

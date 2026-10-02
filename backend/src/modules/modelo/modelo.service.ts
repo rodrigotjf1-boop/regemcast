@@ -17,6 +17,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { ContextoDb } from '../../db/contexto';
 import { modelo } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { autorDaIntegracao } from '../auditoria/autor-integracao';
 import { ErroGraph, GraphService } from '../meta/graph.service';
 import { MetaService } from '../meta/meta.service';
 import { MidiaService, PREFIXO_MIDIA } from '../midia/midia.service';
@@ -68,6 +69,8 @@ export interface ResumoModelo {
   /** Quantas variáveis distintas o corpo usa. */
   variaveis: number;
   criadoEm: Date;
+  /** O produto que criou o rascunho pela porta MCP (ex.: `liame`); nulo = uma pessoa, na tela. */
+  integracaoProduto: string | null;
 }
 
 @Injectable()
@@ -284,6 +287,7 @@ export class ModeloService {
         editadoMetaEm: l.editadoMetaEm,
         variaveis: quantasVariaveis(l.corpo),
         criadoEm: l.criadoEm,
+        integracaoProduto: l.integracaoProduto ?? null,
       }));
     });
   }
@@ -297,7 +301,8 @@ export class ModeloService {
    */
   async salvarRascunho(
     contaId: string,
-    usuarioId: string,
+    // Nulo quando quem grava é um aplicativo conectado (porta MCP), e não uma pessoa.
+    usuarioId: string | null,
     dto: SalvarModeloDto,
     id?: string,
   ): Promise<{ id: string }> {
@@ -322,7 +327,7 @@ export class ModeloService {
 
   private async gravarRascunho(
     contaId: string,
-    usuarioId: string,
+    usuarioId: string | null,
     dto: SalvarModeloDto,
     nome: string,
     id?: string,
@@ -376,7 +381,7 @@ export class ModeloService {
 
       const [criado] = await db
         .insert(modelo)
-        .values({ ...valores, status: 'rascunho', criadoPor: usuarioId })
+        .values({ ...valores, status: 'rascunho', criadoPor: usuarioId, integracaoProduto: autorDaIntegracao()?.produto ?? null })
         .returning({ id: modelo.id });
 
       await this.auditoria.registrar({

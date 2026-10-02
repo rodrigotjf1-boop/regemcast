@@ -6,7 +6,9 @@ import { ContaModule } from '../conta/conta.module';
 import { ContatoModule } from '../contato/contato.module';
 import { DistribuicaoModule } from '../distribuicao/distribuicao.module';
 import { MetaModule } from '../meta/meta.module';
+import { ModeloModule } from '../modelo/modelo.module';
 import { OrcamentoModule } from '../orcamento/orcamento.module';
+import { IdempotenciaJob } from './idempotencia.job';
 import { IntegracaoDistribuicaoController } from './integracao-distribuicao.controller';
 import { IntegracaoController } from './integracao.controller';
 import { IntegracaoGuard } from './integracao.guard';
@@ -20,13 +22,13 @@ import { McpServidor } from './mcp.servidor';
  * Desenho e decisões em `docs/mcp.md`.
  *
  * `DistribuicaoModule` entra pelo portão e pelo livro de acessos do console.
- * Os módulos de campanha, conta, contato, Meta e orçamento entram pelos
+ * Os módulos de campanha, conta, contato, Meta, modelo e orçamento entram pelos
  * serviços que as ferramentas reaproveitam — os mesmos das telas.
  * `AuditoriaModule` é global.
  */
 @Module({
-  imports: [DrizzleModule, DistribuicaoModule, CampanhaModule, ContaModule, ContatoModule, MetaModule, OrcamentoModule],
+  imports: [DrizzleModule, DistribuicaoModule, CampanhaModule, ContaModule, ContatoModule, MetaModule, ModeloModule, OrcamentoModule],
   controllers: [McpController, IntegracaoController, IntegracaoDistribuicaoController],
-  providers: [IntegracaoService, IntegracaoGuard, McpServidor],
+  providers: [IntegracaoService, IntegracaoGuard, McpServidor, IdempotenciaJob],
 })
 export class IntegracaoModule {}

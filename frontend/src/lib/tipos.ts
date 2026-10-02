@@ -331,6 +331,8 @@ export interface ResumoCampanha {
   respondidas?: number;
   /** O descanso desta campanha, em dias; nulo = sem descanso. */
   descansoDias?: number | null;
+  /** O aplicativo conectado que montou a campanha (ex.: `liame`); vazio = uma pessoa, na tela. */
+  integracaoProduto?: string | null;
 }
 
 /** O que dá para mudar numa campanha já montada. A tela manda só o que mexeu. */
@@ -999,6 +1001,8 @@ export interface ModeloSalvo {
   ltoHoras?: number | null;
   variaveis: number;
   criadoEm: string;
+  /** O aplicativo conectado que criou o rascunho (ex.: `liame`); vazio = uma pessoa, na tela. */
+  integracaoProduto?: string | null;
 }
 
 // --------------------------------------------------------------- segurança

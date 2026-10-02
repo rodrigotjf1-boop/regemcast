@@ -99,7 +99,7 @@ const contaSituacao: Ferramenta = {
 
 const SITUACOES_DE_CAMPANHA = ['rascunho', 'agendada', 'enviando', 'pausada', 'concluida', 'cancelada'] as const;
 
-const esquemaDaCampanha = z.object({
+export const esquemaDaCampanha = z.object({
   id: z.string(),
   nome: z.string(),
   situacao: z.string(),
@@ -120,7 +120,7 @@ const esquemaDaCampanha = z.object({
 });
 
 /** A campanha como o MCP entrega: os números que decidem, sem a lista de quem recebeu. */
-function campanhaParaFora(r: ResumoCampanha): z.infer<typeof esquemaDaCampanha> {
+export function campanhaParaFora(r: ResumoCampanha): z.infer<typeof esquemaDaCampanha> {
   const n = (...status: string[]) => status.reduce((soma, s) => soma + (r.porStatus[s] ?? 0), 0);
   return {
     id: r.id,
@@ -144,7 +144,7 @@ function campanhaParaFora(r: ResumoCampanha): z.infer<typeof esquemaDaCampanha> 
   };
 }
 
-const esquemaDoCusto = z
+export const esquemaDoCusto = z
   .object({
     moeda: z.string().nullable(),
     gastoCentavos: z.number().nullable(),
@@ -154,7 +154,7 @@ const esquemaDoCusto = z
   })
   .nullable();
 
-function custoParaFora(custo: CustoParaTela | null | undefined): z.infer<typeof esquemaDoCusto> {
+export function custoParaFora(custo: CustoParaTela | null | undefined): z.infer<typeof esquemaDoCusto> {
   if (!custo) return null;
   return { moeda: custo.moeda, gastoCentavos: custo.gastoCentavos, aSairCentavos: custo.aSairCentavos, linhas: custo.linhas, avisos: custo.avisos };
 }

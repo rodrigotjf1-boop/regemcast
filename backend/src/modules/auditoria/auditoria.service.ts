@@ -27,11 +27,12 @@ import { isIP } from 'node:net';
 
 import { ContextoDb, type Db } from '../../db/contexto';
 import { auditoria } from '../../db/schema';
+import { autorDaIntegracao } from './autor-integracao';
 
 export interface EntradaAuditoria {
   /** Ausente herda a conta do contexto corrente (ver comentário em `montar`). */
   contaId?: string | null;
-  atorTipo?: 'usuario' | 'sistema' | 'distribuicao';
+  atorTipo?: 'usuario' | 'sistema' | 'distribuicao' | 'integracao';
   atorUsuarioId?: string | null;
   /** Verbo no formato `entidade.acao`, ex.: 'usuario.login', 'conta.criada'. */
   acao: string;
@@ -173,15 +174,25 @@ export class AuditoriaService {
       );
     }
 
+    // Dentro de uma ferramenta do MCP, o que o serviço registra como "usuário"
+    // sem dizer qual é, na verdade, do aplicativo conectado: sai com o autor
+    // `integracao` e o nome do token (`autor-integracao.ts`). O que já vem com
+    // uma pessoa, ou como sistema ou distribuição, fica como veio.
+    const integracao = autorDaIntegracao();
+    const daIntegracao = Boolean(integracao) && !entrada.atorUsuarioId && (entrada.atorTipo ?? 'usuario') === 'usuario';
+
     return {
       contaId: entrada.contaId ?? doContexto ?? null,
-      atorTipo: entrada.atorTipo ?? 'usuario',
+      atorTipo: daIntegracao ? 'integracao' : (entrada.atorTipo ?? 'usuario'),
       atorUsuarioId: entrada.atorUsuarioId ?? null,
+      ...(daIntegracao ? { atorNome: `${integracao!.nome} (${integracao!.produto})`.slice(0, 200) } : {}),
       acao: entrada.acao,
       entidade: entrada.entidade ?? null,
       entidadeId: entrada.entidadeId ?? null,
       // A coluna é `not null default '{}'`; explicitar evita depender do default.
-      detalhe: entrada.detalhe ?? {},
+      detalhe: daIntegracao
+        ? { ...(entrada.detalhe ?? {}), integracao: { produto: integracao!.produto, classe: integracao!.classe, tokenId: integracao!.tokenId } }
+        : (entrada.detalhe ?? {}),
       // A coluna é `inet`: string fora do formato estouraria o insert e levaria
       // a operação inteira embora. Vale mais perder o IP do que o registro.
       ip: entrada.ip && isIP(entrada.ip) ? entrada.ip : null,

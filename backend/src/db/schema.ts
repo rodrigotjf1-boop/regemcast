@@ -485,6 +485,8 @@ export const campanha = pgTable('campanha', {
   modeloCategoria: text('modelo_categoria'),
   status: text('status').notNull().default('rascunho'),
   criadaPor: uuid('criada_por'),
+  /** O produto que montou a campanha pela porta MCP (migration 045); nulo = uma pessoa, na tela. */
+  integracaoProduto: text('integracao_produto'),
   /** 0 = domingo … 6 = sábado. Vazio = qualquer dia. */
   janelaDias: smallint('janela_dias').array().notNull().default(sql`'{}'`),
   /** 'HH:MM:SS' no fuso da conta. `time`, não instante: a regra é "das 9 às 20 todo dia". */
@@ -791,6 +793,8 @@ export const modelo = pgTable('modelo', {
   /** Quando a última edição foi aceita pela Meta (migration 018). Ela aceita 1 a cada 24h. */
   editadoMetaEm: timestamp('editado_meta_em', { withTimezone: true }),
   criadoPor: uuid('criado_por'),
+  /** O produto que criou o rascunho pela porta MCP (migration 045); nulo = uma pessoa, na tela. */
+  integracaoProduto: text('integracao_produto'),
   enviadoEm: timestamp('enviado_em', { withTimezone: true }),
   respondidoEm: timestamp('respondido_em', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
@@ -1232,4 +1236,23 @@ export const conversaAnuncio = pgTable('conversa_anuncio', {
   wamidUq: uniqueIndex('idx_conversa_anuncio_wamid').on(t.contaId, t.wamid),
   cursorIdx: index('idx_conversa_anuncio_cursor').on(t.contaId, t.registradoEm, t.id),
   prazoIdx: index('idx_conversa_anuncio_prazo').on(t.registradoEm),
+}));
+
+/**
+ * Chave de idempotência das ferramentas de escrita da porta MCP (migration
+ * 045). A linha nasce na transação da ação e guarda a resposta dela; a mesma
+ * chave com o mesmo pedido devolve essa resposta. Sai depois de 24 horas.
+ */
+export const integracaoIdempotencia = pgTable('integracao_idempotencia', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  contaId: uuid('conta_id').notNull().references(() => conta.id, { onDelete: 'cascade' }),
+  tokenId: uuid('token_id').notNull().references(() => integracaoToken.id, { onDelete: 'cascade' }),
+  ferramenta: text('ferramenta').notNull(),
+  chave: text('chave').notNull(),
+  pedidoHash: text('pedido_hash').notNull(),
+  resposta: jsonb('resposta'),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  chaveUq: uniqueIndex('idx_integracao_idempotencia_chave').on(t.tokenId, t.ferramenta, t.chave),
+  prazoIdx: index('idx_integracao_idempotencia_prazo').on(t.criadoEm),
 }));
