@@ -47,8 +47,33 @@ interface Rascunho {
   fonte: string;
 }
 
-const hoje = () => new Date().toISOString().slice(0, 10);
-const vazio = (): Rascunho => ({ moeda: 'BRL', ddi: '55', categoria: 'marketing', valor: '', vigenteDe: hoje(), fonte: '' });
+/** AAAA-MM-DD no relógio de quem usa — não em UTC, que às 21h de Brasília já virou o dia. */
+const dia = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const hoje = () => dia(new Date());
+
+/**
+ * O primeiro dia do trimestre corrente: é só nele que a Meta muda os preços, e
+ * é a data que o arquivo dela traz ("effective October 1, 2026").
+ *
+ * O formulário sugeria HOJE. Quem cadastrava no dia 2 deixava a tarifa valendo
+ * do dia 2 em diante, e a mensagem entregue no dia 1 ficava sem preço — sem
+ * erro nenhum na tela do console.
+ */
+const inicioDoTrimestre = () => {
+  const d = new Date();
+  return dia(new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3, 1));
+};
+const ehInicioDeTrimestre = (data: string) => /^\d{4}-(01|04|07|10)-01$/.test(data);
+
+const vazio = (): Rascunho => ({
+  moeda: 'BRL',
+  ddi: '55',
+  categoria: 'marketing',
+  valor: '',
+  vigenteDe: inicioDoTrimestre(),
+  fonte: '',
+});
 
 export function PainelTarifas() {
   const [tarifas, setTarifas] = useState<TarifaNoConsole[] | null>(null);
@@ -208,9 +233,22 @@ export function PainelTarifas() {
                 onChange={(e) => setRascunho({ ...rascunho, vigenteDe: e.target.value })}
                 readOnly={!nova}
                 required
+                aria-describedby={nova ? 'ajuda-t-vigente' : undefined}
               />
             </div>
           </div>
+          {nova && (
+            <p id="ajuda-t-vigente" className="text-xs leading-relaxed text-tinta-suave">
+              A data de vigência é a que o arquivo da Meta informa, não a de hoje: mensagem
+              entregue antes dessa data fica sem preço.{' '}
+              {rascunho.vigenteDe && !ehInicioDeTrimestre(rascunho.vigenteDe) && (
+                <strong className="font-medium text-atencao">
+                  A Meta só muda os preços no primeiro dia de um trimestre (janeiro, abril, julho e outubro). Confira a
+                  data no arquivo.
+                </strong>
+              )}
+            </p>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="t-fonte">De onde saiu o valor</Label>
             <Input
@@ -218,7 +256,7 @@ export function PainelTarifas() {
               value={rascunho.fonte}
               onChange={(e) => setRascunho({ ...rascunho, fonte: e.target.value })}
               maxLength={200}
-              placeholder="Arquivo de tarifas BRL da Meta, de 01/07/2026"
+              placeholder="Arquivo BRL rates and volume tiers da Meta, vigente desde 01/10/2026"
             />
           </div>
           <div className="flex gap-2">

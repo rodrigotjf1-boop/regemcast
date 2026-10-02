@@ -928,6 +928,13 @@ desta tabela.
   Meta"), a partir do arquivo oficial de tarifas. **Nenhum valor vem embutido
   no produto**: preço de terceiro cravado em código envelhece calado. Sem
   tarifa cadastrada, a tela do cliente diz que não sabe estimar.
+- **A data é a do arquivo, não a de hoje.** "Vale a partir de" é a vigência
+  que o arquivo da Meta informa ("effective October 1, 2026"). O formulário
+  sugere o primeiro dia do trimestre corrente e avisa quando a data não é uma
+  virada de trimestre. Até 02/10/2026 ele sugeria hoje: a tarifa cadastrada no
+  dia 2 valia do dia 2 em diante, e a mensagem entregue no dia 1 ficava sem
+  preço. Data errada se conserta cadastrando a linha com a data certa (a data
+  é parte da identidade da linha; a que ficou não atrapalha).
 - **Tarifa não se apaga.** Valor novo é linha nova. Numa linha existente só
   mudam o valor e a fonte, para corrigir erro de digitação; a moeda, o país, a
   categoria e a data são a identidade dela.
