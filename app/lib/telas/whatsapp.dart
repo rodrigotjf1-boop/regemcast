@@ -177,6 +177,35 @@ class _Conta extends StatelessWidget {
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
+                // A Meta cobra as mensagens direto desta conta: o atalho para
+                // o cartão, a moeda e o fuso. No app da Play nada leva a uma
+                // página de pagamento fora dele.
+                if (s.pagamentoUrl != null && compraNoApp) ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    key: const ValueKey('w-pagamento-meta'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(0, 40),
+                      foregroundColor: c.acento,
+                      side: BorderSide(color: c.acento.withValues(alpha: .5)),
+                    ),
+                    onPressed: () => launchUrl(
+                      Uri.parse(s.pagamentoUrl!),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                    icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                    label: const Text('Pagamento na Meta'),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'A Meta cobra as mensagens direto desta conta do WhatsApp. O cartão, a moeda e o fuso horário ficam lá.',
+                    style: TextStyle(
+                      color: c.superficie.withValues(alpha: .72),
+                      fontSize: 12.5,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

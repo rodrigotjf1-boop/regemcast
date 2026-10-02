@@ -1326,6 +1326,25 @@ describe('erroDoDestinatario — o que a tela diz de cada falha', () => {
     expect(erro.explicacao).toBe(traduzirErroMeta(131042).explicacao);
   });
 
+  it('131042 sem o endereço na frase da Meta: o botão usa a página de pagamento da conta', () => {
+    const DA_CONTA = 'https://business.facebook.com/billing_hub/accounts/details/?business_id=1&asset_id=2&account_type=whatsapp-business-account';
+    const linha = {
+      status: 'falhou',
+      erroCodigo: 131042,
+      erroTitulo: 'Falta acertar o pagamento na Meta',
+      erroDetalhe: 'x',
+      erroMeta: 'Message failed to send because there were one or more errors related to your payment method.',
+    };
+    // Foi o que aconteceu no segundo teste do dono: a tela ficou sem o botão.
+    expect(erroDoDestinatario(linha)!.link).toBeNull();
+    expect(erroDoDestinatario(linha, DA_CONTA)!.link).toEqual({ rotulo: 'Abrir o pagamento na Meta', url: DA_CONTA });
+    // Quando a Meta manda o endereço, vale o dela.
+    const comEndereco = { ...linha, erroMeta: 'Visit https://business.facebook.com/billing_hub/x to resolve.' };
+    expect(erroDoDestinatario(comEndereco, DA_CONTA)!.link!.url).toBe('https://business.facebook.com/billing_hub/x');
+    // E outro erro não ganha botão de pagamento.
+    expect(erroDoDestinatario({ ...linha, erroCodigo: 131026, erroMeta: null }, DA_CONTA)!.link).toBeNull();
+  });
+
   it('código conhecido: o texto é o de hoje, com o que fazer e onde', () => {
     const erro = falha({ erroCodigo: 131026, erroTitulo: 'título antigo', erroDetalhe: 'explicação antiga' })!;
     expect(erro.titulo).toBe('Número não recebe no WhatsApp');

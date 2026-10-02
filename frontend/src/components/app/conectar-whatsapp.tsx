@@ -55,6 +55,8 @@ declare global {
 interface InfoDaSessao {
   phone_number_id?: string;
   waba_id?: string;
+  /** O portfólio de negócios do cliente: com ele o servidor monta o link do pagamento na Meta. */
+  business_id?: string;
 }
 
 type Etapa = 'carregando' | 'pronto' | 'conectando' | 'concluido' | 'erro';
@@ -154,6 +156,7 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
         if (dados.data?.phone_number_id) {
           infoRef.current.phone_number_id = dados.data.phone_number_id;
         }
+        if (dados.data?.business_id) infoRef.current.business_id = dados.data.business_id;
       } catch {
         // A janela manda outras mensagens que não são JSON. Ignorar é o
         // comportamento certo — não é erro.
@@ -190,7 +193,7 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
     window.FB.login(
       (resposta) => {
         const code = resposta?.authResponse?.code;
-        const { phone_number_id: phoneNumberId, waba_id: wabaId } = infoRef.current;
+        const { phone_number_id: phoneNumberId, waba_id: wabaId, business_id: businessId } = infoRef.current;
 
         if (!code) {
           // Fechar a janela no meio cai aqui. Não é erro do sistema.
@@ -212,6 +215,8 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
             code,
             wabaId,
             ...(phoneNumberId ? { phoneNumberId } : {}),
+            // Só dígitos: o servidor recusa o que não for, e a conexão não pode cair por isso.
+            ...(businessId && /^\d{5,30}$/.test(String(businessId)) ? { businessId: String(businessId) } : {}),
             coexistencia: escolhido === 'coexistencia',
             ...(escolhido === 'coexistencia' && integrarEscolhido !== null
               ? { integrar: integrarEscolhido }

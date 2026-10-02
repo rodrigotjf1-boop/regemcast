@@ -535,6 +535,17 @@ e "registre para investigarmos".
   que ainda não lê `erro`.
 - **No app da Play**, o botão que abre o pagamento na Meta não aparece (nada
   ali leva a uma página de pagamento fora do app); a explicação fica.
+- **O botão do pagamento não depende da frase da Meta.** Ela nem sempre manda
+  o endereço (em 01/10/2026 a primeira recusa do 131042 veio com ele, a segunda
+  sem). O servidor monta o endereço da conta de pagamento do WhatsApp
+  (`meta/pagamento.ts`: `billing_hub/accounts/details` com o `business_id` e o
+  `asset_id` = a WABA) e o usa no erro 131042 quando a Meta não mandou o dela, e
+  na tela **WhatsApp**, no botão "Pagamento na Meta" — o atalho que existe
+  antes do disparo. O `business_id` (o portfólio de negócios dono da conta) vem
+  do Embedded Signup na conexão; conta conectada antes disso é perguntada à
+  Meta uma vez, quando a tela do WhatsApp abre (`owner_business_info`), e a
+  falha dessa pergunta só deixa a tela sem o botão. A cobrança é da conta do
+  WhatsApp (a WABA), não de cada número.
 
 No envio da campanha:
 

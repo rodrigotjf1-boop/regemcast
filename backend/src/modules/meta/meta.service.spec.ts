@@ -100,6 +100,7 @@ function montar() {
       currency: 'BRL',
       account_review_status: 'APPROVED',
     }),
+    negocioDaWaba: jest.fn().mockResolvedValue('3237068579769279'),
     assinarWebhook: jest.fn().mockResolvedValue(undefined),
     numerosDaWaba: jest.fn().mockResolvedValue({
       data: [
@@ -646,5 +647,107 @@ describe('retomarSincronizacao', () => {
 
     expect(estado).toBe('sem_token');
     expect(graph.sincronizarDadosDoApp).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A página de pagamento da conta na Meta. O endereço precisa do negócio dono
+ * da conta (`business_id`), que ficou sem ser guardado até 01/10/2026 — por
+ * isso a tela do WhatsApp descobre na primeira abertura, e nunca cai por isso.
+ */
+describe('o negócio dono da conta e o endereço do pagamento', () => {
+  const lida = (extra: Record<string, unknown> = {}) => ({
+    wabaId: '1578591514280771',
+    nome: 'Padaria Aurora',
+    moeda: null,
+    statusRevisao: 'APPROVED',
+    conectadaEm: null,
+    webhookAssinadoEm: null,
+    tokenExpiraEm: null,
+    businessId: null,
+    ...extra,
+  });
+  const ENDERECO =
+    'https://business.facebook.com/billing_hub/accounts/details/?business_id=3237068579769279&asset_id=1578591514280771&account_type=whatsapp-business-account';
+
+  it('a conexão guarda o negócio que o Embedded Signup devolveu, sem perguntar à Meta', async () => {
+    const { service, graph, diario } = montar();
+
+    await service.concluirOnboarding(CONTA, USUARIO, {
+      code: 'codigo-de-30-segundos',
+      wabaId: 'WABA1',
+      phoneNumberId: 'PN1',
+      businessId: '999888777',
+    });
+
+    expect(ultimaEscritaCom(diario, 'businessId')?.businessId).toBe('999888777');
+    expect(graph.negocioDaWaba).not.toHaveBeenCalled();
+  });
+
+  it('sem o negócio no signup, pergunta à Meta — e a conexão não cai se ela não responder', async () => {
+    const { service, graph, diario } = montar();
+    graph.negocioDaWaba.mockRejectedValue(new Error('campo recusado'));
+
+    const r = await service.concluirOnboarding(CONTA, USUARIO, { code: 'codigo-de-30-segundos', wabaId: 'WABA1', phoneNumberId: 'PN1' });
+
+    expect(r.wabaId).toBe('WABA1');
+    expect(graph.negocioDaWaba).toHaveBeenCalledWith('WABA1', TOKEN);
+    expect(ultimaEscritaCom(diario, 'businessId')?.businessId).toBeNull();
+  });
+
+  it('situação: com o negócio guardado, devolve o endereço e não chama a Meta', async () => {
+    const { service, db, graph, diario } = montar();
+    db.select
+      .mockReturnValueOnce(consulta([lida({ businessId: '3237068579769279' })], diario))
+      .mockReturnValueOnce(consulta([], diario));
+
+    const r = await service.situacao(CONTA);
+
+    expect(r.conectado && r.conta.pagamentoUrl).toBe(ENDERECO);
+    expect(graph.negocioDaWaba).not.toHaveBeenCalled();
+    // O identificador do negócio não vai para a tela: ela só precisa do endereço.
+    expect(JSON.stringify(r)).not.toContain('businessId');
+  });
+
+  it('situação: conta antiga, sem o negócio — pergunta à Meta uma vez, guarda e devolve o endereço', async () => {
+    const { service, db, graph, diario } = montar();
+    db.select
+      .mockReturnValueOnce(consulta([lida()], diario)) // a conta
+      .mockReturnValueOnce(consulta([{ tokenCifrado: cifrarToken(TOKEN, Buffer.alloc(32, 7).toString('base64')), wabaId: '1578591514280771' }], diario)) // o token
+      .mockReturnValueOnce(consulta([], diario)); // os números
+
+    const r = await service.situacao(CONTA);
+
+    expect(graph.negocioDaWaba).toHaveBeenCalledWith('1578591514280771', TOKEN);
+    expect(ultimaEscritaCom(diario, 'businessId')?.businessId).toBe('3237068579769279');
+    expect(r.conectado && r.conta.pagamentoUrl).toBe(ENDERECO);
+  });
+
+  it('situação: a Meta não responde — a tela abre do mesmo jeito, só sem o botão', async () => {
+    const { service, db, graph, diario } = montar();
+    graph.negocioDaWaba.mockRejectedValue(new Error('tempo esgotado'));
+    db.select
+      .mockReturnValueOnce(consulta([lida()], diario))
+      .mockReturnValueOnce(consulta([{ tokenCifrado: cifrarToken(TOKEN, Buffer.alloc(32, 7).toString('base64')), wabaId: '1578591514280771' }], diario))
+      .mockReturnValueOnce(consulta([], diario));
+
+    const r = await service.situacao(CONTA);
+
+    expect(r.conectado).toBe(true);
+    expect(r.conectado && r.conta.pagamentoUrl).toBeNull();
+    expect(diario.some((e) => 'businessId' in e.valores)).toBe(false);
+  });
+
+  it('pagamentoUrl (para o erro da campanha): só o que está guardado, sem chamar a Meta', async () => {
+    const { service, db, graph, diario } = montar();
+    db.select.mockReturnValueOnce(consulta([{ wabaId: '1578591514280771', businessId: '3237068579769279' }], diario));
+    expect(await service.pagamentoUrl(CONTA)).toBe(ENDERECO);
+
+    db.select.mockReturnValueOnce(consulta([{ wabaId: '1578591514280771', businessId: null }], diario));
+    expect(await service.pagamentoUrl(CONTA)).toBeNull();
+
+    db.select.mockReturnValueOnce(consulta([], diario));
+    expect(await service.pagamentoUrl(CONTA)).toBeNull();
+    expect(graph.negocioDaWaba).not.toHaveBeenCalled();
   });
 });

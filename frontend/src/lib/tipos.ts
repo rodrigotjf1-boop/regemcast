@@ -225,6 +225,12 @@ export interface ContaWhatsapp {
   webhookAssinadoEm: string | null;
   /** Quando a autorização do cliente vence. Nulo = a Meta não informou prazo. */
   tokenExpiraEm: string | null;
+  /**
+   * A página de pagamento desta conta na Meta (cartão, moeda, fuso). A Meta
+   * cobra as mensagens direto da conta do WhatsApp do cliente. Nulo enquanto o
+   * servidor não souber montar o endereço.
+   */
+  pagamentoUrl?: string | null;
 }
 
 /** `GET /whatsapp/situacao` */

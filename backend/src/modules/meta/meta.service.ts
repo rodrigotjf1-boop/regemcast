@@ -32,6 +32,7 @@ import { DECLARACAO_INTEGRACAO } from './agenda.regras';
 import { AgendaService } from './agenda.service';
 import { cifrarToken, decifrarToken } from './cripto';
 import { exigenciasDoEnvio, type ExigenciasDoEnvio } from './envio.regras';
+import { linkDoPagamentoNaMeta } from './pagamento';
 import { ErroGraph, GraphService, type ModeloBruto } from './graph.service';
 import { limiteInformado, type LimiteDaMeta } from './limite.regras';
 import { motivoDoModelo } from './motivos-modelo';
@@ -45,6 +46,8 @@ export interface DadosDoSignup {
    * quando faltar.
    */
   phoneNumberId?: string;
+  /** O portfólio de negócios do cliente, quando o Embedded Signup o devolve. */
+  businessId?: string;
   /** true quando o cliente escolheu manter o WhatsApp Business no celular. */
   coexistencia?: boolean;
   /**
@@ -68,6 +71,8 @@ interface ParametrosConexao {
   jaRegistrado: boolean;
   /** Resposta da tela de conexão sobre contatos e conversas. `null` = não respondeu. */
   integrar: boolean | null;
+  /** O portfólio de negócios do cliente, quando o Embedded Signup o devolveu. */
+  businessId?: string | null;
 }
 
 export interface ResultadoOnboarding {
@@ -323,6 +328,7 @@ export class MetaService {
       jaRegistrado: false,
       // Só `true`/`false` explícitos contam como resposta. Ausente não é "não".
       integrar: typeof dados.integrar === 'boolean' ? dados.integrar : null,
+      businessId: dados.businessId ?? null,
     });
   }
 
@@ -438,6 +444,9 @@ export class MetaService {
       statusRevisao: waba.account_review_status ?? null,
       token,
       expiraEm,
+      // O negócio dono da conta: o que o signup devolveu, ou o que a Meta
+      // disser. Sem resposta, fica para a tela do WhatsApp descobrir depois.
+      businessId: p.businessId ?? (await this.graph.negocioDaWaba(wabaId, token).catch(() => null)),
     });
 
     const pendencias: string[] = [];
@@ -584,6 +593,7 @@ export class MetaService {
       statusRevisao: string | null;
       token: string;
       expiraEm: Date | null;
+      businessId: string | null;
     },
   ): Promise<{ id: string }> {
     const cifrado = cifrarToken(dados.token, env.meta.tokenChave);
@@ -606,6 +616,8 @@ export class MetaService {
           tokenEm: agora,
           tokenExpiraEm: dados.expiraEm,
           onboardadaEm: agora,
+          // Sem resposta nova, fica o que já estava guardado.
+          ...(dados.businessId ? { businessId: dados.businessId } : {}),
         })
         .where(eq(waConta.id, existente.id));
       return existente;
@@ -623,6 +635,7 @@ export class MetaService {
         tokenEm: agora,
         tokenExpiraEm: dados.expiraEm,
         onboardadaEm: agora,
+        businessId: dados.businessId,
       })
       .returning({ id: waConta.id });
 
@@ -724,7 +737,7 @@ export class MetaService {
 
   /** O que a tela de configuração mostra. Nunca inclui o token. */
   async situacao(contaId: string) {
-    const [c] = await this.ctx.db
+    const [lido] = await this.ctx.db
       .select({
         wabaId: waConta.wabaId,
         nome: waConta.nome,
@@ -733,12 +746,20 @@ export class MetaService {
         conectadaEm: waConta.onboardadaEm,
         webhookAssinadoEm: waConta.webhookAssinadoEm,
         tokenExpiraEm: waConta.tokenExpiraEm,
+        businessId: waConta.businessId,
       })
       .from(waConta)
       .where(eq(waConta.contaId, contaId))
       .limit(1);
 
-    if (!c) return { conectado: false as const };
+    if (!lido) return { conectado: false as const };
+
+    // O negócio dono da conta fica fora da resposta: a tela só precisa do
+    // endereço pronto. Conta conectada antes de guardarmos o negócio: pergunta
+    // à Meta uma vez, aqui, e guarda.
+    const { businessId, ...conta } = lido;
+    const negocio = businessId ?? (await this.descobrirNegocio(contaId, lido.wabaId));
+    const c = { ...conta, pagamentoUrl: linkDoPagamentoNaMeta(lido.wabaId, negocio) };
 
     const numeros = await this.ctx.db
       .select({
@@ -786,6 +807,44 @@ export class MetaService {
         vazaoMaxima: n.coexistencia ? VAZAO_COEXISTENCIA : VAZAO_DEDICADA,
       })),
     };
+  }
+
+  /**
+   * O endereço da página de pagamento da conta do WhatsApp na Meta, só com o
+   * que já está guardado (sem chamar a Meta). Nulo sem conta conectada, ou
+   * enquanto o negócio dono dela não for conhecido.
+   */
+  async pagamentoUrl(contaId: string): Promise<string | null> {
+    const [c] = await this.ctx.db
+      .select({ wabaId: waConta.wabaId, businessId: waConta.businessId })
+      .from(waConta)
+      .where(eq(waConta.contaId, contaId))
+      .limit(1);
+    return c ? linkDoPagamentoNaMeta(c.wabaId, c.businessId) : null;
+  }
+
+  /**
+   * Pergunta à Meta qual é o negócio dono da conta e guarda. Não pode derrubar
+   * a tela do WhatsApp: qualquer falha (token vencido, campo recusado, rede)
+   * vira "ainda não sei", e a próxima abertura tenta de novo.
+   */
+  private async descobrirNegocio(contaId: string, wabaId: string): Promise<string | null> {
+    try {
+      const credencial = await this.tokenDaConta(contaId);
+      if (!credencial) return null;
+      const negocio = await this.graph.negocioDaWaba(wabaId, credencial.token);
+      if (!negocio) return null;
+      await this.ctx.db
+        .update(waConta)
+        .set({ businessId: negocio })
+        .where(and(eq(waConta.contaId, contaId), eq(waConta.wabaId, wabaId)));
+      return negocio;
+    } catch (erro) {
+      this.log.warn(
+        `Não consegui ler o negócio dono da WABA ${wabaId}: ${erro instanceof ErroGraph ? erro.detalheParaLog : String(erro)}`,
+      );
+      return null;
+    }
   }
 
   /**

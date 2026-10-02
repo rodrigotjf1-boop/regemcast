@@ -324,6 +324,23 @@ export class GraphService {
     });
   }
 
+  /**
+   * O portfólio de negócios dono da WABA — é com ele que se monta o endereço da
+   * página de pagamento da conta na Meta. Chamada à parte da leitura da WABA,
+   * curta e sem nova tentativa: se a Meta não devolver o campo, a conexão não
+   * pode cair por causa de um botão.
+   */
+  async negocioDaWaba(wabaId: string, tokenDoCliente: string): Promise<string | null> {
+    const r = await this.chamar<{ owner_business_info?: { id?: string } }>(wabaId, {
+      token: tokenDoCliente,
+      query: { fields: 'owner_business_info' },
+      timeoutMs: 4_000,
+      tentativas: 0,
+    });
+    const id = r?.owner_business_info?.id;
+    return typeof id === 'string' && /^\d{5,30}$/.test(id) ? id : null;
+  }
+
   /** Números da WABA, com qualidade e tier. */
   async numerosDaWaba(
     wabaId: string,

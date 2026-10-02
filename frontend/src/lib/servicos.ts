@@ -218,6 +218,8 @@ export interface DadosConexao {
    * número consultando a WABA — o cliente não digita nada.
    */
   phoneNumberId?: string;
+  /** O portfólio de negócios do cliente na Meta, que o Embedded Signup devolve. */
+  businessId?: string;
   /** O cliente escolheu manter o WhatsApp Business no celular. */
   coexistencia?: boolean;
   /** Coexistência: trazer os contatos e as conversas. Ausente = sem resposta. */

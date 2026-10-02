@@ -10,6 +10,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:regemcast/api/cliente_api.dart';
 import 'package:regemcast/api/dados.dart';
 import 'package:regemcast/api/repeticao.dart';
+import 'package:regemcast/config.dart';
 import 'package:regemcast/push/push.dart';
 import 'package:regemcast/sessao/sessao.dart';
 import 'package:regemcast/telas/casca.dart';
@@ -54,6 +55,7 @@ Map<String, dynamic> _situacaoWhatsapp({
   List<Map<String, dynamic>>? numeros,
   DateTime? expiraEm,
   bool webhook = false,
+  String? pagamentoUrl,
 }) => {
   'conectado': conectado,
   'conta': conectado
@@ -61,6 +63,7 @@ Map<String, dynamic> _situacaoWhatsapp({
           'nome': 'Mister Burgers Ltda',
           'wabaId': '123456789',
           'moeda': 'BRL',
+          'pagamentoUrl': pagamentoUrl,
           'webhookAssinadoEm': webhook ? '2026-09-20T12:00:00Z' : null,
           'tokenExpiraEm': expiraEm?.toUtc().toIso8601String(),
         }
@@ -304,6 +307,42 @@ void main() {
           findsOneWidget,
         );
         expect(find.textContaining('uma vez a cada 13 dias'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'pagamento na Meta: o atalho aparece com o endereço da conta — e não no app da Play',
+      (t) async {
+        final s = _Servidor(
+          whatsapp: _situacaoWhatsapp(
+            pagamentoUrl:
+                'https://business.facebook.com/billing_hub/accounts/details/?business_id=1&asset_id=123456789&account_type=whatsapp-business-account',
+          ),
+        );
+        await _abrir(t, s, const TelaWhatsapp());
+
+        // No app da Play nada leva a uma página de pagamento fora dele.
+        expect(
+          find.byKey(const ValueKey('w-pagamento-meta')),
+          compraNoApp ? findsOneWidget : findsNothing,
+        );
+        expect(
+          find.textContaining('A Meta cobra as mensagens direto desta conta'),
+          compraNoApp ? findsOneWidget : findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'pagamento na Meta: sem endereço (ou com endereço que não é https), sem botão',
+      (t) async {
+        await _abrir(t, _Servidor(), const TelaWhatsapp());
+        expect(find.byKey(const ValueKey('w-pagamento-meta')), findsNothing);
+
+        final s = _Servidor(
+          whatsapp: _situacaoWhatsapp(pagamentoUrl: 'javascript:alert(1)'),
+        );
+        expect(SituacaoWhatsapp.deJson(s.whatsapp).pagamentoUrl, isNull);
       },
     );
 
