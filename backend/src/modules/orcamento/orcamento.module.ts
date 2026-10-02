@@ -16,5 +16,6 @@ import { OrcamentoService } from './orcamento.service';
   imports: [DrizzleModule],
   controllers: [OrcamentoController],
   providers: [OrcamentoService, OrcamentoJob],
+  exports: [OrcamentoService],
 })
 export class OrcamentoModule {}

@@ -1,3 +1,6 @@
+// O catálogo de ferramentas importa os serviços das telas, e eles leem o ambiente ao carregar.
+jest.mock('../../config/env', () => ({ env: { mercadoPago: { carenciaDias: 5 } } }));
+
 import {
   conferirEmissao,
   descreverEscopos,
@@ -129,7 +132,27 @@ describe('as ferramentas de cada token', () => {
     for (const f of FERRAMENTAS) expect(f.escopo === null || ids.has(f.escopo)).toBe(true);
   });
 
-  it('a situação da integração vale para qualquer token', () => {
+  it('a situação da integração vale para qualquer token; o resto, só com o escopo', () => {
     expect(ferramentasDe({ escopos: [] }).map((f) => f.nome)).toEqual(['integracao_situacao']);
+    expect(ferramentasDe({ escopos: ['campanhas.ler'] }).map((f) => f.nome)).toEqual([
+      'integracao_situacao',
+      'campanhas_listar',
+      'campanha_detalhar',
+    ]);
+    expect(ferramentasDe({ escopos: ['publicos.ler', 'orcamento.ler'] }).map((f) => f.nome)).toEqual([
+      'integracao_situacao',
+      'publicos_listar',
+      'publico_estimar',
+      'orcamento_ler',
+    ]);
+  });
+
+  it('nenhuma ferramenta de leitura fica sem escopo: só a situação da integração é de todos', () => {
+    expect(FERRAMENTAS.filter((f) => f.escopo === null).map((f) => f.nome)).toEqual(['integracao_situacao']);
+  });
+
+  it('não há duas ferramentas com o mesmo nome', () => {
+    const nomes = FERRAMENTAS.map((f) => f.nome);
+    expect(new Set(nomes).size).toBe(nomes.length);
   });
 });
