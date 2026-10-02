@@ -12,6 +12,7 @@ import '../config.dart';
 import '../sessao/sessao.dart';
 import '../tema/cores.dart';
 import '../util/formato.dart' as f;
+import 'campanha_detalhe.dart' show BlocoDoErro;
 
 /// O WhatsApp da conta, como a tela do site (`(app)/whatsapp/page.tsx`): a
 /// conta na Meta, cada número com a qualidade, o limite da Meta, a velocidade,
@@ -64,7 +65,9 @@ class TelaWhatsapp extends ConsumerWidget {
           color: c.acentoContraste,
           backgroundColor: c.acento,
           onRefresh: () async {
-            ref.invalidate(situacaoWhatsappProvider);
+            ref
+              ..invalidate(situacaoWhatsappProvider)
+              ..invalidate(saudeDaContaProvider);
             await ref
                 .read(situacaoWhatsappProvider.future)
                 .catchError((_) => s);
@@ -87,6 +90,8 @@ class TelaWhatsapp extends ConsumerWidget {
                 )
               else ...[
                 _Conta(situacao: s),
+                const SizedBox(height: 14),
+                const CartaoDaSaude(),
                 _AvisoDeVencimento(expiraEm: s.tokenExpiraEm),
                 const SizedBox(height: 14),
                 for (final n in s.numeros) ...[
@@ -102,6 +107,232 @@ class TelaWhatsapp extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// O sinal da saúde como a tela fala dele.
+(String, TomPilula) sinalDaSaude(String sinal) => switch (sinal) {
+  'pode_enviar' => ('Tudo certo', TomPilula.sucesso),
+  'com_restricao' => ('Atenção', TomPilula.atencao),
+  'bloqueado' => ('Bloqueado', TomPilula.erro),
+  _ => ('Sem resposta', TomPilula.neutro),
+};
+
+/// A saúde da conta na Meta: "posso enviar agora e, se não, o que eu resolvo?".
+///
+/// O servidor pergunta à Meta e devolve pronto: um sinal geral e um item por
+/// coisa conferida (a conta, a empresa, o número, o pagamento, a conexão), cada
+/// problema com o que fazer. O app não traduz nem decide nada.
+class CartaoDaSaude extends ConsumerStatefulWidget {
+  const CartaoDaSaude({super.key});
+
+  @override
+  ConsumerState<CartaoDaSaude> createState() => _CartaoDaSaudeState();
+}
+
+class _CartaoDaSaudeState extends ConsumerState<CartaoDaSaude> {
+  bool _conferindo = false;
+  String? _erro;
+
+  Future<void> _conferir() async {
+    setState(() {
+      _conferindo = true;
+      _erro = null;
+    });
+    try {
+      await ref.read(servicoWhatsappProvider).conferirSaude();
+      ref.invalidate(saudeDaContaProvider);
+      await ref.read(saudeDaContaProvider.future);
+    } catch (e) {
+      _erro = mensagemDoErro(e);
+    }
+    if (mounted) setState(() => _conferindo = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Cores.de(context);
+    final carga = ref.watch(saudeDaContaProvider);
+    final suave = TextStyle(color: c.tintaSuave, fontSize: 12.5, height: 1.45);
+    final saude = carga.value;
+
+    if (saude == null) {
+      // Lendo pela primeira vez: o lugar do cartão. Sem resposta do servidor
+      // não se afirma nada — nem "pode", nem "não pode".
+      if (carga.isLoading) {
+        return const Cartao(child: Esqueleto(altura: 96));
+      }
+      if (!carga.hasError) return const SizedBox.shrink();
+      return Cartao(
+        key: const ValueKey('saude-erro'),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Saúde da conta na Meta',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Não consegui conferir a saúde da conta agora. ${mensagemDoErro(carga.error!)}',
+              style: suave,
+            ),
+            const SizedBox(height: 6),
+            TextButton(
+              onPressed: () => ref.invalidate(saudeDaContaProvider),
+              child: const Text('Tentar de novo'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final (rotulo, tom) = sinalDaSaude(saude.sinal);
+    return Cartao(
+      key: const ValueKey('saude'),
+      destaque: saude.sinal == 'bloqueado',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'SAÚDE DA CONTA NA META',
+            style: TextStyle(
+              color: c.tintaSuave,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              letterSpacing: .6,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                saude.titulo,
+                key: const ValueKey('saude-titulo'),
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Pilula(rotulo, tom: tom),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            saude.resumo,
+            style: TextStyle(color: c.tintaSuave, height: 1.45),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  saude.lidaEm != null
+                      ? 'Conferida em ${f.dataHora(saude.lidaEm)}'
+                      : 'Ainda não conferida',
+                  style: suave,
+                ),
+              ),
+              TextButton(
+                key: const ValueKey('saude-conferir'),
+                onPressed: _conferindo ? null : _conferir,
+                child: Text(_conferindo ? 'Conferindo…' : 'Conferir agora'),
+              ),
+            ],
+          ),
+          if (_erro != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Não consegui conferir de novo agora. $_erro',
+                key: const ValueKey('saude-erro-conferir'),
+                style: TextStyle(color: c.erro, fontSize: 12.5, height: 1.4),
+              ),
+            ),
+          for (final item in saude.itens) ...[
+            Divider(height: 20, color: c.borda),
+            _ItemDaSaude(item: item),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ItemDaSaude extends StatelessWidget {
+  const _ItemDaSaude({required this.item});
+
+  final ItemDaSaude item;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Cores.de(context);
+    final cor = switch (item.sinal) {
+      'pode_enviar' => c.sucesso,
+      'com_restricao' => c.atencao,
+      'bloqueado' => c.erro,
+      _ => c.tintaSuave,
+    };
+    // A conexão que vence já tem o aviso com o botão de reconectar logo
+    // abaixo do cartão: aqui fica só a linha, para não dizer duas vezes.
+    final problemas = item.chave == 'conexao'
+        ? const <ErroQueGuia>[]
+        : item.problemas;
+    return Column(
+      key: ValueKey('saude-${item.chave}'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 6, right: 10),
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(color: cor, shape: BoxShape.circle),
+              ),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.rotulo,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  Text(
+                    item.resumo,
+                    style: TextStyle(
+                      color: c.tintaSuave,
+                      fontSize: 13,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        for (final problema in problemas)
+          Container(
+            margin: const EdgeInsets.only(top: 10),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: c.superficie2,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            // Sem o atalho "Abrir WhatsApp": a tela já é esta.
+            child: BlocoDoErro(erro: problema.semTela()),
+          ),
+      ],
     );
   }
 }

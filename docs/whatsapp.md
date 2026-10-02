@@ -569,6 +569,87 @@ Dois códigos que importam neste fluxo:
 - **`133010`** — número não registrado. É o erro que aparece quando se pula o
   `/register` num número dedicado — e o texto cru da Meta não diz isso.
 
+## Saúde da conta na Meta (migration 039)
+
+"Posso enviar agora e, se não, o que eu resolvo?" A Meta responde isso no campo
+`health_status` da conta do WhatsApp (a WABA) e de cada número: um veredito
+(`AVAILABLE`, `LIMITED`, `BLOCKED`) e a lista do que está por trás dele — a
+conta, a empresa (o portfólio de negócios), o aplicativo, o número —, cada item
+com o próprio estado, o erro (`error_code`, `error_description`) e a solução que
+ela sugere (`possible_solution`). O Regemcast não lia: no teste de 01/10/2026 a
+conta estava sem pagamento e isso só apareceu **depois** do disparo, na recusa
+de cada mensagem (131042).
+
+**O que é lido** (`meta/saude.service.ts`, três chamadas por volta, cada uma
+com tempo máximo de 6 s e sem retentativa):
+
+1. `GET /{waba}?fields=health_status` — o veredito da conta. É a que importa: sem
+   ela, nada é gravado.
+2. `GET /{waba}?fields=currency,timezone_id,primary_funding_id,business_verification_status`
+   — a cobrança, à parte: um campo recusado ali não pode esconder a saúde.
+3. `GET /{numero}?fields=health_status` — de cada número registrado.
+
+Fica em `wa_conta` (`saude_estado`, `saude`, `saude_em`, `moeda`, `fuso`,
+`pagamento_id`, `verificacao_negocio`) e em `wa_numero` (`saude_estado`,
+`saude`, `saude_em`). O `fuso` é um número interno da Meta (`timezone_id`):
+fica guardado e não vai para a tela.
+
+**Quando é lido:**
+
+| Caminho | Validade da leitura guardada |
+| --- | --- |
+| A tela (`GET /whatsapp/saude`) | 10 minutos |
+| "Conferir agora" (`?atualizar=1`) | 20 segundos — o botão não vira martelo na Meta |
+| O disparo e a retomada da campanha | 2 minutos — só vale o que a Meta disse agora |
+| Logo depois de conectar o WhatsApp | lê na hora |
+| A rotina (`meta/saude.job.ts`) | a cada 30 min, até 50 contas com leitura vencida |
+| O aviso `account_update` da Meta | relê na hora (menos os só informativos) |
+
+**As regras** (`meta/saude.regras.ts`):
+
+- **"Não sei" nunca vira "pode" nem "não pode".** A Meta fora do ar, o token
+  vencido ou um veredito que não reconhecemos não gravam nada; a tela mostra a
+  última leitura, com a hora dela, ou "Ainda não conferimos com a Meta".
+- **O que barra o disparo:** só o veredito da Meta (conta ou número `BLOCKED`) e
+  a autorização vencida — e só com leitura **fresca**. Bloqueio guardado de
+  ontem não segura o disparo de hoje: sem resposta da Meta o disparo segue, e a
+  campanha pausa na primeira recusa (seção "Erros e retentativa").
+- **A leitura do disparo é gravada em transação própria.** A recusa desfaz a
+  transação do pedido; gravada nela, a leitura sumia — a tela ficava com o
+  estado velho e o aviso de "bloqueou agora" saía de novo a cada tentativa.
+- **O pagamento é aviso nosso, nunca bloqueio.** Sem moeda ou sem
+  `primary_funding_id` a tela mostra "Confira o pagamento da conta na Meta", com
+  o atalho para a conta de pagamento (o mesmo endereço do botão "Pagamento na
+  Meta"). Quem bloqueia é só o veredito dela. Se a cobrança não pôde ser lida, o
+  item nem aparece.
+- **A frase da Meta nunca é a explicação.** A Meta não publica a lista dos
+  códigos da saúde, só exemplos. O título e a explicação saem do QUE está com
+  problema (conta, empresa, aplicativo, número) e do QUANTO (limita ou
+  bloqueia); o erro e a solução dela vão em "O que a Meta respondeu", com o
+  código. Problema do **aplicativo** é conosco ("fale com o suporte").
+- **Aviso no celular** (categoria campanhas) quando a conta ou um número **vira**
+  bloqueado — uma vez por virada, não a cada leitura.
+- **Autorização caída (190)** na rotina: a conta só é tentada de novo no dia
+  seguinte.
+
+**Na tela:** o cartão "Saúde da conta na Meta" em **WhatsApp** (site e app): o
+sinal geral (Pode enviar · Envia com restrição · Não pode enviar agora), quando
+foi conferida, o botão "Conferir agora" e um item por coisa conferida, do que
+mais pede atenção para o que está certo — cada problema com o que houve, o que
+fazer e de quem depende. Na **campanha** em rascunho ou pausada, um aviso antes
+do botão de disparar quando a Meta aponta algo, com o atalho para a tela do
+WhatsApp. No app da Play o atalho para o pagamento na Meta não aparece.
+
+**O aviso `account_update`** (e `account_review_update`): relê a saúde da conta
+na hora — é ela que diz se dá para enviar, o aviso só diz que algo mudou. Não
+relê nos só informativos (`VOLUME_BASED_PRICING_TIER_UPDATE`,
+`BUSINESS_PRIMARY_LOCATION_COUNTRY_UPDATE`, `PARTNER_ADDED`,
+`PARTNER_APP_INSTALLED`, `AD_ACCOUNT_LINKED`, `MM_LITE_TERMS_SIGNED`,
+`AUTH_INTL_PRICE_ELIGIBILITY_UPDATE`,
+`PARTNER_CLIENT_CERTIFICATION_STATUS_UPDATE`). De passagem, guarda o
+`waba_info.owner_business_id` quando a conta ainda não tem o negócio — é com ele
+que se monta o endereço do pagamento.
+
 ## Modelos: análise antes de enviar
 
 Nada vai para a Meta sem passar pela análise (`modelo/regras-modelo.ts`): o
@@ -671,6 +752,7 @@ disparos e o custo por campanha (roteiro da IA, 01/10/2026).
 
 - Envio de modelo: [Media card carousel templates](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/media-card-carousel-templates) · [Coupon code templates](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/coupon-templates) · [Limited-time offer templates](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/limited-time-offer-templates) · [Custom marketing templates](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/custom-marketing-templates) · [Media (upload para envio)](https://developers.facebook.com/documentation/business-messaging/whatsapp/business-phone-numbers/media) (conferidas em 01/10/2026)
 - [Status messages webhook reference (objeto `pricing`)](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/messages/status) · [Pricing (cobrança por mensagem, na entrega)](https://developers.facebook.com/docs/whatsapp/pricing) (conferidas em 01/10/2026)
+- [Messaging and Calling Health Status (`health_status`)](https://developers.facebook.com/docs/whatsapp/cloud-api/health-status) · [`account_update` webhook](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/account_update) (conferidas em 01/10/2026)
 - [Messaging limits (limite de envio, portfólio)](https://developers.facebook.com/documentation/business-messaging/whatsapp/messaging-limits/)
 - [`business_capability_update` webhook](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/business_capability_update/)
 - [Per-user marketing template limits (131049)](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/marketing-templates/per-user-limits/)

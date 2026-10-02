@@ -28,6 +28,9 @@ class ServicoWhatsapp {
     return '${r['declaracaoIntegracao'] ?? ''}';
   }
 
+  /// "Conferir agora": o servidor pergunta de novo à Meta e guarda a resposta.
+  Future<void> conferirSaude() => _api.get('/whatsapp/saude?atualizar=1');
+
   /// Só o dono: trazer (ou não) os contatos e as conversas deste número.
   Future<void> integrar(String phoneNumberId, bool integrar) => _api.post(
     '/whatsapp/integrar',

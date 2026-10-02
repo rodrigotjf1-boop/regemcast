@@ -64,6 +64,7 @@ import {
 import { ErroGraph, GraphService } from '../meta/graph.service';
 import { MetaService, MODELO_APROVADO, type ModeloDeMensagem } from '../meta/meta.service';
 import { ROTULO_DO_PAGAMENTO_NA_META } from '../meta/pagamento';
+import { SaudeService } from '../meta/saude.service';
 import { MidiaIndisponivel, MidiaService } from '../midia/midia.service';
 import { TelemetriaService } from '../telemetria/telemetria.service';
 import type { CriarCampanhaDto } from './dto/criar-campanha.dto';
@@ -548,6 +549,7 @@ export class CampanhaService {
     private readonly telemetria: TelemetriaService,
     private readonly avisos: AvisoService,
     private readonly midias: MidiaService,
+    private readonly saude: SaudeService,
   ) {}
 
   /** Cria a campanha com os destinatários em `pendente`. Nada é enviado aqui. */
@@ -1407,6 +1409,10 @@ export class CampanhaService {
     // Falha cedo: sem número registrado a campanha ficaria agendada para sempre.
     await this.numeroDeEnvio(contaId);
 
+    // E se a Meta diz agora que a conta ou o número está bloqueado, a primeira
+    // mensagem já seria recusada — e as seguintes também. Melhor dizer antes.
+    await this.saude.conferirAntesDeEnviar(contaId);
+
     // E sem disparos no plano, ela pausaria na primeira rodada. Melhor dizer já.
     if (await motivoDeBloqueio(this.ctx.db, contaId)) {
       throw new BadRequestException(MENSAGEM_INADIMPLENTE);
@@ -1461,6 +1467,8 @@ export class CampanhaService {
       throw new BadRequestException('Reconecte o WhatsApp antes de retomar: a conexão ainda está fora.');
     }
     await this.numeroDeEnvio(contaId);
+    // Retomar com a conta ainda bloqueada na Meta só pausaria de novo.
+    await this.saude.conferirAntesDeEnviar(contaId);
 
     if (await motivoDeBloqueio(this.ctx.db, contaId)) {
       throw new BadRequestException(MENSAGEM_INADIMPLENTE);

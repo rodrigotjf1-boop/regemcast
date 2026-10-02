@@ -9,6 +9,8 @@ import { GraphService } from './graph.service';
 import { LimiteJob } from './limite.job';
 import { MetaController } from './meta.controller';
 import { MetaService } from './meta.service';
+import { SaudeJob } from './saude.job';
+import { SaudeService } from './saude.service';
 import { WebhookController } from './webhook.controller';
 import { WebhookRetomada } from './webhook.retomada';
 import { WebhookService } from './webhook.service';
@@ -25,8 +27,10 @@ import { WebhookService } from './webhook.service';
     WebhookRetomada,
     CoexistenciaJob,
     LimiteJob,
+    SaudeService,
+    SaudeJob,
     DistTokenGuard,
   ],
-  exports: [MetaService, GraphService],
+  exports: [MetaService, GraphService, SaudeService],
 })
 export class MetaModule {}

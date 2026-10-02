@@ -355,7 +355,38 @@ class ErroQueGuia {
   final String? daMeta;
 
   /// O endereço leva a uma página de pagamento (da conta do WhatsApp, na Meta).
-  bool get linkDePagamento => codigo == 131042 || codigo == 134011;
+  /// Pelo código do erro de envio, ou pelo próprio endereço — o aviso da saúde
+  /// da conta não tem código e leva ao mesmo lugar.
+  bool get linkDePagamento =>
+      codigo == 131042 ||
+      codigo == 134011 ||
+      (linkUrl?.contains('/billing_hub/') ?? false);
+
+  /// O mesmo erro sem o atalho de tela: para mostrar na própria tela onde ele
+  /// se resolve, sem abrir uma cópia dela por cima.
+  ErroQueGuia semTela() => ErroQueGuia(
+    codigo: codigo,
+    titulo: titulo,
+    explicacao: explicacao,
+    acao: acao,
+    quem: quem,
+    linkRotulo: linkRotulo,
+    linkUrl: linkUrl,
+    daMeta: daMeta,
+  );
+
+  /// O mesmo erro levando à tela dada, quando ele não aponta nenhuma.
+  ErroQueGuia comTela(String outra) => ErroQueGuia(
+    codigo: codigo,
+    titulo: titulo,
+    explicacao: explicacao,
+    acao: acao,
+    quem: quem,
+    tela: tela ?? outra,
+    linkRotulo: linkRotulo,
+    linkUrl: linkUrl,
+    daMeta: daMeta,
+  );
 
   static ErroQueGuia? deJson(Object? v) {
     if (v is! Map<String, dynamic>) return null;
@@ -377,6 +408,92 @@ class ErroQueGuia {
           ? _txtOuNulo(link['rotulo'])
           : null,
       daMeta: _txtOuNulo(v['daMeta']),
+    );
+  }
+}
+
+/// Um item da saúde da conta: a conta, a empresa, o aplicativo, cada número, o
+/// pagamento e a conexão.
+class ItemDaSaude {
+  const ItemDaSaude({
+    required this.chave,
+    required this.rotulo,
+    required this.sinal,
+    required this.resumo,
+    required this.problemas,
+  });
+
+  /// `conta`, `empresa`, `aplicativo`, `numero:<id>`, `pagamento` ou `conexao`.
+  final String chave;
+  final String rotulo;
+
+  /// `pode_enviar`, `com_restricao`, `bloqueado` ou `desconhecido`.
+  final String sinal;
+
+  /// O estado, numa linha.
+  final String resumo;
+
+  /// O que impede ou limita, cada um com o que fazer.
+  final List<ErroQueGuia> problemas;
+}
+
+/// `GET /whatsapp/saude` — "posso enviar agora e, se não, o que eu resolvo?".
+/// O servidor monta a partir do que a Meta responde; o app só mostra.
+class SaudeDaConta {
+  const SaudeDaConta({
+    required this.sinal,
+    required this.titulo,
+    required this.resumo,
+    required this.itens,
+    this.lidaEm,
+  });
+
+  final String sinal;
+  final String titulo;
+  final String resumo;
+
+  /// Quando a Meta foi consultada. Nulo = nunca.
+  final DateTime? lidaEm;
+  final List<ItemDaSaude> itens;
+
+  /// A Meta aponta algo: bloqueio ou restrição.
+  bool get pedeAtencao => sinal == 'bloqueado' || sinal == 'com_restricao';
+
+  /// O problema que mais pesa (os itens já vêm do pior para o melhor).
+  ErroQueGuia? get primeiroProblema {
+    for (final i in itens) {
+      if (i.problemas.isNotEmpty) return i.problemas.first;
+    }
+    return null;
+  }
+
+  /// Nulo quando o servidor não devolve um sinal (WhatsApp não conectado, ou
+  /// uma resposta que não é a saúde): sem sinal não se afirma nada.
+  static SaudeDaConta? deJson(Object? v) {
+    if (v is! Map<String, dynamic>) return null;
+    final sinal = _txt(v['sinal']);
+    if (sinal.isEmpty) return null;
+    return SaudeDaConta(
+      sinal: sinal,
+      titulo: _txt(v['titulo']),
+      resumo: _txt(v['resumo']),
+      lidaEm: _data(v['lidaEm']),
+      itens: (v['itens'] is List ? v['itens'] as List : const [])
+          .whereType<Map<String, dynamic>>()
+          .map(
+            (i) => ItemDaSaude(
+              chave: _txt(i['chave']),
+              rotulo: _txt(i['rotulo']),
+              sinal: _txt(i['sinal']),
+              resumo: _txt(i['resumo']),
+              problemas:
+                  (i['problemas'] is List ? i['problemas'] as List : const [])
+                      .map(ErroQueGuia.deJson)
+                      .whereType<ErroQueGuia>()
+                      .toList(),
+            ),
+          )
+          .toList(),
     );
   }
 }

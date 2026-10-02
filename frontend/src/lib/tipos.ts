@@ -233,6 +233,34 @@ export interface ContaWhatsapp {
   pagamentoUrl?: string | null;
 }
 
+/** O sinal de três estados da saúde — mais "ainda não conferimos com a Meta". */
+export type SinalDeEnvio = 'pode_enviar' | 'com_restricao' | 'bloqueado' | 'desconhecido';
+
+/** Um item da saúde da conta: a conta, a empresa, o aplicativo, cada número, o pagamento e a conexão. */
+export interface ItemDaSaude {
+  /** `conta`, `empresa`, `aplicativo`, `numero:<id>`, `pagamento` ou `conexao`. */
+  chave: string;
+  rotulo: string;
+  sinal: SinalDeEnvio;
+  /** O estado, numa linha. */
+  resumo: string;
+  /** O que impede ou limita, cada um com o que fazer. Vazio quando está tudo certo. */
+  problemas: ErroQueGuia[];
+}
+
+/**
+ * `GET /whatsapp/saude` — "posso enviar agora e, se não, o que eu resolvo?".
+ * O servidor monta a partir do `health_status` da Meta; a tela só mostra.
+ */
+export interface SaudeDaConta {
+  sinal: SinalDeEnvio;
+  titulo: string;
+  resumo: string;
+  /** Quando a Meta foi consultada. Nulo = nunca. */
+  lidaEm: string | null;
+  itens: ItemDaSaude[];
+}
+
 /** `GET /whatsapp/situacao` */
 export type SituacaoWhatsapp =
   | { conectado: false }

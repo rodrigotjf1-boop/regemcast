@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ConectarWhatsapp } from '@/components/app/conectar-whatsapp';
 import { IconeCelular, IconeConversa, IconeEscudo, IconeRaio } from '@/components/app/icones';
 import { IntegracaoDoNumero } from '@/components/app/integracao-do-numero';
+import { SaudeDaConta } from '@/components/app/saude-da-conta';
 import { useSessao } from '@/components/app/sessao';
 import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
 import { Badge } from '@/components/ui/badge';
@@ -160,6 +161,8 @@ export default function PaginaWhatsapp() {
               </div>
             ) : null}
           </section>
+
+          <SaudeDaConta />
 
           <AvisoExpiracao expiraEm={situacao.conta.tokenExpiraEm} />
 

@@ -26,6 +26,15 @@ final situacaoWhatsappProvider = FutureProvider.autoDispose<SituacaoWhatsapp>((
   return SituacaoWhatsapp.deJson(dados as Map<String, dynamic>);
 });
 
+/// A saúde da conta na Meta. Nulo = WhatsApp não conectado. Separada da
+/// situação: a Meta fora do ar não some com os números da tela.
+final saudeDaContaProvider = FutureProvider.autoDispose<SaudeDaConta?>((
+  ref,
+) async {
+  final dados = await ref.read(clienteApiProvider).get('/whatsapp/saude');
+  return SaudeDaConta.deJson(dados);
+});
+
 final campanhasProvider = FutureProvider.autoDispose<List<ResumoCampanha>>((
   ref,
 ) async {

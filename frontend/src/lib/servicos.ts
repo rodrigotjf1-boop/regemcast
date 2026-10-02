@@ -51,6 +51,7 @@ import type { SituacaoCardapioWeb, SituacaoRegem, Segmento, ResumoSegmentos, Par
   SessaoCriada,
   StatusUsuario,
   ResultadoConexao,
+  SaudeDaConta,
   SituacaoWhatsapp,
   UsuarioDaConta,
 } from './tipos';
@@ -280,6 +281,13 @@ export const whatsapp = {
 
   /** `GET /whatsapp/modelos` */
   modelos: () => api.get<ModeloDeMensagem[]>('/whatsapp/modelos'),
+
+  /**
+   * `GET /whatsapp/saude` — a saúde da conta na Meta. `atualizar` pergunta de
+   * novo a ela (o "Conferir agora"); sem ele, vale a leitura dos últimos 10 min.
+   */
+  saude: (atualizar = false) =>
+    api.get<SaudeDaConta | { conectado: false }>(`/whatsapp/saude${atualizar ? '?atualizar=1' : ''}`),
 
   /** `POST /whatsapp/conectar` */
   conectar: (dados: DadosConexao) => api.post<ResultadoConexao>('/whatsapp/conectar', dados),

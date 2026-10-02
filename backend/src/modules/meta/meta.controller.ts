@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
 import type { UsuarioAutenticado } from '../../common/auth.guard';
@@ -12,6 +12,7 @@ import { IntegrarDto } from './dto/integrar.dto';
 import { RegistrarNumeroDto } from './dto/registrar-numero.dto';
 import { AgendaService } from './agenda.service';
 import { MetaService } from './meta.service';
+import { SaudeService } from './saude.service';
 
 @ApiTags('WhatsApp')
 @Controller('whatsapp')
@@ -19,6 +20,7 @@ export class MetaController {
   constructor(
     private readonly servico: MetaService,
     private readonly agenda: AgendaService,
+    private readonly saudeDaConta: SaudeService,
   ) {}
 
   /** O que o front precisa para abrir o Embedded Signup. Nada aqui é segredo. */
@@ -31,6 +33,19 @@ export class MetaController {
   @Get('situacao')
   situacao(@UsuarioAtual() usuario: UsuarioAutenticado) {
     return this.servico.situacao(usuario.contaId);
+  }
+
+  /**
+   * A saúde da conta na Meta: "posso enviar agora e, se não, o que eu resolvo?".
+   * O veredito dela para a conta e o número, o pagamento e a conexão — cada um
+   * com o que fazer. `atualizar=1` pergunta de novo à Meta (o "Conferir agora").
+   *
+   * Qualquer usuário da conta vê: quem monta campanha precisa saber se dá para
+   * enviar. Nada aqui é credencial.
+   */
+  @Get('saude')
+  saude(@UsuarioAtual() usuario: UsuarioAutenticado, @Query('atualizar') atualizar?: string) {
+    return this.saudeDaConta.daConta(usuario.contaId, { atualizar: atualizar === '1' || atualizar === 'true' });
   }
 
   /**
@@ -50,8 +65,12 @@ export class MetaController {
    */
   @Post('conectar')
   @UseGuards(DonoGuard)
-  conectar(@UsuarioAtual() usuario: UsuarioAutenticado, @Body() dto: ConcluirSignupDto) {
-    return this.servico.concluirOnboarding(usuario.contaId, usuario.id, dto);
+  async conectar(@UsuarioAtual() usuario: UsuarioAutenticado, @Body() dto: ConcluirSignupDto) {
+    const resultado = await this.servico.concluirOnboarding(usuario.contaId, usuario.id, dto);
+    // Conectou: a primeira leitura da saúde sai já, para a tela abrir sabendo se
+    // dá para enviar. Falha aqui não desfaz a conexão — a tela lê de novo.
+    await this.saudeDaConta.daConta(usuario.contaId, { atualizar: true }).catch(() => undefined);
+    return resultado;
   }
 
   /**

@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../api/campanhas.dart';
 import '../api/dados.dart';
 import '../api/erro_api.dart';
+import '../api/leituras.dart';
 import '../componentes/basicos.dart';
 import '../componentes/campanha.dart';
 import '../componentes/categoria.dart';
@@ -310,6 +311,8 @@ class _TelaCampanhaDetalheState extends ConsumerState<TelaCampanhaDetalhe> {
               _Cabecalho(campanha: camp),
               const SizedBox(height: 14),
               ..._alertas(camp, c),
+              // Antes de disparar ou de retomar: o que a Meta aponta na conta.
+              if (camp.podeDisparar || camp.podeRetomar) const AvisoDaSaude(),
               _Metricas(campanha: camp),
               const SizedBox(height: 14),
               if (camp.falhasPorMotivo.isNotEmpty) ...[
@@ -505,6 +508,44 @@ class _TelaCampanhaDetalheState extends ConsumerState<TelaCampanhaDetalhe> {
 }
 
 // ----------------------------------------------------------------- blocos
+
+/// O aviso curto antes de disparar ou de retomar: se a Meta aponta um problema
+/// na conta, diz qual e leva à tela do WhatsApp, onde está o que fazer. Quieto
+/// quando está tudo certo e quando não deu para conferir — o servidor confere
+/// de novo na hora do disparo.
+class AvisoDaSaude extends ConsumerWidget {
+  const AvisoDaSaude({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final saude = ref.watch(saudeDaContaProvider).value;
+    final problema = saude?.primeiroProblema;
+    if (saude == null || !saude.pedeAtencao || problema == null) {
+      return const SizedBox.shrink();
+    }
+    final bloqueado = saude.sinal == 'bloqueado';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        key: const ValueKey('cd-saude'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Aviso(
+            tom: bloqueado ? TomPilula.erro : TomPilula.atencao,
+            icone: bloqueado
+                ? Icons.block_rounded
+                : Icons.warning_amber_rounded,
+            texto: bloqueado
+                ? 'A Meta não deixa esta conta enviar agora. Resolva o ponto abaixo antes de disparar.'
+                : 'A Meta aponta um ponto de atenção nesta conta. O envio sai, mas vale resolver antes.',
+          ),
+          const SizedBox(height: 10),
+          Cartao(child: BlocoDoErro(erro: problema.comTela('whatsapp'))),
+        ],
+      ),
+    );
+  }
+}
 
 class _Cabecalho extends StatelessWidget {
   const _Cabecalho({required this.campanha});

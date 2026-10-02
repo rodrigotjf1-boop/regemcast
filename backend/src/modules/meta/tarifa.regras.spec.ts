@@ -77,7 +77,8 @@ describe('tarifaDoStatus', () => {
   });
 
   it('não lê tarifa de status sem `pricing` (o segundo aviso, ou uma falha)', () => {
-    const { pricing: _fora, ...semPricing } = statusOficial();
+    const semPricing: Record<string, unknown> = { ...statusOficial() };
+    delete semPricing.pricing;
     expect(tarifaDoStatus(semPricing)).toBeNull();
     expect(tarifaDoStatus({ id: 'wamid.x', status: 'failed', errors: [{ code: 131026 }] })).toBeNull();
   });
