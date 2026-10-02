@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { DadosConta } from '@/components/app/dados-conta';
 import { IconeConta } from '@/components/app/icones';
+import { OrcamentoDeDisparos } from '@/components/app/orcamento-de-disparos';
 import { SegurancaConta } from '@/components/app/seguranca-conta';
 import { TrocarSenha } from '@/components/app/trocar-senha';
 import { useSessao } from '@/components/app/sessao';
@@ -108,6 +109,8 @@ export default function ContaPage() {
       ) : (
         <DadosConta conta={resumo.conta} podeEditar={ehDono} aoSalvar={aoSalvar} />
       )}
+
+      <OrcamentoDeDisparos />
 
       <TrocarSenha />
 

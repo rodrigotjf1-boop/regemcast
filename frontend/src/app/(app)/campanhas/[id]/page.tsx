@@ -397,6 +397,24 @@ export default function PaginaCampanha() {
         </Alerta>
       )}
 
+      {campanha.status === 'pausada' && campanha.pausaMotivo === 'orcamento' && (
+        <Alerta tom="atencao">
+          <span className="block space-y-2">
+            <span className="block">
+              Pausada pelo orçamento de disparos. {campanha.pausaTexto ?? 'O teto de gasto foi atingido.'} Ninguém foi
+              marcado como falha — quem faltava continua na fila e a campanha volta a sair sozinha
+              {campanha.pausaAte ? ` em ${formatarDataHora(campanha.pausaAte)}` : ' na virada do período'}, ou antes se
+              o dono aumentar o orçamento.
+            </span>
+            <Link href="/conta">
+              <Button tamanho="sm" variante="secundario">
+                Ver o orçamento
+              </Button>
+            </Link>
+          </span>
+        </Alerta>
+      )}
+
       {campanha.status === 'pausada' && campanha.pausaMotivo === 'inadimplencia' && (
         <Alerta tom="erro">
           <span className="block space-y-2">

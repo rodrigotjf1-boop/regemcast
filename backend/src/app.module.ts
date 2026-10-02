@@ -30,6 +30,7 @@ import { SaudeModule } from './modules/saude/saude.module';
 import { EmailModule } from './modules/email/email.module';
 import { SegurancaModule } from './modules/seguranca/seguranca.module';
 import { CobrancaModule } from './modules/cobranca/cobranca.module';
+import { OrcamentoModule } from './modules/orcamento/orcamento.module';
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { CobrancaModule } from './modules/cobranca/cobranca.module';
     MidiaModule,
     DistribuicaoModule,
     CobrancaModule,
+    OrcamentoModule,
     SaudeModule,
   ],
   providers: [

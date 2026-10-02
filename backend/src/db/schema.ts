@@ -92,6 +92,14 @@ export const conta = pgTable('conta', {
   timezone: text('timezone').notNull().default('America/Sao_Paulo'),
   /** Descanso entre campanhas de marketing, em dias; 0 desliga (migration 031). */
   descansoMarketingDias: integer('descanso_marketing_dias').notNull().default(3),
+  /**
+   * Orçamento de disparos (migration 042): quanto a conta aceita gastar na Meta
+   * por dia, por semana e por mês, em centavos da moeda da conta. Nulo = sem
+   * teto. Só o dono altera (`orcamento/orcamento.service.ts`).
+   */
+  orcamentoDiaCentavos: integer('orcamento_dia_centavos'),
+  orcamentoSemanaCentavos: integer('orcamento_semana_centavos'),
+  orcamentoMesCentavos: integer('orcamento_mes_centavos'),
   /** aprovada | ativa | suspensa | cancelada */
   status: text('status').notNull().default('aprovada'),
   planoId: uuid('plano_id').references(() => plano.id, { onDelete: 'set null' }),

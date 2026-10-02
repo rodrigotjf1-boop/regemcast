@@ -974,8 +974,49 @@ As regras ficam em `orcamento/custo.regras.ts` (puras) e a leitura em
   estimativa que a própria pessoa lê. Na campanha criada vale a categoria lida
   da Meta (ver "O modelo da campanha é o que a Meta diz").
 
-Fica para os próximos PRs da etapa: os tetos em reais (com a pausa e a retomada)
-e a conferência com o relatório de custo da Meta.
+## Orçamento de disparos (migration 042)
+
+Etapa 3 do roteiro, terceira parte: os tetos. O dono define quanto a conta
+aceita gastar na Meta por dia, por semana (segunda a domingo) e por mês, no fuso
+da conta. As regras ficam em `orcamento/orcamento.regras.ts`, a leitura em
+`orcamento/orcamento.consulta.ts`, e as rotas em `GET /orcamento` e
+`PUT /orcamento`.
+
+- **Quem muda.** Só o dono (`DonoGuard`). O operador lê — vê quanto já saiu — e
+  dispara dentro do orçamento. Decisão do dono do produto, em 02/10/2026.
+- **O que conta como gasto do período.** O que **saiu** nele: a mensagem que a
+  Meta aceitou, pelo preço cheio, mesmo antes de ser entregue. A Meta só cobra
+  na entrega, mas o teto existe para segurar o que o dono autoriza disparar — se
+  esperasse a entrega para contar, uma rodada inteira passaria do teto antes de
+  o primeiro aviso chegar. A que falhou e a que a Meta avisou que sai de graça
+  deixam de contar. A categoria é a que a Meta disse, quando já disse; senão, a
+  do modelo.
+- **A reserva, na rodada do envio.** Dentro da mesma trava por conta do teto do
+  plano (duas campanhas não gastam a mesma folga), a rodada olha quem está na
+  vez, pega o preço de uma mensagem — o **maior** entre os países de quem está
+  na vez, para nunca passar do teto — e reserva só o que cabe em todos os tetos.
+- **Sem folga, a campanha pausa e volta sozinha.** Motivo `orcamento`, com a
+  hora de voltar em `campanha.retomar_em`: a virada do período que encheu (a
+  mais distante, quando encheu mais de um). O `OrcamentoJob` devolve à fila, a
+  cada minuto, quem chegou na hora; a rodada confere de novo. Ninguém é marcado
+  como falha. Mudou o orçamento, as campanhas que ele pausou voltam na hora.
+  Retomar à mão sem folga é recusado com a frase do teto.
+- **Disparar com o teto cheio é permitido.** O orçamento também serve para
+  espalhar uma campanha grande por vários dias: ela entra na fila, pausa na
+  primeira rodada e sai quando o período virar.
+- **Avisos no celular, uma vez por período.** Aos 80% e quando o teto é atingido
+  (`orcamento_aviso`, com chave única por conta, período e nível — é ela que
+  impede o aviso repetido quando duas rodadas cruzam a marca juntas). O de 100%
+  anota o de 80% junto. Mudar o orçamento zera os avisos do período.
+- **O que o teto não segura, e a tela diz.** Mensagem sem tarifa cadastrada não
+  tem preço para contar: sai, e o cartão do orçamento mostra quantas foram. Sem
+  moeda lida na Meta, ou sem tarifa nenhuma para a moeda, o orçamento não conta
+  nada — e o cartão avisa.
+- **Custo da leitura.** Conta sem teto custa uma consulta por rodada (a linha
+  da conta). Com teto, a rodada conta as mensagens que saíram desde o começo do
+  período mais antigo que tem teto, pelo índice de envio da conta.
+
+Fica para o próximo PR da etapa: a conferência com o relatório de custo da Meta.
 
 ## O que ainda falta
 

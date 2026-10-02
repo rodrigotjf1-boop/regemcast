@@ -18,6 +18,7 @@ import '../util/formato.dart' as f;
 import 'bloqueios.dart';
 import 'campanha_formulario.dart';
 import 'casca.dart';
+import 'conta.dart';
 import 'plano.dart';
 import 'whatsapp.dart';
 
@@ -459,6 +460,21 @@ class _TelaCampanhaDetalheState extends ConsumerState<TelaCampanhaDetalhe> {
               icone: Icons.speed_rounded,
               texto:
                   'Pausada: os disparos do seu plano acabaram neste ciclo. Ninguém foi marcado como falha — quem faltava continua na fila e a campanha volta a sair sozinha quando o ciclo virar ou quando o plano tiver mais disparos.',
+            ),
+          );
+        case 'orcamento':
+          // O orçamento de disparos encheu: a frase do teto vem do servidor, e
+          // a campanha volta sozinha na virada do período.
+          lista.add(
+            Aviso(
+              key: const ValueKey('cd-pausa-orcamento'),
+              icone: Icons.savings_outlined,
+              texto:
+                  'Pausada pelo orçamento de disparos. ${camp.pausaTexto ?? 'O teto de gasto foi atingido.'} Ninguém foi marcado como falha — quem faltava continua na fila e a campanha volta a sair sozinha ${camp.pausaAte == null ? 'na virada do período' : 'em ${f.dataHora(camp.pausaAte)}'}, ou antes se o dono aumentar o orçamento.',
+              acao: const _BotaoTela(
+                rotulo: 'Ver o orçamento',
+                tela: TelaConta(),
+              ),
             ),
           );
         case 'inadimplencia':

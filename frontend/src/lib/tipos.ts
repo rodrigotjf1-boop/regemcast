@@ -285,7 +285,11 @@ export interface ResumoCampanha {
    * ou recusou por um problema da conta do WhatsApp na Meta (`conta_meta`:
    * pagamento, restrição, registro do número).
    */
-  pausaMotivo: 'conexao' | 'teto_plano' | 'inadimplencia' | 'manual' | 'modelo' | 'conta_meta' | null;
+  pausaMotivo: 'conexao' | 'teto_plano' | 'inadimplencia' | 'manual' | 'modelo' | 'conta_meta' | 'orcamento' | null;
+  /** Só na pausa pelo orçamento de disparos: qual teto encheu, em uma frase pronta do servidor. */
+  pausaTexto?: string | null;
+  /** Só na pausa pelo orçamento de disparos: quando a campanha volta sozinha (a virada do período). */
+  pausaAte?: string | null;
   /** O erro da Meta que pausou a campanha, quando a pausa nasceu de um. */
   pausaErro?: ErroQueGuia | null;
   /** Por que as mensagens falharam, do motivo mais comum para o menos. Só em `GET /campanhas/:id`. */
@@ -627,6 +631,38 @@ export interface CustoNaMeta {
   /** O que falta para a conta ficar completa (tarifa, moeda, aviso de cobrança). */
   avisos: string[];
   nota: string | null;
+}
+
+export type PeriodoDoOrcamento = 'dia' | 'semana' | 'mes';
+
+/**
+ * `GET /orcamento` e `PUT /orcamento` — o orçamento de disparos: os tetos de
+ * gasto na Meta e quanto já saiu em cada período. As frases vêm prontas.
+ */
+export interface OrcamentoDeDisparos {
+  /** A moeda em que a Meta cobra a conta. Nulo = a Meta ainda não informou. */
+  moeda: string | null;
+  /** Em centavos; nulo = sem teto naquele período. */
+  tetos: Record<PeriodoDoOrcamento, number | null>;
+  /** O texto de cada campo de edição ("50,00"); vazio = sem teto. */
+  campos: Record<PeriodoDoOrcamento, string>;
+  /** Só os períodos com teto. */
+  periodos: Array<{
+    periodo: PeriodoDoOrcamento;
+    rotulo: string;
+    tetoCentavos: number;
+    gastoCentavos: number;
+    /** 0 a 100, para a barra. */
+    percentual: number;
+    /** "R$ 12,40 de R$ 50,00". */
+    texto: string;
+    sinal: 'ok' | 'atencao' | 'cheio';
+    /** "Zera amanhã". */
+    zera: string;
+  }>;
+  avisos: string[];
+  /** Só o dono muda o orçamento. */
+  podeMudar: boolean;
 }
 
 /** `POST /campanhas/previa` — quantos podem receber, quantos estão em descanso e em que período pedem. */

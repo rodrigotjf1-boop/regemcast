@@ -30,7 +30,7 @@ type Executor = { execute: (q: SQL) => Promise<unknown> };
 const PREFIXO = sql.raw(String(DIGITOS_DO_PREFIXO));
 
 /** A moeda em que a Meta cobra a conta e as tarifas cadastradas nessa moeda. */
-async function moedaETarifas(db: Executor, contaId: string): Promise<{ moeda: string | null; tarifas: TarifaDaTabela[] }> {
+export async function moedaETarifas(db: Executor, contaId: string): Promise<{ moeda: string | null; tarifas: TarifaDaTabela[] }> {
   const r = (await db.execute(sql`
     select w.moeda, t.ddi, t.categoria, t.valor::text as valor, to_char(t.vigente_de, 'YYYY-MM-DD') as "vigenteDe"
       from (select upper(nullif(trim(moeda), '')) as moeda

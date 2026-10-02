@@ -561,7 +561,14 @@ class ResumoCampanha {
     this.pausaErro,
     this.falhasPorMotivo = const [],
     this.custo,
+    this.pausaTexto,
+    this.pausaAte,
   });
+
+  /// Só na pausa pelo orçamento de disparos: qual teto encheu, em uma frase
+  /// pronta do servidor, e quando a campanha volta sozinha.
+  final String? pausaTexto;
+  final DateTime? pausaAte;
 
   /// Quanto a campanha custa na Meta. Só vem em `GET /campanhas/:id`.
   final CustoNaMeta? custo;
@@ -592,6 +599,7 @@ class ResumoCampanha {
   /// `rascunho`, `agendada`, `enviando`, `pausada`, `concluida` ou `cancelada`.
   final String status;
 
+  /// `orcamento` (o orçamento de disparos encheu; volta sozinha na virada),
   /// `conexao`, `teto_plano`, `inadimplencia`, `manual`, `modelo` (a Meta
   /// recusou o modelo, ou o arquivo dele sumiu) ou `conta_meta` (a Meta recusou
   /// por um problema da conta do WhatsApp: pagamento, restrição, registro) —
@@ -674,6 +682,8 @@ class ResumoCampanha {
     modeloNome: _txt(j['modeloNome']),
     status: _txt(j['status']),
     pausaMotivo: _txtOuNulo(j['pausaMotivo']),
+    pausaTexto: _txtOuNulo(j['pausaTexto']),
+    pausaAte: _data(j['pausaAte']),
     criadoEm: _data(j['criadoEm']),
     porStatus: _mapa(j['porStatus']).map((k, v) => MapEntry(k, _int(v))),
     total: _int(j['total']),
