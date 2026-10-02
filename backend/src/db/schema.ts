@@ -50,16 +50,6 @@ export const plano = pgTable('plano', {
 }));
 
 /**
- * Tarifas da Meta por mensagem entregue (migration 041; tabela da distribuição
- * — leitura em qualquer escopo, escrita só no de sistema).
- *
- * O preço depende da moeda da conta, do país de quem recebe (`ddi`) e da
- * categoria do modelo, e só muda no primeiro dia de um trimestre: cada linha
- * tem a data em que passa a valer, e a anterior fica como histórico.
- * `valor` é `numeric(12,6)` — entra e sai como texto; a conta é em micros
- * (`orcamento/tarifa.regras.ts`).
- */
-/**
  * Token de integração por conta (migration 043): a credencial de outro produto
  * da DMS para entrar pela porta MCP. Só o hash é guardado; o token em claro
  * sai uma vez, na emissão. `classe` = `dms` (produto do grupo) ou `externo`
@@ -84,6 +74,16 @@ export const integracaoToken = pgTable('integracao_token', {
   contaIdx: index('idx_integracao_token_conta').on(t.contaId, t.criadoEm),
 }));
 
+/**
+ * Tarifas da Meta por mensagem entregue (migration 041; tabela da distribuição
+ * — leitura em qualquer escopo, escrita só no de sistema).
+ *
+ * O preço depende da moeda da conta, do país de quem recebe (`ddi`) e da
+ * categoria do modelo, e só muda no primeiro dia de um trimestre: cada linha
+ * tem a data em que passa a valer, e a anterior fica como histórico.
+ * `valor` é `numeric(12,6)` — entra e sai como texto; a conta é em micros
+ * (`orcamento/tarifa.regras.ts`).
+ */
 export const tarifaMeta = pgTable('tarifa_meta', {
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   /** ISO 4217, a moeda de cobrança da conta (`wa_conta.moeda`). */
@@ -1204,4 +1204,32 @@ export const mensagem = pgTable('mensagem', {
   wamidUq: uniqueIndex('mensagem_wamid_uq').on(t.contaId, t.wamid),
   conversaIdx: index('mensagem_conversa_idx').on(t.conversaId, t.criadaEm),
   retencaoIdx: index('mensagem_retencao_idx').on(t.contaId, t.criadaEm),
+}));
+
+/**
+ * Mensagem que chegou com a origem de um anúncio de clique para o WhatsApp
+ * (migration 044). Só a origem, o momento e o telefone — nenhum conteúdo. Só é
+ * escrita enquanto a conta tem aplicativo conectado com a permissão
+ * `conversas.anuncio.ler`, e sai depois de 180 dias. Regras em
+ * `meta/anuncio.regras.ts`.
+ */
+export const conversaAnuncio = pgTable('conversa_anuncio', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  contaId: uuid('conta_id').notNull().references(() => conta.id, { onDelete: 'cascade' }),
+  waNumeroId: uuid('wa_numero_id').notNull().references(() => waNumero.id, { onDelete: 'cascade' }),
+  /** Quem escreveu, no formato do `contato` (só dígitos, com o 55 e o 9º dígito). */
+  telefoneE164: text('telefone_e164').notNull(),
+  wamid: text('wamid').notNull(),
+  abertaEm: timestamp('aberta_em', { withTimezone: true }).notNull(),
+  /** `ad` ou `post`, como a Meta manda. */
+  origemTipo: text('origem_tipo').notNull(),
+  origemId: text('origem_id').notNull(),
+  ctwaClid: text('ctwa_clid'),
+  origemUrl: text('origem_url'),
+  /** Quando a linha entrou: ordena a leitura com cursor e conta o prazo de guarda. */
+  registradoEm: timestamp('registrado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  wamidUq: uniqueIndex('idx_conversa_anuncio_wamid').on(t.contaId, t.wamid),
+  cursorIdx: index('idx_conversa_anuncio_cursor').on(t.contaId, t.registradoEm, t.id),
+  prazoIdx: index('idx_conversa_anuncio_prazo').on(t.registradoEm),
 }));

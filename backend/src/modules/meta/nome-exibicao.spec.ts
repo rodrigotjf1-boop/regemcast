@@ -145,7 +145,7 @@ describe('o aviso no webhook', () => {
     };
     const avisos = { avisar: jest.fn().mockResolvedValue(undefined) };
     const saude = { atualizarDoSistema: jest.fn().mockResolvedValue({ leu: true, credencial: false }) };
-    const service = new WebhookService(ctx as never, {} as never, avisos as never, {} as never, {} as never, saude as never);
+    const service = new WebhookService(ctx as never, {} as never, avisos as never, {} as never, {} as never, saude as never, {} as never);
     const receber = (value: Record<string, unknown>, entrada: string | undefined = WABA) =>
       (service as unknown as { aplicar(tipo: string, m: unknown): Promise<unknown> }).aplicar('phone_number_name_update', {
         field: 'phone_number_name_update',

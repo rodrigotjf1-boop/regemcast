@@ -147,6 +147,15 @@ describe('as ferramentas de cada token', () => {
     ]);
   });
 
+  it('o telefone de quem veio de anúncio só sai com a permissão própria', () => {
+    expect(ferramentasDe({ escopos: ['conversas.anuncio.ler'] }).map((f) => f.nome)).toEqual([
+      'integracao_situacao',
+      'conversas_anuncio_listar',
+    ]);
+    const leitura = ['conta.ler', 'campanhas.ler', 'publicos.ler', 'modelos.ler', 'orcamento.ler'];
+    expect(ferramentasDe({ escopos: leitura }).map((f) => f.nome)).not.toContain('conversas_anuncio_listar');
+  });
+
   it('nenhuma ferramenta de leitura fica sem escopo: só a situação da integração é de todos', () => {
     expect(FERRAMENTAS.filter((f) => f.escopo === null).map((f) => f.nome)).toEqual(['integracao_situacao']);
   });

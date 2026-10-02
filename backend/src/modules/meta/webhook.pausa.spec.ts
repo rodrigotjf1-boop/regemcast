@@ -37,7 +37,7 @@ function montar(campanhasAtivas: Array<{ id: string; contaId: string; nome: stri
 
   const ctx = { comEscopoSistema: <T>(_motivo: string, fn: (d: typeof db) => Promise<T>) => fn(db) };
   const avisos = { avisar: jest.fn().mockResolvedValue(undefined) };
-  const service = new WebhookService(ctx as never, {} as never, avisos as never, {} as never, {} as never, {} as never);
+  const service = new WebhookService(ctx as never, {} as never, avisos as never, {} as never, {} as never, {} as never, {} as never);
 
   const falhar = (codigo: number, detalhes: string) =>
     (service as unknown as { mensagens(m: unknown): Promise<void> }).mensagens({
@@ -133,7 +133,7 @@ describe('mudança na conta (account_update)', () => {
     };
     const ctx = { comEscopoSistema: <T>(_m: string, fn: (d: typeof db) => Promise<T>) => fn(db) };
     const saude = { atualizarDoSistema: jest.fn().mockResolvedValue({ leu: true, credencial: false }) };
-    const service = new WebhookService(ctx as never, {} as never, {} as never, {} as never, {} as never, saude as never);
+    const service = new WebhookService(ctx as never, {} as never, {} as never, {} as never, {} as never, saude as never, {} as never);
     const avisar = (value: Record<string, unknown>, entrada: string | undefined = '1578000000000001') =>
       (service as unknown as { contaAtualizada(m: unknown): Promise<void> }).contaAtualizada({ field: 'account_update', value, entrada });
     return { avisar, saude, gravados };

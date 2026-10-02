@@ -6,7 +6,8 @@
  * registro inteiro. Três regras valem para todas:
  *
  * - **Sem telefone, sem nome de contato, sem conteúdo de conversa.** Contagens
- *   e situações. O que identifica uma pessoa não sai por aqui.
+ *   e situações. O que identifica uma pessoa não sai por aqui (a única
+ *   ferramenta que devolve telefone é a de `mcp.conversas.ts`).
  * - **Dinheiro em centavos inteiros**, e a frase pronta ao lado, quando existe.
  * - **Erro de regra volta como resposta de erro**, com a frase em português que
  *   a tela mostraria; erro inesperado não vaza detalhe.
@@ -14,39 +15,15 @@
  * Os textos escritos por quem usa a conta (nome de campanha, corpo de modelo)
  * são DADOS: quem consome não deve tratá-los como instrução.
  */
-import { HttpException, Logger } from '@nestjs/common';
 import * as z from 'zod/v4';
 
 import type { ResumoCampanha } from '../campanha/campanha.service';
 import { ORIGENS_DO_PUBLICO } from '../contato/origem-do-publico';
 import { MODELO_APROVADO } from '../meta/meta.service';
 import type { CustoParaTela } from '../orcamento/custo.regras';
-import { erroDaFerramenta as erro, resposta, type ContextoDaFerramenta, type Ferramenta } from './mcp.ferramenta';
-
-const log = new Logger('McpFerramenta');
-
-/**
- * Roda a leitura dentro da conta do token. Recusa de regra (400, 404…) vira
- * resposta de erro com a frase do serviço; o resto é registrado e sai como
- * "erro interno", sem detalhe.
- */
-async function naConta<T extends Record<string, unknown>>(c: ContextoDaFerramenta, nome: string, fn: () => Promise<T>) {
-  try {
-    return resposta(await c.ctx.comConta(c.quem.contaId, fn));
-  } catch (e) {
-    if (e instanceof HttpException && e.getStatus() < 500) {
-      const corpo = e.getResponse();
-      const mensagem = typeof corpo === 'string' ? corpo : ((corpo as { message?: unknown }).message ?? e.message);
-      return erro(Array.isArray(mensagem) ? mensagem.join(' ') : String(mensagem));
-    }
-    log.error(`${nome} falhou para o token ${c.quem.tokenId}: ${(e as Error)?.message ?? String(e)}`, (e as Error)?.stack);
-    return erro('Erro interno ao ler os dados da conta. Tente de novo em instantes.');
-  }
-}
+import { LEITURA, naConta, type Ferramenta } from './mcp.ferramenta';
 
 const iso = (d: Date | string | null | undefined): string | null => (d ? new Date(d).toISOString() : null);
-
-const LEITURA = { readOnlyHint: true, idempotentHint: true, openWorldHint: false } as const;
 
 // ---------------------------------------------------------------- conta
 

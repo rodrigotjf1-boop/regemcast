@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { DrizzleModule } from '../../db/drizzle.module';
 import { DistTokenGuard } from '../lista-espera/dist-token.guard';
 import { AgendaService } from './agenda.service';
+import { ConversaAnuncioService } from './anuncio.service';
 import { CoexistenciaJob } from './coexistencia.job';
 import { ConversasService } from './conversas.service';
 import { GraphService } from './graph.service';
@@ -24,6 +25,7 @@ import { WebhookService } from './webhook.service';
     GraphService,
     AgendaService,
     ConversasService,
+    ConversaAnuncioService,
     WebhookService,
     WebhookRetomada,
     CoexistenciaJob,
@@ -33,6 +35,6 @@ import { WebhookService } from './webhook.service';
     RenovacaoJob,
     DistTokenGuard,
   ],
-  exports: [MetaService, GraphService, SaudeService],
+  exports: [MetaService, GraphService, SaudeService, ConversaAnuncioService],
 })
 export class MetaModule {}
