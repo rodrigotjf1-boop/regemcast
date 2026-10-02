@@ -784,10 +784,19 @@ chega, e nada avisa que falta.
 | `message_template_quality_update` | Queda de qualidade do modelo |
 | `template_category_update` | A Meta vai mudar, ou mudou, a categoria do modelo |
 | `phone_number_quality_update` | Qualidade do número |
+| `phone_number_name_update` | A Meta aprovou ou recusou o nome de exibição: relê a saúde, guarda o nome aprovado e avisa no celular |
 | `business_capability_update`, `messaging_limit_update` | Limite de envio |
 | `account_update`, `account_review_update` | Restrição, desativação, mudança na conta (relê a saúde) |
 | `user_preferences` | Parou ou voltou a aceitar marketing |
 | `smb_app_state_sync`, `history`, `smb_message_echoes` | Coexistência: agenda, histórico e ecos do celular |
+
+Conferido no painel em 02/10/2026 (print do dono): todos os campos da tabela
+que apareceram no print estão assinados — `template_category_update` foi
+assinado nesse dia. Também assinado e sem tratamento próprio: `security`. Não
+assinados, e sem uso aqui: `message_echoes`, `message_template_components_update`,
+`template_correct_category_detection` (sem página de referência que desse para
+abrir; não assinar sem saber o que traz), `flows`, `group_*`, `standby`,
+`tracking_events`, `payment_configuration_update`.
 
 ### Onde fica a configuração do webhook no painel da Meta
 
