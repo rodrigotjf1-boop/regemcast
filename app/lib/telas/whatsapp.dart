@@ -277,10 +277,11 @@ class _ItemDaSaude extends StatelessWidget {
       'bloqueado' => c.erro,
       _ => c.tintaSuave,
     };
-    // A conexão que vence já tem o aviso com o botão de reconectar logo
-    // abaixo do cartão: aqui fica só a linha, para não dizer duas vezes.
+    // A autorização que vence (sem código) já tem o aviso com o botão de
+    // reconectar logo abaixo do cartão: aqui fica só a linha. A que a Meta
+    // recusou (190) não tem outro lugar, e aparece.
     final problemas = item.chave == 'conexao'
-        ? const <ErroQueGuia>[]
+        ? item.problemas.where((p) => p.codigo != null).toList()
         : item.problemas;
     return Column(
       key: ValueKey('saude-${item.chave}'),

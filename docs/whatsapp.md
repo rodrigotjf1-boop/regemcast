@@ -620,8 +620,13 @@ fica guardado e não vai para a tela.
 - **O pagamento é aviso nosso, nunca bloqueio.** Sem moeda ou sem
   `primary_funding_id` a tela mostra "Confira o pagamento da conta na Meta", com
   o atalho para a conta de pagamento (o mesmo endereço do botão "Pagamento na
-  Meta"). Quem bloqueia é só o veredito dela. Se a cobrança não pôde ser lida, o
-  item nem aparece.
+  Meta"). Quem bloqueia é só o veredito dela.
+- **A cobrança só afirma o que foi lido.** A Meta recusa a chamada INTEIRA
+  quando a autorização não alcança um dos campos — foi o que aconteceu na
+  primeira leitura real. Então: os quatro juntos; recusou, um de cada vez. O
+  que ela recusa fica anotado em `saude.cobrancaRecusada` (campo e código) e só
+  volta a ser pedido no dia seguinte. Campo recusado não é "vazio": a tela diz
+  só o que sabe ("Cobrança em BRL."), e "falta" só o que foi lido e veio vazio.
 - **A frase da Meta nunca é a explicação.** A Meta não publica a lista dos
   códigos da saúde, só exemplos. O título e a explicação saem do QUE está com
   problema (conta, empresa, aplicativo, número) e do QUANTO (limita ou
@@ -631,14 +636,37 @@ fica guardado e não vai para a tela.
   bloqueado — uma vez por virada, não a cada leitura.
 - **Autorização caída (190)** na rotina: a conta só é tentada de novo no dia
   seguinte.
+- **A conferência que falha deixa rastro.** O código da falha (sem a frase da
+  Meta) fica em `saude.ultimaFalha`, e some na leitura boa seguinte. Com 190 a
+  tela diz "A conexão com a Meta caiu"; com outro código, "A Meta não respondeu
+  à última conferência (código N)" — outro código pode ser só um campo que a
+  autorização não alcança, e a conta envia normalmente. A falha não barra o
+  disparo. Sem isto a conta que a Meta recusava ficava em "ainda não
+  conferimos" para sempre, sem dizer por quê.
+
+**O que a primeira leitura real ensinou** (02/10/2026, número em coexistência):
+
+- O `health_status` é de mensagens **e de chamadas de voz**. O número veio
+  `LIMITED` com o erro 138024 ("calling cannot use SIP…"), que não diz nada
+  sobre o envio de mensagens. Erro de chamadas (a faixa 138000, ou a frase
+  falando de chamadas ou de SIP) não vai para a tela; fica guardado como veio.
+- O motivo de verdade veio em `additional_info`, sem código: o nome de exibição
+  ainda não aprovado. `additional_info` é lido sempre, e a frase que
+  conhecemos vira explicação nossa ("O nome de exibição do número ainda não foi
+  aprovado"); a que não conhecemos vai em "O que a Meta respondeu".
+- Um item **disponível** pode trazer erros (o aplicativo, com 138025): só o
+  estado decide se há problema.
+- "Envia com restrição" pode durar semanas e a mensagem sai. Por isso **o aviso
+  na campanha aparece só no bloqueio**; a restrição fica na tela do WhatsApp.
+  Aviso amarelo em toda campanha ensinaria a ignorar o vermelho.
 
 **Na tela:** o cartão "Saúde da conta na Meta" em **WhatsApp** (site e app): o
 sinal geral (Pode enviar · Envia com restrição · Não pode enviar agora), quando
 foi conferida, o botão "Conferir agora" e um item por coisa conferida, do que
 mais pede atenção para o que está certo — cada problema com o que houve, o que
 fazer e de quem depende. Na **campanha** em rascunho ou pausada, um aviso antes
-do botão de disparar quando a Meta aponta algo, com o atalho para a tela do
-WhatsApp. No app da Play o atalho para o pagamento na Meta não aparece.
+do botão de disparar quando o envio está **bloqueado**, com o atalho para a
+tela do WhatsApp. No app da Play o atalho para o pagamento na Meta não aparece.
 
 **O aviso `account_update`** (e `account_review_update`): relê a saúde da conta
 na hora — é ela que diz se dá para enviar, o aviso só diz que algo mudou. Não
@@ -798,6 +826,15 @@ disparos e o custo por campanha (roteiro da IA, 01/10/2026).
   de categorias depois; valor novo é guardado como veio, sem `check` no banco.
 
 ## O que ainda falta
+
+- **Reconectar com a conta já conectada.** Vários textos mandam "reconectar"
+  (autorização vencendo ou vencida, conexão caída, campanha pausada pela
+  conexão), mas a tela do WhatsApp só mostra o fluxo de conexão para quem
+  **não** tem conta conectada — e `situacao.conectado` é verdadeiro sempre que
+  existe a linha em `wa_conta`. Hoje não há botão para refazer a conexão. O
+  servidor aceita (a mesma WABA atualiza o token), mas em coexistência
+  reconectar reabre a cópia de 24 horas (`sincronizacao: 'pendente'`): precisa
+  de análise própria e de teste com conta de verdade.
 
 - **Acesso Avançado — e ele bloqueia a coexistência inteira.** Testado em
   produção: com Acesso Padrão, o Embedded Signup nunca troca a tela de "digite

@@ -110,6 +110,8 @@ function montar(conta: Record<string, unknown> = {}, numero: Record<string, unkn
 }
 
 const haMinutos = (n: number) => new Date(Date.now() - n * 60_000);
+/** Os campos da cobrança, na ordem em que são pedidos. */
+const CAMPOS = ['currency', 'timezone_id', 'primary_funding_id', 'business_verification_status'];
 const guardada = { entidades: [{ tipo: 'conta', id: '1578', estado: 'disponivel', erros: [], info: [] }], cobrancaLida: true };
 
 beforeAll(() => {
@@ -125,7 +127,8 @@ describe('a tela — GET /whatsapp/saude', () => {
 
     expect(m.graph.saudeDe).toHaveBeenCalledWith('1578000000000001', TOKEN);
     expect(m.graph.saudeDe).toHaveBeenCalledWith('PN1', TOKEN);
-    expect(m.graph.cobrancaDaWaba).toHaveBeenCalledWith('1578000000000001', TOKEN);
+    expect(m.graph.cobrancaDaWaba).toHaveBeenCalledTimes(1);
+    expect(m.graph.cobrancaDaWaba).toHaveBeenCalledWith('1578000000000001', TOKEN, CAMPOS);
     expect(m.daConta()[0]).toMatchObject({
       saudeEstado: 'disponivel',
       moeda: 'BRL',
@@ -133,7 +136,7 @@ describe('a tela — GET /whatsapp/saude', () => {
       pagamentoId: '2056000000000001',
       verificacaoNegocio: 'verified',
     });
-    expect((m.daConta()[0]!.saude as { cobrancaLida: boolean }).cobrancaLida).toBe(true);
+    expect(m.daConta()[0]!.saude).toMatchObject({ cobrancaLidos: CAMPOS, cobrancaRecusada: [], cobrancaRecusadaEm: null });
     expect(m.doNumero()[0]).toMatchObject({ saudeEstado: 'disponivel' });
     expect('sinal' in s && s.sinal).toBe('pode_enviar');
   });
@@ -163,13 +166,40 @@ describe('a tela — GET /whatsapp/saude', () => {
     expect(agorinha.graph.saudeDe).not.toHaveBeenCalled();
   });
 
-  it('a Meta fora do ar: nada é gravado, a tela abre e diz que ainda não conferiu', async () => {
+  it('a Meta fora do ar: a leitura não muda, a falha fica anotada e a tela diz que a Meta não respondeu', async () => {
     const m = montar();
     m.graph.saudeDe.mockRejectedValue(new Error('tempo esgotado'));
     const s = await m.service.daConta(CONTA);
 
-    expect(m.gravados).toHaveLength(0);
+    // Só a anotação da falha: nem veredito, nem "lida em".
+    expect(m.daConta()).toHaveLength(1);
+    expect(Object.keys(m.daConta()[0]!)).toEqual(['saude']);
+    expect(m.daConta()[0]!.saude).toMatchObject({ entidades: [], ultimaFalha: { codigo: null } });
     expect('sinal' in s && s.sinal).toBe('desconhecido');
+    expect('resumo' in s && s.resumo).toMatch(/^A Meta não respondeu à última conferência\./);
+  });
+
+  it('a Meta recusa a autorização (190): a tela diz que a conexão caiu, em vez de "ainda não conferimos"', async () => {
+    const m = montar();
+    m.graph.saudeDe.mockRejectedValue(new ErroGraph({ status: 401, codigo: 190, traduzido: traduzirErroMeta(190) }));
+    const s = await m.service.daConta(CONTA);
+
+    expect(m.daConta()[0]!.saude).toMatchObject({ ultimaFalha: { codigo: 190 } });
+    expect('sinal' in s && s.sinal).toBe('bloqueado');
+    expect('itens' in s && s.itens[0]).toMatchObject({ chave: 'conexao', problemas: [expect.objectContaining({ titulo: 'A conexão com a Meta caiu' })] });
+    // A frase da Meta e o token não vão para o banco nem para a tela.
+    expect(JSON.stringify([m.daConta(), s])).not.toMatch(/validating|access token|EAAG/i);
+  });
+
+  it('a falha anotada não apaga a última leitura boa, e some na leitura boa seguinte', async () => {
+    const m = montar({ saudeEstado: 'disponivel', saude: guardada, saudeEm: haMinutos(15), moeda: 'BRL' });
+    m.graph.saudeDe.mockRejectedValueOnce(new Error('tempo esgotado'));
+    await m.service.daConta(CONTA);
+    expect(m.linhaDaConta.saudeEstado).toBe('disponivel');
+    expect(m.linhaDaConta.saude).toMatchObject({ entidades: guardada.entidades, ultimaFalha: { codigo: null } });
+
+    await m.service.daConta(CONTA);
+    expect(m.linhaDaConta.saude).not.toHaveProperty('ultimaFalha');
   });
 
   it('resposta que não é uma saúde: nada é gravado', async () => {
@@ -188,6 +218,72 @@ describe('a tela — GET /whatsapp/saude', () => {
     expect('moeda' in m.daConta()[0]!).toBe(false);
     // Sem cobrança lida, o item do pagamento não aparece: nada é afirmado.
     expect('itens' in s && s.itens.some((i) => i.chave === 'pagamento')).toBe(false);
+  });
+
+  it('a Meta recusa a cobrança INTEIRA por causa de um campo: lê um de cada vez e guarda o que deu', async () => {
+    // Foi a primeira leitura real (02/10/2026): a chamada com os quatro campos
+    // foi recusada, e a tela ficou sem a moeda por causa de um campo que nem era ela.
+    const m = montar();
+    m.graph.cobrancaDaWaba.mockImplementation((_waba: string, _token: string, campos: readonly string[]) =>
+      campos.includes('primary_funding_id')
+        ? Promise.reject(new ErroGraph({ status: 400, codigo: 100, traduzido: traduzirErroMeta(100) }))
+        : Promise.resolve({ currency: 'BRL', timezone_id: '25', business_verification_status: 'verified' }),
+    );
+    const s = await m.service.daConta(CONTA);
+
+    // Os quatro juntos, e depois um de cada vez.
+    expect(m.graph.cobrancaDaWaba.mock.calls.map((c) => c[2])).toEqual([CAMPOS, ['currency'], ['timezone_id'], ['primary_funding_id'], ['business_verification_status']]);
+    expect(m.daConta()[0]).toMatchObject({ moeda: 'BRL', fuso: '25', verificacaoNegocio: 'verified' });
+    // O campo recusado não é gravado como "vazio".
+    expect('pagamentoId' in m.daConta()[0]!).toBe(false);
+    expect(m.daConta()[0]!.saude).toMatchObject({
+      cobrancaLidos: ['currency', 'timezone_id', 'business_verification_status'],
+      cobrancaRecusada: [{ campo: 'primary_funding_id', codigo: 100 }],
+    });
+    // E a tela diz só o que sabe: a moeda, sem alarme sobre a forma de pagamento.
+    expect('itens' in s && s.itens.find((i) => i.chave === 'pagamento')).toMatchObject({ sinal: 'pode_enviar', resumo: 'Cobrança em BRL.' });
+  });
+
+  it('campo recusado há pouco não é pedido de novo: uma chamada só, com os outros', async () => {
+    const recusadaEm = haMinutos(40).toISOString();
+    const m = montar({
+      saudeEstado: 'disponivel',
+      saudeEm: haMinutos(40),
+      moeda: 'BRL',
+      saude: { entidades: [], cobrancaLidos: ['currency'], cobrancaRecusada: [{ campo: 'primary_funding_id', codigo: 100 }], cobrancaRecusadaEm: recusadaEm },
+    });
+    await m.service.daConta(CONTA);
+
+    expect(m.graph.cobrancaDaWaba).toHaveBeenCalledTimes(1);
+    expect(m.graph.cobrancaDaWaba.mock.calls[0]![2]).toEqual(['currency', 'timezone_id', 'business_verification_status']);
+    // A recusa de antes continua anotada, com a data dela.
+    expect(m.daConta()[0]!.saude).toMatchObject({
+      cobrancaRecusada: [{ campo: 'primary_funding_id', codigo: 100 }],
+      cobrancaRecusadaEm: recusadaEm,
+    });
+  });
+
+  it('no dia seguinte, o campo recusado volta a ser pedido', async () => {
+    const m = montar({
+      saudeEstado: 'disponivel',
+      saudeEm: haMinutos(40),
+      saude: { entidades: [], cobrancaLidos: ['currency'], cobrancaRecusada: [{ campo: 'primary_funding_id', codigo: 100 }], cobrancaRecusadaEm: haMinutos(25 * 60).toISOString() },
+    });
+    await m.service.daConta(CONTA);
+
+    expect(m.graph.cobrancaDaWaba.mock.calls[0]![2]).toEqual(CAMPOS);
+    expect(m.daConta()[0]!.saude).toMatchObject({ cobrancaLidos: CAMPOS, cobrancaRecusada: [] });
+  });
+
+  it('rede caída na cobrança: não tenta campo a campo, e o que se sabia continua valendo', async () => {
+    const m = montar({ saudeEstado: 'disponivel', saudeEm: haMinutos(40), moeda: 'BRL', pagamentoId: '9', saude: { entidades: [], cobrancaLidos: [...CAMPOS], cobrancaRecusada: [] } });
+    m.graph.cobrancaDaWaba.mockRejectedValue(new ErroGraph({ status: 0, codigo: null, traduzido: traduzirErroMeta(null) }));
+    const s = await m.service.daConta(CONTA);
+
+    expect(m.graph.cobrancaDaWaba).toHaveBeenCalledTimes(1);
+    expect(m.daConta()[0]!.saude).toMatchObject({ cobrancaLidos: CAMPOS });
+    expect('moeda' in m.daConta()[0]!).toBe(false);
+    expect('itens' in s && s.itens.find((i) => i.chave === 'pagamento')).toMatchObject({ sinal: 'pode_enviar' });
   });
 
   it('o token nunca aparece no que a tela recebe', async () => {
@@ -287,7 +383,10 @@ describe('pelo sistema — a rotina e o aviso de mudança na conta', () => {
     const m = montar();
     m.graph.saudeDe.mockRejectedValue(new ErroGraph({ status: 401, codigo: 190, traduzido: traduzirErroMeta(190) }));
     await expect(m.service.atualizarDoSistema({ waContaId: 'wa-1' })).resolves.toEqual({ leu: false, credencial: true });
-    expect(m.gravados).toHaveLength(0);
+    // Nada da leitura é gravado — só a anotação da falha, com o código.
+    expect(m.gravados).toHaveLength(1);
+    expect(Object.keys(m.daConta()[0]!)).toEqual(['saude']);
+    expect(m.daConta()[0]!.saude).toMatchObject({ ultimaFalha: { codigo: 190 } });
   });
 
   it('conta sem token: nem tenta', async () => {

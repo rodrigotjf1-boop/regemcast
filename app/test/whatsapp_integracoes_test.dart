@@ -729,6 +729,86 @@ void main() {
     );
 
     testWidgets(
+      'saúde: a Meta recusou a autorização (190) — o problema aparece no cartão, sem atalho para a própria tela',
+      (t) async {
+        final s = _Servidor()
+          ..saude = _saude(
+            sinal: 'bloqueado',
+            titulo: 'Não pode enviar agora',
+            itens: [
+              {
+                'chave': 'conexao',
+                'rotulo': 'Conexão com o Regemcast',
+                'sinal': 'bloqueado',
+                'resumo': 'A Meta recusou a autorização desta conta.',
+                'problemas': [
+                  {
+                    'codigo': 190,
+                    'titulo': 'A conexão com a Meta caiu',
+                    'explicacao':
+                        'A Meta recusou a autorização que o Regemcast tem desta conta.',
+                    'acao':
+                        'É preciso refazer a conexão desta conta com a Meta.',
+                    'quem': 'voce',
+                    'tela': 'whatsapp',
+                    'link': null,
+                    'daMeta': null,
+                  },
+                ],
+              },
+            ],
+          );
+        await _abrir(t, s, const TelaWhatsapp());
+
+        expect(find.text('A conexão com a Meta caiu'), findsOneWidget);
+        expect(find.byKey(const ValueKey('erro-tela')), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'saúde: número com restrição pelo nome de exibição — diz o motivo e o que fazer',
+      (t) async {
+        final s = _Servidor()
+          ..saude = _saude(
+            sinal: 'com_restricao',
+            titulo: 'Envia com restrição',
+            resumo: 'Há 1 ponto de atenção — o envio sai, mas vale resolver.',
+            itens: [
+              {
+                'chave': 'numero:1111',
+                'rotulo': 'Número +55 21 99999-8888',
+                'sinal': 'com_restricao',
+                'resumo': 'Envia com restrição.',
+                'problemas': [
+                  {
+                    'codigo': null,
+                    'titulo':
+                        'O nome de exibição do número ainda não foi aprovado',
+                    'explicacao':
+                        'Enquanto a Meta não aprova o nome de exibição, o número envia com um limite menor de mensagens.',
+                    'acao':
+                        'Confira o nome de exibição do número no Gerenciador do WhatsApp, na Meta.',
+                    'quem': 'voce',
+                    'tela': null,
+                    'link': null,
+                    'daMeta': 'Your display name has not been approved yet.',
+                  },
+                ],
+              },
+            ],
+          );
+        await _abrir(t, s, const TelaWhatsapp());
+
+        expect(find.text('Envia com restrição'), findsOneWidget);
+        expect(
+          find.text('O nome de exibição do número ainda não foi aprovado'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('display name'), findsNothing);
+      },
+    );
+
+    testWidgets(
       'saúde: "Conferir agora" pergunta de novo à Meta e mostra o novo',
       (t) async {
         final s = _Servidor()

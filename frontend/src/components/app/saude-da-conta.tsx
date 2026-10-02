@@ -127,14 +127,16 @@ export function SaudeDaConta() {
                 </span>
                 <span className="text-sm text-tinta-suave [overflow-wrap:anywhere]">{item.resumo}</span>
               </div>
-              {/* A conexão que vence já tem o aviso com o botão de reconectar logo abaixo
-                  do cartão: aqui fica só a linha. E nenhum problema leva a "Abrir
-                  WhatsApp" — a tela já é esta. */}
-              {(item.chave === 'conexao' ? [] : item.problemas).map((p, i) => (
-                <div key={i} className="rounded-lg border border-borda bg-superficie-2/50 p-3">
-                  <ErroQueGuia erro={{ ...p, tela: p.tela === 'whatsapp' ? null : p.tela }} />
-                </div>
-              ))}
+              {/* A autorização que vence (sem código) já tem o aviso logo abaixo do cartão:
+                  aqui fica só a linha. A que a Meta recusou (190) não tem outro lugar,
+                  e aparece. Nenhum problema leva a "Abrir WhatsApp" — a tela já é esta. */}
+              {item.problemas
+                .filter((p) => item.chave !== 'conexao' || p.codigo !== null)
+                .map((p, i) => (
+                  <div key={i} className="rounded-lg border border-borda bg-superficie-2/50 p-3">
+                    <ErroQueGuia erro={{ ...p, tela: p.tela === 'whatsapp' ? null : p.tela }} />
+                  </div>
+                ))}
             </li>
           ))}
         </ul>
@@ -145,8 +147,13 @@ export function SaudeDaConta() {
 
 /**
  * O aviso curto para a tela da campanha, antes de disparar ou de retomar: se a
- * Meta aponta um problema, diz qual e leva à tela do WhatsApp, onde está o que
+ * Meta BLOQUEOU o envio, diz por quê e leva à tela do WhatsApp, onde está o que
  * fazer. Quieto quando está tudo certo ou quando não deu para conferir.
+ *
+ * Só o bloqueio aparece aqui. "Envia com restrição" pode durar semanas (um
+ * nome de exibição aguardando aprovação, por exemplo) e a mensagem sai: um
+ * aviso amarelo em toda campanha ensinaria a ignorar o vermelho. A restrição
+ * fica na tela do WhatsApp.
  */
 export function AvisoDaSaude() {
   const [saude, setSaude] = useState<Saude | null>(null);
@@ -166,20 +173,15 @@ export function AvisoDaSaude() {
     };
   }, []);
 
-  if (!saude || (saude.sinal !== 'bloqueado' && saude.sinal !== 'com_restricao')) return null;
-  const problema = saude.itens.flatMap((i) => i.problemas)[0];
+  if (!saude || saude.sinal !== 'bloqueado') return null;
+  // Os itens vêm do pior para o melhor: o primeiro bloqueado é o motivo.
+  const problema = saude.itens.find((i) => i.sinal === 'bloqueado')?.problemas[0];
   if (!problema) return null;
-  const bloqueado = saude.sinal === 'bloqueado';
 
   return (
-    <div
-      role={bloqueado ? 'alert' : 'status'}
-      className={`space-y-3 rounded-lg border px-3 py-3 text-sm ${bloqueado ? 'border-erro/30 bg-erro/10' : 'border-atencao/30 bg-atencao/10'}`}
-    >
-      <p className={`leading-relaxed ${bloqueado ? 'text-erro' : 'text-atencao'}`}>
-        {bloqueado
-          ? 'A Meta não deixa esta conta enviar agora. Resolva o ponto abaixo antes de disparar.'
-          : 'A Meta aponta um ponto de atenção nesta conta. O envio sai, mas vale resolver antes.'}
+    <div role="alert" className="space-y-3 rounded-lg border border-erro/30 bg-erro/10 px-3 py-3 text-sm">
+      <p className="leading-relaxed text-erro">
+        A Meta não deixa esta conta enviar agora. Resolva o ponto abaixo antes de disparar.
       </p>
       <div className="rounded-lg border border-borda bg-superficie p-3">
         <ErroQueGuia erro={{ ...problema, tela: problema.tela ?? 'whatsapp' }} />
