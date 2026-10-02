@@ -413,6 +413,155 @@ describe('token inválido (190) — o erro precisa dizer de quem é a culpa', ()
   });
 });
 
+/**
+ * Reconectar renova a AUTORIZAÇÃO de uma conta que já está conectada — e só
+ * isso. O que estes testes trancam é o que ela não pode fazer: tocar no número,
+ * pedir de novo a cópia dos contatos e das conversas (a Meta só deixa uma vez),
+ * ou trocar a conta de quem só queria renovar.
+ */
+describe('reconectar — renova a autorização e mais nada', () => {
+  const DADOS = { code: 'codigo-de-30-segundos', wabaId: 'WABA1' };
+
+  function conectada() {
+    const m = montar();
+    m.db.select.mockReturnValueOnce(consulta([{ id: 'wa-conta-1', wabaId: 'WABA1' }], m.diario));
+    return m;
+  }
+
+  it('troca o code, grava o token novo cifrado com a validade, e reassina o webhook', async () => {
+    const { service, graph, diario } = conectada();
+
+    const r = await service.reconectar(CONTA, USUARIO, DADOS);
+
+    expect(graph.trocarCodePorToken).toHaveBeenCalledWith('codigo-de-30-segundos');
+    expect(graph.dadosDaWaba).toHaveBeenCalledWith('WABA1', TOKEN);
+    expect(graph.assinarWebhook).toHaveBeenCalledWith('WABA1', TOKEN);
+
+    const gravado = ultimaEscritaCom(diario, 'tokenCifrado')!;
+    expect(String(gravado.tokenCifrado).startsWith('v1.')).toBe(true);
+    expect(String(gravado.tokenCifrado)).not.toContain(TOKEN);
+    expect(gravado.tokenEm).toBeInstanceOf(Date);
+    // 60 dias, como a Meta informou.
+    const dias = ((gravado.tokenExpiraEm as Date).getTime() - Date.now()) / 86_400_000;
+    expect(Math.round(dias)).toBe(60);
+    expect(ultimaEscritaCom(diario, 'webhookAssinadoEm')).toBeDefined();
+
+    expect(r).toMatchObject({ wabaId: 'WABA1', nome: 'Padaria Aurora', pendencias: [] });
+    expect(r.expiraEm).toBeInstanceOf(Date);
+  });
+
+  it('NÃO toca no número nem pede de novo a cópia dos contatos e das conversas', async () => {
+    const { service, graph, diario, agenda, db } = conectada();
+
+    await service.reconectar(CONTA, USUARIO, DADOS);
+
+    // A Meta só deixa pedir a cópia UMA vez: pedir de novo exigiria desconectar.
+    expect(graph.sincronizarDadosDoApp).not.toHaveBeenCalled();
+    expect(graph.registrarNumero).not.toHaveBeenCalled();
+    expect(graph.numerosDaWaba).not.toHaveBeenCalled();
+    expect(agenda.decidirNaConexao).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+    // Nenhuma escrita com campo de número.
+    for (const campo of ['sincronizacao', 'status', 'coexistencia', 'onboardadoEm', 'phoneNumberId', 'integrarConversas']) {
+      expect(ultimaEscritaCom(diario, campo)).toBeUndefined();
+    }
+  });
+
+  it('não regrava a data do onboarding da conta (reconectar não é conectar de novo)', async () => {
+    const { service, diario } = conectada();
+    await service.reconectar(CONTA, USUARIO, DADOS);
+    expect(ultimaEscritaCom(diario, 'onboardadaEm')).toBeUndefined();
+  });
+
+  it('outra conta do WhatsApp escolhida na janela da Meta: recusa, e o token guardado não muda', async () => {
+    const { service, diario, graph } = conectada();
+
+    const erro = await service.reconectar(CONTA, USUARIO, { ...DADOS, wabaId: '99999999' }).catch((e: unknown) => e);
+
+    expect(erro).toBeInstanceOf(BadRequestException);
+    expect((erro as BadRequestException).message).toContain('escolha a mesma conta');
+    expect(ultimaEscritaCom(diario, 'tokenCifrado')).toBeUndefined();
+    expect(graph.assinarWebhook).not.toHaveBeenCalled();
+  });
+
+  it('conta sem WhatsApp conectado: manda conectar, não reconectar', async () => {
+    const { service, diario } = montar();
+
+    const erro = await service.reconectar(CONTA, USUARIO, DADOS).catch((e: unknown) => e);
+
+    expect(erro).toBeInstanceOf(BadRequestException);
+    expect((erro as BadRequestException).message).toContain('Conectar meu número');
+    expect(ultimaEscritaCom(diario, 'tokenCifrado')).toBeUndefined();
+  });
+
+  it('o token novo não enxerga a conta: explica e NÃO troca o que está guardado', async () => {
+    const { service, diario, graph } = conectada();
+    graph.dadosDaWaba.mockRejectedValue(new ErroGraph({ status: 401, codigo: 190, traduzido: traduzirErroMeta(190) }));
+
+    const erro = await service.reconectar(CONTA, USUARIO, DADOS).catch((e: unknown) => e);
+
+    expect(erro).toBeInstanceOf(BadRequestException);
+    expect((erro as BadRequestException).message).toContain('autorização nova');
+    expect(ultimaEscritaCom(diario, 'tokenCifrado')).toBeUndefined();
+  });
+
+  it('o code vencido (30 segundos): pede para tentar de novo, sem tocar no banco', async () => {
+    const { service, diario, graph, db } = conectada();
+    graph.trocarCodePorToken.mockRejectedValue(new ErroGraph({ status: 400, codigo: 100, traduzido: traduzirErroMeta(100) }));
+
+    const erro = await service.reconectar(CONTA, USUARIO, DADOS).catch((e: unknown) => e);
+
+    expect(erro).toBeInstanceOf(BadRequestException);
+    expect((erro as BadRequestException).message).toContain('30 segundos');
+    expect(db.update).not.toHaveBeenCalled();
+    expect(diario).toHaveLength(0);
+  });
+
+  it('o webhook não reassinou: a autorização nova fica gravada, com a pendência dita', async () => {
+    const { service, diario, graph } = conectada();
+    graph.assinarWebhook.mockRejectedValue(new Error('tempo esgotado'));
+
+    const r = await service.reconectar(CONTA, USUARIO, DADOS);
+
+    expect(ultimaEscritaCom(diario, 'tokenCifrado')).toBeDefined();
+    expect(ultimaEscritaCom(diario, 'webhookAssinadoEm')).toBeUndefined();
+    expect(r.pendencias).toHaveLength(1);
+    expect(r.pendencias[0]).toContain('status de entrega');
+  });
+
+  it('a Meta sem prazo na autorização nova: grava "sem prazo" (nulo), sem inventar data', async () => {
+    const { service, diario, graph } = conectada();
+    graph.trocarCodePorToken.mockResolvedValue({ token: TOKEN, expiraEm: null });
+
+    const r = await service.reconectar(CONTA, USUARIO, DADOS);
+
+    expect(ultimaEscritaCom(diario, 'tokenCifrado')!.tokenExpiraEm).toBeNull();
+    expect(r.expiraEm).toBeNull();
+  });
+
+  it('guarda o negócio que a janela da Meta devolveu; sem ele, não apaga o que havia', async () => {
+    const com = conectada();
+    await com.service.reconectar(CONTA, USUARIO, { ...DADOS, businessId: '3237000000000001' });
+    expect(ultimaEscritaCom(com.diario, 'tokenCifrado')!.businessId).toBe('3237000000000001');
+
+    const sem = conectada();
+    await sem.service.reconectar(CONTA, USUARIO, DADOS);
+    expect('businessId' in ultimaEscritaCom(sem.diario, 'tokenCifrado')!).toBe(false);
+  });
+
+  it('a auditoria diz qual conta foi reconectada e até quando vale — nunca o token', async () => {
+    const { service, registrar } = conectada();
+
+    await service.reconectar(CONTA, USUARIO, DADOS);
+
+    expect(registrar).toHaveBeenCalledTimes(1);
+    const entrada = registrar.mock.calls[0][0];
+    expect(entrada).toMatchObject({ acao: 'whatsapp.reconectado', atorUsuarioId: USUARIO, entidade: 'wa_conta', entidadeId: 'wa-conta-1' });
+    expect(entrada.detalhe).toMatchObject({ wabaId: 'WABA1', webhook: true });
+    expect(JSON.stringify(entrada)).not.toContain(TOKEN);
+  });
+});
+
 describe('conectarManual — a porta da distribuição', () => {
   it('recusa conta inexistente sem falar com a Meta', async () => {
     const { service, graph } = montar();

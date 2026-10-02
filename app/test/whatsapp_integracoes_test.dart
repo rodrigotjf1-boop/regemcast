@@ -762,6 +762,9 @@ void main() {
 
         expect(find.text('A conexão com a Meta caiu'), findsOneWidget);
         expect(find.byKey(const ValueKey('erro-tela')), findsNothing);
+        // Reconectar é pelo site: o botão leva até lá.
+        expect(find.byKey(const ValueKey('saude-reconectar')), findsOneWidget);
+        expect(find.text('Reconectar no site'), findsOneWidget);
       },
     );
 

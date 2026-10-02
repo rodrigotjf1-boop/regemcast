@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { ConectarWhatsapp } from '@/components/app/conectar-whatsapp';
+import { ConectarWhatsapp, ReconectarWhatsapp } from '@/components/app/conectar-whatsapp';
 import { IconeCelular, IconeConversa, IconeEscudo, IconeRaio } from '@/components/app/icones';
 import { IntegracaoDoNumero } from '@/components/app/integracao-do-numero';
 import { SaudeDaConta } from '@/components/app/saude-da-conta';
 import { useSessao } from '@/components/app/sessao';
 import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EsqueletoLista } from '@/components/ui/esqueleto';
 import { EstadoErro } from '@/components/ui/estado-erro';
@@ -17,6 +18,7 @@ import { whatsapp } from '@/lib/servicos';
 import type {
   NumeroWhatsapp,
   QualidadeNumero,
+  SaudeDaConta as Saude,
   SincronizacaoNumero,
   SituacaoWhatsapp,
 } from '@/lib/tipos';
@@ -43,6 +45,14 @@ export default function PaginaWhatsapp() {
   const [situacao, setSituacao] = useState<SituacaoWhatsapp | null>(null);
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(true);
+  // A Meta recusou a autorização da conta (a saúde diz): é um dos dois motivos
+  // para o "Reconectar" aparecer. O outro é a autorização vencendo.
+  const [conexaoCaiu, setConexaoCaiu] = useState(false);
+  // Trocar a chave faz o cartão da saúde ler de novo, depois de reconectar.
+  const [leituraDaSaude, setLeituraDaSaude] = useState(0);
+  const aoLerSaude = useCallback((saude: Saude | null) => {
+    setConexaoCaiu(Boolean(saude?.itens.some((i) => i.chave === 'conexao' && i.sinal === 'bloqueado')));
+  }, []);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -162,9 +172,20 @@ export default function PaginaWhatsapp() {
             ) : null}
           </section>
 
-          <SaudeDaConta />
+          <SaudeDaConta key={leituraDaSaude} aoLer={aoLerSaude} />
 
           <AvisoExpiracao expiraEm={situacao.conta.tokenExpiraEm} />
+
+          <Reconexao
+            expiraEm={situacao.conta.tokenExpiraEm}
+            conexaoCaiu={conexaoCaiu}
+            dono={dono}
+            coexistencia={situacao.numeros.some((n) => n.coexistencia)}
+            aoReconectar={() => {
+              void atualizar();
+              setLeituraDaSaude((n) => n + 1);
+            }}
+          />
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             {situacao.numeros.map((n) => (
@@ -376,6 +397,75 @@ const TEXTO_SINCRONIZACAO: Partial<
  * Aparece só na última semana: avisar 50 dias antes é ruído que ensina a
  * ignorar o aviso.
  */
+/** Com quantos dias de antecedência a autorização que vence oferece o "Reconectar". */
+const DIAS_PARA_OFERECER_RECONEXAO = 7;
+
+/**
+ * Refazer a autorização da conta — só quando precisa: a Meta recusou a
+ * autorização (a conexão caiu), ou ela venceu ou vence nos próximos dias.
+ *
+ * Com a conta em dia o cartão não aparece: reconectar não é ajuste de rotina,
+ * e um botão sempre à mão convidaria a refazer o que está funcionando.
+ */
+function Reconexao({
+  expiraEm,
+  conexaoCaiu,
+  dono,
+  coexistencia,
+  aoReconectar,
+}: {
+  expiraEm: string | null;
+  conexaoCaiu: boolean;
+  dono: boolean;
+  coexistencia: boolean;
+  aoReconectar: () => void;
+}) {
+  const [aberto, setAberto] = useState(false);
+  // Depois de reconectar o motivo some; o cartão fica até a pessoa sair, para
+  // ela ler o resultado.
+  const [reconectou, setReconectou] = useState(false);
+
+  const dias = expiraEm ? Math.ceil((new Date(expiraEm).getTime() - Date.now()) / 86_400_000) : null;
+  const vencendo = dias !== null && dias <= DIAS_PARA_OFERECER_RECONEXAO;
+  if (!conexaoCaiu && !vencendo && !reconectou) return null;
+
+  // Vencida também deixa a conexão "bloqueada" na saúde: o prazo, que a pessoa
+  // entende, vem antes de "a Meta recusou".
+  const motivo =
+    dias !== null && dias <= 0
+      ? 'A autorização desta conta venceu. Nenhuma mensagem sai até você autorizar de novo.'
+      : conexaoCaiu
+        ? 'A Meta recusou a autorização que o Regemcast tem desta conta. Nenhuma mensagem sai até você autorizar de novo.'
+        : 'A autorização desta conta está para vencer. Autorize de novo antes disso para as campanhas não pararem.';
+
+  return (
+    <Card className="anima-entrada">
+      <div className="space-y-4">
+        <div className="space-y-1.5">
+          <h2 className="text-base font-semibold text-tinta">Reconectar a conta</h2>
+          {!reconectou && <p className="text-sm leading-relaxed text-tinta-suave">{motivo}</p>}
+        </div>
+
+        {!dono ? (
+          <p className="text-sm leading-relaxed text-tinta-suave">
+            Só o dono da conta pode reconectar. Peça a ele para abrir esta tela.
+          </p>
+        ) : aberto ? (
+          <ReconectarWhatsapp
+            coexistencia={coexistencia}
+            aoReconectar={() => {
+              setReconectou(true);
+              aoReconectar();
+            }}
+          />
+        ) : (
+          <Button onClick={() => setAberto(true)}>Reconectar</Button>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 function AvisoExpiracao({ expiraEm }: { expiraEm: string | null }) {
   if (!expiraEm) return null;
 

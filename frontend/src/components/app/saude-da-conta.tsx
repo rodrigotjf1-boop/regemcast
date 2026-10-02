@@ -29,7 +29,15 @@ const SINAL: Record<SinalDeEnvio, { tom: 'sucesso' | 'atencao' | 'erro' | 'neutr
   desconhecido: { tom: 'neutro', ponto: 'bg-tinta-suave' },
 };
 
-export function SaudeDaConta() {
+export function SaudeDaConta({
+  aoLer,
+}: {
+  /**
+   * Chamado a cada leitura que deu certo. A página usa para saber se a Meta
+   * recusou a autorização — é o que faz o "Reconectar" aparecer.
+   */
+  aoLer?: (saude: Saude | null) => void;
+} = {}) {
   const [saude, setSaude] = useState<Saude | null>(null);
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(true);
@@ -39,12 +47,14 @@ export function SaudeDaConta() {
     setErro('');
     try {
       const r = await whatsapp.saude(atualizar);
-      setSaude('sinal' in r ? r : null);
+      const lida = 'sinal' in r ? r : null;
+      setSaude(lida);
+      aoLer?.(lida);
     } catch (e) {
       // Sem resposta do servidor não se afirma nada: nem "pode", nem "não pode".
       setErro(mensagemDoErro(e));
     }
-  }, []);
+  }, [aoLer]);
 
   useEffect(() => {
     void ler(false).finally(() => setCarregando(false));

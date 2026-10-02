@@ -51,6 +51,7 @@ import type { SituacaoCardapioWeb, SituacaoRegem, Segmento, ResumoSegmentos, Par
   SessaoCriada,
   StatusUsuario,
   ResultadoConexao,
+  ResultadoReconexao,
   SaudeDaConta,
   SituacaoWhatsapp,
   UsuarioDaConta,
@@ -291,6 +292,13 @@ export const whatsapp = {
 
   /** `POST /whatsapp/conectar` */
   conectar: (dados: DadosConexao) => api.post<ResultadoConexao>('/whatsapp/conectar', dados),
+
+  /**
+   * `POST /whatsapp/reconectar` — refaz a autorização de uma conta já conectada.
+   * Só o `code` e a conta: o número e a cópia dos contatos não são tocados.
+   */
+  reconectar: (dados: { code: string; wabaId: string; businessId?: string }) =>
+    api.post<ResultadoReconexao>('/whatsapp/reconectar', dados),
 
   /** `POST /whatsapp/registrar-numero` */
   registrarNumero: (dados: DadosRegistroNumero) =>

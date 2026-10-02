@@ -8,8 +8,9 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { mensagemDoErro } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { formatarData } from '@/lib/formato';
 import { whatsapp } from '@/lib/servicos';
-import type { ConfigSignup, ResultadoConexao } from '@/lib/tipos';
+import type { ConfigSignup, ResultadoConexao, ResultadoReconexao } from '@/lib/tipos';
 
 /**
  * Embedded Signup — versão 4.
@@ -130,42 +131,7 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
 
   // 2. Escuta a janela do Signup. Registrado antes de qualquer clique, porque a
   //    mensagem chega ANTES do callback do login.
-  useEffect(() => {
-    function aoReceber(evento: MessageEvent) {
-      // Só aceita mensagem vinda do domínio da Meta. Sem esta checagem,
-      // qualquer página aberta em outra aba poderia mandar um payload forjado.
-      if (
-        evento.origin !== 'https://www.facebook.com' &&
-        evento.origin !== 'https://web.facebook.com'
-      ) {
-        return;
-      }
-      try {
-        const dados = JSON.parse(evento.data as string) as {
-          type?: string;
-          event?: string;
-          data?: InfoDaSessao;
-        };
-        if (dados.type !== 'WA_EMBEDDED_SIGNUP') return;
-
-        // Guarda cada identificador assim que aparece, em vez de exigir os dois
-        // juntos: na coexistência a Meta pode mandar o `waba_id` sem o
-        // `phone_number_id`, e exigir os dois faria a mensagem inteira ser
-        // descartada — perdendo junto a WABA, que veio.
-        if (dados.data?.waba_id) infoRef.current.waba_id = dados.data.waba_id;
-        if (dados.data?.phone_number_id) {
-          infoRef.current.phone_number_id = dados.data.phone_number_id;
-        }
-        if (dados.data?.business_id) infoRef.current.business_id = dados.data.business_id;
-      } catch {
-        // A janela manda outras mensagens que não são JSON. Ignorar é o
-        // comportamento certo — não é erro.
-      }
-    }
-
-    window.addEventListener('message', aoReceber);
-    return () => window.removeEventListener('message', aoReceber);
-  }, []);
+  useJanelaDoSignup(infoRef);
 
   const escolher = useCallback((novo: Modo) => {
     setModo(novo);
@@ -368,6 +334,259 @@ export function ConectarWhatsapp({ aoConectar }: { aoConectar?: () => void }) {
           </p>
         )}
       </div>
+
+      {etapa === 'conectando' && demorou && (
+        <Alerta tom="atencao">
+          <p>
+            A janela da Meta não abriu? O navegador pode ter bloqueado o pop-up. Clique no ícone
+            de pop-up bloqueado na barra de endereço, permita para cast.dmsregem.com e tente de
+            novo.
+          </p>
+          <button
+            type="button"
+            onClick={() => setEtapa('pronto')}
+            className="mt-2 text-sm font-medium text-acento-forte underline underline-offset-4"
+          >
+            Voltar e tentar de novo
+          </button>
+        </Alerta>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Escuta a janela do Signup e guarda em `infoRef` o que ela manda por
+ * `postMessage` (a conta, o número, o negócio). Usado na conexão e na reconexão.
+ */
+function useJanelaDoSignup(infoRef: { current: InfoDaSessao }) {
+  useEffect(() => {
+    function aoReceber(evento: MessageEvent) {
+      // Só aceita mensagem vinda do domínio da Meta. Sem esta checagem,
+      // qualquer página aberta em outra aba poderia mandar um payload forjado.
+      if (
+        evento.origin !== 'https://www.facebook.com' &&
+        evento.origin !== 'https://web.facebook.com'
+      ) {
+        return;
+      }
+      try {
+        const dados = JSON.parse(evento.data as string) as {
+          type?: string;
+          event?: string;
+          data?: InfoDaSessao;
+        };
+        if (dados.type !== 'WA_EMBEDDED_SIGNUP') return;
+
+        // Guarda cada identificador assim que aparece, em vez de exigir os dois
+        // juntos: na coexistência a Meta pode mandar o `waba_id` sem o
+        // `phone_number_id`, e exigir os dois faria a mensagem inteira ser
+        // descartada — perdendo junto a WABA, que veio.
+        if (dados.data?.waba_id) infoRef.current.waba_id = dados.data.waba_id;
+        if (dados.data?.phone_number_id) {
+          infoRef.current.phone_number_id = dados.data.phone_number_id;
+        }
+        if (dados.data?.business_id) infoRef.current.business_id = dados.data.business_id;
+      } catch {
+        // A janela manda outras mensagens que não são JSON. Ignorar é o
+        // comportamento certo — não é erro.
+      }
+    }
+
+    window.addEventListener('message', aoReceber);
+    return () => window.removeEventListener('message', aoReceber);
+  }, [infoRef]);
+}
+
+/** Por qual caminho a janela da Meta abre na reconexão. */
+type CaminhoDaReconexao = 'padrao' | 'celular';
+
+/**
+ * Refaz a autorização de uma conta que já está conectada.
+ *
+ * É a mesma janela da Meta da primeira conexão, sem as perguntas dela: o modo e
+ * a resposta sobre contatos e conversas já foram dados, e reconectar não muda
+ * nenhum dos dois. O servidor (`POST /whatsapp/reconectar`) só renova a
+ * autorização — não toca no número nem pede de novo a cópia do celular.
+ *
+ * ## Os dois caminhos da janela
+ *
+ * A janela abre primeiro no caminho padrão, em que a pessoa escolhe a empresa,
+ * a conta e o número que já existem. A documentação da Meta não diz como a
+ * janela trata um número em coexistência que já está ligado; se ela não deixar
+ * escolher esse número, a tela oferece abrir pelo caminho do WhatsApp Business
+ * no celular (o `featureType` da coexistência). Para o servidor é igual.
+ */
+export function ReconectarWhatsapp({
+  coexistencia,
+  aoReconectar,
+}: {
+  /** A conta tem número que segue no celular: habilita o segundo caminho. */
+  coexistencia: boolean;
+  aoReconectar?: () => void;
+}) {
+  const [etapa, setEtapa] = useState<Etapa>('carregando');
+  const [erro, setErro] = useState('');
+  const [resultado, setResultado] = useState<ResultadoReconexao | null>(null);
+  const [config, setConfig] = useState<ConfigSignup | null>(null);
+  // Só depois de uma tentativa que não deu certo o segundo caminho aparece.
+  const [tentou, setTentou] = useState(false);
+  const [demorou, setDemorou] = useState(false);
+  useEffect(() => {
+    if (etapa !== 'conectando') {
+      setDemorou(false);
+      return;
+    }
+    const t = window.setTimeout(() => setDemorou(true), 8000);
+    return () => window.clearTimeout(t);
+  }, [etapa]);
+
+  const infoRef = useRef<InfoDaSessao>({});
+  useJanelaDoSignup(infoRef);
+
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        const c = await whatsapp.config();
+        if (!vivo) return;
+        setConfig(c);
+        await carregarSdk(c);
+        if (!vivo) return;
+        setEtapa('pronto');
+      } catch (e) {
+        if (!vivo) return;
+        setErro(mensagemDoErro(e));
+        setEtapa('erro');
+      }
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  const abrir = useCallback(
+    (caminho: CaminhoDaReconexao) => {
+      if (!config || !window.FB) return;
+      setErro('');
+      setEtapa('conectando');
+      infoRef.current = {};
+
+      window.FB.login(
+        (resposta) => {
+          const code = resposta?.authResponse?.code;
+          const { waba_id: wabaId, business_id: businessId } = infoRef.current;
+
+          if (!code) {
+            setTentou(true);
+            setEtapa('pronto');
+            setErro('A reconexão foi cancelada antes de terminar. Você pode tentar de novo.');
+            return;
+          }
+          if (!wabaId) {
+            setTentou(true);
+            setEtapa('erro');
+            setErro('A Meta não informou qual conta foi escolhida. Feche a janela e tente de novo.');
+            return;
+          }
+
+          // O `code` vive 30 segundos: vai direto para o servidor.
+          whatsapp
+            .reconectar({
+              code,
+              wabaId,
+              ...(businessId && /^\d{5,30}$/.test(String(businessId)) ? { businessId: String(businessId) } : {}),
+            })
+            .then((r) => {
+              setResultado(r);
+              setEtapa('concluido');
+              aoReconectar?.();
+            })
+            .catch((e) => {
+              setTentou(true);
+              setErro(mensagemDoErro(e));
+              setEtapa('erro');
+            });
+        },
+        {
+          config_id: config.configId,
+          response_type: 'code',
+          override_default_response_type: true,
+          extras: {
+            setup: {},
+            featureType: caminho === 'celular' ? FEATURE_TYPE.coexistencia : FEATURE_TYPE.dedicado,
+            sessionInfoVersion: '3',
+          },
+        },
+      );
+    },
+    [config, aoReconectar],
+  );
+
+  if (etapa === 'carregando') {
+    return (
+      <div className="flex items-center gap-3 text-sm text-tinta-suave">
+        <Spinner /> Preparando a reconexão…
+      </div>
+    );
+  }
+
+  if (etapa === 'concluido' && resultado) {
+    return (
+      <div className="space-y-3">
+        <Alerta tom="sucesso">
+          <strong>Conexão refeita{resultado.nome ? `: ${resultado.nome}` : ''}.</strong>{' '}
+          {resultado.expiraEm
+            ? `A autorização nova vale até ${formatarData(resultado.expiraEm)}.`
+            : 'A autorização nova não tem prazo informado pela Meta.'}{' '}
+          O número, os modelos e os contatos continuam como estavam.
+        </Alerta>
+        {resultado.pendencias.map((p) => (
+          <Alerta key={p} tom="atencao">
+            {p}
+          </Alerta>
+        ))}
+        <p className="text-sm leading-relaxed text-tinta-suave">
+          Campanha que parou porque a conexão caiu continua pausada: abra a campanha e retome.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {erro && <Alerta tom="erro">{erro}</Alerta>}
+
+      <div className="space-y-2 text-sm leading-relaxed text-tinta-suave">
+        <p>
+          Você vai autorizar o Regemcast de novo, na mesma conta do WhatsApp Business. Na janela
+          da Meta, escolha <strong className="text-tinta">a mesma empresa, a mesma conta e o mesmo número</strong>{' '}
+          que já estão aqui.
+        </p>
+        <p>Só a autorização é renovada. O número, os modelos, os contatos e as conversas não mudam.</p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <Button onClick={() => abrir('padrao')} carregando={etapa === 'conectando'}>
+          {etapa === 'conectando' ? 'Reconectando…' : 'Abrir a janela da Meta'}
+        </Button>
+      </div>
+
+      {coexistencia && tentou && etapa !== 'conectando' && (
+        <div className="rounded-card border border-borda bg-superficie-2 p-3 text-sm leading-relaxed text-tinta-suave">
+          <p>
+            A janela da Meta não deixou escolher o número que você usa no celular, ou pediu para
+            cadastrar um número novo? Tente pelo caminho do WhatsApp Business no celular.
+          </p>
+          <button
+            type="button"
+            onClick={() => abrir('celular')}
+            className="mt-2 text-sm font-medium text-acento-forte underline underline-offset-4"
+          >
+            Tentar pelo WhatsApp Business no celular
+          </button>
+        </div>
+      )}
 
       {etapa === 'conectando' && demorou && (
         <Alerta tom="atencao">
