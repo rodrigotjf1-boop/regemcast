@@ -17,7 +17,7 @@ import { Logotipo } from '@/components/marca/logotipo';
  * com `new Date()` faria a página anunciar revisão que não houve.
  */
 
-const ATUALIZADO_EM = '30 de setembro de 2026';
+const ATUALIZADO_EM = '2 de outubro de 2026';
 const CONTROLADOR = 'DMS Tecnologias';
 const EMAIL = 'suporte@dmsregem.com';
 
@@ -178,8 +178,19 @@ export default function PoliticaDePrivacidade() {
             contatos e histórico trazidos do celular.
           </p>
           <p>
-            Não usamos dados da Meta para publicidade, não os transferimos para terceiros e não
-            os cruzamos com dados de outros clientes.
+            <strong className="text-tinta">Quando alguém começa a conversa por um anúncio</strong> de
+            &ldquo;clique para o WhatsApp&rdquo; do cliente, a Meta informa de qual anúncio a conversa
+            veio (o identificador do anúncio e o do clique). Isso só é guardado quando o cliente
+            conectou ao Regemcast um aplicativo da DMS com permissão para recebê-lo — hoje, o Liame,
+            de marketing e tráfego pago. Nesse caso guardamos a origem do anúncio, a hora e o
+            telefone de quem escreveu, <strong className="text-tinta">sem o conteúdo da mensagem</strong>,
+            e entregamos esses dados a esse aplicativo, para ele ligar o anúncio aos pedidos que
+            vieram depois e mostrar ao cliente quanto cada anúncio trouxe. Sem aplicativo conectado,
+            nada disso é guardado. A origem do anúncio é apagada daqui depois de 180 dias.
+          </p>
+          <p>
+            Fora isso, não usamos dados da Meta para publicidade nossa, não os vendemos, não os
+            entregamos a outras redes de anúncio e não os cruzamos com dados de outros clientes.
           </p>
         </Secao>
 
@@ -227,6 +238,16 @@ export default function PoliticaDePrivacidade() {
               pelo WhatsApp. É o destino final do envio.
             </li>
             <li>
+              <strong className="text-tinta">Aplicativos da DMS que o cliente conectar</strong> —
+              outro produto da {CONTROLADOR}, como o Liame, só quando o dono da conta pede a
+              conexão. O aplicativo recebe apenas o que a permissão dada libera: os números das
+              campanhas, os públicos em contagem, os rascunhos que ele mesmo montar e, se for o caso,
+              a origem dos anúncios descrita na seção 4. Ele pode montar campanhas e, com permissão
+              para isso, dispará-las em nome do cliente, dentro do orçamento de disparos que o dono
+              da conta definiu — e o dono é avisado a cada disparo. Nunca recebe o conteúdo das
+              conversas. O dono vê os aplicativos conectados em Integrações e desliga quando quiser.
+            </li>
+            <li>
               <strong className="text-tinta">Mercado Pago</strong> — para cobrar a assinatura do
               plano. O pagamento é feito na página do Mercado Pago; nós não recebemos nem guardamos
               dados de cartão.
@@ -266,8 +287,12 @@ export default function PoliticaDePrivacidade() {
             questionamento.
           </p>
           <p>
-            Registros de auditoria (quem fez o quê, quando) são mantidos por 5 anos e não podem
-            ser alterados nem apagados, nem por nós.
+            A origem dos anúncios (seção 4) fica 180 dias e depois é apagada.
+          </p>
+          <p>
+            Registros de auditoria (quem fez o quê, quando — inclusive o que um aplicativo
+            conectado fez) são mantidos por 5 anos e não podem ser alterados nem apagados, nem por
+            nós.
           </p>
         </Secao>
 
