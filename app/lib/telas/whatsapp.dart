@@ -333,6 +333,20 @@ class _ItemDaSaude extends StatelessWidget {
             // Sem o atalho "Abrir WhatsApp": a tela já é esta.
             child: BlocoDoErro(erro: problema.semTela()),
           ),
+        // A conexão caiu: reconectar é pelo site (o login da Meta não roda
+        // dentro de outro app), e o botão leva direto à tela.
+        if (item.chave == 'conexao' && problemas.isNotEmpty)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              key: const ValueKey('saude-reconectar'),
+              onPressed: () => launchUrl(
+                Uri.parse('$urlWeb/whatsapp'),
+                mode: LaunchMode.externalApplication,
+              ),
+              child: const Text('Reconectar no site'),
+            ),
+          ),
       ],
     );
   }

@@ -351,11 +351,10 @@ export interface FalhaDaLeitura {
 const TOKEN_INVALIDO = 190;
 
 /**
- * O que fazer quando a conexão caiu ou vai vencer. Não promete um botão: com a
- * conta já conectada, a tela do WhatsApp ainda não oferece "reconectar"
- * (02/10/2026) — a frase diz o que é preciso e a quem recorrer.
+ * O que fazer quando a conexão caiu ou vai vencer: o botão "Reconectar" da tela
+ * do WhatsApp, no site (o login da Meta não roda dentro do app).
  */
-const COMO_RECONECTAR = 'É preciso refazer a conexão desta conta com a Meta. Se a tela do WhatsApp não mostrar como, fale com o suporte do Regemcast.';
+const COMO_RECONECTAR = 'Refaça a autorização pelo botão "Reconectar", na tela do WhatsApp do site. Não muda o número, os modelos nem os contatos.';
 
 /** Com quantos dias de antecedência a conexão que vence vira aviso. */
 export const DIAS_DO_AVISO_DE_CONEXAO = 7;

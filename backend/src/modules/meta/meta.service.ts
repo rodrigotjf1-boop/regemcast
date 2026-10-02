@@ -91,6 +91,15 @@ export interface ResultadoOnboarding {
   pendencias: string[];
 }
 
+/** O que a reconexão devolve: a conta, até quando a autorização nova vale e o que ficou pendente. */
+export interface ResultadoReconexao {
+  wabaId: string;
+  nome: string | null;
+  /** Quando a autorização nova vence. Nulo = a Meta não informou prazo. */
+  expiraEm: Date | null;
+  pendencias: string[];
+}
+
 /** Qualidade como a Meta reporta × como guardamos. */
 const QUALIDADE: Record<string, string> = {
   GREEN: 'verde',
@@ -344,6 +353,122 @@ export class MetaService {
       integrar: typeof dados.integrar === 'boolean' ? dados.integrar : null,
       businessId: dados.businessId ?? null,
     });
+  }
+
+  /**
+   * Refaz a autorização de uma conta que JÁ está conectada.
+   *
+   * A autorização do cliente vence (60 dias) ou é retirada, e a Meta passa a
+   * recusar tudo com 190. O caminho de volta é o cliente autorizar de novo pela
+   * janela da Meta — e só isso: reconectar NÃO é conectar de novo.
+   *
+   * O que este método faz: troca o `code` pelo token novo, confere que ele
+   * enxerga a conta, grava o token e reassina o webhook. O que NÃO faz, de
+   * propósito:
+   *
+   * - não toca no número (`wa_numero`): o estado dele, a qualidade e o limite
+   *   continuam os que estavam;
+   * - não pede de novo a cópia dos contatos e das conversas. Na coexistência a
+   *   Meta só deixa pedir UMA vez ("the customer must first offboard, then
+   *   complete the Embedded Signup flow again"), e o onboarding completo
+   *   regravaria `sincronizacao: 'pendente'`, reabrindo um prazo de 24 horas
+   *   que não existe mais;
+   * - não mexe na resposta sobre contatos e conversas.
+   *
+   * A conta escolhida na janela da Meta tem de ser a MESMA que já está aqui:
+   * aceitar outra trocaria a conta de quem só queria renovar a autorização.
+   */
+  async reconectar(
+    contaId: string,
+    usuarioId: string,
+    dados: { code: string; wabaId: string; businessId?: string },
+  ): Promise<ResultadoReconexao> {
+    // 1. Troca do code. Primeiro de tudo: ele vive 30 segundos.
+    let token: string;
+    let expiraEm: Date | null = null;
+    try {
+      const r = await this.graph.trocarCodePorToken(dados.code);
+      token = r.token;
+      if (r.expiraEm && r.expiraEm > 0) expiraEm = new Date(Date.now() + r.expiraEm * 1000);
+    } catch (erro) {
+      if (erro instanceof ErroGraph) {
+        this.log.error(`Troca do code na reconexão falhou: ${erro.detalheParaLog}`);
+        throw new BadRequestException(
+          'Não conseguimos concluir a reconexão. O código de autorização expira em 30 segundos — ' +
+            'feche a janela e tente reconectar de novo.',
+        );
+      }
+      throw erro;
+    }
+
+    // 2. A conta que já está aqui. Tem de ser a mesma da janela da Meta.
+    const conectadas = await this.ctx.db
+      .select({ id: waConta.id, wabaId: waConta.wabaId })
+      .from(waConta)
+      .where(eq(waConta.contaId, contaId));
+    if (!conectadas.length) {
+      throw new BadRequestException(
+        'Esta conta ainda não tem WhatsApp conectado. Use "Conectar meu número", na tela do WhatsApp.',
+      );
+    }
+    const alvo = conectadas.find((c) => c.wabaId === dados.wabaId);
+    if (!alvo) {
+      throw new BadRequestException(
+        'Na janela da Meta você escolheu outra conta do WhatsApp. Para reconectar, escolha a mesma conta ' +
+          'que já está aqui — o identificador dela aparece no topo da tela do WhatsApp.',
+      );
+    }
+
+    // 3. O token novo enxerga a conta? Se não, não troca o que está guardado.
+    const waba = await this.graph.dadosDaWaba(alvo.wabaId, token).catch((erro) => {
+      if (erro instanceof ErroGraph) {
+        this.log.error(`Leitura da WABA ${alvo.wabaId} na reconexão falhou: ${erro.detalheParaLog}`);
+        throw new BadRequestException(
+          `Não conseguimos ler esta conta de WhatsApp na Meta com a autorização nova. ${erro.mensagemParaUsuario}`,
+        );
+      }
+      throw erro;
+    });
+
+    // 4. Grava a autorização nova. Só ela: o resto da linha fica como estava,
+    //    a não ser o que a Meta acabou de informar.
+    const agora = new Date();
+    await this.ctx.db
+      .update(waConta)
+      .set({
+        tokenCifrado: cifrarToken(token, env.meta.tokenChave),
+        tokenEm: agora,
+        tokenExpiraEm: expiraEm,
+        ...(waba.name ? { nome: waba.name } : {}),
+        ...(waba.currency ? { moeda: waba.currency } : {}),
+        ...(waba.account_review_status ? { statusRevisao: waba.account_review_status } : {}),
+        ...(dados.businessId ? { businessId: dados.businessId } : {}),
+      })
+      .where(eq(waConta.id, alvo.id));
+
+    // 5. O webhook é por WABA e por autorização: reassina.
+    const pendencias: string[] = [];
+    try {
+      await this.graph.assinarWebhook(alvo.wabaId, token);
+      await this.ctx.db.update(waConta).set({ webhookAssinadoEm: agora }).where(eq(waConta.id, alvo.id));
+    } catch (erro) {
+      const detalhe = erro instanceof ErroGraph ? erro.detalheParaLog : String(erro);
+      this.log.error(`Assinatura do webhook na WABA ${alvo.wabaId} (reconexão) falhou: ${detalhe}`);
+      pendencias.push('Não conseguimos reativar o recebimento de status de entrega. Tente reconectar de novo em alguns minutos.');
+    }
+
+    await this.auditoria.registrar({
+      contaId,
+      atorTipo: 'usuario',
+      atorUsuarioId: usuarioId,
+      acao: 'whatsapp.reconectado',
+      entidade: 'wa_conta',
+      entidadeId: alvo.id,
+      // Sem token. O que serve para auditar é QUAL conta e até quando vale.
+      detalhe: { wabaId: alvo.wabaId, expiraEm: expiraEm?.toISOString() ?? null, webhook: pendencias.length === 0 },
+    });
+
+    return { wabaId: alvo.wabaId, nome: waba.name ?? null, expiraEm, pendencias };
   }
 
   /**

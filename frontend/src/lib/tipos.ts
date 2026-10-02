@@ -488,6 +488,16 @@ export interface ResultadoConexao {
   pendencias: string[];
 }
 
+/** `POST /whatsapp/reconectar` — a autorização de uma conta já conectada, refeita. */
+export interface ResultadoReconexao {
+  wabaId: string;
+  nome: string | null;
+  /** Quando a autorização nova vence. Nulo = a Meta não informou prazo. */
+  expiraEm: string | null;
+  /** O que ficou pendente, já em pt-BR. */
+  pendencias: string[];
+}
+
 // ------------------------------------------------------------------ contatos
 
 /** Um contato da base, como a tela lista. */

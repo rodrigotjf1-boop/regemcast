@@ -9,6 +9,7 @@ import { DistTokenGuard } from '../lista-espera/dist-token.guard';
 import { ConcluirSignupDto } from './dto/concluir-signup.dto';
 import { ConectarManualDto } from './dto/conectar-manual.dto';
 import { IntegrarDto } from './dto/integrar.dto';
+import { ReconectarDto } from './dto/reconectar.dto';
 import { RegistrarNumeroDto } from './dto/registrar-numero.dto';
 import { AgendaService } from './agenda.service';
 import { MetaService } from './meta.service';
@@ -69,6 +70,21 @@ export class MetaController {
     const resultado = await this.servico.concluirOnboarding(usuario.contaId, usuario.id, dto);
     // Conectou: a primeira leitura da saúde sai já, para a tela abrir sabendo se
     // dá para enviar. Falha aqui não desfaz a conexão — a tela lê de novo.
+    await this.saudeDaConta.daConta(usuario.contaId, { atualizar: true }).catch(() => undefined);
+    return resultado;
+  }
+
+  /**
+   * Refaz a autorização de uma conta já conectada (a que venceu, ou que a Meta
+   * passou a recusar). Só o dono, como no conectar. Renova a autorização e
+   * mais nada: o número e a cópia dos contatos e das conversas não são tocados.
+   */
+  @Post('reconectar')
+  @UseGuards(DonoGuard)
+  async reconectar(@UsuarioAtual() usuario: UsuarioAutenticado, @Body() dto: ReconectarDto) {
+    const resultado = await this.servico.reconectar(usuario.contaId, usuario.id, dto);
+    // A tela precisa abrir já sabendo se a autorização nova resolveu: relê a saúde
+    // na hora (a leitura boa apaga a anotação da falha).
     await this.saudeDaConta.daConta(usuario.contaId, { atualizar: true }).catch(() => undefined);
     return resultado;
   }

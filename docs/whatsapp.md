@@ -67,6 +67,48 @@ Com `featureType` vazio num número que já está no aplicativo, a Meta recusa c
 Tudo isso vive em [`meta.service.ts`](../backend/src/modules/meta/meta.service.ts),
 com os testes da bifurcação em `meta.service.spec.ts`.
 
+## Reconectar: refazer a autorização de uma conta já conectada
+
+A autorização do cliente vence (60 dias no modelo que usamos) ou é retirada, e
+a Meta passa a recusar tudo com 190. O caminho de volta é o dono autorizar de
+novo pela janela da Meta — e **só isso**: reconectar não é conectar de novo.
+
+`POST /whatsapp/reconectar` (só o dono; `{ code, wabaId, businessId? }`):
+
+1. troca o `code` pelo token novo (o prazo de 30 segundos é o mesmo);
+2. exige que a conta escolhida na janela seja **a mesma** que já está aqui —
+   aceitar outra trocaria a conta de quem só queria renovar;
+3. confere que o token novo enxerga a conta, e só então o grava (cifrado, com a
+   validade);
+4. reassina o webhook;
+5. relê a saúde: a leitura boa apaga "a conexão caiu".
+
+O que **não** faz, de propósito:
+
+- não toca no número (`wa_numero`);
+- não pede de novo a cópia dos contatos e das conversas. A Meta só deixa pedir
+  **uma vez** ("the customer must first offboard, then complete the Embedded
+  Signup flow again"), e o onboarding completo regravaria
+  `sincronizacao: 'pendente'`, reabrindo um prazo de 24 horas que não existe
+  mais;
+- não mexe na resposta sobre contatos e conversas, nem na data do onboarding.
+
+Campanha pausada pela conexão continua pausada: o dono abre e retoma.
+
+**Na tela** (site, `/whatsapp`): o cartão "Reconectar a conta" aparece **só
+quando precisa** — a Meta recusou a autorização (a saúde diz), ou ela venceu ou
+vence em até 7 dias. Com a conta em dia não aparece: um botão sempre à mão
+convidaria a refazer o que está funcionando. O app leva ao site ("Reconectar no
+site"): o login da Meta não roda dentro de outro app.
+
+**A janela da Meta abre por dois caminhos.** Primeiro o padrão, em que a pessoa
+escolhe a empresa, a conta e o número que já existem. A documentação não diz
+como a janela trata um número em coexistência que já está ligado; se ela não
+deixar escolher esse número, depois da primeira tentativa a tela oferece abrir
+pelo caminho do WhatsApp Business no celular (o `featureType` da coexistência).
+Para o servidor os dois são iguais. **Ainda não testado com conta real**
+(02/10/2026): falta o teste do dono com a conta que está com a conexão caída.
+
 ## Coexistência: o que a Meta copia, e o prazo
 
 Duas chamadas ao mesmo endpoint, uma por tipo:
@@ -835,15 +877,6 @@ disparos e o custo por campanha (roteiro da IA, 01/10/2026).
   de categorias depois; valor novo é guardado como veio, sem `check` no banco.
 
 ## O que ainda falta
-
-- **Reconectar com a conta já conectada.** Vários textos mandam "reconectar"
-  (autorização vencendo ou vencida, conexão caída, campanha pausada pela
-  conexão), mas a tela do WhatsApp só mostra o fluxo de conexão para quem
-  **não** tem conta conectada — e `situacao.conectado` é verdadeiro sempre que
-  existe a linha em `wa_conta`. Hoje não há botão para refazer a conexão. O
-  servidor aceita (a mesma WABA atualiza o token), mas em coexistência
-  reconectar reabre a cópia de 24 horas (`sincronizacao: 'pendente'`): precisa
-  de análise própria e de teste com conta de verdade.
 
 - **Acesso Avançado — e ele bloqueia a coexistência inteira.** Testado em
   produção: com Acesso Padrão, o Embedded Signup nunca troca a tela de "digite
