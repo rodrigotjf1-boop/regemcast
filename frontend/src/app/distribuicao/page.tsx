@@ -6,6 +6,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { IconeAtualizar, IconeSair } from '@/components/app/icones';
 import { PainelListaEspera } from '@/components/app/painel-lista-espera';
 import { PainelPlanos } from '@/components/app/painel-planos';
+import { PainelIntegracoes } from '@/components/app/painel-integracoes';
 import { PainelTarifas } from '@/components/app/painel-tarifas';
 import { PainelRegem } from '@/components/app/painel-regem';
 import { CarregandoMarca } from '@/components/marca/carregando-marca';
@@ -62,7 +63,7 @@ export default function ConsoleDistribuicao() {
   const [resumo, setResumo] = useState<ResumoDoConsole | null>(null);
   const [contas, setContas] = useState<ContaNoConsole[]>([]);
   const [telemetria, setTelemetria] = useState<TelemetriaDoConsole | null>(null);
-  const [aba, setAba] = useState<'contas' | 'lista' | 'planos' | 'tarifas' | 'regem' | 'telemetria'>('contas');
+  const [aba, setAba] = useState<'contas' | 'lista' | 'planos' | 'tarifas' | 'integracoes' | 'regem' | 'telemetria'>('contas');
   const [filtro, setFiltro] = useState<SituacaoConta | 'todas'>('todas');
   const [dias, setDias] = useState(7);
   const [erro, setErro] = useState('');
@@ -147,7 +148,7 @@ export default function ConsoleDistribuicao() {
         {resumo && <Indicadores resumo={resumo} aoFiltrar={(s) => { setAba('contas'); setFiltro(s); }} />}
 
         <div className="flex flex-wrap items-center gap-2 border-b border-borda" role="tablist">
-          {(['contas', 'lista', 'planos', 'tarifas', 'regem', 'telemetria'] as const).map((a) => (
+          {(['contas', 'lista', 'planos', 'tarifas', 'integracoes', 'regem', 'telemetria'] as const).map((a) => (
             <button
               key={a}
               type="button"
@@ -167,6 +168,8 @@ export default function ConsoleDistribuicao() {
                     ? 'Planos'
                     : a === 'tarifas'
                       ? 'Tarifas da Meta'
+                    : a === 'integracoes'
+                      ? 'Integrações (MCP)'
                     : a === 'regem'
                       ? 'Regem'
                       : 'Telemetria'}
@@ -192,6 +195,8 @@ export default function ConsoleDistribuicao() {
           <PainelPlanos />
         ) : aba === 'tarifas' ? (
           <PainelTarifas />
+        ) : aba === 'integracoes' ? (
+          <PainelIntegracoes contas={contas} />
         ) : aba === 'regem' ? (
           <PainelRegem contas={contas} />
         ) : (

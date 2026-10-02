@@ -3,6 +3,7 @@
 import Link from 'next/link';
 
 import { IconeImportar, IconeIntegracao } from '@/components/app/icones';
+import { AplicativosConectados } from '@/components/app/integracoes/aplicativos-conectados';
 import { IntegracaoCardapioWeb } from '@/components/app/integracoes/cardapio-web';
 import { IntegracaoRegem } from '@/components/app/integracoes/regem';
 import { Button } from '@/components/ui/button';
@@ -30,6 +31,8 @@ export default function IntegracoesPage() {
       <IntegracaoCardapioWeb />
 
       <IntegracaoRegem />
+
+      <AplicativosConectados />
 
       <Card>
         <CardCabecalho

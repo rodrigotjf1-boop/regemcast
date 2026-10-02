@@ -16,6 +16,7 @@ import type { SituacaoCardapioWeb, SituacaoRegem, Segmento, ResumoSegmentos, Par
   ImportacaoDaBase,
   OrcamentoDeDisparos,
   PeriodoDoOrcamento,
+  AplicativoConectado,
   PreviaDoPublico,
   ProdutoDaBase,
   Publico,
@@ -185,6 +186,15 @@ export const listaEspera = {
   /** `POST /lista-espera` — anônimo e idempotente por e-mail. */
   entrarNaFila: (dados: DadosListaEspera) =>
     api.post<{ mensagem: string }>('/lista-espera', dados, SEM_REDIRECT),
+};
+
+/** "Aplicativos conectados": quem tem acesso à conta pela integração. Ver é de todos; desligar é só do dono. */
+export const aplicativos = {
+  /** `GET /integracoes/aplicativos` */
+  listar: () => api.get<AplicativoConectado[]>('/integracoes/aplicativos'),
+
+  /** `POST /integracoes/aplicativos/:id/revogar` — devolve a lista atualizada. */
+  revogar: (id: string) => api.post<AplicativoConectado[]>(`/integracoes/aplicativos/${id}/revogar`, {}),
 };
 
 /** O orçamento de disparos: os tetos de gasto na Meta. Ler é de todos; definir é só do dono. */
@@ -652,6 +662,20 @@ export interface PlanoNoConsole {
 export type DadosPlano = Partial<Omit<PlanoNoConsole, 'id' | 'contas'>>;
 
 /** Uma tarifa da Meta no console: o preço de uma mensagem entregue. */
+/** Uma permissão do catálogo de integração; `soDms` = só produto da DMS pode ter. */
+export interface EscopoDeIntegracao {
+  id: string;
+  rotulo: string;
+  descricao: string;
+  soDms: boolean;
+}
+
+/** Um token de integração no console: de qual conta é e o que pode. Nunca o token em claro. */
+export interface TokenNoConsole extends AplicativoConectado {
+  contaId: string;
+  contaNome: string;
+}
+
 export interface TarifaNoConsole {
   id: string;
   /** A moeda de cobrança da conta (ISO 4217). */
@@ -787,6 +811,14 @@ export const distribuicao = {
     api.post<{ id: string }>('/distribuicao/planos', dados, SEM_REDIRECT_DIST),
   atualizarPlano: (id: string, dados: DadosPlano) =>
     api.patch<{ ok: boolean; campanhasRetomadas: number }>('/distribuicao/planos/' + id, dados, SEM_REDIRECT_DIST),
+  /** Os tokens de integração de todas as contas e o catálogo de permissões. */
+  integracoes: () =>
+    api.get<{ tokens: TokenNoConsole[]; escopos: EscopoDeIntegracao[] }>('/distribuicao/integracoes', SEM_REDIRECT_DIST),
+  /** Emite um token. O token em claro vem só nesta resposta. */
+  emitirToken: (dados: { contaId: string; produto: string; classe: string; nome: string; escopos: string[] }) =>
+    api.post<{ token: string; emitido: TokenNoConsole }>('/distribuicao/integracoes', dados, SEM_REDIRECT_DIST),
+  revogarToken: (id: string) =>
+    api.post<{ ok: boolean }>(`/distribuicao/integracoes/${id}/revogar`, {}, SEM_REDIRECT_DIST),
   tarifas: () => api.get<TarifaNoConsole[]>('/distribuicao/tarifas', SEM_REDIRECT_DIST),
   criarTarifa: (dados: DadosTarifa) =>
     api.post<{ id: string; valor: string }>('/distribuicao/tarifas', dados, SEM_REDIRECT_DIST),
