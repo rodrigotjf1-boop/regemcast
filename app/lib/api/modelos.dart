@@ -94,6 +94,15 @@ List<String> oQueVaiDoModelo(ModeloNaMeta modelo) {
 }
 
 /// `GET /whatsapp/modelos`. A categoria e o status já vêm em português.
+/// O que pede atenção num modelo: a frase vem pronta do servidor.
+class AlertaDoModelo {
+  const AlertaDoModelo({required this.erro, required this.texto});
+
+  /// `erro` (vermelho) ou atenção (amarelo).
+  final bool erro;
+  final String texto;
+}
+
 class ModeloNaMeta {
   const ModeloNaMeta({
     required this.id,
@@ -108,12 +117,26 @@ class ModeloNaMeta {
     required this.variaveis,
     required this.botoes,
     this.exige,
+    this.qualidade = 'desconhecida',
+    this.categoriaAnterior,
+    this.alertas = const [],
   });
 
   final String id;
   final String nome;
   final String idioma;
   final String categoria;
+
+  /// A qualidade que a Meta atribui pelo que os destinatários fazem com o
+  /// modelo: `verde`, `amarela`, `vermelha` ou `desconhecida` (modelo novo, ou
+  /// a Meta não informou).
+  final String qualidade;
+
+  /// A categoria de antes, quando a Meta já mudou o modelo.
+  final String? categoriaAnterior;
+
+  /// Qualidade caindo, categoria que a Meta vai mudar: o que pede atenção.
+  final List<AlertaDoModelo> alertas;
 
   /// O que o envio leva do modelo; nulo quando o servidor não informou.
   final ExigeDoEnvio? exige;
@@ -144,6 +167,19 @@ class ModeloNaMeta {
         .map((b) => '$b')
         .toList(),
     exige: ExigeDoEnvio.deJson(j['exige']),
+    qualidade: switch (_txt(j['qualidade'])) {
+      final q when q.isNotEmpty => q,
+      _ => 'desconhecida',
+    },
+    categoriaAnterior: _txtOuNulo(j['categoriaAnterior']),
+    alertas: (j['alertas'] is List ? j['alertas'] as List : const [])
+        .whereType<Map<String, dynamic>>()
+        .where((a) => _txt(a['texto']).isNotEmpty)
+        .map(
+          (a) =>
+              AlertaDoModelo(erro: a['tom'] == 'erro', texto: _txt(a['texto'])),
+        )
+        .toList(),
   );
 }
 

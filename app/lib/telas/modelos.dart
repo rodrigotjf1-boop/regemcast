@@ -259,6 +259,9 @@ class TelaModelos extends ConsumerWidget {
                                     status: m.status,
                                     corpo: m.corpo,
                                     motivo: m.motivo,
+                                    qualidade: m.qualidade,
+                                    categoriaAnterior: m.categoriaAnterior,
+                                    alertas: m.alertas,
                                     foraDoRegemCast: localDe(m, meus) == null,
                                     aoTocar: () => _abrir(
                                       context,
@@ -303,7 +306,22 @@ class _CartaoModelo extends StatelessWidget {
     this.motivo,
     this.pontilhado = false,
     this.foraDoRegemCast = false,
+    this.qualidade = 'desconhecida',
+    this.categoriaAnterior,
+    this.alertas = const [],
   });
+
+  /// A qualidade como a tela fala dela. Sem informação não vira pílula.
+  static (String, TomPilula)? rotuloDaQualidade(String q) => switch (q) {
+    'verde' => ('Qualidade: Boa', TomPilula.sucesso),
+    'amarela' => ('Qualidade: Em atenção', TomPilula.atencao),
+    'vermelha' => ('Qualidade: Ruim', TomPilula.erro),
+    _ => null,
+  };
+
+  final String qualidade;
+  final String? categoriaAnterior;
+  final List<AlertaDoModelo> alertas;
 
   final String nome;
   final String categoria;
@@ -322,6 +340,7 @@ class _CartaoModelo extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = Cores.de(context);
     final (rotulo, tom) = situacaoDoModelo(status);
+    final daQualidade = rotuloDaQualidade(qualidade);
     return Cartao(
       aoTocar: aoTocar,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
@@ -350,10 +369,16 @@ class _CartaoModelo extends StatelessWidget {
             [
               rotuloCategoria(categoria),
               idioma,
+              // A Meta reclassificou: o preço segue a categoria de agora.
+              if (categoriaAnterior != null) 'era $categoriaAnterior',
               if (foraDoRegemCast) 'criado fora do Regemcast',
             ].join(' · '),
             style: TextStyle(fontSize: 12, color: c.tintaSuave),
           ),
+          if (daQualidade != null) ...[
+            const SizedBox(height: 8),
+            Pilula(daQualidade.$1, tom: daQualidade.$2),
+          ],
           const SizedBox(height: 8),
           Text(
             corpo,
@@ -368,6 +393,19 @@ class _CartaoModelo extends StatelessWidget {
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(color: c.erro, height: 1.4, fontSize: 13),
+            ),
+          ],
+          // O que a Meta sinaliza neste modelo; a frase vem pronta do servidor.
+          for (final a in alertas) ...[
+            const SizedBox(height: 8),
+            Text(
+              a.texto,
+              key: ValueKey('modelo-alerta-${a.erro ? 'erro' : 'atencao'}'),
+              style: TextStyle(
+                color: a.erro ? c.erro : c.atencao,
+                height: 1.4,
+                fontSize: 13,
+              ),
             ),
           ],
         ],

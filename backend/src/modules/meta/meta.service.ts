@@ -35,6 +35,7 @@ import { exigenciasDoEnvio, type ExigenciasDoEnvio } from './envio.regras';
 import { linkDoPagamentoNaMeta } from './pagamento';
 import { ErroGraph, GraphService, type ModeloBruto } from './graph.service';
 import { limiteInformado, type LimiteDaMeta } from './limite.regras';
+import { type AlertaDoModelo, type QualidadeDoModelo, sinaisDoModelo } from './modelo-sinais';
 import { motivoDoModelo } from './motivos-modelo';
 
 export interface DadosDoSignup {
@@ -126,6 +127,18 @@ export interface ModeloDeMensagem {
    * a tela sabe se mostra o campo da variável do título.
    */
   exige: ExigenciasDoEnvio;
+  /**
+   * A qualidade que a Meta atribui ao modelo pelo que os destinatários fazem
+   * com ele: `verde`, `amarela`, `vermelha` ou `desconhecida` (modelo novo, ou
+   * a Meta não informou).
+   */
+  qualidade: QualidadeDoModelo;
+  /** A categoria para a qual a Meta vai mudar o modelo (aviso de 24 horas). Nulo = nenhuma. */
+  categoriaPrevista: string | null;
+  /** A categoria de antes, quando a Meta já mudou o modelo. Nulo = nunca mudou. */
+  categoriaAnterior: string | null;
+  /** O que pede atenção neste modelo, em frases prontas (`modelo-sinais.ts`). */
+  alertas: AlertaDoModelo[];
 }
 
 /** O único status com que a Meta deixa um modelo ser disparado. */
@@ -185,6 +198,7 @@ function traduzirModelo(m: ModeloBruto): ModeloDeMensagem {
     variaveis: maiorIndiceDeVariavel(texto),
     botoes: rotulosDosBotoes(botoes?.buttons),
     exige: exigenciasDoEnvio(componentes),
+    ...sinaisDoModelo(m),
   };
 }
 

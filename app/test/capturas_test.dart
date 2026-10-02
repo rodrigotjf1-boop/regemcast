@@ -318,7 +318,7 @@ final _api = ClienteApi(
           },
         ]);
       case '/whatsapp/modelos':
-        return _json(_modelosMeta);
+        return _json(_comSinais ? _modelosComSinais : _modelosMeta);
       case '/auth/seguranca':
         return _json({
           'doisFatores': 'nenhum',
@@ -1484,6 +1484,84 @@ late final List<Uint8List> _fotos;
 /// mostra o caminho até o disparo.
 var _contaNova = false;
 
+/// A lista da Meta com os sinais dela: qualidade ruim, em atenção, e a
+/// categoria que vai mudar.
+var _comSinais = false;
+
+Map<String, dynamic> _modeloComSinais(
+  String id,
+  String nome,
+  String corpo, {
+  String categoria = 'marketing',
+  String qualidade = 'verde',
+  String? categoriaAnterior,
+  List<Map<String, String>> alertas = const [],
+}) => {
+  'id': id,
+  'nome': nome,
+  'idioma': 'pt_BR',
+  'categoria': categoria,
+  'status': 'aprovado',
+  'motivo': null,
+  'cabecalho': null,
+  'corpo': corpo,
+  'rodape': null,
+  'variaveis': 0,
+  'botoes': <String>[],
+  'qualidade': qualidade,
+  'categoriaPrevista': null,
+  'categoriaAnterior': categoriaAnterior,
+  'alertas': alertas,
+};
+
+final _modelosComSinais = [
+  _modeloComSinais(
+    's1',
+    'promo_de_sexta',
+    'Sexta é dia de smash! Peça o seu combo com 20% de desconto até as 23h.',
+    qualidade: 'vermelha',
+    alertas: [
+      {
+        'tom': 'erro',
+        'texto':
+            'Qualidade ruim: a Meta pode pausar ou desativar este modelo em breve, e com ele pausado nenhuma campanha sai. Evite usá-lo em campanha grande e reveja o texto e o público.',
+      },
+    ],
+  ),
+  _modeloComSinais(
+    's2',
+    'pedido_saiu',
+    'Seu pedido saiu para entrega. Aproveite e veja a promoção da semana!',
+    categoria: 'utilidade',
+    alertas: [
+      {
+        'tom': 'atencao',
+        'texto':
+            'A Meta vai mudar este modelo de utilidade para marketing em até 24 horas. O preço por mensagem e as regras de envio mudam junto.',
+      },
+    ],
+  ),
+  _modeloComSinais(
+    's3',
+    'voltamos_com_novidade',
+    'Faz tempo! Tem novidade no cardápio esperando por você.',
+    qualidade: 'amarela',
+    categoriaAnterior: 'utilidade',
+    alertas: [
+      {
+        'tom': 'atencao',
+        'texto':
+            'Qualidade em atenção: parte de quem recebeu este modelo bloqueou ou reclamou. Se continuar, a Meta pode pausá-lo. Reveja o texto e para quem você envia.',
+      },
+    ],
+  ),
+  _modeloComSinais(
+    's4',
+    'o_mais_querido',
+    'Já experimentou o mais pedido? Não demore, peça logo o seu!',
+  ),
+];
+
 /// A saúde da conta na Meta que o servidor de exemplo devolve: `certa`,
 /// `bloqueada` ou `pagamento`.
 var _saudeDaConta = 'certa';
@@ -1959,6 +2037,19 @@ void main() {
 
   testWidgets('modelos', (t) async {
     await _capturar(t, const Scaffold(body: TelaModelos()), '08-modelos');
+  }, skip: !ativo);
+
+  testWidgets('modelos — sinais da Meta', (t) async {
+    _comSinais = true;
+    addTearDown(() => _comSinais = false);
+    await _capturar(
+      t,
+      const Scaffold(body: TelaModelos()),
+      '67-modelos-sinais',
+      antes: (t) async {
+        await t.drag(find.byType(Scrollable).first, const Offset(0, -420));
+      },
+    );
   }, skip: !ativo);
 
   Future<void> assentar(WidgetTester t) async {

@@ -460,6 +460,17 @@ export interface ModeloDeMensagem {
     /** O que o disparo ainda não sabe mandar; vazio = sabe tudo. */
     semSuporte: string[];
   };
+  /**
+   * A qualidade que a Meta atribui ao modelo pelo que os destinatários fazem com
+   * ele. `desconhecida` = modelo novo, ou a Meta não informou.
+   */
+  qualidade?: 'verde' | 'amarela' | 'vermelha' | 'desconhecida';
+  /** A categoria para a qual a Meta vai mudar o modelo (aviso de 24 horas). */
+  categoriaPrevista?: string | null;
+  /** A categoria de antes, quando a Meta já mudou o modelo. */
+  categoriaAnterior?: string | null;
+  /** O que pede atenção neste modelo, em frases prontas do servidor. */
+  alertas?: Array<{ tom: 'atencao' | 'erro'; texto: string }>;
 }
 
 /** `POST /whatsapp/conectar` */

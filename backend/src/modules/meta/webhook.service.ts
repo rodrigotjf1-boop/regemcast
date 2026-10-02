@@ -19,11 +19,12 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { doWhatsapp, gemeoDoCelular } from '../../common/telefone';
 import { ContextoDb, type Db } from '../../db/contexto';
+import { avisoDaCategoria, avisoDaQualidade, lerMudancaDeCategoria, lerMudancaDeQualidade } from './modelo-sinais';
 import { motivoDoModelo } from './motivos-modelo';
 import { ERRO_SEM_WHATSAPP, registrarFalhaSemWhatsapp } from '../contato/sem-whatsapp';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { AvisoService } from '../aviso/aviso.service';
-import { campanha, campanhaDestinatario, modelo, waConta, waEvento, waNumero } from '../../db/schema';
+import { campanha, campanhaDestinatario, conta, modelo, waConta, waEvento, waNumero } from '../../db/schema';
 import type { DestinoDoEvento } from './agenda.regras';
 import { AgendaService } from './agenda.service';
 import { ConversasService } from './conversas.service';
@@ -77,6 +78,13 @@ interface Mudanca {
    * duas WABAs diferentes (as duas subiram para 2.000) não é o mesmo evento.
    */
   entrada?: string;
+  /**
+   * O `entry.time` — quando a Meta disparou o aviso. Entra na chave de
+   * idempotência dos avisos sem id de mensagem: o MESMO conteúdo em outro
+   * momento é outro evento (o modelo que cai de qualidade pela segunda vez, o
+   * número sinalizado de novo), e sem isto seria descartado como reenvio.
+   */
+  quando?: number;
 }
 
 /** Evento da Meta → status do nosso registro. O que não está aqui é ignorado. */
@@ -267,6 +275,10 @@ export class WebhookService {
         return this.ecoDeMensagem(mudanca);
       case 'message_template_status_update':
         return this.statusDoModelo(mudanca);
+      case 'message_template_quality_update':
+        return this.qualidadeDoModelo(mudanca);
+      case 'template_category_update':
+        return this.categoriaDoModelo(mudanca);
       case 'user_preferences':
         return this.preferenciasDeMarketing(mudanca);
       default:
@@ -320,6 +332,86 @@ export class WebhookService {
       titulo: `${titulo}: ${alterado.nome}`,
       corpo,
       dados: { modeloId: alterado.id },
+    });
+  }
+
+  /**
+   * De quem é o modelo de um aviso: a conta, o fuso dela e o nosso registro do
+   * modelo, se existir.
+   *
+   * O aviso chega pelo id do modelo na Meta e pela WABA (`entry.id`), sem conta.
+   * Modelo criado fora do Regemcast não tem linha aqui — e mesmo assim o dono
+   * precisa saber: a conta sai da WABA.
+   */
+  private async donoDoModelo(
+    idMeta: string,
+    wabaId: string | undefined,
+  ): Promise<{ contaId: string; fuso: string; modeloId: string | null; nome: string | null } | null> {
+    return this.ctx.comEscopoSistema('meta.webhook.modelo', async (db) => {
+      const [local] = idMeta
+        ? await db
+            .select({ contaId: modelo.contaId, id: modelo.id, nome: modelo.nome })
+            .from(modelo)
+            .where(eq(modelo.metaTemplateId, idMeta))
+            .limit(1)
+        : [];
+      let contaId = local?.contaId ?? null;
+      if (!contaId && wabaId) {
+        const [daWaba] = await db.select({ contaId: waConta.contaId }).from(waConta).where(eq(waConta.wabaId, wabaId)).limit(1);
+        contaId = daWaba?.contaId ?? null;
+      }
+      if (!contaId) return null;
+      const [c] = await db.select({ fuso: conta.timezone }).from(conta).where(eq(conta.id, contaId)).limit(1);
+      return { contaId, fuso: c?.fuso ?? 'America/Sao_Paulo', modeloId: local?.id ?? null, nome: local?.nome ?? null };
+    });
+  }
+
+  /**
+   * A qualidade de um modelo mudou (`message_template_quality_update`).
+   *
+   * Só a QUEDA vira aviso no celular: em vermelha o modelo está para ser
+   * pausado, e pausado nenhuma campanha com ele sai. A tela lê a qualidade na
+   * própria lista da Meta — aqui não se guarda nada.
+   */
+  private async qualidadeDoModelo(m: Mudanca): Promise<void> {
+    const mudanca = lerMudancaDeQualidade(m.value ?? {});
+    const aviso = mudanca && avisoDaQualidade(mudanca);
+    if (!mudanca || !aviso) return;
+
+    const dono = await this.donoDoModelo(mudanca.idMeta, m.entrada);
+    if (!dono) return;
+    void this.avisos.avisar(dono.contaId, 'modelos', {
+      ...aviso,
+      dados: { tela: 'modelos', ...(dono.modeloId ? { modeloId: dono.modeloId } : {}) },
+    });
+  }
+
+  /**
+   * A Meta vai mudar, ou mudou, a categoria de um modelo
+   * (`template_category_update`).
+   *
+   * Ela reclassifica o que considera marketing disfarçado de utilidade: avisa
+   * com 24 horas e muda. O preço por mensagem muda junto. Os dois momentos
+   * viram aviso no celular; na mudança feita, o nosso registro guarda a
+   * categoria nova em `categoria_meta`.
+   */
+  private async categoriaDoModelo(m: Mudanca): Promise<void> {
+    const mudanca = lerMudancaDeCategoria(m.value ?? {});
+    if (!mudanca) return;
+
+    const dono = await this.donoDoModelo(mudanca.idMeta, m.entrada);
+    if (!dono) return;
+
+    if (mudanca.feita && dono.modeloId) {
+      const modeloId = dono.modeloId;
+      await this.ctx.comEscopoSistema('meta.webhook.modelo', (db) =>
+        db.update(modelo).set({ categoriaMeta: mudanca.paraBruta }).where(eq(modelo.id, modeloId)),
+      );
+    }
+
+    void this.avisos.avisar(dono.contaId, 'modelos', {
+      ...avisoDaCategoria(mudanca, dono.fuso),
+      dados: { tela: 'modelos', ...(dono.modeloId ? { modeloId: dono.modeloId } : {}) },
     });
   }
 
@@ -950,7 +1042,10 @@ export class WebhookService {
     for (const e of entradas as Array<Record<string, unknown>>) {
       const mudancas = Array.isArray(e.changes) ? e.changes : [];
       const entrada = typeof e.id === 'string' && e.id ? e.id : undefined;
-      for (const c of mudancas as Mudanca[]) saida.push(entrada ? { ...c, entrada } : c);
+      const quando = typeof e.time === 'number' && Number.isFinite(e.time) && e.time > 0 ? e.time : undefined;
+      for (const c of mudancas as Mudanca[]) {
+        saida.push({ ...c, ...(entrada ? { entrada } : {}), ...(quando ? { quando } : {}) });
+      }
     }
     return saida;
   }
@@ -959,8 +1054,13 @@ export class WebhookService {
    * Chave de idempotência.
    *
    * Usa o id da mensagem quando existe — é o identificador estável que a Meta
-   * repete no reenvio. Sem ele, o hash do conteúdo: dois eventos idênticos são,
-   * para todo efeito, o mesmo evento.
+   * repete no reenvio. Sem ele, o hash do conteúdo MAIS o momento do aviso
+   * (`quando`, o `entry.time`): o reenvio repete os dois e é descartado; o
+   * mesmo conteúdo em outro momento é outro evento, e é tratado.
+   *
+   * Até 02/10/2026 o momento não entrava: o segundo "modelo pausado", a
+   * segunda queda de qualidade ou a segunda restrição da conta — iguais à
+   * primeira, semanas depois — eram descartados como reenvio, para sempre.
    */
   private chaveDe(m: Mudanca): string {
     const v = m.value ?? {};
