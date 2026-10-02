@@ -21,6 +21,7 @@ import { doWhatsapp, gemeoDoCelular } from '../../common/telefone';
 import { ContextoDb, type Db } from '../../db/contexto';
 import { avisoDaCategoria, avisoDaQualidade, lerMudancaDeCategoria, lerMudancaDeQualidade } from './modelo-sinais';
 import { motivoDoModelo } from './motivos-modelo';
+import { avisoDoNome, lerDecisaoDoNome } from './nome-exibicao.regras';
 import { ERRO_SEM_WHATSAPP, registrarFalhaSemWhatsapp } from '../contato/sem-whatsapp';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { AvisoService } from '../aviso/aviso.service';
@@ -252,6 +253,8 @@ export class WebhookService {
     switch (tipo) {
       case 'phone_number_quality_update':
         return this.qualidadeDoNumero(mudanca);
+      case 'phone_number_name_update':
+        return this.nomeDoNumero(mudanca);
       case 'business_capability_update':
       case 'messaging_limit_update':
         return this.limiteDoNumero(mudanca);
@@ -413,6 +416,51 @@ export class WebhookService {
       ...avisoDaCategoria(mudanca, dono.fuso),
       dados: { tela: 'modelos', ...(dono.modeloId ? { modeloId: dono.modeloId } : {}) },
     });
+  }
+
+  /**
+   * A Meta decidiu sobre o nome de exibição de um número
+   * (`phone_number_name_update`).
+   *
+   * Com o nome sem aprovação o número envia com limite menor. O aviso chega
+   * pela WABA (`entry.id`) e pelo telefone, sem conta e sem o id do número:
+   *
+   * - relê a saúde da conta na hora — é ela que diz se a restrição acabou, e a
+   *   tela do WhatsApp passa a mostrar o estado novo;
+   * - aprovado, guarda o nome no número (achado pelo telefone, dentro da WABA);
+   * - aprovado ou recusado, avisa o dono no celular. "Em análise" e "adiado"
+   *   não avisam.
+   */
+  private async nomeDoNumero(m: Mudanca): Promise<void> {
+    const decisao = lerDecisaoDoNome(m.value ?? {});
+    const wabaId = m.entrada;
+    if (!decisao || !wabaId) return;
+
+    const contaId = await this.ctx.comEscopoSistema('meta.webhook.nome', async (db) => {
+      const [conta] = await db.select({ id: waConta.id, contaId: waConta.contaId }).from(waConta).where(eq(waConta.wabaId, wabaId)).limit(1);
+      if (!conta) return null;
+      if (decisao.decisao === 'aprovado' && decisao.nome && decisao.digitos) {
+        // Pelos dígitos: a coluna guarda o telefone como a Meta o exibe, com
+        // espaços e hífen, e o aviso manda só os números.
+        await db
+          .update(waNumero)
+          .set({ nomeExibicao: decisao.nome })
+          .where(
+            and(
+              eq(waNumero.waContaId, conta.id),
+              sql`regexp_replace(coalesce(${waNumero.telefoneE164}, ''), '[^0-9]', '', 'g') = ${decisao.digitos}`,
+            ),
+          );
+      }
+      return conta.contaId;
+    });
+    if (!contaId) return;
+
+    await this.saude.atualizarDoSistema({ wabaId });
+
+    const aviso = avisoDoNome(decisao);
+    if (!aviso) return;
+    void this.avisos.avisar(contaId, 'campanhas', { ...aviso, dados: { tela: 'whatsapp' } });
   }
 
   /**
