@@ -114,6 +114,9 @@ Regras (as do hub, ADR-008 do Liame):
 | `conversas_anuncio_listar` | `conversas.anuncio.ler` | as conversas que começaram por um anúncio de clique para o WhatsApp: id do anúncio, identificador do clique, momento, número da loja e o **telefone** de quem escreveu. Leitura com cursor. |
 | `modelo_rascunhar` | `modelos.rascunhar` | grava um **rascunho** de modelo (título em texto, mensagem, rodapé, botões) e devolve o que barraria o envio. Não vai para a Meta. |
 | `campanha_rascunhar` | `campanhas.rascunhar` | monta uma campanha em **rascunho** (modelo aprovado, público de uma lista ou da base, variáveis, janela e ritmo) e devolve quantas pessoas entraram e o custo estimado. Não dispara. |
+| `campanha_disparo_planejar` | `campanhas.disparar` (só `dms`) | o plano do disparo: pessoas, custo estimado, orçamento da conta, o que impede agora e a **confirmação**. Não muda nada. |
+| `campanha_disparar` | `campanhas.disparar` (só `dms`) | **dispara** a campanha, com a confirmação do plano. As mensagens saem e a Meta cobra. O dono é avisado. |
+| `campanha_pausar` | `campanhas.disparar` (só `dms`) | pausa uma campanha que o aplicativo disparou. Quem retoma é uma pessoa, na tela. |
 
 As de leitura ficam em `integracao/mcp.leitura.ts`. Cada uma chama o **mesmo
 serviço da tela**, dentro da conta do token, e devolve um recorte curado:
@@ -127,7 +130,52 @@ serviço da tela**, dentro da conta do token, e devolve um recorte curado:
   tela mostraria (campanha de outra conta: "Campanha não encontrada"); erro
   inesperado é registrado e sai como "erro interno", sem detalhe.
 
-O disparo entra no próximo PR.
+## Disparo (sem migration)
+
+`integracao/mcp.disparo.ts`, regras em `integracao/disparo.regras.ts`. É a única
+ação da porta que faz mensagem sair e custa dinheiro na Meta. Por isso tem dois
+passos e três travas que a tela não tem.
+
+**Dois passos.** `campanha_disparo_planejar` mostra o que vale agora — quantas
+pessoas, o custo estimado (teto), o orçamento da conta e o que impede — e, se
+nada impede, devolve a `confirmacao` (a impressão digital do que mostrou).
+`campanha_disparar` só roda com ela e só se **nada mudou** desde o plano (o
+público, o custo, o orçamento, a situação da campanha); senão, recusa e pede um
+plano novo. Quem chama mostra o plano a quem aprova antes de disparar: é o
+"planejar → aprovar → executar" da ADR-008, com a aprovação do lado do produto
+que chama.
+
+**Três travas:**
+
+1. **Só produto da DMS.** A permissão não existe para cliente de fora — na
+   emissão, na leitura do token (escopo gravado no banco que a classe não pode
+   ter não vira permissão) e na ferramenta.
+2. **Só campanha que o mesmo aplicativo montou** (`integracao_produto`). O
+   rascunho que uma pessoa fez na tela é dela para disparar; outro aplicativo da
+   mesma conta também não mexe.
+3. **Só com o orçamento de disparos valendo.** A conta precisa ter pelo menos
+   um teto definido pelo dono, o orçamento precisa conseguir contar (moeda lida
+   e tarifa cadastrada) e precisa haver preço para as mensagens **desta**
+   campanha — mensagem sem tarifa não é segurada pelo teto. Sem isso, nada
+   limitaria quanto um aplicativo pode gastar, e o disparo é recusado.
+
+**O disparo em si é o da tela** (`CampanhaService.disparar`), com as mesmas
+conferências: campanha em rascunho, WhatsApp conectado, número registrado,
+conta liberada na Meta, plano com saldo. O plano mostra a recusa que o disparo
+daria (`oQueImpedeODisparo`, as mesmas conferências sem disparar). Disparada, a
+campanha segue as regras de sempre: janela, ritmo, teto do plano, limite da
+Meta e o orçamento, que pausa e retoma sozinho. Custo maior que o que resta no
+orçamento não impede: o plano avisa que a campanha vai sair aos poucos.
+
+**O dono é avisado** no aplicativo (aviso de campanhas): quem disparou, a
+campanha, quantas pessoas e o custo estimado. O aviso sai depois da gravação,
+e não se repete quando o pedido é repetido com a mesma chave.
+
+**Na trilha**, `campanha.disparada` e `campanha.pausada` saem com o autor
+`integracao` e o nome do token.
+
+**Pausar** é a válvula de segurança do aplicativo: para a campanha que ele
+disparou. Retomar é de uma pessoa, na tela.
 
 ## Rascunhos (migration 045)
 

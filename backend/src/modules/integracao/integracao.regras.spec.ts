@@ -165,8 +165,27 @@ describe('as ferramentas de cada token', () => {
     expect(nomes).not.toContain('campanha_rascunhar');
   });
 
-  it('não existe ferramenta que dispare: o escopo de disparo ainda não libera nada', () => {
-    expect(ferramentasDe({ escopos: ['campanhas.disparar'] }).map((f) => f.nome)).toEqual(['integracao_situacao']);
+  it('disparar pede a permissão de disparar: planejar, disparar e pausar', () => {
+    expect(ferramentasDe({ escopos: ['campanhas.disparar'] }).map((f) => f.nome)).toEqual([
+      'integracao_situacao',
+      'campanha_disparo_planejar',
+      'campanha_disparar',
+      'campanha_pausar',
+    ]);
+  });
+
+  it('quem lê e rascunha não dispara nem pausa', () => {
+    const semDisparo = ESCOPOS.map((e) => e.id).filter((id) => id !== 'campanhas.disparar');
+    const nomes = ferramentasDe({ escopos: semDisparo }).map((f) => f.nome);
+    expect(nomes).not.toContain('campanha_disparo_planejar');
+    expect(nomes).not.toContain('campanha_disparar');
+    expect(nomes).not.toContain('campanha_pausar');
+  });
+
+  it('cliente de fora nunca chega ao disparo: a permissão guardada não vira permissão', () => {
+    const efetivos = escoposEfetivos(['campanhas.ler', 'campanhas.rascunhar', 'campanhas.disparar'], 'externo');
+    expect(efetivos).not.toContain('campanhas.disparar');
+    expect(ferramentasDe({ escopos: efetivos }).map((f) => f.nome)).not.toContain('campanha_disparar');
   });
 
   it('nenhuma ferramenta de leitura fica sem escopo: só a situação da integração é de todos', () => {
