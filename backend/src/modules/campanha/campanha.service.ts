@@ -1111,7 +1111,7 @@ export class CampanhaService {
    * Quem já estava saindo naquele instante (status `enviando`) segue: a Meta já
    * recebeu, e fingir que não recebeu duplicaria a mensagem na retomada.
    */
-  async pausar(contaId: string, usuarioId: string, campanhaId: string): Promise<ResumoCampanha> {
+  async pausar(contaId: string, usuarioId: string | null, campanhaId: string): Promise<ResumoCampanha> {
     const alvo = await this.buscar(contaId, campanhaId);
 
     if (alvo.status !== 'agendada' && alvo.status !== 'enviando') {
@@ -1422,11 +1422,54 @@ export class CampanhaService {
    */
   async disparar(
     contaId: string,
-    usuarioId: string,
+    // Nulo quando quem dispara é um aplicativo conectado (porta MCP), e não uma pessoa.
+    usuarioId: string | null,
     campanhaId: string,
   ): Promise<ResumoCampanha> {
     const alvo = await this.buscar(contaId, campanhaId);
+    await this.conferirAntesDeDisparar(contaId, alvo);
 
+    await this.ctx.db
+      .update(campanha)
+      .set({ status: 'agendada', iniciadaEm: new Date() })
+      .where(eq(campanha.id, campanhaId));
+
+    const [{ total }] = await this.ctx.db
+      .select({ total: count(campanhaDestinatario.id) })
+      .from(campanhaDestinatario)
+      .where(eq(campanhaDestinatario.campanhaId, campanhaId));
+
+    await this.auditoria.registrar({
+      contaId,
+      atorTipo: 'usuario',
+      atorUsuarioId: usuarioId,
+      acao: 'campanha.disparada',
+      entidade: 'campanha',
+      entidadeId: campanhaId,
+      detalhe: { destinatarios: Number(total), modelo: alvo.modeloNome },
+    });
+
+    return this.detalhe(contaId, campanhaId);
+  }
+
+  /**
+   * O que o disparo recusaria agora, em uma frase — ou nulo, se nada impede.
+   * Não muda a campanha. É o que o plano de disparo da porta MCP mostra antes
+   * de alguém aprovar: as MESMAS conferências do `disparar`, sem disparar.
+   */
+  async oQueImpedeODisparo(contaId: string, campanhaId: string): Promise<string | null> {
+    const alvo = await this.buscar(contaId, campanhaId);
+    try {
+      await this.conferirAntesDeDisparar(contaId, alvo);
+      return null;
+    } catch (erro) {
+      if (erro instanceof BadRequestException) return erro.message;
+      throw erro;
+    }
+  }
+
+  /** As conferências do disparo: recusa com a frase, antes de mudar qualquer coisa. */
+  private async conferirAntesDeDisparar(contaId: string, alvo: { status: string }): Promise<void> {
     if (alvo.status !== 'rascunho') {
       // Disparar de novo reenviaria para quem já recebeu. Mensagem duplicada
       // queima o destinatário e cobra outra vez.
@@ -1455,28 +1498,6 @@ export class CampanhaService {
     if (saldo !== null && saldo <= 0) {
       throw new BadRequestException(MENSAGEM_SEM_SALDO);
     }
-
-    await this.ctx.db
-      .update(campanha)
-      .set({ status: 'agendada', iniciadaEm: new Date() })
-      .where(eq(campanha.id, campanhaId));
-
-    const [{ total }] = await this.ctx.db
-      .select({ total: count(campanhaDestinatario.id) })
-      .from(campanhaDestinatario)
-      .where(eq(campanhaDestinatario.campanhaId, campanhaId));
-
-    await this.auditoria.registrar({
-      contaId,
-      atorTipo: 'usuario',
-      atorUsuarioId: usuarioId,
-      acao: 'campanha.disparada',
-      entidade: 'campanha',
-      entidadeId: campanhaId,
-      detalhe: { destinatarios: Number(total), modelo: alvo.modeloNome },
-    });
-
-    return this.detalhe(contaId, campanhaId);
   }
 
   /**

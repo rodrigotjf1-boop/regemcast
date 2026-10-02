@@ -9,6 +9,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { ContextoDb } from '../../db/contexto';
 import { comAutorDaIntegracao } from '../auditoria/autor-integracao';
+import type { AvisoService } from '../aviso/aviso.service';
 import type { CampanhaService } from '../campanha/campanha.service';
 import type { ContaService } from '../conta/conta.service';
 import type { ContatoService } from '../contato/contato.service';
@@ -33,6 +34,7 @@ export interface ServicosDoMcp {
   orcamento: OrcamentoService;
   anuncios: ConversaAnuncioService;
   modelos: ModeloService;
+  avisos: AvisoService;
 }
 
 /** O que cada ferramenta recebe: quem chamou, a porta para a conta dele e os serviços. */
