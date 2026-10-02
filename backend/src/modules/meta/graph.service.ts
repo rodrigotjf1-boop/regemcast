@@ -299,6 +299,31 @@ export class GraphService {
   }
 
   /** Assina nosso app na WABA do cliente. Sem isso, nenhum webhook daquela conta chega. */
+  /**
+   * Renova uma autorização que ainda vale: devolve um token novo, de 60 dias.
+   *
+   * É a troca oficial da Meta para token de usuário do sistema que vence
+   * (`grant_type=fb_exchange_token` + `set_token_expires_in_60_days=true`). Só
+   * funciona com o token ainda válido; vencido, o caminho é reconectar.
+   *
+   * Uma tentativa só, e sem o token no log: ele vai na consulta, e o que se
+   * registra de uma falha é o código e a frase da Meta, nunca o endereço.
+   */
+  async renovarToken(tokenAtual: string): Promise<{ token: string; expiraEm: number | null }> {
+    const r = await this.chamar<{ access_token?: string; expires_in?: number }>('oauth/access_token', {
+      query: {
+        grant_type: 'fb_exchange_token',
+        client_id: env.meta.appId,
+        client_secret: env.meta.appSecret,
+        set_token_expires_in_60_days: 'true',
+        fb_exchange_token: tokenAtual,
+      },
+      timeoutMs: 8_000,
+      tentativas: 0,
+    });
+    return { token: r.access_token ?? '', expiraEm: r.expires_in ?? null };
+  }
+
   async assinarWebhook(wabaId: string, tokenDoCliente: string): Promise<void> {
     await this.chamar(`${wabaId}/subscribed_apps`, {
       metodo: 'POST',
