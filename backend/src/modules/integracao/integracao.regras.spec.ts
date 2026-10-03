@@ -133,14 +133,16 @@ describe('as ferramentas de cada token', () => {
   });
 
   it('a situação da integração vale para qualquer token; o resto, só com o escopo', () => {
-    expect(ferramentasDe({ escopos: [] }).map((f) => f.nome)).toEqual(['integracao_situacao']);
+    expect(ferramentasDe({ escopos: [] }).map((f) => f.nome)).toEqual(['integracao_situacao', 'integracao_revogar']);
     expect(ferramentasDe({ escopos: ['campanhas.ler'] }).map((f) => f.nome)).toEqual([
       'integracao_situacao',
+      'integracao_revogar',
       'campanhas_listar',
       'campanha_detalhar',
     ]);
     expect(ferramentasDe({ escopos: ['publicos.ler', 'orcamento.ler'] }).map((f) => f.nome)).toEqual([
       'integracao_situacao',
+      'integracao_revogar',
       'publicos_listar',
       'publico_estimar',
       'orcamento_ler',
@@ -150,6 +152,7 @@ describe('as ferramentas de cada token', () => {
   it('o telefone de quem veio de anúncio só sai com a permissão própria', () => {
     expect(ferramentasDe({ escopos: ['conversas.anuncio.ler'] }).map((f) => f.nome)).toEqual([
       'integracao_situacao',
+      'integracao_revogar',
       'conversas_anuncio_listar',
     ]);
     const leitura = ['conta.ler', 'campanhas.ler', 'publicos.ler', 'modelos.ler', 'orcamento.ler'];
@@ -157,8 +160,8 @@ describe('as ferramentas de cada token', () => {
   });
 
   it('rascunhar pede a permissão de rascunhar: quem só lê não grava', () => {
-    expect(ferramentasDe({ escopos: ['modelos.rascunhar'] }).map((f) => f.nome)).toEqual(['integracao_situacao', 'modelo_rascunhar']);
-    expect(ferramentasDe({ escopos: ['campanhas.rascunhar'] }).map((f) => f.nome)).toEqual(['integracao_situacao', 'campanha_rascunhar']);
+    expect(ferramentasDe({ escopos: ['modelos.rascunhar'] }).map((f) => f.nome)).toEqual(['integracao_situacao', 'integracao_revogar', 'modelo_rascunhar']);
+    expect(ferramentasDe({ escopos: ['campanhas.rascunhar'] }).map((f) => f.nome)).toEqual(['integracao_situacao', 'integracao_revogar', 'campanha_rascunhar']);
     const leitura = ['conta.ler', 'campanhas.ler', 'publicos.ler', 'modelos.ler', 'orcamento.ler', 'conversas.anuncio.ler'];
     const nomes = ferramentasDe({ escopos: leitura }).map((f) => f.nome);
     expect(nomes).not.toContain('modelo_rascunhar');
@@ -168,6 +171,7 @@ describe('as ferramentas de cada token', () => {
   it('disparar pede a permissão de disparar: planejar, disparar e pausar', () => {
     expect(ferramentasDe({ escopos: ['campanhas.disparar'] }).map((f) => f.nome)).toEqual([
       'integracao_situacao',
+      'integracao_revogar',
       'campanha_disparo_planejar',
       'campanha_disparar',
       'campanha_pausar',
@@ -188,8 +192,8 @@ describe('as ferramentas de cada token', () => {
     expect(ferramentasDe({ escopos: efetivos }).map((f) => f.nome)).not.toContain('campanha_disparar');
   });
 
-  it('nenhuma ferramenta de leitura fica sem escopo: só a situação da integração é de todos', () => {
-    expect(FERRAMENTAS.filter((f) => f.escopo === null).map((f) => f.nome)).toEqual(['integracao_situacao']);
+  it('nenhuma ferramenta de leitura fica sem escopo: só a situação e a revogação do próprio token são de todos', () => {
+    expect(FERRAMENTAS.filter((f) => f.escopo === null).map((f) => f.nome)).toEqual(['integracao_situacao', 'integracao_revogar']);
   });
 
   it('não há duas ferramentas com o mesmo nome', () => {

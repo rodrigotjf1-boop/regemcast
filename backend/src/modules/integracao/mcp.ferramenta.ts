@@ -20,7 +20,7 @@ import type { MetaService } from '../meta/meta.service';
 import type { ModeloService } from '../modelo/modelo.service';
 import type { SaudeService } from '../meta/saude.service';
 import type { OrcamentoService } from '../orcamento/orcamento.service';
-import type { IntegracaoAutenticada } from './integracao.service';
+import type { IntegracaoAutenticada, IntegracaoService } from './integracao.service';
 
 /** Os serviços das telas, que as ferramentas reaproveitam. */
 export interface ServicosDoMcp {
@@ -35,6 +35,7 @@ export interface ServicosDoMcp {
   anuncios: ConversaAnuncioService;
   modelos: ModeloService;
   avisos: AvisoService;
+  integracoes: IntegracaoService;
 }
 
 /** O que cada ferramenta recebe: quem chamou, a porta para a conta dele e os serviços. */
