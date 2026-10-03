@@ -103,7 +103,8 @@ Regras (as do hub, ADR-008 do Liame):
 
 | Ferramenta | Escopo | O que faz |
 | --- | --- | --- |
-| `integracao_situacao` | nenhum | diz para qual conta o token vale, o produto, a classe e as permissões. É a primeira chamada de quem integra. |
+| `integracao_situacao` | nenhum | diz para qual conta o token vale (o id, que não muda, e o nome), o fuso dela, o produto, a classe e as permissões. É a primeira chamada de quem integra. |
+| `integracao_revogar` | nenhum | o próprio aplicativo desliga o token dele (`confirmar: true`); vale na chamada seguinte. É o "desconectar" do outro lado. |
 | `conta_situacao` | `conta.ler` | se a conta pode enviar agora (a saúde na Meta, com o que resolver), o plano e o uso do ciclo. |
 | `campanhas_listar` | `campanhas.ler` | as campanhas, das mais novas para as mais antigas, com a situação e os números. Filtro por situação; até 50 por chamada. |
 | `campanha_detalhar` | `campanhas.ler` | os números de uma campanha, por que está pausada ou esperando e até quando, as falhas por motivo com o que fazer, e o custo na Meta. Não devolve quem recebeu. |

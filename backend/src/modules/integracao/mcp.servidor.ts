@@ -33,8 +33,8 @@ import { SaudeService } from '../meta/saude.service';
 import { OrcamentoService } from '../orcamento/orcamento.service';
 import { LIMITE_POR_MINUTO } from './integracao.guard';
 import { descreverEscopos } from './integracao.regras';
-import type { IntegracaoAutenticada } from './integracao.service';
-import { resposta, type Ferramenta, type ServicosDoMcp } from './mcp.ferramenta';
+import { IntegracaoService, type IntegracaoAutenticada } from './integracao.service';
+import { naConta, resposta, type Ferramenta, type ServicosDoMcp } from './mcp.ferramenta';
 import { FERRAMENTAS_DE_CONVERSAS } from './mcp.conversas';
 import { FERRAMENTAS_DE_DISPARO } from './mcp.disparo';
 import { FERRAMENTAS_DE_ESCRITA } from './mcp.escrita';
@@ -53,10 +53,12 @@ const situacaoDaIntegracao: Ferramenta = {
       {
         title: 'Situação da integração',
         description:
-          'Diz para qual conta do RegemCast este token vale, qual produto ele identifica e o que pode fazer. Use para conferir a conexão antes de qualquer outra ferramenta.',
+          'Diz para qual conta do RegemCast este token vale (o id, que não muda, e o nome), o fuso dela, qual produto o token identifica e o que pode fazer. Use para conferir a conexão antes de qualquer outra ferramenta.',
         inputSchema: z.object({}),
         outputSchema: z.object({
+          contaId: z.string(),
           conta: z.string(),
+          fuso: z.string(),
           produto: z.string(),
           classe: z.enum(['dms', 'externo']),
           token: z.string(),
@@ -67,7 +69,9 @@ const situacaoDaIntegracao: Ferramenta = {
       },
       async () =>
         resposta({
+          contaId: quem.contaId,
           conta: quem.contaNome,
+          fuso: quem.contaFuso,
           produto: quem.produto,
           classe: quem.classe,
           token: quem.nome,
@@ -78,9 +82,38 @@ const situacaoDaIntegracao: Ferramenta = {
   },
 };
 
+/**
+ * O aplicativo desconecta a si mesmo: o token dele deixa de valer na chamada
+ * seguinte. É o que o outro produto chama quando a pessoa desliga a conexão lá —
+ * sem isso, o token sairia só do cofre dele e continuaria valendo aqui.
+ */
+const revogarAIntegracao: Ferramenta = {
+  nome: 'integracao_revogar',
+  escopo: null,
+  registrar(servidor, c) {
+    servidor.registerTool(
+      'integracao_revogar',
+      {
+        title: 'Revogar este token',
+        description:
+          'Desliga o PRÓPRIO token: depois desta chamada ele deixa de valer, e só um token novo, emitido pela distribuição a pedido do dono da conta, conecta de novo. Use quando a conexão for desligada do seu lado. Não mexe em mais nada da conta.',
+        inputSchema: z.object({ confirmar: z.literal(true).describe('Precisa ser true: a revogação não tem volta.') }),
+        outputSchema: z.object({ revogado: z.boolean(), revogadoEm: z.string() }),
+        annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      },
+      async () =>
+        naConta(c, 'integracao_revogar', async () => ({
+          revogado: true,
+          revogadoEm: (await c.servicos.integracoes.revogarPeloProprio(c.quem)).toISOString(),
+        })),
+    );
+  },
+};
+
 /** O catálogo de ferramentas. Ferramenta nova entra aqui, com o escopo dela no catálogo de escopos. */
 export const FERRAMENTAS: readonly Ferramenta[] = [
   situacaoDaIntegracao,
+  revogarAIntegracao,
   ...FERRAMENTAS_DE_LEITURA,
   ...FERRAMENTAS_DE_CONVERSAS,
   ...FERRAMENTAS_DE_ESCRITA,
@@ -110,8 +143,9 @@ export class McpServidor {
     anuncios: ConversaAnuncioService,
     modelos: ModeloService,
     avisos: AvisoService,
+    integracoes: IntegracaoService,
   ) {
-    const servicos: ServicosDoMcp = { saude, conta, campanhas, contatos, publicos, segmentos, meta, orcamento, anuncios, modelos, avisos };
+    const servicos: ServicosDoMcp = { saude, conta, campanhas, contatos, publicos, segmentos, meta, orcamento, anuncios, modelos, avisos, integracoes };
     this.handler = createMcpHandler(
       ({ authInfo }) => {
         const servidor = new McpServer(

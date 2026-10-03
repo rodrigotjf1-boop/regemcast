@@ -35,6 +35,8 @@ export interface IntegracaoAutenticada {
   tokenId: string;
   contaId: string;
   contaNome: string;
+  /** O fuso da conta (IANA): é nele que valem as janelas e os períodos dela. */
+  contaFuso: string;
   produto: string;
   classe: ClasseDoToken;
   nome: string;
@@ -238,6 +240,30 @@ export class IntegracaoService {
     return this.daConta(contaId);
   }
 
+  /**
+   * O próprio aplicativo desliga o token dele (a ferramenta `integracao_revogar`):
+   * é o "desconectar" do outro lado. Roda na conta do token, e a trilha registra
+   * o autor `integracao` (a porta MCP define o autor). Repetir não muda nada.
+   */
+  async revogarPeloProprio(quem: Pick<IntegracaoAutenticada, 'tokenId' | 'contaId' | 'nome' | 'produto'>): Promise<Date> {
+    const agora = new Date();
+    const [mudou] = await this.ctx.db
+      .update(integracaoToken)
+      .set({ revogadoEm: agora, revogadoPor: `o próprio aplicativo (${quem.produto})` })
+      .where(and(eq(integracaoToken.id, quem.tokenId), eq(integracaoToken.contaId, quem.contaId), isNull(integracaoToken.revogadoEm)))
+      .returning({ revogadoEm: integracaoToken.revogadoEm });
+    if (mudou) {
+      await this.auditoria.registrar({
+        contaId: quem.contaId,
+        acao: 'integracao.token_revogado',
+        entidade: 'integracao_token',
+        entidadeId: quem.tokenId,
+        detalhe: { nome: quem.nome, produto: quem.produto, pelo: 'proprio_aplicativo' },
+      });
+    }
+    return mudou?.revogadoEm ?? agora;
+  }
+
   // ------------------------------------------------------------------- porta
 
   /**
@@ -261,6 +287,7 @@ export class IntegracaoService {
           escopos: integracaoToken.escopos,
           revogadoEm: integracaoToken.revogadoEm,
           contaNome: conta.nome,
+          contaFuso: conta.timezone,
           contaStatus: conta.status,
         })
         .from(integracaoToken)
@@ -282,6 +309,7 @@ export class IntegracaoService {
         tokenId: l.id,
         contaId: l.contaId,
         contaNome: l.contaNome,
+        contaFuso: l.contaFuso,
         produto: l.produto,
         classe: l.classe as ClasseDoToken,
         nome: l.nome,
