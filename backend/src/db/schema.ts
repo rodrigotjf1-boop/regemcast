@@ -75,6 +75,35 @@ export const integracaoToken = pgTable('integracao_token', {
 }));
 
 /**
+ * Ligação do Hub DMS (migration 046): a credencial nova da porta MCP, ao lado
+ * do token de integração. O aplicativo manda o token do DMS ID (quem é) e o
+ * segredo da ligação no cabeçalho `DMS-Ligacao` (qual conta autorizou). Só o
+ * resumo do segredo é guardado. A que vem de um token (a troca automática)
+ * herda o MESMO id, os escopos, o nome, a classe e a data dele. Regras em
+ * `integracao/ligacao.regras.ts`.
+ */
+export const integracaoLigacao = pgTable('integracao_ligacao', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  contaId: uuid('conta_id').notNull().references(() => conta.id, { onDelete: 'cascade' }),
+  aplicativo: text('aplicativo').notNull(),
+  produto: text('produto').notNull(),
+  classe: text('classe').notNull(),
+  nome: text('nome').notNull(),
+  segredoHash: text('segredo_hash').notNull(),
+  prefixo: text('prefixo').notNull(),
+  escopos: jsonb('escopos').notNull().default(sql`'[]'::jsonb`),
+  origemTokenId: uuid('origem_token_id').references(() => integracaoToken.id, { onDelete: 'set null' }),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  segredoEm: timestamp('segredo_em', { withTimezone: true }).notNull().defaultNow(),
+  ultimoUsoEm: timestamp('ultimo_uso_em', { withTimezone: true }),
+  revogadoEm: timestamp('revogado_em', { withTimezone: true }),
+  revogadoPor: text('revogado_por'),
+}, (t) => ({
+  segredoUq: uniqueIndex('idx_integracao_ligacao_segredo').on(t.segredoHash),
+  contaIdx: index('idx_integracao_ligacao_conta').on(t.contaId, t.criadoEm),
+}));
+
+/**
  * Tarifas da Meta por mensagem entregue (migration 041; tabela da distribuição
  * — leitura em qualquer escopo, escrita só no de sistema).
  *

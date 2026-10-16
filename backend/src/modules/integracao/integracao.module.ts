@@ -8,6 +8,8 @@ import { DistribuicaoModule } from '../distribuicao/distribuicao.module';
 import { MetaModule } from '../meta/meta.module';
 import { ModeloModule } from '../modelo/modelo.module';
 import { OrcamentoModule } from '../orcamento/orcamento.module';
+import { DmsIdController } from './dms-id.controller';
+import { DmsIdService } from './dms-id.service';
 import { IdempotenciaJob } from './idempotencia.job';
 import { IntegracaoDistribuicaoController } from './integracao-distribuicao.controller';
 import { IntegracaoController } from './integracao.controller';
@@ -18,7 +20,8 @@ import { McpServidor } from './mcp.servidor';
 
 /**
  * A porta para outros produtos da DMS: o token de integração (emissão no
- * console, "Aplicativos conectados" na conta) e o servidor MCP (`/mcp`).
+ * console, "Aplicativos conectados" na conta), o servidor MCP (`/mcp`) e a via
+ * do DMS ID do Hub DMS (a ligação, desligada por padrão: `DMS_ID_LIGADO`).
  * Desenho e decisões em `docs/mcp.md`.
  *
  * `DistribuicaoModule` entra pelo portão e pelo livro de acessos do console.
@@ -28,7 +31,7 @@ import { McpServidor } from './mcp.servidor';
  */
 @Module({
   imports: [DrizzleModule, DistribuicaoModule, CampanhaModule, ContaModule, ContatoModule, MetaModule, ModeloModule, OrcamentoModule],
-  controllers: [McpController, IntegracaoController, IntegracaoDistribuicaoController],
-  providers: [IntegracaoService, IntegracaoGuard, McpServidor, IdempotenciaJob],
+  controllers: [McpController, DmsIdController, IntegracaoController, IntegracaoDistribuicaoController],
+  providers: [IntegracaoService, IntegracaoGuard, DmsIdService, McpServidor, IdempotenciaJob],
 })
 export class IntegracaoModule {}

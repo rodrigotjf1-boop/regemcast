@@ -123,6 +123,7 @@ inteira; **variável nova no código entra aqui no mesmo PR**.
 | `JWT_TTL_APP_DIAS` | Validade da sessão do aplicativo. | Padrão `30` |
 | `TETO_CLIENTES_NOVOS_7D` | Quantas contas novas por semana a lista de espera libera. | Padrão `10` |
 | `DATABASE_CA_CERT`, `DATABASE_POOL_MAX` | Ajustes da conexão com o banco. | Só em caso especial; ver abaixo |
+| `DMS_ID_LIGADO`, `DMS_ID_EMISSOR`, `DMS_ID_RECURSO`, `DMS_ID_APLICATIVOS` | A via do DMS ID na porta MCP (Hub DMS — ver [`mcp.md`](mcp.md)). **Desligada por padrão.** Exceção a esta tabela: com `DMS_ID_LIGADO=true`, a API **não sobe** sem as outras três e diz qual falta. Nenhuma é segredo. | Emissor: o `issuer` da descoberta do DMS ID, sem barra no fim. Recurso: o endereço desta porta (`https://castapi.dmsregem.com/api/v1/mcp`), igual ao identificador do recurso no DMS ID. Aplicativos: JSON numa linha, produto → client_id do aplicativo no DMS ID (`{"liame":"…"}`) |
 
 ### Por que `DATABASE_SSL=supabase`, e não `require`
 
