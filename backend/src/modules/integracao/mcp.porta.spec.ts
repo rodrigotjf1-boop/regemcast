@@ -29,6 +29,7 @@ import { MODELO_APROVADO, MetaService } from '../meta/meta.service';
 import { SaudeService } from '../meta/saude.service';
 import { ModeloService } from '../modelo/modelo.service';
 import { OrcamentoService } from '../orcamento/orcamento.service';
+import { DmsIdService } from './dms-id.service';
 import { IntegracaoGuard, LIMITE_POR_MINUTO } from './integracao.guard';
 import { escoposEfetivos, gerarToken, type ClasseDoToken } from './integracao.regras';
 import { IntegracaoService, type IntegracaoAutenticada } from './integracao.service';
@@ -202,6 +203,8 @@ async function subirPorta(): Promise<Porta> {
     providers: [
       McpServidor,
       IntegracaoGuard,
+      // O de verdade, com o env sem `dmsId`: a via do DMS ID desligada, como nasce em produção.
+      DmsIdService,
       { provide: getStorageToken(), useClass: ThrottlerStorageService },
       { provide: IntegracaoService, useValue: { autenticar, revogarPeloProprio: jest.fn() } },
       { provide: ContextoDb, useValue: ctx },

@@ -135,5 +135,10 @@ export function tokenDoCabecalho(authorization: unknown): string | null {
   if (typeof authorization !== 'string') return null;
   const m = /^Bearer\s+(\S+)$/i.exec(authorization.trim());
   const token = m?.[1] ?? '';
-  return /^rct_it_[A-Za-z0-9_-]{43}$/.test(token) ? token : null;
+  return ehTokenDeIntegracao(token) ? token : null;
+}
+
+/** Tem a cara de um token nosso (`rct_it_` + 43 caracteres)? */
+export function ehTokenDeIntegracao(texto: unknown): texto is string {
+  return typeof texto === 'string' && /^rct_it_[A-Za-z0-9_-]{43}$/.test(texto);
 }

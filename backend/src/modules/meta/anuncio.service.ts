@@ -56,12 +56,18 @@ export class ConversaAnuncioService {
       return await this.ctx.comEscopoSistema('meta.conversas.anuncio', async (db) => {
         const achado = await db.execute<{ id: string; conta_id: string; conectado: boolean }>(sql`
           select n.id, n.conta_id,
-                 exists (
+                 (exists (
                    select 1 from integracao_token t
                     where t.conta_id = n.conta_id
                       and t.revogado_em is null
                       and t.escopos @> ${JSON.stringify([ESCOPO_DE_LEITURA])}::jsonb
-                 ) as conectado
+                 ) or exists (
+                   -- a ligação do Hub DMS (migration 046) conta como aplicativo conectado do mesmo jeito
+                   select 1 from integracao_ligacao l
+                    where l.conta_id = n.conta_id
+                      and l.revogado_em is null
+                      and l.escopos @> ${JSON.stringify([ESCOPO_DE_LEITURA])}::jsonb
+                 )) as conectado
             from wa_numero n
            where n.phone_number_id = ${phoneNumberId}
            limit 1

@@ -5,6 +5,8 @@ do grupo lê números da conta e pede ações. O primeiro consumidor é o **Liam
 
 - **Endereço:** `POST {API}/api/v1/mcp` (em produção, `https://castapi.dmsregem.com/api/v1/mcp`).
 - **Credencial:** token de integração por conta, no cabeçalho `Authorization: Bearer rct_it_…`.
+  Com a via do DMS ID ligada (Hub DMS, `DMS_ID_LIGADO`), também o token do DMS
+  ID com o segredo da ligação no cabeçalho `DMS-Ligacao` (seção "A via do DMS ID").
 - **Protocolo:** especificação MCP **2026-07-28**, sem estado. Clientes da
   geração 2025 (com `initialize`) são atendidos no mesmo endereço, também sem
   estado. `GET` e `DELETE` respondem 405.
@@ -88,6 +90,86 @@ não pode ter não vira permissão) e na ferramenta.
    como numa tela. Uma loja não vê a outra.
 
 Sem nenhum token emitido, ninguém entra: a porta nasce fechada.
+
+## A via do DMS ID (Hub DMS, migration 046)
+
+A F2 do Hub DMS troca a porta como a decisão 2 previa: a credencial passa a
+ser a do Padrão DMS (§2.1) — o **token do DMS ID** diz qual aplicativo chama, e
+o **segredo da ligação** diz qual conta autorizou. Vazar um só não abre nada.
+As ferramentas, os escopos e a auditoria ficam como estão.
+
+**Nasce desligada.** Com `DMS_ID_LIGADO=false` (o padrão), nada muda: a porta
+só aceita o `rct_it_`, com as respostas de sempre. Ligada, as duas vias valem ao
+mesmo tempo; com o `rct_it_` no cabeçalho, ele tem a vez. Variáveis em
+[`deploy.md`](deploy.md).
+
+Tabela `integracao_ligacao`. Regras em `integracao/ligacao.regras.ts`; token do
+DMS ID em `dms-id.service.ts`, com o pacote comum do hub copiado em
+`src/dms/integracao-dms.ts` (versão 0.2.0, igual byte a byte; não editar aqui).
+
+- **O pedido:** `Authorization: Bearer <token do DMS ID>` e
+  `DMS-Ligacao: dms_lg_regemcast_…`. O token é conferido pela assinatura (ES384
+  ou RS256, chaves públicas do DMS ID guardadas por 10 minutos), pelo emissor,
+  pelo destino (o endereço desta porta, que é o identificador do recurso no DMS
+  ID) e pela validade.
+- **As permissões são a menor das duas:** as que o token traz (o que o DMS ID
+  deixa o aplicativo fazer no RegemCast) **e** as que a ligação tem (o que a
+  conta deixou). Token sem nenhuma permissão do RegemCast — o DMS ID emite token
+  para qualquer destino, até com `scope` vazio — recebe **403**.
+- **A ligação só vale com o token do aplicativo dono dela**, e só enquanto esse
+  aplicativo estiver em `DMS_ID_APLICATIVOS`: tirar o aplicativo da variável
+  corta todas as ligações dele na chamada seguinte. Só a classe `dms` entra.
+- **Recusas no formato do Padrão** (`application/problem+json`, RFC 9457, base
+  `https://dev.dmstecnologias.com/erros/`):
+
+  | Situação | Resposta |
+  | --- | --- |
+  | sem token, token torto, de outro destino, vencido, assinatura que não confere | 401 `token-invalido` |
+  | token sem permissão do RegemCast | 403 `escopo-insuficiente`, com todas as permissões no `WWW-Authenticate` |
+  | sem ligação, ligação inexistente, revogada, de outro aplicativo | 401 `ligacao-invalida` — **a mesma resposta** para todos |
+  | conta suspensa ou cancelada | 403 `conta-bloqueada` |
+  | passou de 120 chamadas no minuto | 429 `limite-de-chamadas` com `Retry-After` |
+
+  Todo 401 leva `WWW-Authenticate: Bearer resource_metadata="…", scope="…"`
+  (com `error="invalid_token"` quando veio um token que não vale).
+- **Os metadados do recurso (RFC 9728)** saem em
+  `GET /.well-known/oauth-protected-resource/api/v1/mcp`, na raiz do domínio,
+  fora do `/api/v1`: dizem o recurso, o DMS ID como servidor de autorização e as
+  9 permissões. É por eles que um cliente MCP acha o DMS ID.
+- **O id da ligação é o do token de onde ela veio:** o limite por minuto, a
+  idempotência dos rascunhos e o autor na trilha seguem a mesma chave pelas duas
+  vias. **Revogar um revoga o outro** — pelo console, por "Aplicativos
+  conectados" ou pela ferramenta `integracao_revogar`.
+- **O segredo da ligação não passa da porta**, como o token.
+
+### A troca automática (decisão F2-3)
+
+`POST /api/v1/dms-id/ligacao`, com o token do DMS ID do aplicativo e
+`{ "token_integracao": "rct_it_…" }` no corpo. Devolve
+`{ ligacao, prefixo, conta_id, conta, permissoes, segredo_em }` — o segredo em
+claro sai **só** nesta resposta (`Cache-Control: no-store`); o banco guarda o
+resumo (sha-256).
+
+- A ligação herda do token a conta, o produto, o nome e as permissões.
+- Só token **ativo**, de classe `dms`, e só para o aplicativo que
+  `DMS_ID_APLICATIVOS` cadastrou para o produto do token (o Liame não troca o
+  token do GoGeM). Qualquer outro caso: a mesma recusa, 401 `ligacao-invalida`.
+- **Repetir a troca gira o segredo:** o anterior para de valer na hora. Duas
+  trocas ao mesmo tempo esperam uma pela outra; vale o segredo da última
+  resposta. Ligação revogada não volta pela troca.
+- A trilha da conta registra `integracao.ligacao_criada` e
+  `integracao.ligacao_girada`, com o aplicativo como autor.
+
+### Como se prova
+
+- `mcp.dmsid.spec.ts` roda o **kit de conformidade do hub**
+  (`backend/scripts/dms/kit-conformidade.mts`, cópia igual à do hub; fora de
+  `src` porque roda no Node, sem compilar) contra a porta, com um DMS ID de
+  mentira que assina de verdade: as 17 conferências do modo DMS ID passam.
+- `integracao.ligacao.pg.spec.ts` prova o SQL num Postgres descartável, como
+  `regemcast_app` (RLS valendo). Sem `REGEMCAST_TESTE_PG_URL` e
+  `REGEMCAST_TESTE_PG_SUPER`, pula — o CI não tem banco; roda-se à mão antes de
+  mexer no serviço.
 
 ## Ferramentas
 
@@ -346,9 +428,14 @@ conta**, nunca por iniciativa nossa.
 - "Aplicativos conectados" e a marca "montada pelo …" no app Android.
 - No Liame: o conector que consome estas ferramentas, e a emenda da ADR-008 e
   da ADR-019 registrando a decisão 2.
+- Hub DMS: ligar `DMS_ID_LIGADO` em produção (o dono, quando o Liame tiver a
+  via nova — A3), a comparação das duas vias por 14 dias e, na parte B, a
+  ligação autorizada por clique, sem `rct_it_` de origem.
 
 ## Fontes
 
 - [Especificação MCP 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28) (conferida em 02/10/2026: sem estado, pedidos autocontidos, negociação por pedido).
 - [SDK TypeScript v2 — servir por HTTP](https://ts.sdk.modelcontextprotocol.io/v2/serving/http) (`createMcpHandler`, `handler.fetch(request, { authInfo, parsedBody })`, clientes da geração 2025 atendidos sem estado).
 - Liame: `docs/adr/ADR-008-mcp.md`, `docs/adr/ADR-019-integracao-regem-regemcast.md`, `docs/base-conhecimento.md` §8.1 e §13.1.
+- [RFC 9728 — metadados do recurso protegido](https://www.rfc-editor.org/rfc/rfc9728) e [RFC 9457 — problem+json](https://www.rfc-editor.org/rfc/rfc9457).
+- Hub DMS: o Padrão DMS de integração (§2.1, §6 e §7), o pacote comum 0.2.0 e o kit de conformidade.

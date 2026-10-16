@@ -1,31 +1,38 @@
 /**
  * A porta MCP: `POST /api/v1/mcp`.
  *
- * O portão (`IntegracaoGuard`) reconhece o token e aplica o limite por token;
- * daqui o pedido vai para o SDK oficial como um `Request` padrão da web, com o
- * corpo já lido pelo Express e SEM os cabeçalhos de credencial — o token em
- * claro não passa da porta. A resposta do SDK volta como veio.
+ * O portão (`IntegracaoGuard`) reconhece a credencial e aplica o limite por
+ * token; daqui o pedido vai para o SDK oficial como um `Request` padrão da web,
+ * com o corpo já lido pelo Express e SEM os cabeçalhos de credencial — nem o
+ * token nem o segredo da ligação passam da porta. A resposta do SDK volta como
+ * veio.
+ *
+ * As recusas da via do DMS ID saem em `application/problem+json`
+ * (`ProblemaFilter`); as do `rct_it_`, como sempre saíram.
  *
  * GET e DELETE (operações de sessão da geração 2025) não existem num servidor
  * sem estado: 405.
  */
-import { All, Controller, HttpCode, HttpStatus, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { All, Controller, HttpCode, HttpStatus, Post, Req, Res, UseFilters, UseGuards } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { Readable } from 'node:stream';
 
+import { ProblemaFilter } from '../../common/problema.filter';
 import { Publico } from '../../common/publico.decorator';
 import { IntegracaoGuard, type RequestDeIntegracao } from './integracao.guard';
+import { CABECALHO_LIGACAO_NO_NODE } from './ligacao.regras';
 import { McpServidor } from './mcp.servidor';
 
 /** Cabeçalhos que não seguem para o SDK: credencial e o que o Node recalcula. */
-const FICAM_NA_PORTA = new Set(['authorization', 'cookie', 'host', 'connection', 'content-length', 'transfer-encoding']);
+const FICAM_NA_PORTA = new Set(['authorization', CABECALHO_LIGACAO_NO_NODE, 'cookie', 'host', 'connection', 'content-length', 'transfer-encoding']);
 
 @ApiExcludeController()
 @Controller('mcp')
 @Publico()
 @SkipThrottle()
+@UseFilters(ProblemaFilter)
 export class McpController {
   constructor(private readonly mcp: McpServidor) {}
 

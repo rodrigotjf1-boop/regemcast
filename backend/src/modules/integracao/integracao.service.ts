@@ -17,11 +17,14 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException,
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 
 import { ContextoDb } from '../../db/contexto';
-import { conta, integracaoToken } from '../../db/schema';
+import { conta, integracaoLigacao, integracaoToken } from '../../db/schema';
+import { ErroProblema, gerarChave, resumoChave, type TokenDmsId } from '../../dms/integracao-dms';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { comAutorDaIntegracao } from '../auditoria/autor-integracao';
 import {
   conferirEmissao,
   descreverEscopos,
+  ehTokenDeIntegracao,
   escoposEfetivos,
   gerarToken,
   hashDoToken,
@@ -29,6 +32,20 @@ import {
   type ClasseDoToken,
   type DadosDaEmissao,
 } from './integracao.regras';
+import { LIGACAO_INVALIDA, ligacaoVale, permissoesDaLigacao, podeTrocar, TROCA_RECUSADA } from './ligacao.regras';
+
+/** A conta suspensa ou cancelada, na via do DMS ID (a do `rct_it_` segue com a frase dela). */
+const CONTA_BLOQUEADA = 'A conta desta ligação está suspensa ou cancelada. O dono da conta resolve no RegemCast.';
+
+/** A ligação entregue na troca: o segredo em claro sai aqui e em mais lugar nenhum. */
+export interface LigacaoEntregue {
+  ligacao: string;
+  prefixo: string;
+  conta_id: string;
+  conta: string;
+  permissoes: string[];
+  segredo_em: string;
+}
 
 /** Quem entrou pela porta: o que as ferramentas precisam saber. */
 export interface IntegracaoAutenticada {
@@ -178,10 +195,17 @@ export class IntegracaoService {
         .limit(1);
       if (!alvo) throw new NotFoundException('Token não encontrado.');
       if (!alvo.revogadoEm) {
+        const agora = new Date();
+        const por = `${operador} (distribuição)`;
         await db
           .update(integracaoToken)
-          .set({ revogadoEm: new Date(), revogadoPor: `${operador} (distribuição)` })
+          .set({ revogadoEm: agora, revogadoPor: por })
           .where(and(eq(integracaoToken.id, id), isNull(integracaoToken.revogadoEm)));
+        // A ligação que veio deste token (mesmo id) cai junto: revogar um revoga o outro.
+        await db
+          .update(integracaoLigacao)
+          .set({ revogadoEm: agora, revogadoPor: por })
+          .where(and(eq(integracaoLigacao.id, id), isNull(integracaoLigacao.revogadoEm)));
       }
       return { contaId: alvo.contaId, nome: alvo.nome, jaEstava: Boolean(alvo.revogadoEm) };
     });
@@ -223,10 +247,15 @@ export class IntegracaoService {
     if (!alvo) throw new NotFoundException('Aplicativo não encontrado.');
 
     if (!alvo.revogadoEm) {
+      const agora = new Date();
       await this.ctx.db
         .update(integracaoToken)
-        .set({ revogadoEm: new Date(), revogadoPor: usuario.nome })
+        .set({ revogadoEm: agora, revogadoPor: usuario.nome })
         .where(and(eq(integracaoToken.id, id), eq(integracaoToken.contaId, contaId), isNull(integracaoToken.revogadoEm)));
+      await this.ctx.db
+        .update(integracaoLigacao)
+        .set({ revogadoEm: agora, revogadoPor: usuario.nome })
+        .where(and(eq(integracaoLigacao.id, id), eq(integracaoLigacao.contaId, contaId), isNull(integracaoLigacao.revogadoEm)));
       await this.auditoria.registrar({
         contaId,
         atorTipo: 'usuario',
@@ -247,11 +276,19 @@ export class IntegracaoService {
    */
   async revogarPeloProprio(quem: Pick<IntegracaoAutenticada, 'tokenId' | 'contaId' | 'nome' | 'produto'>): Promise<Date> {
     const agora = new Date();
-    const [mudou] = await this.ctx.db
+    const por = `o próprio aplicativo (${quem.produto})`;
+    // Pelas duas vias o id é o mesmo: a ligação que veio de um token herda o id dele. Cai o token e cai a ligação.
+    const [doToken] = await this.ctx.db
       .update(integracaoToken)
-      .set({ revogadoEm: agora, revogadoPor: `o próprio aplicativo (${quem.produto})` })
+      .set({ revogadoEm: agora, revogadoPor: por })
       .where(and(eq(integracaoToken.id, quem.tokenId), eq(integracaoToken.contaId, quem.contaId), isNull(integracaoToken.revogadoEm)))
       .returning({ revogadoEm: integracaoToken.revogadoEm });
+    const [daLigacao] = await this.ctx.db
+      .update(integracaoLigacao)
+      .set({ revogadoEm: agora, revogadoPor: por })
+      .where(and(eq(integracaoLigacao.id, quem.tokenId), eq(integracaoLigacao.contaId, quem.contaId), isNull(integracaoLigacao.revogadoEm)))
+      .returning({ revogadoEm: integracaoLigacao.revogadoEm });
+    const mudou = doToken ?? daLigacao;
     if (mudou) {
       await this.auditoria.registrar({
         contaId: quem.contaId,
@@ -316,5 +353,166 @@ export class IntegracaoService {
         escopos: escoposEfetivos(l.escopos, l.classe),
       };
     });
+  }
+
+  // ---------------------------------------------------- porta, via do DMS ID
+
+  /**
+   * Reconhece a ligação de quem chega pela via do DMS ID, com o token já
+   * conferido (`DmsIdService.conferir`). Ligação ausente, inexistente, revogada,
+   * de cliente de fora ou de outro aplicativo: 401 `ligacao-invalida`, a MESMA
+   * resposta para todos. Conta suspensa ou cancelada: 403 `conta-bloqueada`.
+   *
+   * O `tokenId` devolvido é o id da ligação, que é o do token de onde ela veio:
+   * o limite por minuto, a idempotência e a revogação seguem a mesma chave pelas
+   * duas vias. Valem as permissões que a ligação tem E o token também.
+   */
+  async autenticarLigacao(
+    segredo: string | null,
+    doToken: Pick<TokenDmsId, 'aplicativo' | 'permissoes'>,
+    aplicativos: Readonly<Record<string, string>>,
+  ): Promise<IntegracaoAutenticada> {
+    if (!segredo) throw new ErroProblema('ligacao-invalida', LIGACAO_INVALIDA);
+    const resumo = resumoChave(segredo);
+    return this.ctx.comEscopoSistema('integracao.ligacao.autenticar', async (db) => {
+      const [l] = await db
+        .select({
+          id: integracaoLigacao.id,
+          contaId: integracaoLigacao.contaId,
+          aplicativo: integracaoLigacao.aplicativo,
+          produto: integracaoLigacao.produto,
+          classe: integracaoLigacao.classe,
+          nome: integracaoLigacao.nome,
+          escopos: integracaoLigacao.escopos,
+          origemTokenId: integracaoLigacao.origemTokenId,
+          revogadoEm: integracaoLigacao.revogadoEm,
+          contaNome: conta.nome,
+          contaFuso: conta.timezone,
+          contaStatus: conta.status,
+        })
+        .from(integracaoLigacao)
+        .innerJoin(conta, eq(conta.id, integracaoLigacao.contaId))
+        .where(eq(integracaoLigacao.segredoHash, resumo))
+        .limit(1);
+
+      if (!ligacaoVale(l, doToken.aplicativo, aplicativos)) throw new ErroProblema('ligacao-invalida', LIGACAO_INVALIDA);
+      if (l.contaStatus === 'suspensa' || l.contaStatus === 'cancelada') throw new ErroProblema('conta-bloqueada', CONTA_BLOQUEADA);
+
+      await db.execute(sql`
+        update integracao_ligacao set ultimo_uso_em = now()
+         where id = ${l.id} and (ultimo_uso_em is null or ultimo_uso_em < now() - interval '1 minute')
+      `);
+      // "Aplicativos conectados" mostra o token de onde a ligação veio: o último uso dele acompanha a via nova.
+      if (l.origemTokenId) {
+        await db.execute(sql`
+          update integracao_token set ultimo_uso_em = now()
+           where id = ${l.origemTokenId} and (ultimo_uso_em is null or ultimo_uso_em < now() - interval '1 minute')
+        `);
+      }
+
+      return {
+        tokenId: l.id,
+        contaId: l.contaId,
+        contaNome: l.contaNome,
+        contaFuso: l.contaFuso,
+        produto: l.produto,
+        classe: l.classe as ClasseDoToken,
+        nome: l.nome,
+        escopos: permissoesDaLigacao(l, doToken.permissoes),
+      };
+    });
+  }
+
+  /**
+   * A troca automática (decisão F2-3): o aplicativo do DMS ID manda o token
+   * dele e o `rct_it_` que já usa naquela conta, e recebe o segredo da ligação.
+   * A ligação herda o id, a conta, o produto, o nome e as permissões do token.
+   *
+   * Repetir a troca GIRA o segredo: o anterior para de valer na hora, e quem
+   * chama guarda o da última resposta. Duas trocas ao mesmo tempo esperam uma
+   * pela outra (trava na linha do token). Token inexistente, revogado, de cliente
+   * de fora ou de outro produto: a mesma recusa (`ligacao-invalida`).
+   */
+  async trocarPorLigacao(tokenIntegracao: unknown, aplicativo: string, aplicativos: Readonly<Record<string, string>>): Promise<LigacaoEntregue> {
+    if (!ehTokenDeIntegracao(tokenIntegracao)) throw new ErroProblema('ligacao-invalida', TROCA_RECUSADA);
+    const hash = hashDoToken(tokenIntegracao);
+    const { chave, resumo, prefixo } = gerarChave('lg', 'regemcast');
+
+    const feita = await this.ctx.comEscopoSistema('integracao.ligacao.trocar', async (db) => {
+      const [t] = await db
+        .select({
+          id: integracaoToken.id,
+          contaId: integracaoToken.contaId,
+          produto: integracaoToken.produto,
+          classe: integracaoToken.classe,
+          nome: integracaoToken.nome,
+          escopos: integracaoToken.escopos,
+          criadoEm: integracaoToken.criadoEm,
+          revogadoEm: integracaoToken.revogadoEm,
+          contaNome: conta.nome,
+          contaStatus: conta.status,
+        })
+        .from(integracaoToken)
+        .innerJoin(conta, eq(conta.id, integracaoToken.contaId))
+        .where(eq(integracaoToken.tokenHash, hash))
+        .limit(1)
+        .for('update', { of: integracaoToken });
+
+      if (!t || !podeTrocar(t, aplicativo, aplicativos)) throw new ErroProblema('ligacao-invalida', TROCA_RECUSADA);
+      if (t.contaStatus === 'suspensa' || t.contaStatus === 'cancelada') throw new ErroProblema('conta-bloqueada', CONTA_BLOQUEADA);
+
+      const escopos = escoposEfetivos(t.escopos, t.classe);
+      const agora = new Date();
+      const [existente] = await db
+        .select({ revogadoEm: integracaoLigacao.revogadoEm })
+        .from(integracaoLigacao)
+        .where(eq(integracaoLigacao.id, t.id))
+        .limit(1);
+      // Ligação revogada não volta pela troca, nem com o token ainda ativo.
+      if (existente?.revogadoEm) throw new ErroProblema('ligacao-invalida', TROCA_RECUSADA);
+
+      if (existente) {
+        await db
+          .update(integracaoLigacao)
+          .set({ aplicativo, nome: t.nome, escopos, segredoHash: resumo, prefixo, segredoEm: agora })
+          .where(and(eq(integracaoLigacao.id, t.id), isNull(integracaoLigacao.revogadoEm)));
+      } else {
+        await db.insert(integracaoLigacao).values({
+          id: t.id,
+          contaId: t.contaId,
+          aplicativo,
+          produto: t.produto,
+          classe: t.classe,
+          nome: t.nome,
+          segredoHash: resumo,
+          prefixo,
+          escopos,
+          origemTokenId: t.id,
+          criadoEm: t.criadoEm,
+          segredoEm: agora,
+        });
+      }
+      return { id: t.id, contaId: t.contaId, contaNome: t.contaNome, produto: t.produto, nome: t.nome, escopos, criada: !existente, agora };
+    });
+
+    // Fora da transação da troca: o rastro na conta não pode desfazer o segredo já entregue. O autor é o
+    // aplicativo, com o nome do token, como nas ferramentas da porta.
+    await comAutorDaIntegracao({ tokenId: feita.id, produto: feita.produto, nome: feita.nome, classe: 'dms' }, () =>
+      this.auditoria.registrarForaDeContexto({
+        contaId: feita.contaId,
+        acao: feita.criada ? 'integracao.ligacao_criada' : 'integracao.ligacao_girada',
+        entidade: 'integracao_ligacao',
+        entidadeId: feita.id,
+        detalhe: { aplicativo, escopos: feita.escopos },
+      }),
+    );
+    return {
+      ligacao: chave,
+      prefixo,
+      conta_id: feita.contaId,
+      conta: feita.contaNome,
+      permissoes: feita.escopos,
+      segredo_em: feita.agora.toISOString(),
+    };
   }
 }

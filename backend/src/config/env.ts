@@ -124,6 +124,53 @@ function distToken(): string {
   return valor;
 }
 
+/**
+ * O DMS ID (Hub DMS, F2, etapa A2): a porta MCP aceita, ao lado do `rct_it_`,
+ * o token do DMS ID com o segredo da ligação (cabeçalho `DMS-Ligacao`).
+ * Nasce DESLIGADO: quem liga em produção é o dono, quando o Liame estiver
+ * pronto para a via nova. Ligado, as outras três são obrigatórias, e o boot cai
+ * dizendo qual falta ou está errada — nunca um 401 misterioso depois.
+ */
+function dmsId(): { ligado: boolean; emissor: string; recurso: string; aplicativos: Record<string, string> } {
+  const ligado = booleana('DMS_ID_LIGADO', false);
+  const emissor = opcional('DMS_ID_EMISSOR');
+  const recurso = opcional('DMS_ID_RECURSO');
+  const brutoAplicativos = opcional('DMS_ID_APLICATIVOS');
+  let aplicativos: Record<string, string> = {};
+  if (brutoAplicativos) {
+    let lido: unknown;
+    try {
+      lido = JSON.parse(brutoAplicativos);
+    } catch {
+      throw new Error('Variável DMS_ID_APLICATIVOS precisa ser um JSON, como {"liame":"<client_id do Liame no DMS ID>"}.');
+    }
+    const valido =
+      lido !== null &&
+      typeof lido === 'object' &&
+      !Array.isArray(lido) &&
+      Object.entries(lido).every(([produto, id]) => /^[a-z][a-z0-9_-]{1,39}$/.test(produto) && typeof id === 'string' && id.trim().length > 0);
+    if (!valido) {
+      throw new Error('Variável DMS_ID_APLICATIVOS precisa mapear produto → client_id, como {"liame":"<client_id do Liame no DMS ID>"}.');
+    }
+    aplicativos = Object.fromEntries(Object.entries(lido as Record<string, string>).map(([p, id]) => [p, id.trim()]));
+  }
+  if (ligado) {
+    for (const [nome, valor] of [['DMS_ID_EMISSOR', emissor], ['DMS_ID_RECURSO', recurso]] as const) {
+      if (!valor) throw new Error(`DMS_ID_LIGADO está ligado e falta ${nome}. Veja docs/deploy.md.`);
+      if (!/^https?:\/\/\S+$/.test(valor) || (producao && !valor.startsWith('https://'))) {
+        throw new Error(`Variável ${nome} precisa ser um endereço https:// (recebi "${valor}"). Veja docs/deploy.md.`);
+      }
+    }
+    // Os metadados do recurso (RFC 9728) saem em `/.well-known/oauth-protected-resource/api/v1/mcp`: o recurso
+    // precisa ser a própria porta, senão o cliente MCP procura os metadados num endereço que não existe.
+    if (new URL(recurso).pathname.replace(/\/+$/, '') !== '/api/v1/mcp') {
+      throw new Error(`Variável DMS_ID_RECURSO precisa ser o endereço da porta MCP, terminando em /api/v1/mcp (recebi "${recurso}").`);
+    }
+    if (!Object.keys(aplicativos).length) throw new Error('DMS_ID_LIGADO está ligado e falta DMS_ID_APLICATIVOS. Veja docs/deploy.md.');
+  }
+  return { ligado, emissor: emissor.replace(/\/+$/, ''), recurso: recurso.replace(/\/+$/, ''), aplicativos };
+}
+
 export const env = {
   producao,
   porta: numero('PORT', 3010),
@@ -260,6 +307,9 @@ export const env = {
     /** A API de integração do Regem, com o prefixo (`…/api/v1`). O teste local aponta para um Regem simulado. */
     regemUrl: opcional('REGEM_API_URL', 'https://api.dmsregem.com/api/v1'),
   },
+
+  /** O DMS ID do Hub DMS na porta MCP (ver `dmsId()` acima e `docs/mcp.md`). Desligado por padrão. */
+  dmsId: dmsId(),
 
   /**
    * Push do app Android, pelo Firebase Cloud Messaging.
