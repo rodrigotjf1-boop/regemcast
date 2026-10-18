@@ -34,8 +34,15 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 # ---------------------------------------------------------------- runtime
 FROM node:22-alpine AS runtime
+# A versão no ar (o commit): o EasyPanel passa GIT_SHA como argumento de build
+# (não é segredo); APP_VERSAO explícito vence. É a versão da batida e dos erros
+# que vão ao hub da DMS (modules/hub) e a de /saude/pronto/detalhe. Vazia, vale
+# a do package.json.
+ARG GIT_SHA=
+ARG APP_VERSAO=${GIT_SHA}
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV APP_VERSAO=${APP_VERSAO}
 WORKDIR /app
 
 # O usuário `node` (uid 1000) já vem na imagem. Rodar como root em container é
