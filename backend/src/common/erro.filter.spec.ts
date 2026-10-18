@@ -25,7 +25,7 @@ interface Resultado {
   corpo: { mensagem: string; detalhes?: unknown; referencia?: string };
 }
 
-function responder(excecao: unknown): Resultado {
+function responder(excecao: unknown, telemetria?: { registrar: jest.Mock }): Resultado {
   const capturado: Resultado = { status: 0, corpo: { mensagem: '' } };
 
   const json = (corpo: Resultado['corpo']) => {
@@ -43,7 +43,7 @@ function responder(excecao: unknown): Resultado {
     switchToHttp: () => ({ getResponse: () => res, getRequest: () => req }),
   } as unknown as ArgumentsHost;
 
-  new ErroFilter().catch(excecao, host);
+  new ErroFilter(telemetria as never).catch(excecao, host);
   return capturado;
 }
 
@@ -75,6 +75,26 @@ describe('ErroFilter', () => {
     expect(status).toBe(413);
     expect(corpo.mensagem).toMatch(/Divida o arquivo/);
     expect(corpo).not.toHaveProperty('referencia');
+    avisar.mockRestore();
+  });
+
+  it('outro erro do leitor do corpo que se diz do cliente (415: conjunto de caracteres ou compressão) vira 415 com instrução, sem telemetria', () => {
+    // O express-json também recusa antes do controlador o `charset` e a compressão que não lê, com `expose` e o status;
+    // sem tradução, era 500 "do nosso lado" e ia para a telemetria (e para o hub da DMS, quando ligado). LIC-376.
+    const registrar = jest.fn();
+    const avisar = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const charset = Object.assign(new Error('unsupported charset "LATIN1"'), { status: 415, statusCode: 415, expose: true, type: 'charset.unsupported' });
+
+    const { status, corpo } = responder(charset, { registrar });
+
+    expect(status).toBe(415);
+    expect(corpo.mensagem).toMatch(/JSON, em UTF-8/);
+    expect(corpo).not.toHaveProperty('referencia');
+    expect(registrar).not.toHaveBeenCalled();
+    // Sem `expose` (ou com status de servidor), segue defeito nosso: 500, com referência e telemetria.
+    expect(responder(Object.assign(new Error('x'), { status: 415, expose: false }), { registrar }).status).toBe(500);
+    expect(responder(Object.assign(new Error('y'), { status: 503, expose: true }), { registrar }).status).toBe(500);
+    expect(registrar).toHaveBeenCalledTimes(2);
     avisar.mockRestore();
   });
 
