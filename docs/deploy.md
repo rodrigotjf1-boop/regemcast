@@ -70,7 +70,9 @@ domínio e sem porta pública — só rede interna. A URL interna fica
 **Source:** GitHub → `rodrigotjf1-boop/regemcast` → `main`.
 
 **Build:** Dockerfile · path `backend/Dockerfile` · **context `/`** (a raiz —
-o Dockerfile copia `database/migrations` de lá).
+o Dockerfile copia `database/migrations` de lá). A versão no ar (`APP_VERSAO`)
+sai do `GIT_SHA` que o EasyPanel passa como argumento de build: não se define à
+mão. É a que vai ao hub da DMS na batida e nos erros.
 
 **Environment:**
 
