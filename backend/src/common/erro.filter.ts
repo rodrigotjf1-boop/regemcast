@@ -56,6 +56,7 @@ const FRASE_POR_STATUS: Record<number, string> = {
   [HttpStatus.FORBIDDEN]: 'Você não tem permissão para esta ação.',
   [HttpStatus.NOT_FOUND]: 'Não encontramos este endereço. Confira o link e tente de novo.',
   [HttpStatus.PAYLOAD_TOO_LARGE]: 'O conteúdo enviado é grande demais. Envie um arquivo menor.',
+  [HttpStatus.UNSUPPORTED_MEDIA_TYPE]: 'Não conseguimos ler o que foi enviado. Envie os dados em JSON, em UTF-8, e tente de novo.',
   [HttpStatus.TOO_MANY_REQUESTS]:
     'Muitas tentativas em pouco tempo. Espere um minuto e tente de novo.',
 };
@@ -159,6 +160,17 @@ export class ErroFilter implements ExceptionFilter {
         mensagem:
           'Esta importação é grande demais para um envio só. Divida o arquivo em partes (até cerca de 5.000 contatos por vez) e importe de novo.',
       } satisfies CorpoErro);
+      return;
+    }
+
+    // Outro erro do leitor do corpo que se diz do cliente (o `http-errors` com
+    // `expose`: conjunto de caracteres ou compressão que ele não lê, 415): é
+    // 4xx, não defeito nosso, e não vai para a telemetria (LIC-376).
+    const doLeitor = excecao as { expose?: unknown; status?: unknown } | null;
+    const statusDoLeitor = doLeitor?.status;
+    if (doLeitor?.expose === true && typeof statusDoLeitor === 'number' && Number.isInteger(statusDoLeitor) && statusDoLeitor >= 400 && statusDoLeitor < 500) {
+      this.log.warn(`${req.method} ${req.url} → ${statusDoLeitor}: ${(excecao as Error)?.message ?? 'o leitor do corpo recusou'}`);
+      res.status(statusDoLeitor).json({ mensagem: this.frase(statusDoLeitor) } satisfies CorpoErro);
       return;
     }
 

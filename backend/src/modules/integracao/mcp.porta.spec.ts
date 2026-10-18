@@ -395,6 +395,18 @@ describe('a porta MCP, por HTTP, como o Liame chama', () => {
         expect(r.cabecalhos.get('allow')).toBe('POST');
       }
     });
+
+    it('o corpo que o leitor recusa antes do portão (charset que ele não lê): 415, nunca 500', async () => {
+      const token = p.token({ classe: 'dms', escopos: ['conta.ler'] });
+      const r = await enviar(
+        p,
+        { 'content-type': 'application/json; charset=latin1', accept: 'application/json, text/event-stream', authorization: `Bearer ${token}` },
+        { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      );
+      expect(r.status).toBe(415);
+      expect(r.json.mensagem).toMatch(/JSON, em UTF-8/);
+      expect(p.autenticar).not.toHaveBeenCalled();
+    });
   });
 
   describe('o controlador', () => {
