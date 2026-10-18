@@ -10,6 +10,9 @@
  * As recusas da via do DMS ID saem em `application/problem+json`
  * (`ProblemaFilter`); as do `rct_it_`, como sempre saíram.
  *
+ * Cada chamada passa pelo `RegistroDaPorta` (o código do pedido no
+ * `request-id` e o registro central do hub da DMS).
+ *
  * GET e DELETE (operações de sessão da geração 2025) não existem num servidor
  * sem estado: 405.
  */
@@ -21,6 +24,7 @@ import { Readable } from 'node:stream';
 
 import { ProblemaFilter } from '../../common/problema.filter';
 import { Publico } from '../../common/publico.decorator';
+import { anotarChamada, chamadaAtual, resultadoDaResposta } from '../hub/chamada-atual';
 import { IntegracaoGuard, type RequestDeIntegracao } from './integracao.guard';
 import { CABECALHO_LIGACAO_NO_NODE } from './ligacao.regras';
 import { McpServidor } from './mcp.servidor';
@@ -56,6 +60,16 @@ export class McpController {
     r.headers.forEach((valor, nome) => res.setHeader(nome, valor));
     if (!r.body) {
       res.end();
+      return;
+    }
+    const atual = chamadaAtual();
+    if (atual && /^application\/json\b/i.test(r.headers.get('content-type') ?? '')) {
+      // A resposta JSON vem inteira do SDK: lida aqui, o registro do hub fica sabendo da recusa que sai com 200
+      // (ferramenta fora do escopo, argumento fora do esquema). Quem chamou recebe o mesmo texto.
+      const texto = await r.text();
+      const dito = resultadoDaResposta(texto);
+      if (dito && !atual.resultado) anotarChamada({ resultado: dito.resultado, problema: atual.problema ? undefined : dito.problema });
+      res.end(texto);
       return;
     }
     Readable.fromWeb(r.body as import('node:stream/web').ReadableStream).pipe(res);

@@ -17,14 +17,25 @@
  * viraria teto do produto inteiro). O limite daqui é por TOKEN (ou ligação,
  * que herda o id do token), no mesmo armazenamento do limite global — Redis em
  * produção, para valer entre réplicas e sobreviver a deploy.
+ *
+ * A parada (Padrão §10), nas duas vias, com a recusa 503 `integracao-parada`:
+ * - a chave própria `ACEITAR_INTEGRACOES=false` recusa antes de tudo, sem ir ao
+ *   banco e sem depender do hub;
+ * - a lista de parada do hub (só com `HUB_LIGADO`) vale depois de reconhecer
+ *   quem chama: a geral, a do aplicativo, a da ligação (pelo prefixo visível) e
+ *   a de cada ferramenta do pedido.
+ * O que o portão fica sabendo (credencial, prefixo, quem, o problema da recusa)
+ * é anotado na chamada atual, para o registro central do hub.
  */
-import { CanActivate, ExecutionContext, HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectThrottlerStorage, type ThrottlerStorage } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 
-import { ErroProblema } from '../../dms/integracao-dms';
+import { ErroProblema, prefixoVisivel, problemaDaParada } from '../../dms/integracao-dms';
+import { anotarChamada, ferramentasDoCorpo } from '../hub/chamada-atual';
+import { HubService } from '../hub/hub.service';
 import { DmsIdService } from './dms-id.service';
-import { tokenDoCabecalho } from './integracao.regras';
+import { prefixoVisivel as prefixoDoToken, tokenDoCabecalho } from './integracao.regras';
 import { IntegracaoService, type IntegracaoAutenticada } from './integracao.service';
 import { bearerDoCabecalho, CABECALHO_LIGACAO_NO_NODE, desafioDaRecusa, ligacaoDoCabecalho } from './ligacao.regras';
 
@@ -42,6 +53,7 @@ export class IntegracaoGuard implements CanActivate {
     private readonly integracoes: IntegracaoService,
     private readonly dmsId: DmsIdService,
     @InjectThrottlerStorage() private readonly limites: ThrottlerStorage,
+    private readonly hub: HubService,
   ) {}
 
   async canActivate(contexto: ExecutionContext): Promise<boolean> {
@@ -50,13 +62,21 @@ export class IntegracaoGuard implements CanActivate {
     const res = http.getResponse<Response>();
 
     const token = tokenDoCabecalho(req.headers.authorization);
-    if (!token && this.dmsId.ligado) {
+    const peloDmsId = !token && this.dmsId.ligado;
+    // O prefixo visível (nunca o segredo): o do token, ou o da ligação que tem a forma certa.
+    const ligacao = peloDmsId ? ligacaoDoCabecalho(req.headers[CABECALHO_LIGACAO_NO_NODE]) : null;
+    const prefixo = token ? prefixoDoToken(token) : ligacao ? prefixoVisivel(ligacao) : null;
+    anotarChamada({ credencial: peloDmsId ? 'dms_id' : 'token_integracao', ligacaoPrefixo: prefixo ?? undefined });
+    if (!this.hub.aceitaIntegracoes) throw problemaDaParada();
+
+    if (peloDmsId) {
       req.integracao = await this.pelaViaDoDmsId(req, res);
-      return true;
+      return this.liberar(req.integracao, req.body, prefixo);
     }
     if (!token) {
       // O cabeçalho que a especificação pede na recusa: diz ao cliente que a porta quer um Bearer.
       res.setHeader('WWW-Authenticate', 'Bearer');
+      anotarChamada({ problema: 'token-invalido' });
       throw new UnauthorizedException('Informe o token de integração no cabeçalho Authorization.');
     }
 
@@ -64,13 +84,19 @@ export class IntegracaoGuard implements CanActivate {
     try {
       quem = await this.integracoes.autenticar(token);
     } catch (erro) {
-      if (erro instanceof UnauthorizedException) res.setHeader('WWW-Authenticate', 'Bearer error="invalid_token"');
+      if (erro instanceof UnauthorizedException) {
+        res.setHeader('WWW-Authenticate', 'Bearer error="invalid_token"');
+        anotarChamada({ problema: 'token-invalido' });
+      } else if (erro instanceof ForbiddenException) {
+        anotarChamada({ problema: 'conta-bloqueada' });
+      }
       throw erro;
     }
 
     const uso = await this.contar(quem.tokenId);
     if (uso.bloqueado) {
       res.setHeader('Retry-After', String(uso.retryAfterSeg));
+      anotarChamada({ problema: 'limite-de-chamadas' });
       throw new HttpException(
         `Limite de ${LIMITE_POR_MINUTO} chamadas por minuto atingido para este token. Tente de novo em instantes.`,
         HttpStatus.TOO_MANY_REQUESTS,
@@ -78,6 +104,19 @@ export class IntegracaoGuard implements CanActivate {
     }
 
     req.integracao = quem;
+    return this.liberar(quem, req.body, prefixo);
+  }
+
+  /**
+   * Quem passou pelo portão: anota quem é e confere a lista de parada do hub para a chamada (com o lote da geração
+   * 2025, cada ferramenta do lote). Hub desligado ou sem lista ainda: nada é parado.
+   */
+  private liberar(quem: IntegracaoAutenticada, corpo: unknown, ligacaoPrefixo: string | null): true {
+    anotarChamada({ aplicativo: quem.produto, conta: quem.contaId, contaNome: quem.contaNome });
+    const ferramentas = ferramentasDoCorpo(corpo);
+    for (const ferramenta of ferramentas.length ? ferramentas : [null]) {
+      if (this.hub.parado({ aplicativo: quem.produto, ligacaoPrefixo, ferramenta })) throw problemaDaParada();
+    }
     return true;
   }
 

@@ -245,9 +245,10 @@ function motivoDe(erro: unknown): string {
 /**
  * Versão do app. `APP_VERSAO` vence (é o que o build carimba); o package.json
  * é o fallback de dev. Lido em try/catch porque o healthcheck não pode falhar
- * por causa de um arquivo ausente na imagem.
+ * por causa de um arquivo ausente na imagem. Também é a versão que a batida e
+ * os erros levam ao hub da DMS (`modules/hub`).
  */
-function versaoDoApp(): string {
+export function versaoDoApp(): string {
   const doAmbiente = (process.env.APP_VERSAO ?? '').trim();
   if (doAmbiente) return doAmbiente;
   try {

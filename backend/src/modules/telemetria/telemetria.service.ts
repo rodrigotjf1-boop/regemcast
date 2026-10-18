@@ -21,10 +21,13 @@
  *    mensagem não entra. A tabela é da DISTRIBUIÇÃO e a regra de não registrar
  *    dado pessoal vale aqui como vale no log.
  */
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { ContextoDb } from '../../db/contexto';
 import { eventoErro } from '../../db/schema';
+import type { ErroDoProduto } from '../../dms/integracao-dms';
+import { chamadaAtual } from '../hub/chamada-atual';
+import { HUB_DOS_ERROS, type HubDosErros } from '../hub/hub.token';
 
 export type OrigemErro = 'api' | 'meta' | 'banco' | 'fila' | 'webhook';
 
@@ -62,11 +65,34 @@ export function higienizar(texto: string | null | undefined): string | null {
     .replace(/\+?\d{9,15}/g, (m) => `***${m.slice(-4)}`);
 }
 
+/**
+ * O mesmo erro na forma da lista de erros do hub da DMS (Padrão §11), ou nulo quando não vai. A falha de envio de
+ * cada mensagem à Meta (`meta`) não vai: é resultado do envio (número sem WhatsApp, ritmo), não defeito a tratar, e
+ * já fica aqui, por conta. O lugar é a rota sem os parâmetros; o código, o do pedido da porta MCP ou a referência que
+ * a pessoa viu. A mensagem sai higienizada aqui e limpa de novo pelo pacote antes de sair.
+ */
+export function erroParaOHub(e: EventoDeErro, codigoDoPedido?: string): ErroDoProduto | null {
+  if (e.origem === 'meta') return null;
+  const rota = (e.rota ?? '').split('?')[0]!.trim();
+  const codigo = codigoDoPedido ?? e.referencia ?? undefined;
+  return {
+    origem: e.origem === 'fila' ? 'rotina' : 'backend',
+    tipo: e.classe || (e.status ? `HTTP ${e.status}` : `erro de ${e.origem}`),
+    mensagem: higienizar(e.mensagem) ?? '(sem mensagem)',
+    lugar: rota ? `${e.metodo ?? ''} ${rota}`.trim() : e.classe || e.origem,
+    ...(codigo ? { codigo } : {}),
+  };
+}
+
 @Injectable()
 export class TelemetriaService {
   private readonly log = new Logger('Telemetria');
 
-  constructor(private readonly ctx: ContextoDb) {}
+  constructor(
+    private readonly ctx: ContextoDb,
+    /** O hub da DMS (desligado por padrão: `HUB_LIGADO`). Opcional para os testes que montam o serviço à mão. */
+    @Optional() @Inject(HUB_DOS_ERROS) private readonly hub?: HubDosErros,
+  ) {}
 
   /**
    * Registra um erro. Não espera, não lança.
@@ -74,6 +100,7 @@ export class TelemetriaService {
    * Devolve a promessa só para teste; quem chama em produção ignora.
    */
   registrar(evento: EventoDeErro): Promise<void> {
+    this.paraOHub(evento);
     return this.gravar(evento).catch((falha) => {
       // Só o log: telemetria que falha não pode virar mais um erro na tela.
       this.log.warn(`Não consegui gravar a telemetria: ${(falha as Error)?.message ?? falha}`);
@@ -95,5 +122,16 @@ export class TelemetriaService {
         detalhe: e.detalhe ?? {},
       }),
     );
+  }
+
+  /** Só anota na memória do cliente do hub (o envio sai em lote, depois); como o resto daqui, nunca lança. */
+  private paraOHub(e: EventoDeErro): void {
+    if (!this.hub?.ligado) return;
+    try {
+      const erro = erroParaOHub(e, chamadaAtual()?.codigo);
+      if (erro) this.hub.erro(erro);
+    } catch (falha) {
+      this.log.warn(`Não consegui anotar o erro para o hub: ${(falha as Error)?.message ?? falha}`);
+    }
   }
 }
