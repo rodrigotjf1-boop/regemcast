@@ -9,11 +9,16 @@
  * O motivo de um token recusado (vencido, outro destino, assinatura…) fica no
  * log local, nunca na resposta: para quem chama, todo token que não vale recebe
  * a mesma frase.
+ *
+ * Na porta MCP, o corpo leva o `request_id` (o código do pedido, o mesmo do
+ * cabeçalho `request-id`) e o nome do problema vai para o registro central do
+ * hub (`modules/hub/chamada-atual.ts`).
  */
 import { Catch, Logger, type ArgumentsHost, type ExceptionFilter } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
 import { corpoProblema, ErroProblema, ErroTokenDmsId, TIPO_CONTEUDO_PROBLEMA } from '../dms/integracao-dms';
+import { anotarChamada, chamadaAtual } from '../modules/hub/chamada-atual';
 
 @Catch(ErroProblema)
 export class ProblemaFilter implements ExceptionFilter {
@@ -27,10 +32,11 @@ export class ProblemaFilter implements ExceptionFilter {
     const motivo = erro instanceof ErroTokenDmsId ? ` (${erro.motivo})` : '';
     this.log.debug(`${req.method} ${req.path} → ${erro.status} ${erro.tipo}${motivo}`);
 
+    anotarChamada({ problema: erro.tipo });
     if (erro.retryAfterSeg !== undefined) res.setHeader('Retry-After', String(Math.max(1, Math.ceil(erro.retryAfterSeg))));
     res
       .status(erro.status)
       .type(TIPO_CONTEUDO_PROBLEMA)
-      .send(JSON.stringify(corpoProblema(erro.tipo, erro.detalhe, { status: erro.status })));
+      .send(JSON.stringify(corpoProblema(erro.tipo, erro.detalhe, { status: erro.status, requestId: chamadaAtual()?.codigo })));
   }
 }

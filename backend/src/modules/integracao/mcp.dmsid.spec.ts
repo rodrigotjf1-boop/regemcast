@@ -13,7 +13,7 @@
  */
 jest.mock('../../config/env', () => ({ env: { dmsId: { ligado: true, emissor: '', recurso: '', aplicativos: {} } } }));
 
-import { UnauthorizedException, type INestApplication } from '@nestjs/common';
+import { Module, UnauthorizedException, type INestApplication, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 import { RequestMethod } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getStorageToken, ThrottlerStorageService } from '@nestjs/throttler';
@@ -28,7 +28,7 @@ import { join } from 'node:path';
 import { ErroFilter } from '../../common/erro.filter';
 import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
-import { ErroProblema, gerarChave } from '../../dms/integracao-dms';
+import { ErroProblema, gerarChave, prefixoVisivel, type ChamadaRegistrada } from '../../dms/integracao-dms';
 import { autorDaIntegracao, type AutorDaIntegracao } from '../auditoria/autor-integracao';
 import { AvisoService } from '../aviso/aviso.service';
 import { CampanhaService } from '../campanha/campanha.service';
@@ -41,6 +41,7 @@ import { MetaService } from '../meta/meta.service';
 import { SaudeService } from '../meta/saude.service';
 import { ModeloService } from '../modelo/modelo.service';
 import { OrcamentoService } from '../orcamento/orcamento.service';
+import { HubService } from '../hub/hub.service';
 import { DmsIdController } from './dms-id.controller';
 import { DmsIdService } from './dms-id.service';
 import { IntegracaoGuard, LIMITE_POR_MINUTO } from './integracao.guard';
@@ -49,6 +50,7 @@ import { IntegracaoService, type IntegracaoAutenticada } from './integracao.serv
 import { CAMINHO_DOS_METADADOS, LIGACAO_INVALIDA, ligacaoVale, permissoesDaLigacao, TROCA_RECUSADA } from './ligacao.regras';
 import { McpController } from './mcp.controller';
 import { McpServidor } from './mcp.servidor';
+import { RegistroDaPorta } from './registro-da-porta.middleware';
 
 // Identificadores visivelmente fictícios: o repositório é público.
 const CONTA_ID = '00000000-0000-4000-8000-000000000001';
@@ -155,12 +157,15 @@ async function subirPorta(): Promise<Porta> {
   });
   const trocar = jest.fn();
 
-  const modulo = await Test.createTestingModule({
+  // Um módulo como o IntegracaoModule: o middleware do registro entra depois da leitura do corpo, como em produção.
+  @Module({
     controllers: [McpController, DmsIdController],
     providers: [
       McpServidor,
       IntegracaoGuard,
       DmsIdService,
+      // O de verdade, com o env sem `hub`: desligado, como nasce em produção (os testes da parada o espiam).
+      HubService,
       { provide: getStorageToken(), useClass: ThrottlerStorageService },
       { provide: IntegracaoService, useValue: { autenticar, autenticarLigacao, trocarPorLigacao: trocar, revogarPeloProprio: jest.fn() } },
       { provide: ContextoDb, useValue: ctx },
@@ -169,7 +174,13 @@ async function subirPorta(): Promise<Porta> {
         (provide) => ({ provide, useValue: {} }),
       ),
     ],
-  }).compile();
+  })
+  class PortaDeTeste implements NestModule {
+    configure(consumidor: MiddlewareConsumer): void {
+      consumidor.apply(RegistroDaPorta).forRoutes(McpController);
+    }
+  }
+  const modulo = await Test.createTestingModule({ imports: [PortaDeTeste] }).compile();
   const app = modulo.createNestApplication({ logger: false });
   // Como no main.ts: os metadados fora do prefixo.
   app.setGlobalPrefix('api/v1', { exclude: [{ path: CAMINHO_DOS_METADADOS, method: RequestMethod.GET }] });
@@ -456,6 +467,55 @@ describe('a porta MCP pela via do DMS ID', () => {
       expect(r.tipo).toMatch(/^application\/problem\+json/);
       expect(r.corpo).toEqual({ type: 'https://dev.dmstecnologias.com/erros/ligacao-invalida', title: 'Ligação inválida', status: 401, detail: TROCA_RECUSADA });
       expect(r.cabecalhos.get('www-authenticate')).toContain('resource_metadata="');
+    });
+  });
+
+  describe('o hub da DMS pela via do DMS ID', () => {
+    it('ligado, o registro leva a credencial dms_id e o prefixo visível da ligação, nunca o segredo nem o token', async () => {
+      const hub = p.app.get(HubService);
+      jest.spyOn(hub, 'ligado', 'get').mockReturnValue(true);
+      const registros: ChamadaRegistrada[] = [];
+      jest.spyOn(hub, 'registrar').mockImplementation((c) => void registros.push(c));
+      const ligacao = p.ligacao({ aplicativo: APP_A, classe: 'dms', escopos: ['orcamento.ler'] });
+      const token = dmsId.emitir({});
+      const r = await chamarMcp(p, { token, ligacao, nome: 'orcamento_ler' });
+      expect(r.status).toBe(200);
+      const fim = Date.now() + 2000;
+      while (!registros.length && Date.now() < fim) await new Promise((pronto) => setTimeout(pronto, 5));
+      expect(registros).toHaveLength(1);
+      expect(registros[0]).toMatchObject({
+        codigo: r.cabecalhos.get('request-id'),
+        credencial: 'dms_id',
+        ligacao_prefixo: prefixoVisivel(ligacao),
+        aplicativo: 'liame',
+        ferramenta: 'orcamento_ler',
+        resultado: 'aceita',
+        status_http: 200,
+      });
+      expect(JSON.stringify(registros)).not.toContain(ligacao);
+      expect(JSON.stringify(registros)).not.toContain(token);
+    });
+
+    it('a parada da ligação (pelo prefixo dms_lg_…) e a chave própria recusam com 503 integracao-parada e o request_id', async () => {
+      const hub = p.app.get(HubService);
+      const ligacao = p.ligacao({ aplicativo: APP_A, classe: 'dms', escopos: ['orcamento.ler'] });
+      const outra = p.ligacao({ aplicativo: APP_A, classe: 'dms', escopos: ['orcamento.ler'] });
+      const token = dmsId.emitir({});
+      const parado = jest
+        .spyOn(hub, 'parado')
+        .mockImplementation((c) => (c.ligacaoPrefixo === prefixoVisivel(ligacao) ? { nivel: 'ligacao', produto: 'regemcast', alvo: prefixoVisivel(ligacao) } : null));
+      const r = await chamarMcp(p, { token, ligacao, nome: 'orcamento_ler' });
+      expect(r.status).toBe(503);
+      expect(r.tipo).toMatch(/^application\/problem\+json/);
+      expect(r.corpo).toMatchObject({ type: 'https://dev.dmstecnologias.com/erros/integracao-parada', status: 503, request_id: r.cabecalhos.get('request-id') });
+      expect(parado).toHaveBeenCalledWith({ aplicativo: 'liame', ligacaoPrefixo: prefixoVisivel(ligacao), ferramenta: 'orcamento_ler' });
+      expect((await chamarMcp(p, { token, ligacao: outra, nome: 'orcamento_ler' })).status).toBe(200);
+
+      jest.spyOn(hub, 'aceitaIntegracoes', 'get').mockReturnValue(false);
+      const desligada = await chamarMcp(p, { token, ligacao: outra, nome: 'orcamento_ler' });
+      expect(desligada.status).toBe(503);
+      expect(desligada.cabecalhos.get('retry-after')).toBe('60');
+      expect(desligada.corpo.type).toBe('https://dev.dmstecnologias.com/erros/integracao-parada');
     });
   });
 

@@ -105,7 +105,7 @@ mesmo tempo; com o `rct_it_` no cabeçalho, ele tem a vez. Variáveis em
 
 Tabela `integracao_ligacao`. Regras em `integracao/ligacao.regras.ts`; token do
 DMS ID em `dms-id.service.ts`, com o pacote comum do hub copiado em
-`src/dms/integracao-dms.ts` (versão 0.2.0, igual byte a byte; não editar aqui).
+`src/dms/integracao-dms.ts` (versão 0.3.0, igual byte a byte; não editar aqui).
 
 - **O pedido:** `Authorization: Bearer <token do DMS ID>` e
   `DMS-Ligacao: dms_lg_regemcast_…`. O token é conferido pela assinatura (ES384
@@ -170,6 +170,59 @@ resumo (sha-256).
   `regemcast_app` (RLS valendo). Sem `REGEMCAST_TESTE_PG_URL` e
   `REGEMCAST_TESTE_PG_SUPER`, pula — o CI não tem banco; roda-se à mão antes de
   mexer no serviço.
+
+## O hub da DMS: registro, erros e parada (sem migration)
+
+A etapa 2 da A4 do Hub DMS: a porta passa a falar com o serviço do hub, pelo
+cliente do pacote comum (`ClienteHub`, seção 9 da 0.3.0). Código em
+`modules/hub/` e `integracao/registro-da-porta.middleware.ts`.
+
+**Nasce desligado.** Com `HUB_LIGADO=false` (o padrão), nada vai ao hub e nada
+é parado por ele; a única mudança visível é o código do pedido (abaixo).
+Variáveis em [`deploy.md`](deploy.md). Quem liga em produção é o dono, depois de
+o hub estar no ar e de o aplicativo do RegemCast existir no DMS ID.
+
+- **O código do pedido:** toda chamada da porta ganha um código (`rc_` + 16
+  caracteres), que volta no cabeçalho `request-id` e no `request_id` das recusas
+  do Padrão. É o código que liga o que o produto que chamou viu ao que o hub
+  mostra, e o código dos erros que a chamada causar.
+- **O registro central (Padrão §10):** ligado, cada chamada vira um registro —
+  o código, quando, a credencial (`token_integracao` ou `dms_id`), o prefixo
+  visível do token ou da ligação, o produto que chamou, a conta (o id e o nome
+  da empresa), a ferramenta, o resultado (`aceita`, `recusada` ou `erro`), o
+  problema do Padrão quando recusada, o status e a duração. **Nunca o
+  conteúdo**: nem argumento, nem resposta, nem segredo. A recusa que sai com
+  HTTP 200 também conta como recusada: a regra do serviço dentro da ferramenta
+  (404 vira `nao-encontrado`) e a do SDK (ferramenta fora do escopo ou argumento
+  fora do esquema, `-32602`, vira `parametro-invalido`). O registro sai em lote,
+  a cada 5 s; nada espera o hub.
+- **Os erros (Padrão §11):** o que a telemetria grava vai também à lista de
+  erros do hub (o 500 da API, o Mercado Pago, o e-mail, a fila), e o erro
+  inesperado de uma ferramenta, com o código do pedido. A falha de envio de cada
+  mensagem à Meta não vai: é resultado do envio, não defeito, e fica na
+  telemetria daqui. A mensagem sai higienizada aqui e limpa de novo pelo pacote
+  (telefone, e-mail, documento, token, identificador e número longo saem).
+- **A lista de parada:** lida a cada 15 s (só quando muda). O portão recusa a
+  chamada parada com **503 `integracao-parada`** (`Retry-After: 60`), depois de
+  reconhecer quem chama: a parada geral, a do produto que chama (`liame`), a da
+  ligação (pelo prefixo visível, o mesmo que vai no registro) e a de cada
+  ferramenta do pedido (no lote da geração 2025, uma parada recusa o lote
+  inteiro). Se o hub cair, vale a última lista lida; depois de um reinício com o
+  hub fora, nada é parado até a primeira leitura.
+- **A chave própria (`ACEITAR_INTEGRACOES=false`):** recusa toda chamada com o
+  mesmo 503, antes de tudo, sem ir ao banco e sem depender do hub. É a
+  emergência quando o hub está fora ou comprometido.
+- **A batida:** a cada minuto, com a versão no ar (`APP_VERSAO`) e a chave
+  própria.
+- **A fila fica na memória do processo** (até 5.000 chamadas; acima disso sai a
+  mais velha, contada): um reinício perde o que ainda não saiu. No desligamento,
+  o que falta sai uma vez.
+
+Como se prova: `chamada-atual.spec.ts` (o registro campo a campo contra uma
+cópia do esquema que o hub confere), `hub.service.spec.ts` (o cliente contra um
+DMS ID e um hub de mentira por HTTP), os testes "o hub da DMS" de
+`mcp.porta.spec.ts` e `mcp.dmsid.spec.ts` (a porta inteira, nas duas vias) e
+`telemetria.hub.spec.ts`.
 
 ## Ferramentas
 
@@ -431,6 +484,10 @@ conta**, nunca por iniciativa nossa.
 - Hub DMS: ligar `DMS_ID_LIGADO` em produção (o dono, quando o Liame tiver a
   via nova — A3), a comparação das duas vias por 14 dias e, na parte B, a
   ligação autorizada por clique, sem `rct_it_` de origem.
+- Hub DMS: ligar `HUB_LIGADO` em produção (o dono, com o hub no ar e o
+  aplicativo do RegemCast no DMS ID); guardar a última lista de parada entre
+  reinícios; levar ao registro também a troca pela ligação
+  (`POST /api/v1/dms-id/ligacao`).
 
 ## Fontes
 

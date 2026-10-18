@@ -171,6 +171,37 @@ function dmsId(): { ligado: boolean; emissor: string; recurso: string; aplicativ
   return { ligado, emissor: emissor.replace(/\/+$/, ''), recurso: recurso.replace(/\/+$/, ''), aplicativos };
 }
 
+/**
+ * O hub da DMS (Hub DMS, F2, etapa 2 da A4): a porta MCP manda ao hub o registro de cada chamada (quem chamou, o quê,
+ * o resultado e a duração; nunca o conteúdo) e os erros da API, e consulta a lista de parada. Nasce DESLIGADO: quem
+ * liga em produção é o dono, depois de o hub estar no ar e de o aplicativo do RegemCast existir no DMS ID. Ligado, o
+ * resto é obrigatório e o boot cai dizendo o que falta.
+ *
+ * `ACEITAR_INTEGRACOES` é a chave própria do Padrão (§10): em `false`, a porta recusa toda chamada de integração, com
+ * ou sem o hub — vale mesmo se o hub estiver fora do ar ou comprometido. Padrão: aceitar.
+ */
+function hub(): { ligado: boolean; url: string; recurso: string; emissor: string; aplicativo: string; segredo: string; aceitaIntegracoes: boolean } {
+  const ligado = booleana('HUB_LIGADO', false);
+  const aceitaIntegracoes = booleana('ACEITAR_INTEGRACOES', true);
+  const url = opcional('HUB_URL').replace(/\/+$/, '');
+  const recurso = opcional('HUB_RECURSO').replace(/\/+$/, '');
+  const emissor = opcional('DMS_ID_EMISSOR').replace(/\/+$/, '');
+  const aplicativo = opcional('HUB_APLICATIVO');
+  const segredo = opcional('HUB_SEGREDO');
+  if (ligado) {
+    for (const [nome, valor] of [['HUB_URL', url], ['HUB_RECURSO', recurso], ['DMS_ID_EMISSOR', emissor]] as const) {
+      if (!valor) throw new Error(`HUB_LIGADO está ligado e falta ${nome}. Veja docs/deploy.md.`);
+      if (!/^https?:\/\/\S+$/.test(valor) || (producao && !valor.startsWith('https://'))) {
+        throw new Error(`Variável ${nome} precisa ser um endereço https:// (recebi "${valor}"). Veja docs/deploy.md.`);
+      }
+    }
+    if (!aplicativo) throw new Error('HUB_LIGADO está ligado e falta HUB_APLICATIVO (o client_id do RegemCast no DMS ID). Veja docs/deploy.md.');
+    // o segredo nunca aparece na mensagem
+    if (segredo.length < 16) throw new Error('HUB_LIGADO está ligado e HUB_SEGREDO falta ou está curto (o segredo do aplicativo do RegemCast no DMS ID). Veja docs/deploy.md.');
+  }
+  return { ligado, url, recurso, emissor, aplicativo, segredo, aceitaIntegracoes };
+}
+
 export const env = {
   producao,
   porta: numero('PORT', 3010),
@@ -310,6 +341,9 @@ export const env = {
 
   /** O DMS ID do Hub DMS na porta MCP (ver `dmsId()` acima e `docs/mcp.md`). Desligado por padrão. */
   dmsId: dmsId(),
+
+  /** O hub da DMS: registro, erros e lista de parada (ver `hub()` acima e `docs/mcp.md`). Desligado por padrão. */
+  hub: hub(),
 
   /**
    * Push do app Android, pelo Firebase Cloud Messaging.

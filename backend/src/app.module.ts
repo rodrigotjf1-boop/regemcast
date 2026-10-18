@@ -32,6 +32,7 @@ import { SegurancaModule } from './modules/seguranca/seguranca.module';
 import { CobrancaModule } from './modules/cobranca/cobranca.module';
 import { OrcamentoModule } from './modules/orcamento/orcamento.module';
 import { IntegracaoModule } from './modules/integracao/integracao.module';
+import { HubModule } from './modules/hub/hub.module';
 
 @Module({
   imports: [
@@ -65,6 +66,8 @@ import { IntegracaoModule } from './modules/integracao/integracao.module';
         ...(env.producao ? { storage: new ThrottlerStorageRedisService(env.redis.url) } : {}),
       }),
     }),
+    // O hub da DMS (registro da porta MCP, erros e lista de parada): global e desligado por padrão (`HUB_LIGADO`).
+    HubModule,
     TelemetriaModule,
     AuditoriaModule,
     AvisoModule,

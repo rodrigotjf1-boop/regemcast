@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 
 import { DrizzleModule } from '../../db/drizzle.module';
 import { CampanhaModule } from '../campanha/campanha.module';
@@ -17,6 +17,7 @@ import { IntegracaoGuard } from './integracao.guard';
 import { IntegracaoService } from './integracao.service';
 import { McpController } from './mcp.controller';
 import { McpServidor } from './mcp.servidor';
+import { RegistroDaPorta } from './registro-da-porta.middleware';
 
 /**
  * A porta para outros produtos da DMS: o token de integração (emissão no
@@ -27,11 +28,18 @@ import { McpServidor } from './mcp.servidor';
  * `DistribuicaoModule` entra pelo portão e pelo livro de acessos do console.
  * Os módulos de campanha, conta, contato, Meta, modelo e orçamento entram pelos
  * serviços que as ferramentas reaproveitam — os mesmos das telas.
- * `AuditoriaModule` é global.
+ * `AuditoriaModule` e `HubModule` são globais.
+ *
+ * Cada chamada da porta MCP passa pelo `RegistroDaPorta` (o código do pedido e
+ * o registro central do hub, desligado por padrão: `HUB_LIGADO`).
  */
 @Module({
   imports: [DrizzleModule, DistribuicaoModule, CampanhaModule, ContaModule, ContatoModule, MetaModule, ModeloModule, OrcamentoModule],
   controllers: [McpController, DmsIdController, IntegracaoController, IntegracaoDistribuicaoController],
   providers: [IntegracaoService, IntegracaoGuard, DmsIdService, McpServidor, IdempotenciaJob],
 })
-export class IntegracaoModule {}
+export class IntegracaoModule implements NestModule {
+  configure(consumidor: MiddlewareConsumer): void {
+    consumidor.apply(RegistroDaPorta).forRoutes(McpController);
+  }
+}

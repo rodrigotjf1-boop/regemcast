@@ -11,12 +11,21 @@
  */
 jest.mock('../../config/env', () => ({ env: {} }));
 
-import { ForbiddenException, NotFoundException, UnauthorizedException, type INestApplication } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Module,
+  NotFoundException,
+  UnauthorizedException,
+  type INestApplication,
+  type MiddlewareConsumer,
+  type NestModule,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getStorageToken, ThrottlerStorageService } from '@nestjs/throttler';
 
 import { ErroFilter } from '../../common/erro.filter';
 import { ContextoDb } from '../../db/contexto';
+import type { ChamadaRegistrada, ErroDoProduto } from '../../dms/integracao-dms';
 import { autorDaIntegracao, type AutorDaIntegracao } from '../auditoria/autor-integracao';
 import { AvisoService } from '../aviso/aviso.service';
 import { CampanhaService } from '../campanha/campanha.service';
@@ -29,12 +38,14 @@ import { MODELO_APROVADO, MetaService } from '../meta/meta.service';
 import { SaudeService } from '../meta/saude.service';
 import { ModeloService } from '../modelo/modelo.service';
 import { OrcamentoService } from '../orcamento/orcamento.service';
+import { HubService } from '../hub/hub.service';
 import { DmsIdService } from './dms-id.service';
 import { IntegracaoGuard, LIMITE_POR_MINUTO } from './integracao.guard';
 import { escoposEfetivos, gerarToken, type ClasseDoToken } from './integracao.regras';
 import { IntegracaoService, type IntegracaoAutenticada } from './integracao.service';
 import { McpController } from './mcp.controller';
 import { FERRAMENTAS, McpServidor } from './mcp.servidor';
+import { RegistroDaPorta } from './registro-da-porta.middleware';
 
 // Identificadores visivelmente fictícios: o repositório é público (V34).
 const CONTA_ID = '00000000-0000-4000-8000-000000000001';
@@ -198,13 +209,16 @@ async function subirPorta(): Promise<Porta> {
     };
   });
 
-  const modulo = await Test.createTestingModule({
+  // Um módulo como o IntegracaoModule: o middleware do registro entra depois da leitura do corpo, como em produção.
+  @Module({
     controllers: [McpController],
     providers: [
       McpServidor,
       IntegracaoGuard,
       // O de verdade, com o env sem `dmsId`: a via do DMS ID desligada, como nasce em produção.
       DmsIdService,
+      // O de verdade, com o env sem `hub`: desligado, como nasce em produção (os testes do hub o espiam).
+      HubService,
       { provide: getStorageToken(), useClass: ThrottlerStorageService },
       { provide: IntegracaoService, useValue: { autenticar, revogarPeloProprio: jest.fn() } },
       { provide: ContextoDb, useValue: ctx },
@@ -220,7 +234,13 @@ async function subirPorta(): Promise<Porta> {
       { provide: ModeloService, useValue: servicos.modelos },
       { provide: AvisoService, useValue: servicos.avisos },
     ],
-  }).compile();
+  })
+  class PortaDeTeste implements NestModule {
+    configure(consumidor: MiddlewareConsumer): void {
+      consumidor.apply(RegistroDaPorta).forRoutes(McpController);
+    }
+  }
+  const modulo = await Test.createTestingModule({ imports: [PortaDeTeste] }).compile();
   const app = modulo.createNestApplication({ logger: false });
   app.setGlobalPrefix('api/v1');
   app.useGlobalFilters(new ErroFilter());
@@ -489,5 +509,166 @@ describe('a porta MCP, por HTTP, como o Liame chama', () => {
     );
     expect(r.status).toBe(200);
     expect((r.json.result?.tools ?? []).map((t) => t.name).sort()).toEqual(['conta_situacao', 'integracao_revogar', 'integracao_situacao']);
+  });
+
+  describe('o hub da DMS: registro central, chave própria e lista de parada', () => {
+    /** O HubService de verdade da porta (desligado), espiado: ligado, guardando o que mandaria ao hub. */
+    function ligarHub() {
+      const hub = p.app.get(HubService);
+      jest.spyOn(hub, 'ligado', 'get').mockReturnValue(true);
+      const registros: ChamadaRegistrada[] = [];
+      const erros: ErroDoProduto[] = [];
+      jest.spyOn(hub, 'registrar').mockImplementation((c) => void registros.push(c));
+      jest.spyOn(hub, 'erro').mockImplementation((e) => void erros.push(e));
+      return { hub, registros, erros };
+    }
+    /** O registro sai quando a resposta termina, um instante depois de o cliente ler o corpo. */
+    async function esperarRegistros(registros: unknown[], n: number) {
+      const fim = Date.now() + 2000;
+      while (registros.length < n) {
+        if (Date.now() > fim) throw new Error(`esperava ${n} registros, chegaram ${registros.length}`);
+        await new Promise((pronto) => setTimeout(pronto, 5));
+      }
+    }
+    const doPedido = (registros: ChamadaRegistrada[], r: Resposta) => registros.find((x) => x.codigo === r.cabecalhos.get('request-id'));
+
+    it('desligado, como nasce: nada vai ao hub, e o pedido ganha o código (request-id)', async () => {
+      const registrar = jest.spyOn(p.app.get(HubService), 'registrar');
+      const r = await pedir(p, p.token({ classe: 'dms', escopos: ['conta.ler'] }), 'tools/list');
+      expect(r.status).toBe(200);
+      expect(r.cabecalhos.get('request-id')).toMatch(/^rc_[0-9a-f]{16}$/);
+      await new Promise((pronto) => setTimeout(pronto, 50));
+      expect(registrar).not.toHaveBeenCalled();
+    });
+
+    it('ligado: cada chamada vira um registro com quem chamou, a ferramenta, o resultado e a duração, sem conteúdo', async () => {
+      const { registros } = ligarHub();
+      const token = p.token({ classe: 'dms', escopos: ['orcamento.ler'] });
+      const r = await chamar(p, token, 'orcamento_ler');
+      expect(r.status).toBe(200);
+      await esperarRegistros(registros, 1);
+      expect(registros).toEqual([
+        {
+          codigo: r.cabecalhos.get('request-id'),
+          ocorrido_em: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
+          credencial: 'token_integracao',
+          ligacao_prefixo: token.slice(0, 15),
+          aplicativo: 'liame',
+          conta: CONTA_ID,
+          conta_nome: 'Loja de teste',
+          ferramenta: 'orcamento_ler',
+          resultado: 'aceita',
+          status_http: 200,
+          duracao_ms: expect.any(Number),
+        },
+      ]);
+      const texto = JSON.stringify(registros);
+      expect(texto).not.toContain(token);
+      expect(texto).not.toContain(TELEFONE);
+    });
+
+    it('a recusa do portão é registrada como recusada, com o problema do Padrão', async () => {
+      const { registros } = ligarHub();
+      const desconhecido = gerarToken();
+      const semToken = await pedir(p, null, 'tools/list');
+      const inexistente = await pedir(p, desconhecido, 'tools/list');
+      const suspensa = await pedir(p, p.token({ classe: 'dms', escopos: ['conta.ler'], contaSuspensa: true }), 'tools/list');
+      expect([semToken.status, inexistente.status, suspensa.status]).toEqual([401, 401, 403]);
+      await esperarRegistros(registros, 3);
+      expect(doPedido(registros, semToken)).toMatchObject({ resultado: 'recusada', problema: 'token-invalido', status_http: 401, ferramenta: 'tools/list' });
+      expect(doPedido(registros, semToken)).not.toHaveProperty('ligacao_prefixo');
+      expect(doPedido(registros, inexistente)).toMatchObject({ resultado: 'recusada', problema: 'token-invalido', ligacao_prefixo: desconhecido.slice(0, 15) });
+      expect(doPedido(registros, inexistente)).not.toHaveProperty('conta');
+      expect(doPedido(registros, suspensa)).toMatchObject({ resultado: 'recusada', problema: 'conta-bloqueada', status_http: 403 });
+    });
+
+    it('a ferramenta que recusa por regra responde 200 e o registro diz recusada; o erro nosso diz erro e vai à lista de erros com o código do pedido', async () => {
+      const { registros, erros } = ligarHub();
+      const token = p.token({ classe: 'dms', escopos: ['campanhas.ler'] });
+      p.servicos.campanhas.detalhe.mockRejectedValueOnce(new NotFoundException('Campanha não encontrada.'));
+      const regra = await chamar(p, token, 'campanha_detalhar');
+      p.servicos.campanhas.detalhe.mockRejectedValueOnce(new Error(`falhou ao gravar ${TELEFONE}`));
+      const inesperado = await chamar(p, token, 'campanha_detalhar');
+      expect([regra.status, inesperado.status]).toEqual([200, 200]);
+      await esperarRegistros(registros, 2);
+      expect(doPedido(registros, regra)).toMatchObject({ resultado: 'recusada', problema: 'nao-encontrado', status_http: 200, ferramenta: 'campanha_detalhar' });
+      expect(doPedido(registros, inesperado)).toMatchObject({ resultado: 'erro', problema: 'erro-interno', status_http: 200 });
+      // a mensagem chega crua ao HubService: quem limpa é o cliente do pacote, ao anotar (hub.service.spec.ts)
+      expect(erros).toEqual([
+        { origem: 'backend', tipo: 'Error', mensagem: `falhou ao gravar ${TELEFONE}`, lugar: 'mcp · campanha_detalhar', codigo: inesperado.cabecalhos.get('request-id') },
+      ]);
+    });
+
+    it('a ferramenta fora do escopo (o SDK recusa com -32602 dentro do 200): recusada no registro, e a resposta sai igual', async () => {
+      const { registros } = ligarHub();
+      const r = await chamar(p, p.token({ classe: 'dms', escopos: ['conta.ler'] }), 'orcamento_ler');
+      expect(r.status).toBe(200);
+      expect(r.json.error?.code).toBe(-32602);
+      await esperarRegistros(registros, 1);
+      expect(doPedido(registros, r)).toMatchObject({ resultado: 'recusada', problema: 'parametro-invalido', status_http: 200, ferramenta: 'orcamento_ler' });
+    });
+
+    it('a chave própria ACEITAR_INTEGRACOES=false: 503 integracao-parada no formato do Padrão, sem ir ao banco', async () => {
+      jest.spyOn(p.app.get(HubService), 'aceitaIntegracoes', 'get').mockReturnValue(false);
+      const r = await pedir(p, p.token({ classe: 'dms', escopos: ['conta.ler'] }), 'tools/list');
+      expect(r.status).toBe(503);
+      expect(r.cabecalhos.get('content-type')).toMatch(/^application\/problem\+json/);
+      expect(r.cabecalhos.get('retry-after')).toBe('60');
+      expect(JSON.parse(r.texto)).toEqual({
+        type: 'https://dev.dmstecnologias.com/erros/integracao-parada',
+        title: 'Integração parada',
+        status: 503,
+        detail: 'Esta integração está parada pela DMS no momento. Tente de novo mais tarde.',
+        request_id: r.cabecalhos.get('request-id'),
+      });
+      expect(p.autenticar).not.toHaveBeenCalled();
+    });
+
+    it('a lista de parada: a ferramenta parada recusa com 503 e as outras seguem; a parada recebe o aplicativo, o prefixo e a ferramenta', async () => {
+      const { hub, registros } = ligarHub();
+      const parado = jest
+        .spyOn(hub, 'parado')
+        .mockImplementation((c) => (c.ferramenta === 'orcamento_ler' ? { nivel: 'ferramenta', produto: 'regemcast', alvo: 'orcamento_ler' } : null));
+      const token = p.token({ classe: 'dms', escopos: ['orcamento.ler', 'conta.ler'] });
+      const parada = await chamar(p, token, 'orcamento_ler');
+      expect(parada.status).toBe(503);
+      expect(JSON.parse(parada.texto).type).toMatch(/\/integracao-parada$/);
+      expect(p.servicos.orcamento.ler).not.toHaveBeenCalled();
+      expect(parado).toHaveBeenCalledWith({ aplicativo: 'liame', ligacaoPrefixo: token.slice(0, 15), ferramenta: 'orcamento_ler' });
+      expect((await chamar(p, token, 'conta_situacao')).status).toBe(200);
+      await esperarRegistros(registros, 2);
+      expect(doPedido(registros, parada)).toMatchObject({ resultado: 'recusada', problema: 'integracao-parada', status_http: 503, ferramenta: 'orcamento_ler' });
+    });
+
+    it('a parada da ligação (pelo prefixo do token) e a do aplicativo valem para toda ferramenta', async () => {
+      const { hub } = ligarHub();
+      const a = p.token({ classe: 'dms', escopos: ['conta.ler'] });
+      const b = p.token({ classe: 'dms', escopos: ['conta.ler'] });
+      const parado = jest
+        .spyOn(hub, 'parado')
+        .mockImplementation((c) => (c.ligacaoPrefixo === a.slice(0, 15) ? { nivel: 'ligacao', produto: 'regemcast', alvo: a.slice(0, 15) } : null));
+      expect((await pedir(p, a, 'tools/list')).status).toBe(503);
+      expect((await pedir(p, b, 'tools/list')).status).toBe(200);
+      parado.mockImplementation((c) => (c.aplicativo === 'liame' ? { nivel: 'aplicativo', produto: null, alvo: 'liame' } : null));
+      expect((await pedir(p, b, 'tools/list')).status).toBe(503);
+    });
+
+    it('o lote da geração 2025: uma ferramenta parada no lote recusa o pedido inteiro', async () => {
+      const { hub } = ligarHub();
+      jest
+        .spyOn(hub, 'parado')
+        .mockImplementation((c) => (c.ferramenta === 'campanha_disparar' ? { nivel: 'ferramenta', produto: 'regemcast', alvo: 'campanha_disparar' } : null));
+      const token = p.token({ classe: 'dms', escopos: TODOS_OS_ESCOPOS });
+      const r = await enviar(
+        p,
+        { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'mcp-protocol-version': '2025-06-18', authorization: `Bearer ${token}` },
+        [
+          { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'orcamento_ler', arguments: {} } },
+          { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'campanha_disparar', arguments: {} } },
+        ],
+      );
+      expect(r.status).toBe(503);
+      expect(p.servicos.orcamento.ler).not.toHaveBeenCalled();
+    });
   });
 });

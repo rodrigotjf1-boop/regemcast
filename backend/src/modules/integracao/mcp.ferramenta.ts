@@ -9,6 +9,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { ContextoDb } from '../../db/contexto';
 import { comAutorDaIntegracao } from '../auditoria/autor-integracao';
+import { anotarChamada, problemaDoStatus } from '../hub/chamada-atual';
 import type { AvisoService } from '../aviso/aviso.service';
 import type { CampanhaService } from '../campanha/campanha.service';
 import type { ContaService } from '../conta/conta.service';
@@ -72,7 +73,8 @@ export const LEITURA = { readOnlyHint: true, idempotentHint: true, openWorldHint
  * Roda a ferramenta dentro da conta do token, com a integração como autora de
  * tudo que for auditado no caminho. Recusa de regra (400, 404…) vira resposta
  * de erro com a frase do serviço; o resto é registrado e sai como "erro
- * interno", sem detalhe.
+ * interno", sem detalhe. O registro central do hub fica com o resultado (e,
+ * no erro nosso, com o erro, que vai também à lista de erros do hub).
  */
 export async function naConta<T extends Record<string, unknown>>(c: ContextoDaFerramenta, nome: string, fn: () => Promise<T>) {
   try {
@@ -80,11 +82,14 @@ export async function naConta<T extends Record<string, unknown>>(c: ContextoDaFe
     return resposta(await comAutorDaIntegracao(autor, () => c.ctx.comConta(c.quem.contaId, fn)));
   } catch (e) {
     if (e instanceof HttpException && e.getStatus() < 500) {
+      anotarChamada({ resultado: 'recusada', problema: problemaDoStatus(e.getStatus()) });
       const corpo = e.getResponse();
       const mensagem = typeof corpo === 'string' ? corpo : ((corpo as { message?: unknown }).message ?? e.message);
       return erroDaFerramenta(Array.isArray(mensagem) ? mensagem.join(' ') : String(mensagem));
     }
-    log.error(`${nome} falhou para o token ${c.quem.tokenId}: ${(e as Error)?.message ?? String(e)}`, (e as Error)?.stack);
+    const motivo = (e as Error)?.message ?? String(e);
+    log.error(`${nome} falhou para o token ${c.quem.tokenId}: ${motivo}`, (e as Error)?.stack);
+    anotarChamada({ resultado: 'erro', problema: 'erro-interno', erro: { tipo: (e as Error)?.name || 'Erro', mensagem: motivo, lugar: `mcp · ${nome}` } });
     return erroDaFerramenta('Erro interno. Tente de novo em instantes.');
   }
 }
