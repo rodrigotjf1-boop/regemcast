@@ -193,9 +193,11 @@ o hub estar no ar e de o aplicativo do RegemCast existir no DMS ID.
   problema do Padrão quando recusada, o status e a duração. **Nunca o
   conteúdo**: nem argumento, nem resposta, nem segredo. A recusa que sai com
   HTTP 200 também conta como recusada: a regra do serviço dentro da ferramenta
-  (404 vira `nao-encontrado`) e a do SDK (ferramenta fora do escopo ou argumento
-  fora do esquema, `-32602`, vira `parametro-invalido`). O registro sai em lote,
-  a cada 5 s; nada espera o hub.
+  (404 vira `nao-encontrado`), o argumento fora do esquema (o SDK devolve um
+  resultado com `isError`: recusada, sem problema) e a ferramenta que o token
+  não enxerga (o SDK responde `-32602` "not found"; pelo catálogo, a fora do
+  escopo vira `escopo-insuficiente` e a que não existe, `nao-encontrado`). O
+  registro sai em lote, a cada 5 s; nada espera o hub.
 - **Os erros (Padrão §11):** o que a telemetria grava vai também à lista de
   erros do hub (o 500 da API, o Mercado Pago, o e-mail, a fila), e o erro
   inesperado de uma ferramenta, com o código do pedido. A falha de envio de cada

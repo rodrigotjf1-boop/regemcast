@@ -157,7 +157,7 @@ describe('as ferramentas de um corpo JSON-RPC', () => {
 describe('o que a resposta JSON-RPC do SDK diz da chamada', () => {
   it.each([
     ['atendida', '{"jsonrpc":"2.0","id":1,"result":{"content":[]}}', null],
-    ['ferramenta fora do escopo (-32602)', '{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"Tool x not found"}}', { resultado: 'recusada', problema: 'parametro-invalido' }],
+    ['-32602 sem a situação da ferramenta: o argumento fora do esquema', '{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"Invalid arguments"}}', { resultado: 'recusada', problema: 'parametro-invalido' }],
     ['erro interno do protocolo (-32603)', '{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"Internal error"}}', { resultado: 'erro', problema: 'erro-interno' }],
     ['resultado com isError', '{"jsonrpc":"2.0","id":1,"result":{"isError":true,"content":[]}}', { resultado: 'recusada' }],
     [
@@ -168,6 +168,21 @@ describe('o que a resposta JSON-RPC do SDK diz da chamada', () => {
     ['não é JSON', 'event: message', null],
   ])('%s', (_, texto, esperado) => {
     expect(resultadoDaResposta(texto)).toEqual(esperado);
+  });
+
+  // ERR-049: o mesmo -32602 diz três coisas; o hub mostrava "parâmetro inválido" para a ferramenta fora do escopo
+  it.each([
+    ['fora-do-escopo', 'escopo-insuficiente'],
+    ['inexistente', 'nao-encontrado'],
+    ['liberada', 'parametro-invalido'],
+  ] as const)('o -32602 de uma ferramenta %s sai como %s', (situacao, problema) => {
+    const texto = '{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"Tool x not found"}}';
+    expect(resultadoDaResposta(texto, situacao)).toEqual({ resultado: 'recusada', problema });
+  });
+
+  it('a situação só muda o -32602: outro código de erro segue parâmetro inválido, e o -32603 segue erro interno', () => {
+    expect(resultadoDaResposta('{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"Invalid Request"}}', 'fora-do-escopo')).toEqual({ resultado: 'recusada', problema: 'parametro-invalido' });
+    expect(resultadoDaResposta('{"jsonrpc":"2.0","id":1,"error":{"code":-32603}}', 'fora-do-escopo')).toEqual({ resultado: 'erro', problema: 'erro-interno' });
   });
 });
 

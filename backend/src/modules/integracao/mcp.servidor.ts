@@ -31,6 +31,7 @@ import { MetaService } from '../meta/meta.service';
 import { ModeloService } from '../modelo/modelo.service';
 import { SaudeService } from '../meta/saude.service';
 import { OrcamentoService } from '../orcamento/orcamento.service';
+import type { SituacaoDaFerramenta } from '../hub/chamada-atual';
 import { LIMITE_POR_MINUTO } from './integracao.guard';
 import { descreverEscopos } from './integracao.regras';
 import { IntegracaoService, type IntegracaoAutenticada } from './integracao.service';
@@ -123,6 +124,20 @@ export const FERRAMENTAS: readonly Ferramenta[] = [
 /** As ferramentas que um token pode ver e usar. */
 export function ferramentasDe(quem: Pick<IntegracaoAutenticada, 'escopos'>): Ferramenta[] {
   return FERRAMENTAS.filter((f) => f.escopo === null || quem.escopos.includes(f.escopo));
+}
+
+/**
+ * Como a ferramenta de um `tools/call` está para quem chamou, pela mesma regra de `ferramentasDe`: o registro do hub
+ * diz "escopo insuficiente" para a fora do escopo e "não encontrado" para a que não existe, em vez do "parâmetro
+ * inválido" do -32602 (ERR-049). O lote e os outros métodos contam como liberados.
+ */
+export function situacaoDaFerramenta(corpo: unknown, quem: Pick<IntegracaoAutenticada, 'escopos'>): SituacaoDaFerramenta {
+  if (!corpo || typeof corpo !== 'object' || Array.isArray(corpo)) return 'liberada';
+  const { method, params } = corpo as { method?: unknown; params?: { name?: unknown } | null };
+  if (method !== 'tools/call' || !params || typeof params.name !== 'string') return 'liberada';
+  const nome = params.name;
+  if (!FERRAMENTAS.some((f) => f.nome === nome)) return 'inexistente';
+  return ferramentasDe(quem).some((f) => f.nome === nome) ? 'liberada' : 'fora-do-escopo';
 }
 
 @Injectable()

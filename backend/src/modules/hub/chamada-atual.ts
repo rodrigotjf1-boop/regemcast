@@ -99,11 +99,27 @@ export function problemaDoStatus(status: number): string | undefined {
 }
 
 /**
- * O que a resposta JSON-RPC do SDK diz da chamada, quando ela sai com HTTP 200 mas não foi atendida: o erro do
- * protocolo (ferramenta inexistente ou fora do escopo do token e argumento fora do esquema são -32602; -32603 é erro
- * interno) e o resultado com `isError`. Nulo: atendida, ou a resposta não é JSON-RPC.
+ * Como a ferramenta de um `tools/call` está para o token que chamou: no catálogo e liberada pelo escopo, no catálogo
+ * mas fora do escopo (o SDK nem a mostra ao token), ou fora do catálogo. Quem sabe é a porta (`situacaoDaFerramenta`
+ * em mcp.servidor.ts), pelo catálogo; o lote e os outros métodos contam como liberados.
  */
-export function resultadoDaResposta(texto: string): { resultado: ResultadoChamada; problema?: string } | null {
+export type SituacaoDaFerramenta = 'liberada' | 'fora-do-escopo' | 'inexistente';
+
+/** O problema do -32602 pela situação da ferramenta: o código é o mesmo para as três, e a frase do SDK é em inglês. */
+const PROBLEMA_DO_32602: Record<SituacaoDaFerramenta, string> = {
+  liberada: 'parametro-invalido',
+  'fora-do-escopo': 'escopo-insuficiente',
+  inexistente: 'nao-encontrado',
+};
+
+/**
+ * O que a resposta JSON-RPC do SDK diz da chamada, quando ela sai com HTTP 200 mas não foi atendida: o erro do
+ * protocolo e o resultado com `isError`. Num `tools/call`, o -32602 é a ferramenta que o token não enxerga (fora do
+ * escopo ou inexistente: a frase do SDK é a mesma, "not found"), e o problema sai da `situacao` dela; fora disso, fica
+ * parâmetro inválido. O argumento fora do esquema não é -32602 neste SDK: volta como resultado com `isError`. O -32603
+ * é erro interno. Nulo: atendida, ou a resposta não é JSON-RPC.
+ */
+export function resultadoDaResposta(texto: string, situacao: SituacaoDaFerramenta = 'liberada'): { resultado: ResultadoChamada; problema?: string } | null {
   let corpo: unknown;
   try {
     corpo = JSON.parse(texto);
@@ -116,7 +132,7 @@ export function resultadoDaResposta(texto: string): { resultado: ResultadoChamad
     const { error, result } = m as { error?: { code?: unknown } | null; result?: { isError?: unknown } | null };
     if (error && typeof error === 'object') {
       if (error.code === -32603) return { resultado: 'erro', problema: 'erro-interno' };
-      achado = { resultado: 'recusada', problema: 'parametro-invalido' };
+      achado = { resultado: 'recusada', problema: error.code === -32602 ? PROBLEMA_DO_32602[situacao] : 'parametro-invalido' };
     } else if (!achado && result && typeof result === 'object' && result.isError === true) {
       achado = { resultado: 'recusada' };
     }
