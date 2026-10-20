@@ -611,13 +611,23 @@ describe('a porta MCP, por HTTP, como o Liame chama', () => {
       ]);
     });
 
-    it('a ferramenta fora do escopo (o SDK recusa com -32602 dentro do 200): recusada no registro, e a resposta sai igual', async () => {
+    it('a ferramenta que o token não enxerga: o SDK recusa com -32602 dentro do 200 e a resposta sai igual; o registro diz o motivo pelo catálogo (ERR-049)', async () => {
       const { registros } = ligarHub();
-      const r = await chamar(p, p.token({ classe: 'dms', escopos: ['conta.ler'] }), 'orcamento_ler');
-      expect(r.status).toBe(200);
-      expect(r.json.error?.code).toBe(-32602);
-      await esperarRegistros(registros, 1);
-      expect(doPedido(registros, r)).toMatchObject({ resultado: 'recusada', problema: 'parametro-invalido', status_http: 200, ferramenta: 'orcamento_ler' });
+      const token = p.token({ classe: 'dms', escopos: ['conta.ler', 'campanhas.ler'] });
+      const foraDoEscopo = await chamar(p, token, 'orcamento_ler');
+      const inexistente = await chamar(p, token, 'ferramenta_que_nao_existe');
+      // o argumento fora do esquema NÃO é -32602 neste SDK: volta como resultado com isError, e o registro diz só recusada
+      const argumentoTorto = await chamar(p, token, 'campanha_detalhar', { id: 'nao-e-um-uuid' });
+      expect([foraDoEscopo, inexistente, argumentoTorto].map((r) => [r.status, r.json.error?.code ?? (r.json.result?.isError ? 'isError' : 'atendida')])).toEqual([
+        [200, -32602],
+        [200, -32602],
+        [200, 'isError'],
+      ]);
+      await esperarRegistros(registros, 3);
+      expect(doPedido(registros, foraDoEscopo)).toMatchObject({ resultado: 'recusada', problema: 'escopo-insuficiente', status_http: 200, ferramenta: 'orcamento_ler' });
+      expect(doPedido(registros, inexistente)).toMatchObject({ resultado: 'recusada', problema: 'nao-encontrado', status_http: 200, ferramenta: 'ferramenta_que_nao_existe' });
+      expect(doPedido(registros, argumentoTorto)).toMatchObject({ resultado: 'recusada', status_http: 200, ferramenta: 'campanha_detalhar' });
+      expect(doPedido(registros, argumentoTorto)).not.toHaveProperty('problema');
     });
 
     it('a chave própria ACEITAR_INTEGRACOES=false: 503 integracao-parada no formato do Padrão, sem ir ao banco', async () => {

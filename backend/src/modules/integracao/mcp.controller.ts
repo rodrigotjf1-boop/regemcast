@@ -27,7 +27,7 @@ import { Publico } from '../../common/publico.decorator';
 import { anotarChamada, chamadaAtual, resultadoDaResposta } from '../hub/chamada-atual';
 import { IntegracaoGuard, type RequestDeIntegracao } from './integracao.guard';
 import { CABECALHO_LIGACAO_NO_NODE } from './ligacao.regras';
-import { McpServidor } from './mcp.servidor';
+import { McpServidor, situacaoDaFerramenta } from './mcp.servidor';
 
 /** Cabeçalhos que não seguem para o SDK: credencial e o que o Node recalcula. */
 const FICAM_NA_PORTA = new Set(['authorization', CABECALHO_LIGACAO_NO_NODE, 'cookie', 'host', 'connection', 'content-length', 'transfer-encoding']);
@@ -65,9 +65,10 @@ export class McpController {
     const atual = chamadaAtual();
     if (atual && /^application\/json\b/i.test(r.headers.get('content-type') ?? '')) {
       // A resposta JSON vem inteira do SDK: lida aqui, o registro do hub fica sabendo da recusa que sai com 200
-      // (ferramenta fora do escopo, argumento fora do esquema). Quem chamou recebe o mesmo texto.
+      // (ferramenta fora do escopo ou inexistente, argumento fora do esquema: o catálogo diz qual). Quem chamou recebe
+      // o mesmo texto.
       const texto = await r.text();
-      const dito = resultadoDaResposta(texto);
+      const dito = resultadoDaResposta(texto, situacaoDaFerramenta(req.body, req.integracao!));
       if (dito && !atual.resultado) anotarChamada({ resultado: dito.resultado, problema: atual.problema ? undefined : dito.problema });
       res.end(texto);
       return;
