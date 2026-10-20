@@ -34,7 +34,7 @@ import {
   type ClasseDoToken,
   type DadosDaEmissao,
 } from './integracao.regras';
-import { LIGACAO_INVALIDA, ligacaoVale, permissoesDaLigacao, podeTrocar, TROCA_RECUSADA } from './ligacao.regras';
+import { JA_LIGADA_POR_CLIQUE, LIGACAO_INVALIDA, ligacaoVale, permissoesDaLigacao, podeTrocar, TROCA_RECUSADA } from './ligacao.regras';
 
 /** A conta suspensa ou cancelada, na via do DMS ID (a do `rct_it_` segue com a frase dela). */
 const CONTA_BLOQUEADA = 'A conta desta ligação está suspensa ou cancelada. O dono da conta resolve no RegemCast.';
@@ -671,20 +671,28 @@ export class IntegracaoService {
           .set({ aplicativo, nome: t.nome, escopos, segredoHash: resumo, prefixo, segredoEm: agora })
           .where(and(eq(integracaoLigacao.id, t.id), isNull(integracaoLigacao.revogadoEm)));
       } else {
-        await db.insert(integracaoLigacao).values({
-          id: t.id,
-          contaId: t.contaId,
-          aplicativo,
-          produto: t.produto,
-          classe: t.classe,
-          nome: t.nome,
-          segredoHash: resumo,
-          prefixo,
-          escopos,
-          origemTokenId: t.id,
-          criadoEm: t.criadoEm,
-          segredoEm: agora,
-        });
+        try {
+          await db.insert(integracaoLigacao).values({
+            id: t.id,
+            contaId: t.contaId,
+            aplicativo,
+            produto: t.produto,
+            classe: t.classe,
+            nome: t.nome,
+            segredoHash: resumo,
+            prefixo,
+            escopos,
+            origemTokenId: t.id,
+            criadoEm: t.criadoEm,
+            segredoEm: agora,
+          });
+        } catch (erro) {
+          // Uma ligação ativa por conta e aplicativo (migration 047): a da autorização por clique já está lá. A troca
+          // automática não cria outra, e a recusa é do aplicativo, não defeito nosso.
+          const e = erro as { code?: string; cause?: { code?: string } } | null;
+          if (e?.code === '23505' || e?.cause?.code === '23505') throw new ErroProblema('ligacao-invalida', JA_LIGADA_POR_CLIQUE);
+          throw erro;
+        }
       }
       return { id: t.id, contaId: t.contaId, contaNome: t.contaNome, produto: t.produto, nome: t.nome, escopos, criada: !existente, agora, liberadoEm: t.criadoEm };
     });

@@ -41,6 +41,10 @@ export const LIGACAO_INVALIDA =
 export const TROCA_RECUSADA =
   'O token de integração informado não vale para este aplicativo: inexistente, revogado ou de outro produto. Peça um token novo à distribuição.';
 
+/** A troca recusada porque a conta já tem a ligação da autorização por clique com o aplicativo (uma ativa por conta e aplicativo). */
+export const JA_LIGADA_POR_CLIQUE =
+  'Esta conta já está ligada a este aplicativo pela autorização do dono: a troca automática não cria outra ligação. Use a ligação que veio da autorização.';
+
 /** Todas as permissões do RegemCast, na ordem do catálogo: é o que o 401 e o 403 da porta anunciam. */
 export const PERMISSOES_DO_RECURSO: readonly string[] = ESCOPOS.map((e) => e.id);
 
