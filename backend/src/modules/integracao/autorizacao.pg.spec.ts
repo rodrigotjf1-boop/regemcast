@@ -42,6 +42,7 @@ import { ContextoInterceptor } from '../../db/contexto.interceptor';
 import * as schema from '../../db/schema';
 import { ErroProblema } from '../../dms/integracao-dms';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { comAutorDaIntegracao } from '../auditoria/autor-integracao';
 import { gerarHashSenha } from '../auth/argon2';
 import { HubService } from '../hub/hub.service';
 import { AutorizacaoPortaController } from './autorizacao-porta.controller';
@@ -579,6 +580,72 @@ descrever('a autorização por clique, por HTTP, no Postgres', () => {
       expect(ativas).toHaveLength(1);
       expect(ativas[0]!.prefixo).toBe('dms_lg_regemcast_outra');
       expect(avisos.ligacaoPorClique).not.toHaveBeenCalled();
+    });
+
+    // A ligação que nasceu da troca automática (F2-3) tem o id do token de onde veio, e revogar o token derruba a
+    // ligação de mesmo id. Girada pelo clique, ela seguia presa ao token: quando o Liame passa a conta para a
+    // autorização nova e revoga o token antigo, ou quando a comparação refaz a troca automática, a ligação do clique
+    // caía ou trocava de segredo.
+    async function ligacaoDoToken(contaId: string) {
+      const s = servico();
+      const { token, emitido } = await s.emitir(contaId, { produto: 'liame', classe: 'dms', nome: 'Liame (token)', escopos: NECESSARIAS.split(' ') }, 'operador-de-teste');
+      await s.trocarPorLigacao(token, APP_A, { liame: APP_A });
+      return { token, tokenId: emitido.id };
+    }
+
+    it('a ligação que veio de um token é substituída no clique por uma nova, e revogar o token antigo não derruba a do clique', async () => {
+      const { contaId, dono } = await novaConta();
+      const { tokenId } = await ligacaoDoToken(contaId);
+      expect((await ligacoesAtivas(contaId)).map((l) => l.id)).toEqual([tokenId]);
+
+      const l = await ligado(dono, { opcionais: ['conversas.anuncio.ler'] });
+      const [nova] = await ligacoesAtivas(contaId);
+      expect(nova!.id).not.toBe(tokenId);
+      expect(nova).toEqual(expect.objectContaining({ origem_token_id: null, revogado_em: null }));
+      const antiga = (await poolSuper.query('select revogado_em, revogado_por from integracao_ligacao where id = $1', [tokenId])).rows[0];
+      expect(antiga.revogado_em).not.toBeNull();
+      expect(antiga.revogado_por).toBe('substituída pela autorização por clique');
+      // Para o dono, o Liame já estava ligado: a ligação nova traz mais uma permissão.
+      expect(avisos.ligacaoPorClique).toHaveBeenLastCalledWith(contaId, expect.objectContaining({ tipo: 'mais' }));
+
+      // O Liame encerra a autorização antiga e revoga o token pela própria porta (`integracao_revogar`).
+      await comAutorDaIntegracao({ tokenId, produto: 'liame', nome: 'Liame (token)', classe: 'dms' }, () =>
+        ctx.comConta(contaId, () => servico().revogarPeloProprio({ tokenId, contaId, nome: 'Liame (token)', produto: 'liame' })),
+      );
+      expect((await ligacoesAtivas(contaId)).map((x) => x.id)).toEqual([nova!.id]);
+      const quem = await servico().autenticarLigacao(l.entregue.ligacao, { aplicativo: APP_A, permissoes: ['conta.ler'] }, { liame: APP_A });
+      expect(quem.contaId).toBe(contaId);
+    });
+
+    it('depois do clique, a troca automática com o token antigo é recusada e não gira a ligação do clique', async () => {
+      const { contaId, dono } = await novaConta();
+      const { token } = await ligacaoDoToken(contaId);
+      const l = await ligado(dono);
+      const recusada = await servico()
+        .trocarPorLigacao(token, APP_A, { liame: APP_A })
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(recusada).toBeInstanceOf(ErroProblema);
+      expect((recusada as ErroProblema).tipo).toBe('ligacao-invalida');
+      const quem = await servico().autenticarLigacao(l.entregue.ligacao, { aplicativo: APP_A, permissoes: ['conta.ler'] }, { liame: APP_A });
+      expect(quem.contaId).toBe(contaId);
+    });
+
+    it('a troca automática com outro token, com a ligação do clique ativa: recusada como ligação inválida, nunca 500, e a do clique segue', async () => {
+      const { contaId, dono } = await novaConta();
+      const l = await ligado(dono);
+      const s = servico();
+      const { token } = await s.emitir(contaId, { produto: 'liame', classe: 'dms', nome: 'Liame (outro token)', escopos: ['conta.ler'] }, 'operador-de-teste');
+      const recusada = await s.trocarPorLigacao(token, APP_A, { liame: APP_A }).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(recusada).toBeInstanceOf(ErroProblema);
+      expect((recusada as ErroProblema).tipo).toBe('ligacao-invalida');
+      expect(await ligacoesAtivas(contaId)).toHaveLength(1);
+      expect((await s.autenticarLigacao(l.entregue.ligacao, { aplicativo: APP_A, permissoes: ['conta.ler'] }, { liame: APP_A })).contaId).toBe(contaId);
     });
   });
 

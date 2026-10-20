@@ -65,6 +65,8 @@ import type { LigacaoEntregue } from './integracao.service';
 export const PEDIDO_INVALIDO =
   'Este pedido de autorização não vale: ele já foi usado, venceu (vale 10 minutos) ou chegou incompleto. Volte ao aplicativo e comece de novo.';
 export const CODIGO_INVALIDO = 'Código de autorização inválido, vencido ou já usado.';
+/** Quem revogou a ligação que veio de um token, quando o dono autorizou por clique (o motivo na tela e na auditoria). */
+export const SUBSTITUIDA_PELO_CLIQUE = 'substituída pela autorização por clique';
 const NAO_USA = 'Este aplicativo não usa a autorização por clique do Regemcast.';
 const DESLIGADA = 'A autorização por clique não está ligada neste ambiente.';
 const SO_O_DONO = 'Só o dono da conta autoriza um aplicativo.';
@@ -487,21 +489,33 @@ export class AutorizacaoService {
 
       const agora = new Date();
       const [ativa] = await db
-        .select({ id: integracaoLigacao.id, escopos: integracaoLigacao.escopos, classe: integracaoLigacao.classe })
+        .select({ id: integracaoLigacao.id, escopos: integracaoLigacao.escopos, classe: integracaoLigacao.classe, origemTokenId: integracaoLigacao.origemTokenId })
         .from(integracaoLigacao)
         .where(and(eq(integracaoLigacao.contaId, a.conta_id), eq(integracaoLigacao.aplicativo, quem.clientId), isNull(integracaoLigacao.revogadoEm)))
         .limit(1)
         .for('update');
+      // A ligação que veio de um token (a troca automática) tem o id dele, e revogar o token derruba a ligação de mesmo
+      // id: o clique não fica com ela. Ela cai, substituída, e nasce outra, da autorização. Sem isso, o aplicativo que
+      // revoga o token antigo (ao passar a conta para a autorização nova), ou que refaz a troca automática, derrubava ou
+      // trocava o segredo da ligação do clique.
+      const substituida = ativa?.origemTokenId ? ativa : null;
+      const gira = ativa !== undefined && substituida === null;
 
       let id: string;
       try {
-        if (ativa) {
+        if (gira) {
           await db
             .update(integracaoLigacao)
             .set({ escopos, segredoHash: resumoDoSegredo, prefixo, segredoEm: agora, autorizacaoId: a.id })
             .where(and(eq(integracaoLigacao.id, ativa.id), isNull(integracaoLigacao.revogadoEm)));
           id = ativa.id;
         } else {
+          if (substituida) {
+            await db
+              .update(integracaoLigacao)
+              .set({ revogadoEm: agora, revogadoPor: SUBSTITUIDA_PELO_CLIQUE })
+              .where(and(eq(integracaoLigacao.id, substituida.id), isNull(integracaoLigacao.revogadoEm)));
+          }
           const [nova] = await db
             .insert(integracaoLigacao)
             .values({
@@ -535,10 +549,10 @@ export class AutorizacaoService {
       await comAutorDaIntegracao({ tokenId: id, produto: quem.app.produto, nome: quem.app.nome, classe: 'dms' }, () =>
         this.auditoria.registrar({
           contaId: a.conta_id,
-          acao: ativa ? 'integracao.ligacao_girada' : 'integracao.ligacao_criada',
+          acao: gira ? 'integracao.ligacao_girada' : 'integracao.ligacao_criada',
           entidade: 'integracao_ligacao',
           entidadeId: id,
-          detalhe: { aplicativo: quem.app.produto, escopos, via: 'clique', autorizacao: a.id, tipo },
+          detalhe: { aplicativo: quem.app.produto, escopos, via: 'clique', autorizacao: a.id, tipo, ...(substituida ? { substituiu: substituida.id } : {}) },
         }),
       );
       return { id, contaNome: dona.nome, agora, tipo };

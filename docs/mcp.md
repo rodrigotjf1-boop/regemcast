@@ -204,6 +204,10 @@ O caminho:
    `redirect_uri`. Devolve o segredo da ligação no formato da troca automática.
    **Só aqui a ligação nasce** (ou, se a conta já tem uma ligação ativa com o
    aplicativo, ela gira o segredo e fica com as permissões novas, com o mesmo id).
+   A exceção é a ligação que veio de um token (a troca automática, com o id do
+   token): ela é revogada ("substituída pela autorização por clique") e nasce
+   outra, da autorização. Revogar o token derruba a ligação de mesmo id, e o
+   aplicativo revoga o token antigo quando passa a conta para a autorização nova.
 
 Regras que moram no servidor:
 
@@ -216,7 +220,9 @@ Regras que moram no servidor:
   verificador errado ou endereço diferente gastam o código também. Código usado
   de novo desliga a ligação que ele criou (RFC 6749 §4.1.2).
 - Uma ligação ativa por conta e aplicativo (índice único): duas trocas ao mesmo
-  tempo não deixam duas valendo.
+  tempo não deixam duas valendo. A troca automática (`POST /api/v1/dms-id/ligacao`)
+  que esbarra na ligação do clique é recusada (`ligacao-invalida`), sem girar nem
+  criar nada; a do token substituído também (ligação revogada não volta).
 - Com o aplicativo parado no hub (ou `ACEITAR_INTEGRACOES=false`), não há pedido,
   página nem troca.
 - O dono é avisado a cada ligação nova, com mais permissões ou renovada: e-mail
