@@ -11,15 +11,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { mensagemDoErro } from '@/lib/api';
+import { destinoSeguro, voltaParaAutorizacao } from '@/lib/destino-seguro';
 import { auth } from '@/lib/servicos';
 import type { EtapaCodigoLogin } from '@/lib/tipos';
-
-/** Só aceita caminho interno — `?de=https://outro.site` não vira redirect. */
-function destinoSeguro(bruto: string | null): string {
-  if (!bruto) return '/painel';
-  if (!bruto.startsWith('/') || bruto.startsWith('//')) return '/painel';
-  return bruto;
-}
 
 /**
  * Entrada. Duas telas no mesmo lugar: a senha e, para quem ligou a verificação
@@ -187,6 +181,9 @@ export default function Entrar() {
       }
     >
       <form onSubmit={enviarSenha} noValidate className="space-y-5">
+        {voltaParaAutorizacao(destino) ? (
+          <Alerta tom="informacao">Entre para autorizar o aplicativo que pediu acesso à sua conta. Depois de entrar, você volta para a autorização.</Alerta>
+        ) : null}
         <div className="space-y-1.5">
           <Label htmlFor="email">E-mail</Label>
           <Input

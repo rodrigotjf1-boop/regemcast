@@ -9,7 +9,8 @@
  *   (`{ "token_integracao": "rct_it_…" }`), e recebe o segredo da ligação.
  *
  * Desligado (`DMS_ID_LIGADO`), as duas respondem 404. As recusas saem em
- * `application/problem+json` (`ProblemaFilter`).
+ * `application/problem+json` (`ProblemaFilter`). A troca vai ao registro do hub
+ * (`RegistroDaPorta`, só POST), como `dms-id.ligacao`.
  */
 import { Body, Controller, Get, Header, HttpCode, HttpStatus, Post, Req, Res, UseFilters } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
@@ -18,6 +19,7 @@ import type { Request, Response } from 'express';
 import { ProblemaFilter } from '../../common/problema.filter';
 import { Publico } from '../../common/publico.decorator';
 import { ErroProblema } from '../../dms/integracao-dms';
+import { anotarChamada } from '../hub/chamada-atual';
 import { DmsIdService } from './dms-id.service';
 import { IntegracaoService, type LigacaoEntregue } from './integracao.service';
 import { bearerDoCabecalho, CAMINHO_DOS_METADADOS, desafioDaRecusa } from './ligacao.regras';
@@ -45,6 +47,7 @@ export class DmsIdController {
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
   async trocar(@Req() req: Request, @Res({ passthrough: true }) res: Response, @Body() corpo: unknown): Promise<LigacaoEntregue> {
+    anotarChamada({ ferramenta: 'dms-id.ligacao', credencial: 'dms_id' });
     if (!this.dmsId.ligado) throw new ErroProblema('nao-encontrado', DESLIGADA);
     const bearer = bearerDoCabecalho(req.headers.authorization);
     try {

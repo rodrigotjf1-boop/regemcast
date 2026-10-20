@@ -11,6 +11,7 @@
  */
 import { sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   customType,
   bigint,
   smallint,
@@ -93,6 +94,8 @@ export const integracaoLigacao = pgTable('integracao_ligacao', {
   prefixo: text('prefixo').notNull(),
   escopos: jsonb('escopos').notNull().default(sql`'[]'::jsonb`),
   origemTokenId: uuid('origem_token_id').references(() => integracaoToken.id, { onDelete: 'set null' }),
+  /** A autorização por clique de onde a ligação veio, ou a última que a mudou (migration 047). */
+  autorizacaoId: uuid('autorizacao_id').references((): AnyPgColumn => integracaoAutorizacao.id, { onDelete: 'set null' }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
   segredoEm: timestamp('segredo_em', { withTimezone: true }).notNull().defaultNow(),
   ultimoUsoEm: timestamp('ultimo_uso_em', { withTimezone: true }),
@@ -100,7 +103,67 @@ export const integracaoLigacao = pgTable('integracao_ligacao', {
   revogadoPor: text('revogado_por'),
 }, (t) => ({
   segredoUq: uniqueIndex('idx_integracao_ligacao_segredo').on(t.segredoHash),
+  origemUq: uniqueIndex('idx_integracao_ligacao_origem').on(t.origemTokenId).where(sql`origem_token_id is not null`),
   contaIdx: index('idx_integracao_ligacao_conta').on(t.contaId, t.criadoEm),
+  /** Uma ligação ATIVA por conta e aplicativo (migration 047). */
+  ativaUq: uniqueIndex('uq_integracao_ligacao_ativa').on(t.contaId, t.aplicativo).where(sql`revogado_em is null`),
+}));
+
+/**
+ * Pedidos de autorização por clique (migration 047, Hub DMS B1): o pedido
+ * empurrado (RFC 9126) que o servidor do aplicativo registra com o token do DMS
+ * ID, antes de haver conta (policy `rc_sistema`). Só o resumo do número do
+ * pedido; vale 10 minutos e uma vez só. Regras em `integracao/autorizacao.regras.ts`.
+ */
+export const integracaoPedido = pgTable('integracao_pedido', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  aplicativo: text('aplicativo').notNull(),
+  produto: text('produto').notNull(),
+  numeroHash: text('numero_hash').notNull(),
+  redirectUri: text('redirect_uri').notNull(),
+  necessarias: jsonb('necessarias').notNull().default(sql`'[]'::jsonb`),
+  opcionais: jsonb('opcionais').notNull().default(sql`'[]'::jsonb`),
+  state: text('state').notNull(),
+  desafio: text('desafio').notNull(),
+  contaQuePede: jsonb('conta_que_pede').notNull(),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  venceEm: timestamp('vence_em', { withTimezone: true }).notNull(),
+  usadoEm: timestamp('usado_em', { withTimezone: true }),
+}, (t) => ({
+  numeroUq: uniqueIndex('idx_integracao_pedido_numero').on(t.numeroHash),
+  venceIdx: index('idx_integracao_pedido_vence').on(t.venceEm),
+}));
+
+/**
+ * Autorizações por clique (migration 047): o que o dono liberou, confirmando
+ * com a senha, com o texto que a tela mostrou e a versão dele — a prova, que a
+ * aplicação não apaga (sem `delete` para `regemcast_app`). O código de uso único
+ * vai só em resumo.
+ */
+export const integracaoAutorizacao = pgTable('integracao_autorizacao', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  contaId: uuid('conta_id').notNull().references(() => conta.id, { onDelete: 'cascade' }),
+  pedidoId: uuid('pedido_id').references(() => integracaoPedido.id, { onDelete: 'set null' }),
+  aplicativo: text('aplicativo').notNull(),
+  produto: text('produto').notNull(),
+  usuarioId: uuid('usuario_id').references(() => usuario.id, { onDelete: 'set null' }),
+  usuarioNome: text('usuario_nome').notNull(),
+  escopos: jsonb('escopos').notNull().default(sql`'[]'::jsonb`),
+  opcionaisDesligados: jsonb('opcionais_desligados').notNull().default(sql`'[]'::jsonb`),
+  contaQuePede: jsonb('conta_que_pede').notNull(),
+  outraEmpresa: boolean('outra_empresa').notNull().default(false),
+  textoVersao: integer('texto_versao').notNull(),
+  texto: jsonb('texto').notNull(),
+  codigoHash: text('codigo_hash').notNull(),
+  codigoVenceEm: timestamp('codigo_vence_em', { withTimezone: true }).notNull(),
+  codigoUsadoEm: timestamp('codigo_usado_em', { withTimezone: true }),
+  redirectUri: text('redirect_uri').notNull(),
+  desafio: text('desafio').notNull(),
+  ligacaoId: uuid('ligacao_id').references((): AnyPgColumn => integracaoLigacao.id, { onDelete: 'set null' }),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  codigoUq: uniqueIndex('idx_integracao_autorizacao_codigo').on(t.codigoHash),
+  contaIdx: index('idx_integracao_autorizacao_conta').on(t.contaId, t.criadoEm),
 }));
 
 /**
@@ -200,6 +263,10 @@ export const usuario = pgTable('usuario', {
   totpUltimoPasso: bigint('totp_ultimo_passo', { mode: 'number' }),
   tentativasFalhas: integer('tentativas_falhas').notNull().default(0),
   bloqueadoAte: timestamp('bloqueado_ate', { withTimezone: true }),
+  /** A trava da senha na autorização por clique (migration 047), separada da trava da entrada. */
+  autorizacaoErros: integer('autorizacao_erros').notNull().default(0),
+  autorizacaoErroEm: timestamp('autorizacao_erro_em', { withTimezone: true }),
+  autorizacaoTravadaAte: timestamp('autorizacao_travada_ate', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({

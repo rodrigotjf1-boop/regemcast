@@ -65,6 +65,13 @@ export function formatarTelefone(e164?: string | null): string {
   return d ? `+${d}` : '—';
 }
 
+/** "11222333000181" → "11.222.333/0001-81". O que não tem 14 dígitos sai como veio. */
+export function formatarCnpj(cnpj?: string | null): string {
+  const d = (cnpj ?? '').replace(/\D/g, '');
+  if (d.length !== 14) return cnpj ?? '';
+  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+}
+
 /** "14:32". */
 export function formatarHora(iso?: string | null): string {
   if (!iso) return '';

@@ -171,6 +171,69 @@ resumo (sha-256).
   `REGEMCAST_TESTE_PG_SUPER`, pula — o CI não tem banco; roda-se à mão antes de
   mexer no serviço.
 
+## A autorização por clique (Hub DMS B1, migration 047)
+
+O dono da conta liga um aplicativo do DMS ID (o Liame) confirmando com a senha,
+sem token emitido pela distribuição. É a tela única do Padrão DMS (§3, ajustado
+em 20/10/2026), com o protótipo e as 9 decisões aprovados pelo dono no mesmo dia
+(página "Autorização por clique" do Hub DMS). **Nasce desligada**
+(`AUTORIZACAO_POR_CLIQUE`); quem liga em produção é o dono, depois da comparação
+das duas vias. Código em `integracao/autorizacao.*`.
+
+O caminho:
+
+1. **O pedido** (pedido empurrado, RFC 9126): o servidor do aplicativo chama
+   `POST /api/v1/integracao/autorizacao/pedido` com o token do DMS ID e, em
+   formulário (ou JSON): `response_type=code`, `client_id`, `redirect_uri`,
+   `scope`, `state`, `code_challenge` (S256), `code_challenge_method=S256` e a
+   conta que pede no sistema dele (`conta_nome`, `conta_cnpj`, `conta_email`,
+   `conta_marca`). Recebe `{ request_uri, expires_in: 600 }`: o número vale 10
+   minutos e uma vez só; o banco guarda o resumo.
+2. **A página** `cast.dmsregem.com/integracoes/autorizar?client_id=…&request_uri=…`,
+   fora do menu: o dono confere quem pede (o aplicativo, a empresa dele com o
+   CNPJ, a conta que pede e a conta dele), o que vai (necessárias sem chave; a
+   opcional nasce desligada) e o que não vai, e confirma com a senha. Conta que
+   pede com outro CNPJ (ou sem CNPJ) pede a confirmação explícita. Cinco senhas
+   erradas em 15 minutos travam a autorização por 15 minutos (a entrada na conta
+   não). A autorização fica gravada com o texto da tela e a versão dele: a prova,
+   que a aplicação não apaga.
+3. **A volta** ao endereço cadastrado do aplicativo, com `code`, `state` e `iss`
+   (o endereço desta API; RFC 9207). Cancelar volta com `error=access_denied`.
+4. **A troca:** `POST /api/v1/integracao/autorizacao/token`, com o token do DMS
+   ID e `grant_type=authorization_code`, `code`, `code_verifier` e
+   `redirect_uri`. Devolve o segredo da ligação no formato da troca automática.
+   **Só aqui a ligação nasce** (ou, se a conta já tem uma ligação ativa com o
+   aplicativo, ela gira o segredo e fica com as permissões novas, com o mesmo id).
+
+Regras que moram no servidor:
+
+- O catálogo de quem pode usar a página está no código (a classe `dms` do Padrão
+  §1): o aplicativo só pede o que está nele, e nele não há permissão de gravar
+  (decisão B1-3: gravar fica fora até a F5). Os endereços de volta são os do
+  catálogo, comparados por inteiro (`AUTORIZACAO_ENDERECOS_DE_VOLTA` troca a lista
+  para teste).
+- O código vale 10 minutos e uma vez só, e é gasto antes das conferências:
+  verificador errado ou endereço diferente gastam o código também. Código usado
+  de novo desliga a ligação que ele criou (RFC 6749 §4.1.2).
+- Uma ligação ativa por conta e aplicativo (índice único): duas trocas ao mesmo
+  tempo não deixam duas valendo.
+- Com o aplicativo parado no hub (ou `ACEITAR_INTEGRACOES=false`), não há pedido,
+  página nem troca.
+- O dono é avisado a cada ligação nova, com mais permissões ou renovada: e-mail
+  (não se desliga) e aviso no celular do tipo `seguranca` (vai sempre, não é
+  preferência). A ligação que nasce sozinha de um token antigo (a troca
+  automática) manda o e-mail de "mudou de forma".
+- "Aplicativos conectados" mostra o token (e a ligação que veio dele) e a ligação
+  por clique, com quem autorizou, a conta que pediu, o texto guardado ("Ver o
+  texto que você autorizou") e o histórico tirado da auditoria; o dono desliga
+  qualquer uma.
+- O pedido e a troca vão ao registro do hub como chamadas (`autorizacao.pedido`,
+  `autorizacao.token`), sem o código, o verificador nem o segredo.
+
+Como se prova: `autorizacao.regras.spec.ts` (as regras puras e a tela) e
+`autorizacao.pg.spec.ts` (por HTTP, com os controladores e o serviço de verdade,
+o DMS ID de mentira e o Postgres descartável; pula sem as duas variáveis).
+
 ## O hub da DMS: registro, erros e parada (sem migration)
 
 A etapa 2 da A4 do Hub DMS: a porta passa a falar com o serviço do hub, pelo
@@ -483,13 +546,16 @@ conta**, nunca por iniciativa nossa.
 - "Aplicativos conectados" e a marca "montada pelo …" no app Android.
 - No Liame: o conector que consome estas ferramentas, e a emenda da ADR-008 e
   da ADR-019 registrando a decisão 2.
-- Hub DMS: ligar `DMS_ID_LIGADO` em produção (o dono, quando o Liame tiver a
-  via nova — A3), a comparação das duas vias por 14 dias e, na parte B, a
-  ligação autorizada por clique, sem `rct_it_` de origem.
-- Hub DMS: ligar `HUB_LIGADO` em produção (o dono, com o hub no ar e o
-  aplicativo do RegemCast no DMS ID); guardar a última lista de parada entre
-  reinícios; levar ao registro também a troca pela ligação
-  (`POST /api/v1/dms-id/ligacao`).
+- Hub DMS: ligar `AUTORIZACAO_POR_CLIQUE` em produção (o dono, depois da
+  comparação das duas vias, até 01/11/2026), com `AUTORIZACAO_DMS_RAZAO_SOCIAL` e
+  `AUTORIZACAO_DMS_CNPJ`; o lado do Liame (o botão em Contas conectadas, a volta e
+  a troca) vem no PR dele.
+- Hub DMS: guardar a última lista de parada entre reinícios. A troca pela
+  ligação (`POST /api/v1/dms-id/ligacao`) já vai ao registro (`dms-id.ligacao`).
+- O console da distribuição ainda lista só os tokens; a ligação por clique
+  aparece para o dono em "Aplicativos conectados" e no registro do hub.
+- O app Android ainda não mostra os aplicativos conectados: o aviso de segurança
+  diz onde desligar (o site).
 
 ## Fontes
 

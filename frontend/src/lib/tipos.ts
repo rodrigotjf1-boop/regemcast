@@ -658,7 +658,68 @@ export interface AplicativoConectado {
   ultimoUsoEm: string | null;
   revogadoEm: string | null;
   revogadoPor: string | null;
+  /** `distribuicao`: o token emitido pela DMS; `clique`: autorizado pelo dono na página. Ausente no console. */
+  via?: 'distribuicao' | 'clique';
+  /** A autorização por clique que vale para ele: quem, quando e o texto guardado (a prova). */
+  autorizacao?: AutorizacaoGuardada | null;
+  /** O que aconteceu com ele, tirado da auditoria, do mais novo para o mais velho. */
+  historico?: Array<{ em: string; texto: string }>;
 }
+
+/** A conta que pede, no sistema do aplicativo (a autorização por clique, Hub DMS B1). */
+export interface ContaQuePede {
+  nome: string;
+  cnpj: string | null;
+  email: string;
+  marca: string | null;
+}
+
+/** O texto que o dono autorizou, como foi guardado (a tela inteira e a decisão dele). */
+export interface AutorizacaoGuardada {
+  em: string;
+  por: string;
+  versao: number;
+  texto: Omit<TelaDaAutorizacao, 'opcionais'> & { opcionais: Array<PermissaoNaTela & { ligada: boolean }>; confirmouOutraEmpresa: boolean | null };
+  contaQuePede: ContaQuePede;
+  outraEmpresa: boolean;
+}
+
+/** Uma permissão como a página de autorização mostra (frase do catálogo e motivo do aplicativo). */
+export interface PermissaoNaTela {
+  id: string;
+  rotulo: string;
+  frase: string;
+  motivo: string;
+  dadoPessoal: boolean;
+  semEla: string | null;
+}
+
+/** A tela da autorização por clique, montada no servidor: é ela que vira o texto guardado. */
+export interface TelaDaAutorizacao {
+  versao: number;
+  aplicativo: { produto: string; nome: string; selo: string; empresa: string; cnpj: string; detalhes: string; inicio: string };
+  titulo: string;
+  abertura: string;
+  contaQuePede: ContaQuePede & { outraEmpresa: boolean };
+  conta: { nome: string; cnpj: string | null };
+  necessarias: PermissaoNaTela[];
+  opcionais: PermissaoNaTela[];
+  jaLigada: null | { desde: string; escopos: Array<{ id: string; rotulo: string }>; novas: string[] };
+  naoPode: Array<{ rotulo: string; frase: string }>;
+  nota: string;
+  rodape: string;
+}
+
+type AplicativoNaVolta = { nome: string; inicio: string };
+
+/** `GET /integracoes/autorizacao` — a situação da página e, para decidir, a tela inteira. */
+export type RespostaDaAutorizacao =
+  | { situacao: 'indisponivel' }
+  | { situacao: 'invalido'; aplicativo: AplicativoNaVolta | null }
+  | { situacao: 'pausado'; aplicativo: AplicativoNaVolta }
+  | { situacao: 'nao_dono'; aplicativo: AplicativoNaVolta; pessoa: { nome: string; papel: string }; dono: string | null }
+  | { situacao: 'travada'; aplicativo: AplicativoNaVolta; pessoa: { nome: string; papel: string }; minutos: number }
+  | { situacao: 'escolha'; aplicativo: AplicativoNaVolta; pessoa: { nome: string; papel: string }; tela: TelaDaAutorizacao };
 
 export type PeriodoDoOrcamento = 'dia' | 'semana' | 'mes';
 

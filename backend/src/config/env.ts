@@ -1,5 +1,8 @@
 import { resolve } from 'node:path';
 
+// Regra pura, sem efeito colateral nem import de configuração: a conferência dos endereços de volta da autorização.
+import { enderecoDeVoltaInvalido } from '../modules/integracao/autorizacao.regras';
+
 /**
  * Leitura e validação das variáveis de ambiente, uma vez, no boot.
  *
@@ -172,6 +175,59 @@ function dmsId(): { ligado: boolean; emissor: string; recurso: string; aplicativ
 }
 
 /**
+ * A autorização por clique (Hub DMS, F2, etapa B1): o dono da conta liga um
+ * aplicativo do DMS ID na página `/integracoes/autorizar`, com a senha, sem
+ * token emitido pela distribuição. Nasce DESLIGADA: quem liga em produção é o
+ * dono, depois da comparação das duas vias (até 01/11/2026). Ligada, exige o
+ * DMS ID ligado e a razão social e o CNPJ da DMS (a tela mostra a empresa dona
+ * do aplicativo; o repositório é público e não guarda esses dados), e o boot cai
+ * dizendo o que falta. `AUTORIZACAO_ENDERECOS_DE_VOLTA` troca a lista de
+ * endereços de volta de um aplicativo (JSON produto → lista), para teste.
+ */
+function autorizacao(): { ligada: boolean; empresa: string; cnpj: string; enderecosDeVolta: Record<string, string[]> } {
+  const ligada = booleana('AUTORIZACAO_POR_CLIQUE', false);
+  const empresa = opcional('AUTORIZACAO_DMS_RAZAO_SOCIAL');
+  const cnpj = opcional('AUTORIZACAO_DMS_CNPJ').replace(/\D/g, '');
+  const bruto = opcional('AUTORIZACAO_ENDERECOS_DE_VOLTA');
+  let enderecosDeVolta: Record<string, string[]> = {};
+  if (bruto) {
+    let lido: unknown;
+    try {
+      lido = JSON.parse(bruto);
+    } catch {
+      throw new Error('Variável AUTORIZACAO_ENDERECOS_DE_VOLTA precisa ser um JSON, como {"liame":["https://…/v1/oauth/callback"]}.');
+    }
+    const valido =
+      lido !== null &&
+      typeof lido === 'object' &&
+      !Array.isArray(lido) &&
+      Object.entries(lido).every(
+        ([produto, lista]) => /^[a-z][a-z0-9_-]{1,39}$/.test(produto) && Array.isArray(lista) && lista.length > 0 && lista.every((e) => typeof e === 'string'),
+      );
+    if (!valido) throw new Error('Variável AUTORIZACAO_ENDERECOS_DE_VOLTA precisa mapear produto → lista de endereços, como {"liame":["https://…"]}.');
+    enderecosDeVolta = Object.fromEntries(Object.entries(lido as Record<string, string[]>).map(([p, lista]) => [p, lista.map((e) => e.trim())]));
+    for (const lista of Object.values(enderecosDeVolta)) {
+      for (const endereco of lista) {
+        const problema = enderecoDeVoltaInvalido(endereco, producao);
+        if (problema) throw new Error(`Variável AUTORIZACAO_ENDERECOS_DE_VOLTA: ${problema}`);
+      }
+    }
+  }
+  if (ligada) {
+    if (!booleana('DMS_ID_LIGADO', false)) {
+      throw new Error('AUTORIZACAO_POR_CLIQUE está ligada e o DMS_ID_LIGADO não: a autorização entrega uma ligação do DMS ID. Veja docs/deploy.md.');
+    }
+    if (empresa.length < 2 || empresa.length > 200) {
+      throw new Error('AUTORIZACAO_POR_CLIQUE está ligada e falta AUTORIZACAO_DMS_RAZAO_SOCIAL (a razão social da DMS). Veja docs/deploy.md.');
+    }
+    if (!/^\d{14}$/.test(cnpj)) {
+      throw new Error('AUTORIZACAO_POR_CLIQUE está ligada e falta AUTORIZACAO_DMS_CNPJ (o CNPJ da DMS, 14 dígitos). Veja docs/deploy.md.');
+    }
+  }
+  return { ligada, empresa, cnpj, enderecosDeVolta };
+}
+
+/**
  * O hub da DMS (Hub DMS, F2, etapa 2 da A4): a porta MCP manda ao hub o registro de cada chamada (quem chamou, o quê,
  * o resultado e a duração; nunca o conteúdo) e os erros da API, e consulta a lista de parada. Nasce DESLIGADO: quem
  * liga em produção é o dono, depois de o hub estar no ar e de o aplicativo do RegemCast existir no DMS ID. Ligado, o
@@ -341,6 +397,9 @@ export const env = {
 
   /** O DMS ID do Hub DMS na porta MCP (ver `dmsId()` acima e `docs/mcp.md`). Desligado por padrão. */
   dmsId: dmsId(),
+
+  /** A autorização por clique do Hub DMS (ver `autorizacao()` acima e `docs/mcp.md`). Desligada por padrão. */
+  autorizacao: autorizacao(),
 
   /** O hub da DMS: registro, erros e lista de parada (ver `hub()` acima e `docs/mcp.md`). Desligado por padrão. */
   hub: hub(),

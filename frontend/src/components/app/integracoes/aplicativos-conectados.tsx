@@ -2,19 +2,23 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
+import { IconeSeta } from '@/components/app/icones';
 import { useSessao } from '@/components/app/sessao';
 import { Alerta } from '@/components/ui/alerta';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardCabecalho, CardCorpo } from '@/components/ui/card';
 import { mensagemDoErro } from '@/lib/api';
-import { formatarDataHora } from '@/lib/formato';
+import { formatarCnpj, formatarDataHora } from '@/lib/formato';
 import { aplicativos } from '@/lib/servicos';
 import type { AplicativoConectado } from '@/lib/tipos';
+import { TextoAutorizado } from './texto-autorizado';
 
 /**
  * Aplicativos conectados: os produtos que têm acesso a esta conta pela
- * integração, e o que cada um pode fazer.
+ * integração, e o que cada um pode fazer — o token emitido pela DMS (e a
+ * ligação que nasceu dele) ou a ligação autorizada pelo dono por clique, com o
+ * texto que ele aceitou (a prova) e o histórico.
  *
  * A decisão de expor a conta é de quem é dono dela: qualquer pessoa da conta
  * vê a lista, e o dono desliga — o acesso para de valer na hora. Sem nenhum
@@ -28,6 +32,7 @@ export function AplicativosConectados() {
   const [erro, setErro] = useState('');
   const [confirmando, setConfirmando] = useState<string | null>(null);
   const [desligando, setDesligando] = useState(false);
+  const [textoAberto, setTextoAberto] = useState<string | null>(null);
 
   const carregar = useCallback(async () => {
     try {
@@ -72,8 +77,18 @@ export function AplicativosConectados() {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium text-tinta">{a.nome}</span>
                   <Badge tom={a.revogadoEm ? 'neutro' : 'sucesso'}>{a.revogadoEm ? 'Desligado' : 'Ativo'}</Badge>
-                  <span className="text-xs text-tinta-suave">{a.classe === 'dms' ? 'Produto da DMS' : 'Aplicativo de fora'}</span>
+                  <span className="text-xs text-tinta-suave">
+                    {a.classe === 'dms' ? 'Produto da DMS' : 'Aplicativo de fora'}
+                    {a.via === 'clique' ? ' · autorizado por clique' : ''}
+                  </span>
                 </div>
+                {a.autorizacao ? (
+                  <p className="text-xs text-tinta-suave">
+                    Pedido pela conta {a.autorizacao.contaQuePede.nome} no {a.nome}
+                    {a.autorizacao.contaQuePede.cnpj ? ` (CNPJ ${formatarCnpj(a.autorizacao.contaQuePede.cnpj)})` : ' (sem CNPJ)'}
+                    {a.autorizacao.outraEmpresa ? ', outra empresa' : ''}.
+                  </p>
+                ) : null}
                 <ul className="space-y-1 text-sm">
                   {a.escopos.map((e) => (
                     <li key={e.id} className="leading-relaxed text-tinta-suave">
@@ -87,8 +102,34 @@ export function AplicativosConectados() {
                     : a.ultimoUsoEm
                       ? `Usado pela última vez em ${formatarDataHora(a.ultimoUsoEm)}.`
                       : 'Ainda não foi usado.'}{' '}
-                  Conectado em {formatarDataHora(a.criadoEm)}.
+                  {a.autorizacao
+                    ? `Autorizado por ${a.autorizacao.por} em ${formatarDataHora(a.autorizacao.em)}, com a senha.`
+                    : `Conectado em ${formatarDataHora(a.criadoEm)}.`}
                 </p>
+                {a.autorizacao ? (
+                  <button type="button" onClick={() => setTextoAberto(a.id)} className="text-xs font-semibold text-acento-forte underline underline-offset-2">
+                    Ver o texto que você autorizou
+                  </button>
+                ) : null}
+                {a.historico?.length ? (
+                  <details className="group text-xs">
+                    <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded font-semibold text-acento-forte [&::-webkit-details-marker]:hidden">
+                      <IconeSeta className="h-3 w-3 transition-transform group-open:rotate-180 motion-reduce:transition-none" />
+                      Histórico
+                    </summary>
+                    <ol className="mt-2 space-y-2 border-l-2 border-borda pl-3">
+                      {a.historico.map((h, i) => (
+                        <li key={`${h.em}-${i}`} className="text-tinta-suave">
+                          <time className="block font-semibold text-tinta">{formatarDataHora(h.em)}</time>
+                          {h.texto}
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
+                ) : null}
+                {a.autorizacao ? (
+                  <TextoAutorizado aplicativo={a.nome} autorizacao={a.autorizacao} aberto={textoAberto === a.id} onFechar={() => setTextoAberto(null)} />
+                ) : null}
               </div>
               {!a.revogadoEm && ehDono && (
                 <div className="shrink-0">

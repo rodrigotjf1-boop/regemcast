@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start -p 3011",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@types/qrcode": "^1.5.6",
