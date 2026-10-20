@@ -6,6 +6,10 @@
  *   - `modelos`: a Meta aprovou, recusou ou pausou um modelo;
  *   - `cobranca`: pagamento recusado — este só para o dono.
  *
+ * E um que não é preferência e vai sempre: `seguranca` (Hub DMS, decisão B1-4),
+ * o aviso ao dono de que um aplicativo foi ligado à conta. Não entra em
+ * `Avisos` nem nas rotas de preferência: não se desliga, como o e-mail dele.
+ *
  * `avisar` NUNCA lança e nunca espera o Firebase dentro de uma transação: quem
  * chama faz `void this.avisos.avisar(...)` depois de gravar. Aviso atrasado ou
  * perdido é incômodo; campanha que trava porque o Firebase caiu é defeito.
@@ -22,6 +26,9 @@ import { FcmService, type MensagemPush } from './fcm.service';
 
 export type TipoAviso = 'campanhas' | 'modelos' | 'cobranca';
 export const TIPOS_AVISO: TipoAviso[] = ['campanhas', 'modelos', 'cobranca'];
+
+/** O aviso que não é preferência: vai a todo aparelho de quem recebe, sem olhar a escolha. */
+export type TipoAvisoSempre = 'seguranca';
 
 export interface Avisos {
   campanhas: boolean;
@@ -127,12 +134,13 @@ export class AvisoService {
   }
 
   /**
-   * Manda o aviso para os aparelhos da conta que querem este tipo.
-   * Não lança. Token que o FCM diz não existir mais é apagado.
+   * Manda o aviso para os aparelhos da conta que querem este tipo (o de
+   * segurança vai a todos, sem olhar a escolha). Não lança. Token que o FCM diz
+   * não existir mais é apagado.
    */
   async avisar(
     contaId: string,
-    tipo: TipoAviso,
+    tipo: TipoAviso | TipoAvisoSempre,
     mensagem: MensagemPush,
     opcoes: { soDono?: boolean } = {},
   ): Promise<void> {
@@ -148,7 +156,7 @@ export class AvisoService {
            where d.conta_id = ${contaId}
              and u.conta_id = ${contaId}
              and u.status = 'ativo'
-             and coalesce((d.avisos ->> ${tipo})::boolean, true)
+             ${tipo === 'seguranca' ? sql`` : sql`and coalesce((d.avisos ->> ${tipo})::boolean, true)`}
              ${opcoes.soDono ? sql`and u.papel = 'dono'` : sql``}
         `);
         return r.rows as { id: string; token_fcm: string }[];

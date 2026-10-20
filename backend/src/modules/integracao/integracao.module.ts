@@ -8,6 +8,10 @@ import { DistribuicaoModule } from '../distribuicao/distribuicao.module';
 import { MetaModule } from '../meta/meta.module';
 import { ModeloModule } from '../modelo/modelo.module';
 import { OrcamentoModule } from '../orcamento/orcamento.module';
+import { AutorizacaoPortaController } from './autorizacao-porta.controller';
+import { AutorizacaoController } from './autorizacao.controller';
+import { AutorizacaoService } from './autorizacao.service';
+import { AvisoDeLigacao } from './aviso-de-ligacao.service';
 import { DmsIdController } from './dms-id.controller';
 import { DmsIdService } from './dms-id.service';
 import { IdempotenciaJob } from './idempotencia.job';
@@ -30,16 +34,19 @@ import { RegistroDaPorta } from './registro-da-porta.middleware';
  * serviços que as ferramentas reaproveitam — os mesmos das telas.
  * `AuditoriaModule` e `HubModule` são globais.
  *
- * Cada chamada da porta MCP passa pelo `RegistroDaPorta` (o código do pedido e
- * o registro central do hub, desligado por padrão: `HUB_LIGADO`).
+ * Cada chamada da porta MCP e das duas rotas da autorização por clique do lado
+ * do aplicativo (o pedido e a troca do código) passa pelo `RegistroDaPorta` (o
+ * código do pedido e o registro central do hub, desligado por padrão:
+ * `HUB_LIGADO`). A autorização por clique nasce desligada (`AUTORIZACAO_POR_CLIQUE`).
+ * `EmailModule` e `AvisoModule` são globais (o aviso ao dono a cada ligação).
  */
 @Module({
   imports: [DrizzleModule, DistribuicaoModule, CampanhaModule, ContaModule, ContatoModule, MetaModule, ModeloModule, OrcamentoModule],
-  controllers: [McpController, DmsIdController, IntegracaoController, IntegracaoDistribuicaoController],
-  providers: [IntegracaoService, IntegracaoGuard, DmsIdService, McpServidor, IdempotenciaJob],
+  controllers: [McpController, DmsIdController, IntegracaoController, IntegracaoDistribuicaoController, AutorizacaoController, AutorizacaoPortaController],
+  providers: [IntegracaoService, IntegracaoGuard, DmsIdService, McpServidor, IdempotenciaJob, AutorizacaoService, AvisoDeLigacao],
 })
 export class IntegracaoModule implements NestModule {
   configure(consumidor: MiddlewareConsumer): void {
-    consumidor.apply(RegistroDaPorta).forRoutes(McpController);
+    consumidor.apply(RegistroDaPorta).forRoutes(McpController, DmsIdController, AutorizacaoPortaController);
   }
 }

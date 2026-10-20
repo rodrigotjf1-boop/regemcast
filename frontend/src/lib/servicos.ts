@@ -17,6 +17,7 @@ import type { SituacaoCardapioWeb, SituacaoRegem, Segmento, ResumoSegmentos, Par
   OrcamentoDeDisparos,
   PeriodoDoOrcamento,
   AplicativoConectado,
+  RespostaDaAutorizacao,
   PreviaDoPublico,
   ProdutoDaBase,
   Publico,
@@ -195,6 +196,24 @@ export const aplicativos = {
 
   /** `POST /integracoes/aplicativos/:id/revogar` — devolve a lista atualizada. */
   revogar: (id: string) => api.post<AplicativoConectado[]>(`/integracoes/aplicativos/${id}/revogar`, {}),
+};
+
+/**
+ * A autorização por clique (Hub DMS B1): a página `/integracoes/autorizar`. O
+ * código HTTP do erro diz a situação (422 senha, 423 travada, 410 pedido que não
+ * vale, 403 não é o dono, 503 aplicativo parado): quem chama olha `ErroApi.status`.
+ */
+export const autorizacao = {
+  /** `GET /integracoes/autorizacao` — a situação da página e, para decidir, a tela inteira. */
+  ler: (clientId: string, requestUri: string) =>
+    api.get<RespostaDaAutorizacao>(`/integracoes/autorizacao?${new URLSearchParams({ client_id: clientId, request_uri: requestUri })}`),
+
+  /** `POST /integracoes/autorizacao` — o dono autoriza com a senha; devolve o endereço de volta ao aplicativo. */
+  autorizar: (d: { clientId: string; requestUri: string; senha: string; opcionais: string[]; confirmoOutraEmpresa: boolean }) =>
+    api.post<{ redirect: string }>('/integracoes/autorizacao', d),
+
+  /** `POST /integracoes/autorizacao/recusar` — cancelar ou voltar; devolve o endereço de volta, sem nada compartilhado. */
+  recusar: (d: { clientId: string; requestUri: string }) => api.post<{ redirect: string }>('/integracoes/autorizacao/recusar', d),
 };
 
 /** O orçamento de disparos: os tetos de gasto na Meta. Ler é de todos; definir é só do dono. */

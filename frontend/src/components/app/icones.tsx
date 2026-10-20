@@ -341,3 +341,42 @@ export function IconeMapa(p: Props) {
     </Base>
   );
 }
+
+/** Cadeado: o que não vai, ou o que está desligado. */
+export function IconeCadeado(p: Props) {
+  return (
+    <Base {...p}>
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </Base>
+  );
+}
+
+/** Pessoa: a conta que pede. */
+export function IconePessoa(p: Props) {
+  return (
+    <Base {...p}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21a8 8 0 0 1 16 0" />
+    </Base>
+  );
+}
+
+/** Troca: um produto ligado ao outro. */
+export function IconeTroca(p: Props) {
+  return (
+    <Base {...p}>
+      <path d="M4 9h15l-3.5-3.5M20 15H5l3.5 3.5" />
+    </Base>
+  );
+}
+
+/** Pausa: o aplicativo parado. */
+export function IconePausa(p: Props) {
+  return (
+    <Base {...p}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M10 9v6M14 9v6" />
+    </Base>
+  );
+}

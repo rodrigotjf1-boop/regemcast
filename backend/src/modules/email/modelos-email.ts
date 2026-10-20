@@ -24,7 +24,9 @@ function escapar(texto: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function moldura(titulo: string, corpo: string): string {
+const RODAPE_DE_CODIGO = 'Você recebeu este e-mail porque ele foi usado no RegemCast. Se não foi você, ignore — nada muda sem o código.';
+
+function moldura(titulo: string, corpo: string, rodape = RODAPE_DE_CODIGO): string {
   return `<!doctype html>
 <html lang="pt-BR"><body style="margin:0;padding:0;background:#F8F5F2;font-family:Arial,Helvetica,sans-serif;color:${AMEIXA}">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F8F5F2;padding:32px 12px">
@@ -38,7 +40,7 @@ function moldura(titulo: string, corpo: string): string {
 ${corpo}
 </td></tr>
 <tr><td style="padding:16px 28px;border-top:1px solid #E5DFE8;font-size:12px;color:${SUAVE}">
-Você recebeu este e-mail porque ele foi usado no RegemCast. Se não foi você, ignore — nada muda sem o código.
+${escapar(rodape)}
 </td></tr>
 </table>
 </td></tr>
@@ -116,6 +118,88 @@ export function emailDeConvite(para: string, nome: string, link: string, expiraE
 <p style="margin:0 0 16px;font-size:14px;color:${SUAVE}">Tenha em mãos o CNPJ da empresa — ele precisa estar ativo na Receita. Vamos confirmar o seu e-mail com um código.</p>
 <p style="margin:0;font-size:12px;color:${SUAVE};word-break:break-all">Se o botão não abrir, copie este endereço: ${escapar(link)}</p>`,
     ),
+  };
+}
+
+// ------------------------------------------------- avisos de segurança (Hub DMS)
+
+const RODAPE_DE_SEGURANCA = 'Este aviso de segurança vai sempre ao dono da conta e não se desliga.';
+
+const lista = (itens: readonly string[]) =>
+  `<ul style="margin:0 0 16px;padding-left:20px;font-size:14px;line-height:1.6;color:${SUAVE}">${itens.map((i) => `<li>${escapar(i)}</li>`).join('')}</ul>`;
+const paragrafo = (t: string) => `<p style="margin:0 0 16px;font-size:15px;line-height:1.5;color:${SUAVE}">${t}</p>`;
+const botao = (link: string, rotulo: string) =>
+  `<p style="margin:0 0 8px;text-align:center"><a href="${escapar(link)}" style="display:inline-block;background:${LIMA};color:${AMEIXA};font-weight:bold;text-decoration:none;border-radius:12px;padding:14px 28px;font-size:16px">${escapar(rotulo)}</a></p>`;
+
+/**
+ * Um aplicativo foi ligado à conta pela autorização por clique (ou ganhou mais
+ * permissões). Vai ao dono a cada ligação nova, mesmo quando foi ele quem
+ * autorizou: é o recibo, e o alarme se não foi ele (Padrão DMS §3, decisão B1-4).
+ */
+export function emailAplicativoLigado(
+  para: string,
+  d: {
+    nome: string;
+    aplicativo: string;
+    contaNome: string;
+    contaQuePede: { nome: string; cnpj: string | null };
+    quando: string;
+    liberadas: readonly string[];
+    /** `nova`: a primeira ligação; `mais`: ganhou permissões; `renovada`: autorizou de novo, com as mesmas. */
+    tipo: 'nova' | 'mais' | 'renovada';
+    link: string;
+  },
+): EmailParaEnviar {
+  const primeiroNome = d.nome.trim().split(/\s+/)[0] || d.nome;
+  const quem = d.contaQuePede.cnpj ? `${d.contaQuePede.nome} no ${d.aplicativo} (CNPJ ${d.contaQuePede.cnpj})` : `${d.contaQuePede.nome} no ${d.aplicativo} (sem CNPJ)`;
+  const assunto =
+    d.tipo === 'nova'
+      ? `Você ligou o ${d.aplicativo} à sua conta do RegemCast`
+      : d.tipo === 'mais'
+        ? `Você liberou mais permissões ao ${d.aplicativo} no RegemCast`
+        : `Você autorizou de novo o ${d.aplicativo} no RegemCast`;
+  const feito =
+    d.tipo === 'nova' ? `foi ligada ao ${d.aplicativo}` : d.tipo === 'mais' ? `liberou mais permissões ao ${d.aplicativo}` : `autorizou de novo o ${d.aplicativo}`;
+  const abertura = `${primeiroNome}, ${d.quando}, a conta ${d.contaNome} do RegemCast ${feito}, a pedido da conta ${quem}.`;
+  const naoPode = `Ele não pode enviar mensagens, mudar campanhas nem ver a sua lista de contatos.`;
+  const conferir = 'Foi você? Não precisa fazer nada. Não foi você? Desligue agora em Integrações › Aplicativos conectados e troque a sua senha.';
+
+  return {
+    para,
+    assunto,
+    texto: `${abertura}\n\nO ${d.aplicativo} pode ver:\n${d.liberadas.map((l) => `- ${l}`).join('\n')}\n\n${naoPode}\n\n${conferir}\n\nAplicativos conectados: ${d.link}`,
+    html: moldura(
+      assunto,
+      `${paragrafo(escapar(abertura))}
+<p style="margin:0 0 8px;font-size:15px;color:${AMEIXA}"><strong>O ${escapar(d.aplicativo)} pode ver:</strong></p>
+${lista(d.liberadas)}
+${paragrafo(escapar(naoPode))}
+${paragrafo(`<strong style="color:${AMEIXA}">Foi você?</strong> Não precisa fazer nada. <strong style="color:${AMEIXA}">Não foi você?</strong> Desligue agora em Integrações › Aplicativos conectados e troque a sua senha.`)}
+${botao(d.link, 'Ver aplicativos conectados')}`,
+      RODAPE_DE_SEGURANCA,
+    ),
+  };
+}
+
+/**
+ * A ligação nasceu sozinha de um token emitido pela distribuição (a troca
+ * automática, decisão F2-3): o alcance é o mesmo, a forma mudou, e agora o dono
+ * vê e desliga a ligação em "Aplicativos conectados".
+ */
+export function emailLigacaoMudouDeForma(
+  para: string,
+  d: { nome: string; aplicativo: string; desde: string; liberadoEm: string; permissoes: readonly string[]; link: string },
+): EmailParaEnviar {
+  const primeiroNome = d.nome.trim().split(/\s+/)[0] || d.nome;
+  const assunto = `O acesso do ${d.aplicativo} à sua conta mudou de forma`;
+  const abertura = `${primeiroNome}, desde ${d.desde} o ${d.aplicativo} lê a sua conta do RegemCast por uma ligação nova. Ele continua vendo só o que foi liberado em ${d.liberadoEm}:`;
+  const diferenca = 'Você não precisa fazer nada. A diferença: agora você vê essa ligação e desliga quando quiser, em Integrações › Aplicativos conectados.';
+
+  return {
+    para,
+    assunto,
+    texto: `${abertura}\n${d.permissoes.map((p) => `- ${p}`).join('\n')}\n\n${diferenca}\n\nAplicativos conectados: ${d.link}`,
+    html: moldura(assunto, `${paragrafo(escapar(abertura))}\n${lista(d.permissoes)}\n${paragrafo(escapar(diferenca))}\n${botao(d.link, 'Ver aplicativos conectados')}`, RODAPE_DE_SEGURANCA),
   };
 }
 
