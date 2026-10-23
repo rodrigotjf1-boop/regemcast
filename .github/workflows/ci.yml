@@ -21,6 +21,14 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# A versão EXATA do Node, num lugar só: o CI testa com ela e confere que as duas
+# imagens (backend/Dockerfile e frontend/Dockerfile, que fixam a mesma tag)
+# respondem a mesma em `node -v`. "22" solto pegava a versão que estivesse
+# guardada no executor — e o boletim de 21/10/2026 (Brotli, CVE-2026-111497)
+# só está corrigido a partir da 22.23.4.
+env:
+  NODE_VERSAO: '22.23.4'
+
 jobs:
   backend:
     name: backend (typecheck · build · test)
@@ -33,9 +41,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ env.NODE_VERSAO }}
           cache: npm
           cache-dependency-path: backend/package-lock.json
+
+      - name: Versão do Node
+        run: test "$(node -v)" = "v${NODE_VERSAO}" && node -v
 
       # npm ci (e não npm install): respeita o lockfile e falha se ele estiver
       # fora de sincronia com o package.json, em vez de resolver sozinho uma
@@ -63,9 +74,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ env.NODE_VERSAO }}
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+
+      - name: Versão do Node
+        run: test "$(node -v)" = "v${NODE_VERSAO}" && node -v
 
       - name: Instalar dependências
         run: npm ci
@@ -102,6 +116,8 @@ jobs:
           context: .
           file: backend/Dockerfile
           push: false
+          load: true
+          tags: regemcast-api:ci
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
 
@@ -111,8 +127,21 @@ jobs:
           context: .
           file: frontend/Dockerfile
           push: false
+          load: true
+          tags: regemcast-web:ci
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
+
+      # O Node que sobe em produção é o da imagem, não o do setup-node: confere
+      # dentro das duas imagens que é a versão fixada lá em cima (Dockerfile e
+      # CI divergindo deixam o CI vermelho).
+      - name: Versão do Node nas imagens
+        run: |
+          for imagem in regemcast-api:ci regemcast-web:ci; do
+            versao="$(docker run --rm --entrypoint node "$imagem" -v)"
+            echo "$imagem: $versao"
+            test "$versao" = "v${NODE_VERSAO}"
+          done
 
   app:
     name: app Android (análise · testes)

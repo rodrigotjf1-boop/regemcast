@@ -7,15 +7,22 @@
 # entra: o endereço da API é lido pelo servidor Next a cada inicialização, da
 # variável API_URL_PUBLICA (ver src/lib/config-runtime.tsx). A imagem é a mesma
 # em qualquer ambiente; trocar de domínio é trocar a variável e reiniciar.
+#
+# Node na versão EXATA, igual nos três estágios: 22.23.4, a corrigida pelo
+# boletim de segurança do Node de 21/10/2026 (Brotli, CVE-2026-111497, e as
+# chaves da eMudhra). Tag flutuante (`22-alpine`) deixa o construtor do deploy
+# reaproveitar a camada antiga em cache. A mesma versão está no CI
+# (`NODE_VERSAO` em .github/workflows/ci.yml), que roda `node -v` dentro desta
+# imagem e falha se as duas divergirem.
 
 # ---------------------------------------------------------------- deps
-FROM node:22-alpine AS deps
+FROM node:22.23.4-alpine AS deps
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
 # ---------------------------------------------------------------- build
-FROM node:22-alpine AS build
+FROM node:22.23.4-alpine AS build
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
@@ -25,7 +32,7 @@ COPY frontend/ ./
 RUN mkdir -p public && npm run build
 
 # ---------------------------------------------------------------- runtime
-FROM node:22-alpine AS runtime
+FROM node:22.23.4-alpine AS runtime
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3001
