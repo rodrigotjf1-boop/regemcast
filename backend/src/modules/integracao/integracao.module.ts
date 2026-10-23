@@ -19,6 +19,7 @@ import { IntegracaoDistribuicaoController } from './integracao-distribuicao.cont
 import { IntegracaoController } from './integracao.controller';
 import { IntegracaoGuard } from './integracao.guard';
 import { IntegracaoService } from './integracao.service';
+import { ManifestoController } from './manifesto.controller';
 import { McpController } from './mcp.controller';
 import { McpServidor } from './mcp.servidor';
 import { RegistroDaPorta } from './registro-da-porta.middleware';
@@ -39,10 +40,21 @@ import { RegistroDaPorta } from './registro-da-porta.middleware';
  * código do pedido e o registro central do hub, desligado por padrão:
  * `HUB_LIGADO`). A autorização por clique nasce desligada (`AUTORIZACAO_POR_CLIQUE`).
  * `EmailModule` e `AvisoModule` são globais (o aviso ao dono a cada ligação).
+ *
+ * O manifesto da porta (Padrão DMS §13; Hub DMS, F4 parte A) fica em `/.well-known/dms-manifesto`, sem credencial e fora
+ * do `RegistroDaPorta` (`manifesto.ts`; o arquivo do repositório é `docs/dms-manifesto.json`).
  */
 @Module({
   imports: [DrizzleModule, DistribuicaoModule, CampanhaModule, ContaModule, ContatoModule, MetaModule, ModeloModule, OrcamentoModule],
-  controllers: [McpController, DmsIdController, IntegracaoController, IntegracaoDistribuicaoController, AutorizacaoController, AutorizacaoPortaController],
+  controllers: [
+    McpController,
+    DmsIdController,
+    ManifestoController,
+    IntegracaoController,
+    IntegracaoDistribuicaoController,
+    AutorizacaoController,
+    AutorizacaoPortaController,
+  ],
   providers: [IntegracaoService, IntegracaoGuard, DmsIdService, McpServidor, IdempotenciaJob, AutorizacaoService, AvisoDeLigacao],
 })
 export class IntegracaoModule implements NestModule {
