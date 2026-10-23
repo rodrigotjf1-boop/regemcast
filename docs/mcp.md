@@ -105,7 +105,7 @@ mesmo tempo; com o `rct_it_` no cabeçalho, ele tem a vez. Variáveis em
 
 Tabela `integracao_ligacao`. Regras em `integracao/ligacao.regras.ts`; token do
 DMS ID em `dms-id.service.ts`, com o pacote comum do hub copiado em
-`src/dms/integracao-dms.ts` (versão 0.3.0, igual byte a byte; não editar aqui).
+`src/dms/integracao-dms.ts` (versão 0.7.2, igual byte a byte; não editar aqui).
 
 - **O pedido:** `Authorization: Bearer <token do DMS ID>` e
   `DMS-Ligacao: dms_lg_regemcast_…`. O token é conferido pela assinatura (ES384
@@ -136,6 +136,20 @@ DMS ID em `dms-id.service.ts`, com o pacote comum do hub copiado em
   `GET /.well-known/oauth-protected-resource/api/v1/mcp`, na raiz do domínio,
   fora do `/api/v1`: dizem o recurso, o DMS ID como servidor de autorização e as
   9 permissões. É por eles que um cliente MCP acha o DMS ID.
+- **O manifesto da porta (Padrão DMS §13; Hub DMS, F4 parte A)** sai em
+  `GET /.well-known/dms-manifesto`, também na raiz e sem credencial: OpenAPI 3.1
+  com os campos `x-dms` — as 9 permissões com a frase da tela, a classe (`dms`)
+  e o sensível (o telefone das conversas por anúncio e o disparo, que gasta na
+  Meta), as 15 ferramentas com o esquema de entrada e o jeito de cada uma que
+  grava ser idempotente (`chave`: a `chaveIdempotencia` obrigatória;
+  `substituicao`: repetir não muda nada, o revogar), o limite por ligação e a
+  porta MCP (`x-dms-mcp`: o endereço e a versão 2026-07-28). É montado do
+  próprio código (`integracao/manifesto.ts`, a partir do catálogo `ESCOPOS`, do
+  `FERRAMENTAS` e do guard) e guardado em [`dms-manifesto.json`](dms-manifesto.json);
+  o teste confere que o arquivo é o que o código monta (`ATUALIZAR_MANIFESTO=1`
+  regrava). Ferramenta que grava sem `chaveIdempotencia` e sem a marca de
+  idempotente para a montagem (Padrão §6). O `rct_it_` não entra: é a credencial
+  antiga, que sai na F5.
 - **O id da ligação é o do token de onde ela veio:** o limite por minuto, a
   idempotência dos rascunhos e o autor na trilha seguem a mesma chave pelas duas
   vias. **Revogar um revoga o outro** — pelo console, por "Aplicativos
@@ -165,7 +179,11 @@ resumo (sha-256).
 - `mcp.dmsid.spec.ts` roda o **kit de conformidade do hub**
   (`backend/scripts/dms/kit-conformidade.mts`, cópia igual à do hub; fora de
   `src` porque roda no Node, sem compilar) contra a porta, com um DMS ID de
-  mentira que assina de verdade: as 17 conferências do modo DMS ID passam.
+  mentira que assina de verdade: as 17 conferências do modo DMS ID passam; as
+  10 opcionais da 0.7.2 que não cabem aqui saem puladas (a classe acima do teto,
+  a ligação suspensa e a parada, que são da parte F, e as sete da porta REST: a
+  conta, o cursor e a escrita). No modo `manifesto`, o kit confere o manifesto
+  pela porta e pelo arquivo do repositório.
 - `integracao.ligacao.pg.spec.ts` prova o SQL num Postgres descartável, como
   `regemcast_app` (RLS valendo). Sem `REGEMCAST_TESTE_PG_URL` e
   `REGEMCAST_TESTE_PG_SUPER`, pula — o CI não tem banco; roda-se à mão antes de
@@ -569,4 +587,4 @@ conta**, nunca por iniciativa nossa.
 - [SDK TypeScript v2 — servir por HTTP](https://ts.sdk.modelcontextprotocol.io/v2/serving/http) (`createMcpHandler`, `handler.fetch(request, { authInfo, parsedBody })`, clientes da geração 2025 atendidos sem estado).
 - Liame: `docs/adr/ADR-008-mcp.md`, `docs/adr/ADR-019-integracao-regem-regemcast.md`, `docs/base-conhecimento.md` §8.1 e §13.1.
 - [RFC 9728 — metadados do recurso protegido](https://www.rfc-editor.org/rfc/rfc9728) e [RFC 9457 — problem+json](https://www.rfc-editor.org/rfc/rfc9457).
-- Hub DMS: o Padrão DMS de integração (§2.1, §6 e §7), o pacote comum 0.2.0 e o kit de conformidade.
+- Hub DMS: o Padrão DMS de integração (§2.1, §6, §7 e §13), o pacote comum 0.7.2 e o kit de conformidade.

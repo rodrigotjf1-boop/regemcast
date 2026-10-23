@@ -14,7 +14,6 @@
 jest.mock('../../config/env', () => ({ env: { dmsId: { ligado: true, emissor: '', recurso: '', aplicativos: {} } } }));
 
 import { Module, UnauthorizedException, type INestApplication, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
-import { RequestMethod } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getStorageToken, ThrottlerStorageService } from '@nestjs/throttler';
 import { spawn } from 'node:child_process';
@@ -47,7 +46,9 @@ import { DmsIdService } from './dms-id.service';
 import { IntegracaoGuard, LIMITE_POR_MINUTO } from './integracao.guard';
 import { escoposEfetivos, gerarToken } from './integracao.regras';
 import { IntegracaoService, type IntegracaoAutenticada } from './integracao.service';
-import { CAMINHO_DOS_METADADOS, LIGACAO_INVALIDA, ligacaoVale, permissoesDaLigacao, TROCA_RECUSADA } from './ligacao.regras';
+import { CAMINHO_DO_MANIFESTO, CAMINHO_DOS_METADADOS, LIGACAO_INVALIDA, ligacaoVale, permissoesDaLigacao, ROTAS_FORA_DO_PREFIXO, TROCA_RECUSADA } from './ligacao.regras';
+import { ManifestoController } from './manifesto.controller';
+import { manifestoDaPorta, PORTA_MCP } from './manifesto';
 import { McpController } from './mcp.controller';
 import { McpServidor } from './mcp.servidor';
 import { RegistroDaPorta } from './registro-da-porta.middleware';
@@ -58,6 +59,7 @@ const APP_A = 'aplicativo-a-de-teste';
 const APP_B = 'aplicativo-b-de-teste';
 const KIT = join(__dirname, '..', '..', '..', 'scripts', 'dms', 'kit-conformidade.mts');
 const COPIA_DO_PACOTE = join(__dirname, '..', '..', 'dms', 'integracao-dms.ts');
+const ARQUIVO_DO_MANIFESTO = join(__dirname, '..', '..', '..', '..', 'docs', 'dms-manifesto.json');
 
 const configDmsId = env.dmsId as { ligado: boolean; emissor: string; recurso: string; aplicativos: Record<string, string> };
 
@@ -159,7 +161,7 @@ async function subirPorta(): Promise<Porta> {
 
   // Um módulo como o IntegracaoModule: o middleware do registro entra depois da leitura do corpo, como em produção.
   @Module({
-    controllers: [McpController, DmsIdController],
+    controllers: [McpController, DmsIdController, ManifestoController],
     providers: [
       McpServidor,
       IntegracaoGuard,
@@ -182,8 +184,8 @@ async function subirPorta(): Promise<Porta> {
   }
   const modulo = await Test.createTestingModule({ imports: [PortaDeTeste] }).compile();
   const app = modulo.createNestApplication({ logger: false });
-  // Como no main.ts: os metadados fora do prefixo.
-  app.setGlobalPrefix('api/v1', { exclude: [{ path: CAMINHO_DOS_METADADOS, method: RequestMethod.GET }] });
+  // Como no main.ts: os metadados e o manifesto fora do prefixo.
+  app.setGlobalPrefix('api/v1', { exclude: ROTAS_FORA_DO_PREFIXO });
   app.useGlobalFilters(new ErroFilter());
   await app.listen(0, '127.0.0.1');
   const origem = (await app.getUrl()).replace('[::1]', '127.0.0.1');
@@ -218,14 +220,14 @@ async function chamarMcp(p: Porta, o: { token?: string; ligacao?: string; metodo
     'content-type': 'application/json',
     accept: 'application/json, text/event-stream',
     'mcp-method': metodo,
-    'mcp-protocol-version': '2026-07-28',
+    'mcp-protocol-version': PORTA_MCP.versao,
   };
   if (o.nome) cabecalhos['mcp-name'] = o.nome;
   if (o.token !== undefined) cabecalhos.authorization = `Bearer ${o.token}`;
   if (o.ligacao !== undefined) cabecalhos['DMS-Ligacao'] = o.ligacao;
   const params: Record<string, unknown> = {
     _meta: {
-      'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+      'io.modelcontextprotocol/protocolVersion': PORTA_MCP.versao,
       'io.modelcontextprotocol/clientInfo': { name: 'teste', version: '1' },
       'io.modelcontextprotocol/clientCapabilities': {},
     },
@@ -297,7 +299,7 @@ describe('a porta MCP pela via do DMS ID', () => {
       leitura: {
         caminho: '/api/v1/mcp',
         permissao: 'orcamento.ler',
-        cabecalhos: { 'mcp-method': 'tools/call', 'mcp-name': 'orcamento_ler', 'mcp-protocol-version': '2026-07-28' },
+        cabecalhos: { 'mcp-method': 'tools/call', 'mcp-name': 'orcamento_ler', 'mcp-protocol-version': PORTA_MCP.versao },
         corpo: {
           jsonrpc: '2.0',
           id: 1,
@@ -306,7 +308,7 @@ describe('a porta MCP pela via do DMS ID', () => {
             name: 'orcamento_ler',
             arguments: {},
             _meta: {
-              'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+              'io.modelcontextprotocol/protocolVersion': PORTA_MCP.versao,
               'io.modelcontextprotocol/clientInfo': { name: 'kit-dms', version: '1' },
               'io.modelcontextprotocol/clientCapabilities': {},
             },
@@ -337,9 +339,41 @@ describe('a porta MCP pela via do DMS ID', () => {
       KIT_LIGACAO_SEM_PERMISSAO: p.ligacao({ aplicativo: APP_A, classe: 'dms', escopos: ['conta.ler'] }),
     });
     const linhas = r.saida.split(/\r?\n/).filter((l) => /^[✔✘–] /.test(l));
-    expect({ codigo: r.codigo, falhas: linhas.filter((l) => !l.startsWith('✔')), saida: linhas.length ? '' : r.saida }).toEqual({ codigo: 0, falhas: [], saida: '' });
-    // As 17 conferências do modo com a porta MCP, todas com ✔ (pulada sairia com – e entraria nas falhas acima).
-    expect(linhas).toHaveLength(17);
+    expect({ codigo: r.codigo, falhas: linhas.filter((l) => l.startsWith('✘')), saida: linhas.length ? '' : r.saida }).toEqual({ codigo: 0, falhas: [], saida: '' });
+    // As 17 conferências do modo com a porta MCP, todas com ✔. Puladas, só as opcionais do kit da 0.7.2: as três da parte F
+    // da F4 (a classe, a ligação suspensa e a parada) e as sete que são da porta REST (a conta, o cursor e a escrita).
+    expect(linhas.filter((l) => l.startsWith('✔'))).toHaveLength(17);
+    expect(linhas.filter((l) => l.startsWith('–')).map((l) => l.split(':')[0])).toEqual([
+      '– dmsid-acima-da-classe',
+      '– dmsid-ligacao-suspensa',
+      '– dmsid-parada-ligada',
+      '– dmsid-mesma-conta-ve',
+      '– dmsid-outra-conta-nao-ve',
+      '– dmsid-cursor-invalido',
+      '– dmsid-cursor-de-outra-conta',
+      '– dmsid-escrita-sem-idempotencia',
+      '– dmsid-idempotencia-repete',
+      '– dmsid-idempotencia-outro-corpo',
+    ]);
+  }, 60_000);
+
+  it('o manifesto da porta (Padrão §13): sem credencial, fora do prefixo, o mesmo que o código monta', async () => {
+    const r = await fetch(`${p.origem}/${CAMINHO_DO_MANIFESTO}`);
+    expect(r.status).toBe(200);
+    expect(r.headers.get('content-type')).toContain('application/json');
+    expect(r.headers.get('cache-control')).toContain('max-age=300');
+    expect(await r.json()).toEqual(JSON.parse(JSON.stringify(manifestoDaPorta())));
+    // fora do prefixo: debaixo de /api/v1 ele não existe
+    expect((await fetch(`${p.origem}/api/v1/${CAMINHO_DO_MANIFESTO}`)).status).toBe(404);
+  });
+
+  it('passa no kit de conformidade do hub, no modo do manifesto: pela porta, sem credencial, e pelo arquivo do repositório', async () => {
+    for (const fonte of [{ base: p.origem }, { arquivo: ARQUIVO_DO_MANIFESTO }]) {
+      const r = await rodarKit({ modo: 'manifesto', produto: 'regemcast', ...fonte, copiaDoPacote: COPIA_DO_PACOTE }, {});
+      const linhas = r.saida.split(/\r?\n/).filter((l) => /^[✔✘–] /.test(l));
+      expect({ fonte, codigo: r.codigo, falhas: linhas.filter((l) => l.startsWith('✘')), saida: r.codigo === 0 ? '' : r.saida }).toEqual({ fonte, codigo: 0, falhas: [], saida: '' });
+      expect(linhas.map((l) => l.split(':')[0])).toEqual(['✔ copia-do-pacote', '✔ manifesto-chega', '✔ manifesto-formato', '✔ manifesto-do-produto']);
+    }
   }, 60_000);
 
   it('a ferramenta roda na conta da ligação, com o id dela como autor, e só com as permissões que a ligação E o token têm', async () => {

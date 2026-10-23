@@ -1,0 +1,739 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Porta de integração do Regemcast",
+    "version": "1.0.0",
+    "description": "A porta MCP que os produtos da DMS ligados à conta usam: a situação da conta, as campanhas, os públicos, os modelos, o orçamento e as conversas abertas por anúncio, com o que o dono autorizou, e os rascunhos e o disparo de campanha. Credencial: o token do DMS ID com o segredo da ligação (DMS-Ligacao).",
+    "x-dms-produto": "regemcast",
+    "x-dms-pacote": "0.7.2"
+  },
+  "servers": [
+    {
+      "url": "https://castapi.dmsregem.com"
+    }
+  ],
+  "security": [
+    {
+      "dmsId": []
+    }
+  ],
+  "paths": {},
+  "components": {
+    "securitySchemes": {
+      "dmsId": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Token do DMS ID, com o segredo da ligação no cabeçalho DMS-Ligacao (Padrão §2.1)"
+      }
+    },
+    "schemas": {
+      "Problema": {
+        "type": "object",
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "x-dms-permissoes": {
+    "conta.ler": {
+      "frase": "Ver se a conta pode enviar agora, o plano e o uso do ciclo.",
+      "classes": [
+        "dms"
+      ],
+      "sensivel": false
+    },
+    "campanhas.ler": {
+      "frase": "Ver as campanhas, o andamento, as falhas por motivo e o custo na Meta.",
+      "classes": [
+        "dms"
+      ],
+      "sensivel": false
+    },
+    "publicos.ler": {
+      "frase": "Contar quantas pessoas há em cada público e lista. Sem nome e sem telefone.",
+      "classes": [
+        "dms"
+      ],
+      "sensivel": false
+    },
+    "modelos.ler": {
+      "frase": "Ver os modelos, a situação na Meta e a categoria.",
+      "classes": [
+        "dms"
+      ],
+      "sensivel": false
+    },
+    "orcamento.ler": {
+      "frase": "Ver os tetos de gasto e quanto já saiu em cada período.",
+      "classes": [
+        "dms"
+      ],
+      "sensivel": false
+    },
+    "conversas.anuncio.ler": {
+      "frase": "Ver quais conversas começaram por um anúncio, com o telefone de quem escreveu. Sem o conteúdo das mensagens.",
+      "classes": [
+        "dms"
+      ],
+      "sensivel": true
+    },
+    "modelos.rascunhar": {
+      "frase": "Criar e editar rascunhos de modelo. Não envia para a Meta.",
+      "classes": [
+        "dms"
+      ],
+      "sensivel": false
+    },
+    "campanhas.rascunhar": {
+      "frase": "Montar campanhas em rascunho. Não dispara.",
+      "classes": [
+        "dms"
+      ],
+      "sensivel": false
+    },
+    "campanhas.disparar": {
+      "frase": "Disparar uma campanha montada, dentro do orçamento da conta. Só para produtos da DMS.",
+      "classes": [
+        "dms"
+      ],
+      "sensivel": true
+    }
+  },
+  "x-dms-limite": {
+    "porMinuto": 120,
+    "por": "ligacao"
+  },
+  "x-dms-ferramentas": [
+    {
+      "nome": "integracao_situacao",
+      "descricao": "Diz para qual conta do RegemCast este token vale (o id, que não muda, e o nome), o fuso dela, qual produto o token identifica e o que pode fazer. Use para conferir a conexão antes de qualquer outra ferramenta.",
+      "permissao": null,
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "nome": "integracao_revogar",
+      "descricao": "Desliga o PRÓPRIO token: depois desta chamada ele deixa de valer, e só um token novo, emitido pela distribuição a pedido do dono da conta, conecta de novo. Use quando a conexão for desligada do seu lado. Não mexe em mais nada da conta.",
+      "permissao": null,
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "confirmar": {
+            "type": "boolean",
+            "const": true,
+            "description": "Precisa ser true: a revogação não tem volta."
+          }
+        },
+        "required": [
+          "confirmar"
+        ],
+        "additionalProperties": false
+      },
+      "escrita": "substituicao"
+    },
+    {
+      "nome": "conta_situacao",
+      "descricao": "Diz se a conta pode enviar mensagens agora (a saúde da conta do WhatsApp na Meta, com o que resolver quando há problema), o plano e quantos disparos já saíram no ciclo. Use antes de propor ou montar uma campanha.",
+      "permissao": "conta.ler",
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "nome": "campanhas_listar",
+      "descricao": "Lista as campanhas da conta, das mais novas para as mais antigas, com a situação e os números de cada uma (na fila, enviadas, entregues, lidas, falhas, quem respondeu). Para o motivo de uma pausa, as falhas e o custo, use campanha_detalhar.",
+      "permissao": "campanhas.ler",
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "situacao": {
+            "description": "Só as campanhas nesta situação.",
+            "type": "string",
+            "enum": [
+              "rascunho",
+              "agendada",
+              "enviando",
+              "pausada",
+              "concluida",
+              "cancelada"
+            ]
+          },
+          "limite": {
+            "description": "Quantas devolver. Padrão: 20.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "nome": "campanha_detalhar",
+      "descricao": "Os números de uma campanha, por que ela está pausada ou esperando (e até quando), os motivos das falhas com o que fazer em cada um, e o custo na Meta: a estimativa antes de disparar, o gasto e o que ainda pode sair depois. Não devolve quem recebeu.",
+      "permissao": "campanhas.ler",
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "O id da campanha, como veio em campanhas_listar."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "nome": "publicos_listar",
+      "descricao": "Os grupos de contatos que uma campanha pode usar, com quantas pessoas de cada um PODEM receber (quem pediu para sair ou não tem WhatsApp já está fora): as listas da conta, os públicos prontos (com a regra de cada um) e os perfis da base. Só contagens: nenhum nome ou telefone.",
+      "permissao": "publicos.ler",
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "nome": "publico_estimar",
+      "descricao": "Quantas pessoas de um público podem receber, quantas estão em descanso (receberam marketing há pouco e ficariam de fora) e, informando a categoria do modelo, o custo estimado na Meta — que é teto: a Meta só cobra a mensagem entregue. Usa a mesma regra da montagem da campanha. Não cria nada.",
+      "permissao": "publicos.ler",
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "origem": {
+            "type": "string",
+            "enum": [
+              "lista",
+              "importacao",
+              "base",
+              "perfil",
+              "regiao",
+              "publico"
+            ],
+            "description": "De onde sai o público: lista, importacao, base (toda a base), perfil, regiao (estado, pelo DDD) ou publico (um público pronto)."
+          },
+          "origemId": {
+            "description": "O id da lista ou da importação, quando a origem é uma delas.",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "segmento": {
+            "description": "O id do perfil, quando a origem é perfil (veja publicos_listar).",
+            "type": "string"
+          },
+          "uf": {
+            "description": "A sigla do estado, quando a origem é regiao.",
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 2
+          },
+          "publico": {
+            "description": "O id do público pronto, quando a origem é publico (veja publicos_listar).",
+            "type": "string"
+          },
+          "publicoValor": {
+            "description": "O bairro, o mês (1 a 12) ou o produto, quando o público pede.",
+            "type": "string",
+            "maxLength": 80
+          },
+          "categoria": {
+            "description": "A categoria do modelo que será usado. Com ela vem o custo estimado.",
+            "type": "string",
+            "enum": [
+              "marketing",
+              "utilidade",
+              "autenticação"
+            ]
+          }
+        },
+        "required": [
+          "origem"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "nome": "modelos_listar",
+      "descricao": "Os modelos de mensagem da conta como a Meta os tem agora: situação (só \"aprovado\" pode ser disparado), categoria (decide o preço e o descanso), qualidade, quantas variáveis o texto espera e o que pede atenção. O texto do modelo é conteúdo escrito pela loja.",
+      "permissao": "modelos.ler",
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "soAprovados": {
+            "description": "Só os que podem ser disparados.",
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "nome": "orcamento_ler",
+      "descricao": "Os tetos de gasto na Meta que o dono da conta definiu (por dia, semana e mês, em centavos) e quanto já saiu em cada período. Período sem teto não aparece. Quando um teto é atingido, as campanhas pausam e voltam sozinhas na virada do período.",
+      "permissao": "orcamento.ler",
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "nome": "conversas_anuncio_listar",
+      "descricao": "As conversas que começaram por um anúncio de clique para o WhatsApp: o id do anúncio, o identificador do clique (ctwa_clid, que a Meta omite em anúncio no Status), o momento, o número da loja e o telefone de quem escreveu. Sem nome e sem conteúdo de mensagem. Leitura com cursor: guarde o proximo_cursor e volte com ele para receber só o que entrou depois. Só existe o que chegou enquanto a conta tinha um aplicativo com esta permissão, e por até 180 dias.",
+      "permissao": "conversas.anuncio.ler",
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "description": "O proximo_cursor da leitura anterior. Sem ele, a leitura começa do início.",
+            "type": "string",
+            "maxLength": 400
+          },
+          "limite": {
+            "description": "Quantas devolver. Padrão: 200.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "desde": {
+            "description": "Só as conversas abertas a partir deste instante (ISO 8601 com fuso, como 2026-07-01T00:00:00Z). Para a carga inicial.",
+            "type": "string",
+            "maxLength": 40
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "nome": "modelo_rascunhar",
+      "descricao": "Grava um RASCUNHO de modelo de mensagem no RegemCast: título em texto (opcional), mensagem, rodapé e botões. Não envia para a Meta — uma pessoa da conta confere e envia para aprovação, em Modelos. A resposta traz os problemas que barrariam o envio (regras da Meta, texto igual ao de outro modelo), para corrigir antes. Com `id`, altera um rascunho que este mesmo aplicativo criou. Não aceita imagem, vídeo, documento, carrossel nem oferta por tempo limitado.",
+      "permissao": "modelos.rascunhar",
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "chaveIdempotencia": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.:-]{8,100}$",
+            "description": "Uma chave sua, única por ação (8 a 100 caracteres: letras, números, ponto, dois-pontos, hífen, sublinhado). Repetir o MESMO pedido com a mesma chave devolve a mesma resposta, sem criar de novo. Vale por 24 horas."
+          },
+          "id": {
+            "description": "O rascunho a alterar. Só um que este aplicativo criou e que ainda não foi enviado à Meta.",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "nome": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Nome técnico: minúsculas, números e sublinhado, como promo_frete_gratis."
+          },
+          "categoria": {
+            "type": "string",
+            "enum": [
+              "marketing",
+              "utilidade"
+            ],
+            "description": "marketing (promoção, novidade) ou utilidade (aviso sobre algo que a pessoa já pediu). Decide o preço e o descanso."
+          },
+          "idioma": {
+            "description": "Padrão: pt_BR.",
+            "type": "string",
+            "maxLength": 32
+          },
+          "titulo": {
+            "description": "O título da mensagem, em texto. Aceita uma variável, {{1}}.",
+            "type": "string",
+            "maxLength": 60
+          },
+          "tituloExemplo": {
+            "description": "Um exemplo do valor de {{1}} no título, quando ele tem variável.",
+            "type": "string",
+            "maxLength": 200
+          },
+          "corpo": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "description": "A mensagem. Variáveis como {{1}}, {{2}}, em ordem."
+          },
+          "corpoExemplos": {
+            "description": "Um exemplo para cada variável da mensagem, em ordem. A Meta exige.",
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          "rodape": {
+            "type": "string",
+            "maxLength": 60
+          },
+          "botoes": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tipo": {
+                  "type": "string",
+                  "enum": [
+                    "URL",
+                    "PHONE_NUMBER",
+                    "QUICK_REPLY",
+                    "COPY_CODE"
+                  ],
+                  "description": "URL (abre um endereço), PHONE_NUMBER (liga), QUICK_REPLY (resposta rápida) ou COPY_CODE (copia um código)."
+                },
+                "texto": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "url": {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                "telefone": {
+                  "type": "string",
+                  "maxLength": 32
+                }
+              },
+              "required": [
+                "tipo",
+                "texto"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "chaveIdempotencia",
+          "nome",
+          "categoria",
+          "corpo"
+        ],
+        "additionalProperties": false
+      },
+      "escrita": "chave"
+    },
+    {
+      "nome": "campanha_rascunhar",
+      "descricao": "Monta uma campanha em RASCUNHO: o modelo (precisa estar aprovado na Meta), o público (uma lista ou um público da base — nunca números soltos), as variáveis e, se quiser, a janela de horário e o ritmo. Nada é enviado: uma pessoa da conta confere e dispara, em Campanhas. A resposta traz quantas pessoas entraram, quem ficou de fora e o custo estimado na Meta. Use publico_estimar antes para ver o tamanho do público, e modelos_listar para o nome do modelo e quantas variáveis ele espera.",
+      "permissao": "campanhas.rascunhar",
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "chaveIdempotencia": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.:-]{8,100}$",
+            "description": "Uma chave sua, única por ação (8 a 100 caracteres: letras, números, ponto, dois-pontos, hífen, sublinhado). Repetir o MESMO pedido com a mesma chave devolve a mesma resposta, sem criar de novo. Vale por 24 horas."
+          },
+          "nome": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 120,
+            "description": "O nome da campanha, para a pessoa da conta encontrá-la."
+          },
+          "modeloNome": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "O nome do modelo aprovado, como veio em modelos_listar."
+          },
+          "modeloIdioma": {
+            "description": "Padrão: pt_BR.",
+            "type": "string",
+            "maxLength": 32
+          },
+          "publico": {
+            "type": "object",
+            "properties": {
+              "origem": {
+                "type": "string",
+                "enum": [
+                  "lista",
+                  "importacao",
+                  "base",
+                  "perfil",
+                  "regiao",
+                  "publico"
+                ],
+                "description": "De onde sai o público: lista, importacao, base (toda a base), perfil, regiao (estado, pelo DDD) ou publico (um público pronto)."
+              },
+              "origemId": {
+                "description": "O id da lista ou da importação, quando a origem é uma delas.",
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "segmento": {
+                "description": "O id do perfil, quando a origem é perfil (veja publicos_listar).",
+                "type": "string"
+              },
+              "uf": {
+                "description": "A sigla do estado, quando a origem é regiao.",
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 2
+              },
+              "publico": {
+                "description": "O id do público pronto, quando a origem é publico (veja publicos_listar).",
+                "type": "string"
+              },
+              "publicoValor": {
+                "description": "O bairro, o mês (1 a 12) ou o produto, quando o público pede.",
+                "type": "string",
+                "maxLength": 80
+              }
+            },
+            "required": [
+              "origem"
+            ],
+            "additionalProperties": false
+          },
+          "variaveis": {
+            "description": "Uma para cada variável da mensagem do modelo, em ordem: a primeira é {{1}}.",
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "origem": {
+                  "type": "string",
+                  "enum": [
+                    "fixo",
+                    "nome",
+                    "primeiro_nome",
+                    "cashback_saldo",
+                    "cashback_validade"
+                  ],
+                  "description": "fixo (o mesmo texto para todos), nome ou primeiro_nome (do contato), cashback_saldo ou cashback_validade (só vai para quem tem cashback válido)."
+                },
+                "valor": {
+                  "description": "O texto, quando fixo; ou o que usar quando o contato não tem o dado. O saldo do cashback não usa.",
+                  "type": "string",
+                  "maxLength": 1024
+                }
+              },
+              "required": [
+                "origem"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "variavelDoTitulo": {
+            "description": "Só quando o título do modelo tem variável.",
+            "type": "object",
+            "properties": {
+              "origem": {
+                "type": "string",
+                "enum": [
+                  "fixo",
+                  "nome",
+                  "primeiro_nome",
+                  "cashback_saldo",
+                  "cashback_validade"
+                ],
+                "description": "fixo (o mesmo texto para todos), nome ou primeiro_nome (do contato), cashback_saldo ou cashback_validade (só vai para quem tem cashback válido)."
+              },
+              "valor": {
+                "description": "O texto, quando fixo; ou o que usar quando o contato não tem o dado. O saldo do cashback não usa.",
+                "type": "string",
+                "maxLength": 1024
+              }
+            },
+            "required": [
+              "origem"
+            ],
+            "additionalProperties": false
+          },
+          "janelaDias": {
+            "description": "Dias em que pode enviar: 0 = domingo … 6 = sábado. Vazio = qualquer dia.",
+            "maxItems": 7,
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 6
+            }
+          },
+          "janelaInicio": {
+            "description": "Início do horário de envio, HH:MM, no fuso da conta. Só vale junto do fim.",
+            "type": "string",
+            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          },
+          "janelaFim": {
+            "description": "Fim do horário de envio, HH:MM.",
+            "type": "string",
+            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          },
+          "pausaSegundos": {
+            "description": "Segundos entre uma mensagem e a próxima.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3600
+          },
+          "maxPorDia": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "maxPorSemana": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "maxPorMes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "chaveIdempotencia",
+          "nome",
+          "modeloNome",
+          "publico"
+        ],
+        "additionalProperties": false
+      },
+      "escrita": "chave"
+    },
+    {
+      "nome": "campanha_disparo_planejar",
+      "descricao": "O primeiro passo do disparo: mostra, para uma campanha em rascunho que este aplicativo montou, quantas pessoas vão receber, o custo estimado na Meta (teto), como está o orçamento de disparos da conta e o que impede o disparo agora. Se nada impede, devolve a `confirmacao` que campanha_disparar exige. Não muda nada. A decisão de disparar é de quem aprova do lado de quem chama: mostre estes números a essa pessoa.",
+      "permissao": "campanhas.disparar",
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "O id da campanha em rascunho, como veio em campanha_rascunhar."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "nome": "campanha_disparar",
+      "descricao": "DISPARA a campanha: as mensagens começam a sair para o público, e a Meta cobra cada uma que for entregue. Não tem volta para o que já saiu. Exige a `confirmacao` devolvida por campanha_disparo_planejar — se o público, o custo ou o orçamento mudaram desde o plano, é recusado e é preciso planejar de novo. Só para campanha que este aplicativo montou, e só com o orçamento de disparos da conta definido. Depois de disparada, a campanha respeita a janela, o ritmo, o plano e o orçamento (que pausa e retoma sozinho); acompanhe com campanha_detalhar. O dono da conta é avisado.",
+      "permissao": "campanhas.disparar",
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "chaveIdempotencia": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.:-]{8,100}$",
+            "description": "Uma chave sua, única por ação (8 a 100 caracteres). Repetir o MESMO pedido com a mesma chave devolve a mesma resposta, sem fazer de novo. Vale por 24 horas."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "O id da campanha."
+          },
+          "confirmacao": {
+            "type": "string",
+            "minLength": 16,
+            "maxLength": 64,
+            "description": "A confirmação que veio em campanha_disparo_planejar."
+          }
+        },
+        "required": [
+          "chaveIdempotencia",
+          "id",
+          "confirmacao"
+        ],
+        "additionalProperties": false
+      },
+      "escrita": "chave"
+    },
+    {
+      "nome": "campanha_pausar",
+      "descricao": "Para uma campanha que está saindo ou agendada, montada por este aplicativo: nenhuma mensagem nova sai, e quem faltava continua na fila. O que já saiu não volta. Quem retoma é uma pessoa da conta, na tela.",
+      "permissao": "campanhas.disparar",
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "chaveIdempotencia": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.:-]{8,100}$",
+            "description": "Uma chave sua, única por ação (8 a 100 caracteres). Repetir o MESMO pedido com a mesma chave devolve a mesma resposta, sem fazer de novo. Vale por 24 horas."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "O id da campanha."
+          }
+        },
+        "required": [
+          "chaveIdempotencia",
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "escrita": "chave"
+    }
+  ],
+  "x-dms-avisos": [],
+  "x-dms-mcp": {
+    "endereco": "https://castapi.dmsregem.com/api/v1/mcp",
+    "versao": "2026-07-28"
+  }
+}

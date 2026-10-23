@@ -1,4 +1,4 @@
-import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -7,7 +7,7 @@ import helmet from 'helmet';
 
 import { AppModule } from './app.module';
 import { ErroFilter } from './common/erro.filter';
-import { CAMINHO_DOS_METADADOS } from './modules/integracao/ligacao.regras';
+import { ROTAS_FORA_DO_PREFIXO } from './modules/integracao/ligacao.regras';
 import { TelemetriaService } from './modules/telemetria/telemetria.service';
 import { env } from './config/env';
 
@@ -36,8 +36,9 @@ async function bootstrap() {
    */
   app.useBodyParser('json', { limit: '3mb' });
 
-  // Os metadados do recurso da porta MCP (RFC 9728) ficam na raiz do domínio, onde o cliente MCP procura.
-  app.setGlobalPrefix('api/v1', { exclude: [{ path: CAMINHO_DOS_METADADOS, method: RequestMethod.GET }] });
+  // Os metadados do recurso da porta MCP (RFC 9728) ficam na raiz do domínio, onde o cliente MCP procura; o manifesto da
+  // porta (Padrão DMS §13) também.
+  app.setGlobalPrefix('api/v1', { exclude: ROTAS_FORA_DO_PREFIXO });
   app.use(helmet());
   app.use(cookieParser());
   app.set('trust proxy', env.rede.trustProxy);
