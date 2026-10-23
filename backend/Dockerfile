@@ -8,9 +8,16 @@
 # Nada de ARG com segredo: build arg fica gravado no histórico da imagem e
 # `docker history` mostra para qualquer um que baixe. Segredo entra só em
 # runtime, por variável de ambiente.
+#
+# Node na versão EXATA, igual nos três estágios: 22.23.4, a corrigida pelo
+# boletim de segurança do Node de 21/10/2026 (Brotli, CVE-2026-111497, e as
+# chaves da eMudhra). Tag flutuante (`22-alpine`) deixa o construtor do deploy
+# reaproveitar a camada antiga em cache. A mesma versão está no CI
+# (`NODE_VERSAO` em .github/workflows/ci.yml), que roda `node -v` dentro desta
+# imagem e falha se as duas divergirem.
 
 # ---------------------------------------------------------------- deps
-FROM node:22-alpine AS deps
+FROM node:22.23.4-alpine AS deps
 WORKDIR /app
 # argon2 é módulo nativo: sem toolchain o node-gyp falha no musl. Estes pacotes
 # ficam só aqui e não vão para a imagem final.
@@ -26,14 +33,14 @@ COPY backend/src ./src
 RUN npm run build
 
 # ---------------------------------------------------------------- deps de produção
-FROM node:22-alpine AS prod-deps
+FROM node:22.23.4-alpine AS prod-deps
 WORKDIR /app
 RUN apk add --no-cache python3 make g++
 COPY backend/package.json backend/package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 # ---------------------------------------------------------------- runtime
-FROM node:22-alpine AS runtime
+FROM node:22.23.4-alpine AS runtime
 # A versão no ar (o commit): o EasyPanel passa GIT_SHA como argumento de build
 # (não é segredo); APP_VERSAO explícito vence. É a versão da batida e dos erros
 # que vão ao hub da DMS (modules/hub) e a de /saude/pronto/detalhe. Vazia, vale

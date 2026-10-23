@@ -225,6 +225,23 @@ um 500 obscuro no primeiro request.
 
 ---
 
+## Versão do Node
+
+As duas imagens fixam a versão **exata** do Node (`node:22.23.4-alpine` nos três
+estágios de `backend/Dockerfile` e de `frontend/Dockerfile`), e o CI usa a mesma
+(`NODE_VERSAO` em `.github/workflows/ci.yml`). Tag flutuante (`node:22-alpine`)
+deixa o construtor do EasyPanel reaproveitar a camada antiga que está em cache —
+um boletim de segurança do Node não chegaria à produção. A 22.23.4 é a
+corrigida pelo boletim de 21/10/2026 (Brotli, CVE-2026-111497, e as chaves da
+eMudhra).
+
+**Para atualizar:** mudar a tag nos seis `FROM` e o `NODE_VERSAO` no mesmo PR.
+O job "imagens docker" roda `node -v` dentro das duas imagens e fica vermelho
+se a imagem e o CI divergirem. Ficar na mesma linha (22) até decidir mudar de
+linha, com build e suíte completa. A versão do Node **não** aparece em rota
+pública; depois do deploy, ela se confere no log de build do EasyPanel (a linha
+do `FROM node:22.23.4-alpine`).
+
 ## Migrations
 
 Os dois serviços ficam em **auto-deploy**: o merge na `main` implanta sozinho.
