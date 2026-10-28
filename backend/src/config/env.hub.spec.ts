@@ -13,8 +13,14 @@ const BASE = {
 const ORIGINAL = process.env;
 const SEGREDO = 'segredo-do-aplicativo-de-teste-0123456789';
 
+/**
+ * O ambiente de cada teste é só o que ele define (mais o NODE_ENV do jest), como no CI. Nada herdado do processo: fora
+ * de produção o `env.ts` carrega o `backend/.env` com `process.loadEnvFile`, que escreve no ambiente REAL — e o arquivo
+ * de teste seguinte no mesmo processo nasce com essas variáveis. Herdadas, um `DIST_TOKEN` curto do `.env` local
+ * estourava o teste de produção antes da conferência do HUB_URL (só local, com mais de um arquivo por processo).
+ */
 function carregar(extra: Record<string, string>) {
-  process.env = { ...ORIGINAL, ...BASE, ...extra };
+  process.env = { NODE_ENV: ORIGINAL.NODE_ENV, ...BASE, ...extra };
   let lido: typeof import('./env') | undefined;
   jest.isolateModules(() => {
     lido = require('./env') as typeof import('./env'); // eslint-disable-line @typescript-eslint/no-require-imports
