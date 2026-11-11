@@ -131,6 +131,8 @@ export interface PlanoDoDisparo {
   publico: { rotulo: string | null; destinatarios: number; aceitaram: number; impressao: string };
   custo: { moeda: string | null; estimadoCentavos: number | null };
   cupom: { codigo: string; descricao: string | null } | null;
+  /** O "continuar": a campanha parou no teto do pedido anterior, e este a faz seguir para quem falta. */
+  continuacao?: { tetoAnteriorCentavos: number } | null;
 }
 
 /** Um pedido na tela: o pedido, o plano guardado e quem decidiu. */
@@ -155,6 +157,8 @@ export interface PedidoAberto extends PedidoParaTela {
   podeAprovar: boolean;
   segundoFatorPorApp: boolean;
   conferido: boolean;
+  /** No "continuar": o que a campanha já gastou (o teto aprovado vale para ela inteira e tem de passar disso). */
+  gastoAteAquiCentavos?: number | null;
 }
 
 /** `POST /aprovacoes/:id/aprovar`: aprovou e disparou, aprovou e o disparo ficou para depois, ou o pedido se encerrou. */

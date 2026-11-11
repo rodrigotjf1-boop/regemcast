@@ -62,6 +62,17 @@ export interface PlanoDoDisparo {
   publico: { rotulo: string | null; destinatarios: number; aceitaram: number; impressao: string };
   custo: { moeda: string | null; estimadoCentavos: number | null };
   cupom: CupomDoPedido | null;
+  /**
+   * O "continuar": a campanha parou no teto do pedido anterior, e este pedido a faz seguir para quem falta. Guarda o
+   * teto que ela tinha. Nulo no primeiro disparo. O teto que se aprova aqui vale para a campanha INTEIRA: o que ela já
+   * gastou conta (a mesma conta do worker, `folgaDoTeto`).
+   */
+  continuacao: { tetoAnteriorCentavos: number } | null;
+}
+
+/** A campanha parada no teto de gasto aprovado: só segue por um pedido novo (o "continuar"), nunca pelo Retomar. */
+export function paradaNoTeto(c: { status: string; pausaMotivo?: string | null }): boolean {
+  return c.status === 'pausada' && c.pausaMotivo === 'teto_aprovado';
 }
 
 const inteiroSemSinal = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.trunc(v) : 0);
@@ -85,6 +96,7 @@ export function montarPlano(e: {
   moeda: string | null;
   estimadoCentavos: number | null;
   cupom: CupomDoPedido | null;
+  continuacao?: { tetoAnteriorCentavos: number } | null;
 }): PlanoDoDisparo {
   return {
     campanha: e.campanhaId,
@@ -114,6 +126,7 @@ export function montarPlano(e: {
       estimadoCentavos: typeof e.estimadoCentavos === 'number' && Number.isSafeInteger(e.estimadoCentavos) && e.estimadoCentavos >= 0 ? e.estimadoCentavos : null,
     },
     cupom: e.cupom ? { codigo: e.cupom.codigo, descricao: e.cupom.descricao } : null,
+    continuacao: e.continuacao ? { tetoAnteriorCentavos: inteiroSemSinal(e.continuacao.tetoAnteriorCentavos) } : null,
   };
 }
 
@@ -227,6 +240,11 @@ export function adiado(frase: string, venceEm: string): string {
 export function pausaNoTeto(produto: string | null): string {
   const quem = produto ? `o ${nomeDoProduto(produto)}` : 'o aplicativo que pediu';
   return `Esta campanha parou no teto de gasto aprovado. Para seguir, ${quem} faz um pedido novo, com outro teto.`;
+}
+
+/** O teto do "continuar" vale para a campanha inteira: tem de passar do que ela já gastou, senão ela para de novo na hora. */
+export function tetoAbaixoDoGasto(gasto: string): string {
+  return `Esta campanha já gastou ${gasto}, e o teto deste pedido vale para ela inteira: aprove um teto maior que isso.`;
 }
 
 /** O nome do produto como a tela mostra ("Liame"), a partir do identificador (`liame`). */

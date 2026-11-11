@@ -90,14 +90,22 @@ function ConteudoDoPedido({
   const { pedido, plano } = aberto;
   const quem = nomeDoAplicativo(plano.aplicativo) ?? plano.aplicativo;
   const esperando = pedido.situacao === 'aguardando';
-  const [teto, setTeto] = useState(plano.custo.estimadoCentavos ? String(Math.ceil(plano.custo.estimadoCentavos / 100)) : '');
+  // O "continuar": a campanha parou no teto do pedido anterior; o teto daqui vale para ela inteira (o gasto de antes conta).
+  const continuacao = plano.continuacao ?? null;
+  const gasto = continuacao ? (aberto.gastoAteAquiCentavos ?? 0) : 0;
+  const sugerido = (plano.custo.estimadoCentavos ?? 0) + gasto;
+  const [teto, setTeto] = useState(sugerido > 0 ? String(Math.ceil(sugerido / 100)) : '');
   const [erroTeto, setErroTeto] = useState('');
   const [dialogo, setDialogo] = useState<'' | 'fator' | 'recusar'>('');
 
   const tetoCentavos = centavosDoTexto(teto);
   const abrirAprovar = () => {
     if (tetoCentavos === null || tetoCentavos < 100) {
-      setErroTeto('Diga o teto de gasto deste disparo, em reais (pelo menos R$ 1,00).');
+      setErroTeto(`Diga o teto de gasto ${continuacao ? 'da campanha inteira' : 'deste disparo'}, em reais (pelo menos R$ 1,00).`);
+      return;
+    }
+    if (continuacao && tetoCentavos <= gasto) {
+      setErroTeto(`A campanha já gastou ${dinheiroNaMoeda(gasto, plano.custo.moeda)}: o teto precisa ser maior que isso.`);
       return;
     }
     setErroTeto('');
@@ -115,7 +123,14 @@ function ConteudoDoPedido({
 
       {resultado ? <AvisoDoResultado resultado={resultado} /> : null}
       {recusado ? (
-        <Alerta tom="informacao">Pedido recusado. O {quem} recebeu o motivo e vai desativar o cupom, se houver um.</Alerta>
+        <Alerta tom="informacao">Pedido recusado. O motivo volta para o {quem}, que desativa o cupom, se houver um.</Alerta>
+      ) : null}
+      {continuacao && esperando ? (
+        <Alerta tom="informacao">
+          Esta campanha já saiu e parou no teto de gasto de {dinheiroNaMoeda(continuacao.tetoAnteriorCentavos, plano.custo.moeda)}
+          , com {dinheiroNaMoeda(gasto, plano.custo.moeda)} gastos. Aprovar faz ela seguir para quem falta, e o teto que você fixa
+          vale para a campanha inteira.
+        </Alerta>
       ) : null}
       {!aberto.conferido && esperando ? (
         <Alerta tom="atencao">
@@ -147,7 +162,7 @@ function ConteudoDoPedido({
           <CardCorpo>
             <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <dt className="text-xs text-tinta-suave">Aceitaram receber</dt>
+                <dt className="text-xs text-tinta-suave">{continuacao ? 'Faltam receber' : 'Aceitaram receber'}</dt>
                 <dd className="numerico text-2xl font-semibold text-tinta">{formatarNumero(plano.publico.aceitaram)}</dd>
                 <dd className="text-xs text-tinta-suave">
                   de {formatarNumero(plano.publico.destinatarios)}
@@ -159,7 +174,9 @@ function ConteudoDoPedido({
                 <dd className="numerico text-2xl font-semibold text-tinta">
                   {plano.custo.estimadoCentavos !== null ? dinheiroNaMoeda(plano.custo.estimadoCentavos, plano.custo.moeda) : '—'}
                 </dd>
-                <dd className="text-xs text-tinta-suave">a Meta cobra por mensagem entregue</dd>
+                <dd className="text-xs text-tinta-suave">
+                  {continuacao ? 'para quem falta; ' : ''}a Meta cobra por mensagem entregue
+                </dd>
               </div>
             </dl>
           </CardCorpo>
@@ -203,8 +220,12 @@ function ConteudoDoPedido({
       {esperando ? (
         <Card>
           <CardCabecalho
-            titulo="Teto de gasto deste disparo"
-            descricao="O disparo para se o gasto chegar ao teto; passar dele pede um pedido novo. O orçamento da conta continua valendo."
+            titulo={continuacao ? 'Teto de gasto da campanha inteira' : 'Teto de gasto deste disparo'}
+            descricao={
+              continuacao
+                ? `Conta o que ela já gastou (${dinheiroNaMoeda(gasto, plano.custo.moeda)}): o teto precisa ser maior. Ela para de novo se o gasto chegar a ele. O orçamento da conta continua valendo.`
+                : 'O disparo para se o gasto chegar ao teto; passar dele pede um pedido novo. O orçamento da conta continua valendo.'
+            }
           />
           <CardCorpo className="space-y-3">
             <div className="max-w-xs space-y-1.5">
@@ -311,7 +332,7 @@ function AvisoDoResultado({ resultado }: { resultado: RespostaDaAprovacao }) {
     return (
       <Alerta tom="sucesso">
         <span className="block space-y-2">
-          <span className="block">Aprovado. O disparo começou, uma vez, dentro do teto; quem pediu foi avisado.</span>
+          <span className="block">Aprovado. O disparo começou, uma vez, dentro do teto, e a decisão já aparece no pedido para quem pediu.</span>
           {resultado.campanhaId ? (
             <Link href={`/campanhas/${resultado.campanhaId}`} className="font-medium underline underline-offset-4">
               Acompanhar a campanha
@@ -376,8 +397,10 @@ function DialogoAprovar({
       descricao={
         <>
           {formatarNumero(plano.publico.aceitaram)} {plano.publico.aceitaram === 1 ? 'pessoa' : 'pessoas'}
+          {plano.continuacao ? (plano.publico.aceitaram === 1 ? ' que falta' : ' que faltam') : ''}
           {plano.custo.estimadoCentavos !== null ? `, cerca de ${dinheiroNaMoeda(plano.custo.estimadoCentavos, plano.custo.moeda)}` : ''}, teto de{' '}
           {dinheiroNaMoeda(tetoCentavos, plano.custo.moeda)}
+          {plano.continuacao ? ' para a campanha inteira' : ''}
           {plano.cupom ? `, com o cupom ${plano.cupom.codigo}` : ''}. Abra o aplicativo autenticador e digite o código de 6
           números da conta Regemcast.
         </>

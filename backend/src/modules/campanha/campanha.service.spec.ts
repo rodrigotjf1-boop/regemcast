@@ -509,6 +509,64 @@ describe('disparar', () => {
       await expect(m.service.retomar(CONTA, USUARIO, CAMPANHA)).rejects.toThrow(/parou no teto de gasto aprovado. Para seguir, o Liame faz um pedido novo/);
       expect(m.diario.some((e) => e.valores.status === 'agendada')).toBe(false);
     });
+
+    describe('o "continuar" depois do teto (decisão F5-6: passar do teto pede aprovação nova)', () => {
+      const PARADA_NO_TETO = { ...CAMPANHA_RASCUNHO, status: 'pausada', pausaMotivo: 'teto_aprovado', integracaoProduto: 'liame', acaoPedidoId: 'pedido-1' };
+
+      it('o Disparar (sem pedido) da campanha parada no teto recusa com a frase do pedido novo', async () => {
+        const m = montar();
+        m.db.select.mockReturnValueOnce(m.consulta([PARADA_NO_TETO]));
+        await expect(m.service.disparar(CONTA, USUARIO, CAMPANHA)).rejects.toThrow(/Para seguir, o Liame faz um pedido novo, com outro teto/);
+        expect(m.diario.some((e) => e.valores.status === 'agendada')).toBe(false);
+      });
+
+      it('o plano da porta enxerga o continuar só na campanha parada no teto por pedido; outra pausa segue "já disparada"', async () => {
+        const m = montar();
+        m.db.select
+          .mockReturnValueOnce(m.consulta([PARADA_NO_TETO]))
+          .mockReturnValueOnce(m.consulta([{ phoneNumberId: 'PN1', status: 'registrado' }]));
+        expect(await m.service.oQueImpedeODisparo(CONTA, CAMPANHA)).toBeNull();
+
+        const outra = montar();
+        outra.db.select.mockReturnValueOnce(outra.consulta([{ ...PARADA_NO_TETO, pausaMotivo: 'manual' }]));
+        expect(await outra.service.oQueImpedeODisparo(CONTA, CAMPANHA)).toMatch(/já foi disparada \(está "pausada"\)/);
+
+        // Parada no teto, mas sem pedido que a disparou (não deveria existir): não há o que continuar.
+        const semPedido = montar();
+        semPedido.db.select.mockReturnValueOnce(semPedido.consulta([{ ...PARADA_NO_TETO, acaoPedidoId: null }]));
+        expect(await semPedido.service.oQueImpedeODisparo(CONTA, CAMPANHA)).toMatch(/já foi disparada/);
+      });
+
+      it('continuarNoTeto: a campanha parada volta à fila, condicionada à pausa no teto, com a auditoria do pedido', async () => {
+        const m = montar();
+        m.db.select
+          .mockReturnValueOnce(m.consulta([PARADA_NO_TETO])) // buscar
+          .mockReturnValueOnce(m.consulta([{ phoneNumberId: 'PN1', status: 'registrado' }])) // número
+          .mockReturnValueOnce(m.consulta([{ ...PARADA_NO_TETO, status: 'agendada', pausaMotivo: null }])) // detalhe
+          .mockReturnValueOnce(m.consulta([])); // contagem do detalhe
+        m.db.update.mockReturnValueOnce(consulta([{ id: CAMPANHA }], m.diario, 'update'));
+
+        await m.service.continuarNoTeto(CONTA, USUARIO, CAMPANHA, { pedidoId: 'pedido-2' });
+
+        expect(m.diario.find((e) => e.valores.status === 'agendada')?.valores).toMatchObject({ pausaMotivo: null, retomarEm: null });
+        expect(m.registrar).toHaveBeenCalledWith(expect.objectContaining({ acao: 'campanha.continuada', detalhe: expect.objectContaining({ pedido: 'pedido-2' }) }));
+      });
+
+      it('continuarNoTeto recusa a campanha que não está parada no teto (o Retomar e o continuar não se misturam)', async () => {
+        const m = montar();
+        m.db.select.mockReturnValueOnce(m.consulta([{ ...PARADA_NO_TETO, pausaMotivo: 'orcamento' }]));
+        await expect(m.service.continuarNoTeto(CONTA, USUARIO, CAMPANHA, { pedidoId: 'pedido-2' })).rejects.toThrow(/não está parada no teto/);
+        expect(m.diario.some((e) => e.valores.status === 'agendada')).toBe(false);
+      });
+
+      it('cancelar a campanha parada no teto encerra o pedido do continuar que estava aberto', async () => {
+        const m = montar();
+        m.db.select.mockReturnValueOnce(m.consulta([PARADA_NO_TETO]));
+        await m.service.excluir(CONTA, USUARIO, CAMPANHA);
+        const encerrou = m.db.execute.mock.calls.map((c) => JSON.stringify(c[0])).find((t) => t.includes('update acao_pedido') && t.includes('cancelado'));
+        expect(encerrou).toContain('pedido-cancelado');
+      });
+    });
   });
 
   it('recusa quando não há número pronto — agora, e não horas depois', async () => {
@@ -625,6 +683,34 @@ describe('rodada do worker', () => {
       .mockResolvedValueOnce({ rows: [] }) // saldo do plano
       .mockResolvedValueOnce({ rows: [] }); // limite da Meta
   }
+
+  it('o teto conferido é o do pedido EM VIGOR (depois do "continuar", o pedido novo), e a pausa no teto anota nele', async () => {
+    // A campanha guarda o pedido que a disparou (pedido-1); o último executado (pedido-2, o do continuar) tem teto de
+    // R$ 1,00, e já saíram 2 mensagens de R$ 0,50: não cabe mais uma.
+    const m = montar();
+    m.db.select.mockReturnValueOnce(m.consulta([{ ...ATIVA, modeloCategoria: 'marketing', acaoPedidoId: 'pedido-1', integracaoProduto: 'liame', nome: 'Combo' }]));
+    ateOOrcamento(m);
+    m.db.execute
+      .mockResolvedValueOnce({ rows: [] }) // orçamento de disparos (conta sem teto)
+      .mockResolvedValueOnce({ rows: [{ id: 'pedido-2', teto: 100, moeda: 'BRL' }] }) // o pedido em vigor
+      .mockResolvedValueOnce({ rows: [{ moeda: 'BRL', ddi: '55', categoria: 'marketing', valor: '0.500000', vigenteDe: '2026-07-01' }] }) // moeda e tarifas
+      .mockResolvedValueOnce({ rows: [{ hoje: '2026-09-16' }] }) // hoje, no fuso da conta
+      .mockResolvedValueOnce({ rows: [{ prefixo: '5521', daMeta: null, quantas: 2 }] }) // o que a campanha já gastou
+      .mockResolvedValueOnce({ rows: [{ prefixo: '5521' }] }) // quem está na vez
+      .mockResolvedValueOnce({ rows: [{ id: CAMPANHA }] }) // a pausa no teto
+      .mockResolvedValueOnce({ rows: [{ id: 'pedido-2' }] }); // o motivo no pedido em vigor
+
+    await m.service.processarRodada(CAMPANHA, new Date('2026-09-16T15:00:00Z'));
+
+    const chamadas = m.db.execute.mock.calls.map((c) => JSON.stringify(c[0]));
+    const vigor = chamadas.find((t) => t.includes("situacao = 'executado'") && t.includes('order by executado_em desc'));
+    expect(vigor).toBeDefined();
+    const anotou = chamadas.find((t) => t.includes("motivo = 'teto-de-gasto'"));
+    expect(anotou).toContain('pedido-2');
+    expect(anotou).not.toContain('pedido-1');
+    expect(reivindicacao(m)).toBeUndefined();
+    expect(m.avisos.avisar).toHaveBeenCalledWith(CONTA, 'campanhas', expect.objectContaining({ corpo: expect.stringMatching(/o Liame faz um pedido novo/) }));
+  });
 
   it('orçamento de disparos sem folga: PAUSA pelo orçamento, com a hora de voltar, e não reivindica ninguém', async () => {
     // R$ 50,00 por dia e 155 mensagens de 0,3217 já saíram (49,86): não cabe mais uma.

@@ -106,7 +106,14 @@ function CartaoDoPedido({ item }: { item: PedidoParaTela }) {
           <span aria-hidden="true">·</span>
           <span className="numerico">
             {formatarNumero(item.plano.publico.aceitaram)} {item.plano.publico.aceitaram === 1 ? 'pessoa' : 'pessoas'}
+            {item.plano.continuacao ? (item.plano.publico.aceitaram === 1 ? ' que falta' : ' que faltam') : ''}
           </span>
+          {item.plano.continuacao ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>continuar depois do teto</span>
+            </>
+          ) : null}
           {custo !== null ? (
             <>
               <span aria-hidden="true">·</span>

@@ -648,7 +648,7 @@
     },
     {
       "nome": "campanha_disparo_planejar",
-      "descricao": "O primeiro passo do disparo: mostra, para uma campanha em rascunho que este aplicativo montou, quantas pessoas vão receber, o custo estimado na Meta (teto), como está o orçamento de disparos da conta e o que impede o disparo agora. Se nada impede, devolve a `confirmacao` que campanha_disparar exige. Não muda nada. A decisão de disparar é de quem aprova do lado de quem chama: mostre estes números a essa pessoa.",
+      "descricao": "O primeiro passo do disparo: mostra, para uma campanha em rascunho que este aplicativo montou, quantas pessoas vão receber, o custo estimado na Meta (teto), como está o orçamento de disparos da conta e o que impede o disparo agora. Se nada impede, devolve a `confirmacao` que campanha_disparar exige. Não muda nada. A decisão de disparar é de quem aprova do lado de quem chama: mostre estes números a essa pessoa. Também planeja o \"continuar\" da campanha que parou no teto de gasto aprovado (os números são de quem falta); ela só segue por campanha_disparo_pedir.",
       "permissao": "campanhas.disparar",
       "esquemaEntrada": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -658,7 +658,7 @@
             "type": "string",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "O id da campanha em rascunho, como veio em campanha_rascunhar."
+            "description": "O id da campanha em rascunho, como veio em campanha_rascunhar, ou da campanha parada no teto de gasto aprovado."
           }
         },
         "required": [
@@ -732,7 +732,7 @@
     },
     {
       "nome": "campanha_disparo_pedir",
-      "descricao": "Pede o disparo de uma campanha em rascunho que este aplicativo montou. NADA sai agora: uma pessoa da conta (o dono, ou quem ele autorizou) aprova no Regemcast, com o código do aplicativo autenticador, e fixa o teto de gasto; só então as mensagens saem, uma vez. Exige a `confirmacao` de campanha_disparo_planejar. O pedido fica preso ao plano (o texto, as variáveis, quem recebe, o custo e o cupom): se algo mudar, ele se encerra e é preciso pedir de novo. Vence em 24 horas. Um pedido aberto por campanha. Responde o pedido (situação `aguardando` e o link da tela de aprovação); acompanhe com acao_pedido_ler. Repetir com a mesma chave devolve o mesmo pedido como está agora.",
+      "descricao": "Pede o disparo de uma campanha em rascunho que este aplicativo montou. NADA sai agora: uma pessoa da conta (o dono, ou quem ele autorizou) aprova no Regemcast, com o código do aplicativo autenticador, e fixa o teto de gasto; só então as mensagens saem, uma vez. Exige a `confirmacao` de campanha_disparo_planejar. O pedido fica preso ao plano (o texto, as variáveis, quem recebe, o custo e o cupom): se algo mudar, ele se encerra e é preciso pedir de novo. Vence em 24 horas. Um pedido aberto por campanha. Responde o pedido (situação `aguardando` e o link da tela de aprovação); acompanhe com acao_pedido_ler. Repetir com a mesma chave devolve o mesmo pedido como está agora. A campanha disparada por pedido que parou no teto de gasto aprovado segue por um pedido novo daqui (o \"continuar\"): quem aprova fixa um teto para a campanha inteira, maior do que ela já gastou, e ela volta a sair para quem falta.",
       "permissao": "campanhas.disparar",
       "esquemaEntrada": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -747,7 +747,7 @@
             "type": "string",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "O id da campanha em rascunho."
+            "description": "O id da campanha em rascunho, ou da campanha parada no teto de gasto aprovado."
           },
           "confirmacao": {
             "type": "string",

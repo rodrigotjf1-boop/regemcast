@@ -371,6 +371,9 @@ inteiro, as travas e os testes estão em [`aprovacao-de-disparos.md`](aprovacao-
 - **`DISPARO_SO_COM_APROVACAO=true`** fecha o caminho direto (`campanha_disparar` recusa, e a tela não dispara o
   rascunho de outro produto): o dono liga depois que o Liame passar ao pedido.
 - **A recusa** sai `isError`, com a frase comum do pacote e `structuredContent` `{ problema, mensagem, pedido? }`.
+- **O "continuar" depois do teto:** a campanha disparada por pedido que parou no teto aprovado segue por um pedido novo
+  (planejar e pedir com o id dela; o plano é o de quem falta e leva `continuacao`). Quem aprova fixa um teto para a
+  campanha inteira, maior do que ela já gastou.
 
 ## Disparo (sem migration)
 
