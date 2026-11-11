@@ -1,0 +1,192 @@
+# Aprovação de disparos (Hub DMS, F5 parte B)
+
+O disparo que outro produto da DMS pede pela porta MCP passa a **esperar uma pessoa da conta**: o dono (ou quem ele
+autorizou) aprova na tela do Regemcast, com o código do aplicativo autenticador, fixa o teto de gasto daquele disparo, e
+só então as mensagens saem, uma vez. Até aqui a "confirmação" do disparo era uma impressão digital que o próprio chamador
+recebia: provava que o plano não mudou, não que alguém aprovou (documento "F5 do Hub DMS", 22/10/2026).
+
+- **Contrato:** o pedido de ação do pacote comum (`dms/integracao-dms.ts`, seção 11; Padrão DMS §8.1). As situações, o
+  prazo, o resumo do plano, as conferências e as mensagens de erro são as do pacote; aqui ficam a guarda, a tela, o
+  segundo fator e a execução. Os **8 casos comuns** do pacote rodam contra o serviço de verdade
+  (`aprovacao.pg.spec.ts`).
+- **Decisões do dono (23/10/2026, todas na A):** F5-1 código do aplicativo autenticador na hora de aprovar; F5-2 só o
+  dono, que pode dar a permissão a outra pessoa; F5-3 quem pediu não aprova (o pedido do agente, quem tem a permissão
+  aprova); F5-4 prazo de 24 horas, lembrete na metade; F5-5 o cupom aparece junto (o Liame o desativa se o pedido for
+  recusado ou vencer); F5-6 teto de gasto do disparo; F5-7 o resultado vai a quem pediu por aviso assinado e pela
+  consulta; F5-11 o merge e a migration esperam o "pode" do dono.
+- **Protótipo aprovado:** "Aprovação de disparos" (Hub DMS, `prototipos/aprovacao-de-disparos.html`), 10 situações.
+- **Revisão de olhos frescos do desenho** (11/11/2026), antes do código: 4 bloqueantes e 10 importantes, todos
+  tratados (o que mudou está nas seções abaixo).
+
+## Os PRs
+
+1. **Servidor** (migration 048): o pedido, as ferramentas, a aprovação pela API, a execução, o teto no worker, o prazo
+   e o lembrete, os avisos a quem aprova, o registro no hub e a permissão de aprovar em Conta e usuários.
+2. **Tela:** Campanhas › Para aprovar, o pedido aberto, os diálogos de aprovar e recusar, a permissão em Conta e
+   usuários, o teto e o gasto na campanha (pela MESMA conta do worker), e o "continuar" depois do teto.
+3. **Aviso assinado a quem pediu** (F5-7): o Regemcast passa a mandar aviso (Standard Webhooks, pacote seção 7). Até
+   ele, quem pediu acompanha pela consulta (`acao_pedido_ler`).
+
+## O que nasce desligado e o que não
+
+- **O caminho novo existe desde o merge** (aditivo; contrato 1.1.0): `campanha_disparo_pedir`, `acao_pedido_ler`,
+  `acao_pedido_cancelar` e as rotas da tela. Ninguém os usa até o Liame passar a pedir (parte D). Ele é mais seguro que
+  o de hoje: nada sai sem a pessoa.
+- **Campanha com pedido aberto só sai por ele**, com a chave ligada ou não: o Disparar da tela e o `campanha_disparar`
+  recusam (`CampanhaService.disparar`, no serviço). Assim ninguém contorna quem aprova enquanto as partes D e E não
+  chegam.
+- **O caminho direto fecha com `DISPARO_SO_COM_APROVACAO=true`** (padrão `false`): `campanha_disparar` recusa, pelas
+  duas credenciais, e o Disparar da tela recusa todo rascunho montado por outro produto (ele sai pelo pedido). A trava
+  fica em `CampanhaService.disparar`, que distingue a execução de um pedido aprovado pelo `pedidoId`. O dono liga depois
+  que o Liame passar ao pedido (parte D) e depois da parte E (F5-8). Ligar é **quebra** para quem ainda usa
+  `campanha_disparar` (Padrão §12): antes, passar pela skill `mudanca-produto-dms`.
+- `campanha_disparar` continua no catálogo (o manifesto lista o que existe); sai numa versão de contrato posterior,
+  pela régua de retirada do Padrão §12.
+
+## Migration 048 (`048_aprovacao_de_disparos.sql`)
+
+**`acao_pedido`** (RLS da conta; o `regemcast_app` não apaga: é a prova):
+
+- a campanha, a ação (`campanha_disparar`), o risco (`R3`: mensagem a cliente E gasto, então o teto é obrigatório), a
+  situação (as 8 do pacote), o resumo do plano e o plano;
+- o aplicativo, a credencial por onde veio (`token_id`, o token ou a ligação) e o prefixo visível dela;
+- quem pede (`{"tipo":"agente"}` ou `{"tipo":"pessoa","pessoa":"<resumo do e-mail>"}`), a chave de repetição só em
+  resumo e a impressão do pedido (`impressaoPedido` do pacote);
+- `criado_em`, `vence_em` e `lembrete_em` **gravados pelo serviço** (o mesmo relógio, também nos testes);
+- quem decidiu (a pessoa e o papel, para o hub), o teto, o motivo (um nome de problema do pacote) e o da recusa.
+
+**Índices:** um pedido aberto por campanha (`aguardando`, `aprovado`, `executando`); a chave presa ao pedido
+`(conta, aplicativo, chave)`; os da rotina.
+
+**O gatilho `rc_acao_pedido_guarda`:** a situação anda só pelas transições do pacote; o que prende o pedido não muda
+depois de nascer; sem mudança de situação, a decisão (quem, quando, o motivo da recusa, a execução) não muda, e o
+motivo só muda no executado para `teto-de-gasto`; o teto nasce uma vez, na aprovação.
+
+**`campanha.acao_pedido_id`:** o pedido que disparou a campanha, gravado uma vez (gatilho). O worker lê o teto **do
+pedido**, nunca de uma coluna da campanha que outro caminho mexeria. `pausa_motivo` ganha `teto_aprovado` (o check é
+trocado com `not valid` + `validate`).
+
+**`usuario.aprova_disparos`** (a permissão que o dono dá; ele aprova sempre) e a trava do código na aprovação
+(`aprovacao_erros`, `aprovacao_erro_em`, `aprovacao_travada_ate`: 5 errados em 15 minutos travam aprovar por 15
+minutos, separada da trava da entrada).
+
+Tem `drop constraint`: vai pelo SQL Editor, colada pelo dono, com a linha do ledger.
+
+## O plano prende o que sai
+
+O plano é tudo o que a pessoa vê para aprovar, montado por uma função só (`planoAgora`) no pedido, na tela e na
+execução. O resumo dele (`resumoDoPlano`) prende o pedido:
+
+- o **modelo como a Meta o tem agora**: o id dela, o cabeçalho, o corpo, o rodapé e os botões. Sem o texto, o pedido é
+  recusado: quem aprova precisa ver o que sai. Editar o modelo no WhatsApp Manager muda o plano;
+- as **variáveis** (de onde sai cada uma, com o valor das fixas: o cupom e o "10%" que o rascunho grava), a variável do
+  título e o que o envio exige (`campanha.envio`);
+- o **público**: o rótulo, as contagens e a **impressão de quem recebe** (o telefone e as variáveis de cada um, em
+  ordem). Trocar a lista por outra do mesmo tamanho muda o plano;
+- o custo estimado (moeda e centavos) e o **cupom** que veio no pedido (texto de terceiro: dado, até 40 e 200
+  caracteres).
+
+O orçamento da conta **não** entra: não é o que a pessoa aprova (ela fixa o teto do disparo), e o teto mexido pelo
+dono não encerra o pedido. **Editar** o rascunho encerra o pedido aberto (`plano-mudou`) e **excluir** também
+(`pedido-cancelado`), na mesma transação, com a campanha travada.
+
+## As ferramentas (porta MCP)
+
+Todas com `campanhas.disparar` (só `dms`), dentro da conta da credencial, e só para o aplicativo que pediu.
+
+- **`campanha_disparo_pedir`** `{ chaveIdempotencia, id, confirmacao, pedidoPor, cupom? }`:
+  1. a **chave primeiro**: a mesma chave com a mesma impressão devolve o pedido como está agora, aprovado ou não, também
+     depois de a campanha ter saído; com outra impressão, `chave-reutilizada`;
+  2. no máximo 20 pedidos esperando por conta;
+  3. só o pedido novo passa pela conferência da porta (a campanha é deste aplicativo, nada impede, e a `confirmacao` é
+     a do plano de agora), monta o plano e confere pelo pacote (`conferirPedidoNovo`);
+  4. grava `aguardando` (`on conflict do nothing`): bateu na chave, é a repetição; bateu no índice da campanha,
+     `aprovacao-pendente` com o id do pedido aberto;
+  5. depois do commit: avisa quem aprova e registra no hub.
+- **`acao_pedido_ler`** `{ id }`: o pedido como está agora (o que passou do prazo aparece vencido), com o link da tela.
+- **`acao_pedido_cancelar`** `{ id }`: quem pediu desiste (`aguardando`/`aprovado` → `cancelado`, decidido por quem
+  pediu). Cancelar de novo devolve o cancelado; o executado, o recusado e o vencido recusam com o problema deles.
+- **A recusa** sai `isError` com a frase comum do pacote e `structuredContent` `{ problema, mensagem, pedido? }`
+  (também o 503 da parada: é recusa, não erro nosso). O SDK 2.3.0 não valida o `outputSchema` quando há `isError`.
+
+## A aprovação (API da tela)
+
+Rotas na conta da sessão (`/api/v1/aprovacoes`); dono e operador veem, quem decide é conferido no **serviço**.
+
+- `GET /aprovacoes` — os que esperam (pelo prazo) e os decididos nos últimos 30 dias; `podeAprovar` e
+  `segundoFatorPorApp` de quem pergunta.
+- `GET /aprovacoes/:id` — o pedido e o plano guardado. Se o plano de agora é outro, o pedido se encerra ali
+  (`cancelado`, `plano-mudou`), na transação da tela; se a Meta não respondeu, nada se encerra e `conferido` volta
+  falso.
+- `POST /aprovacoes/:id/aprovar` `{ codigo, tetoCentavos, resumoVisto }`:
+  1. quem pode (dono, ou `aprova_disparos`) e o teto (R$ 1,00 a R$ 1.000.000,00);
+  2. o **código do aplicativo autenticador**: travado, recusa; errado, conta numa transação **própria** (a recusa
+     desfaz a do pedido, a contagem fica) e trava no quinto; certo, gasta o passo numa transação própria (o mesmo
+     `totp_ultimo_passo` da entrada: quem acabou de entrar espera o próximo código);
+  3. a situação de agora primeiro (o vencido não vira cancelado); o aplicativo ainda ligado, com a permissão (senão o
+     pedido se encerra); a parada do hub (recusa, sem encerrar); o plano de agora (mudou: encerra e responde o
+     encerrado, sem lançar, para o encerramento confirmar);
+  4. `conferirAprovacao` (pacote); o que impediria o disparo agora (recusa com a frase, sem gravar);
+  5. `aprovado`, condicional a `aguardando`; e a tela **executa na mesma transação**.
+  Responde o pedido, o resultado (`executado`, `encerrado` ou `adiado`) e o aviso.
+- `POST /aprovacoes/:id/recusar` `{ motivo }` — `conferirRecusa`; motivo de 1 a 300 caracteres, volta a quem pediu.
+
+## A execução
+
+`executar` roda na transação de quem chama (a tela, ou a rotina numa `comConta`):
+
+1. trava o pedido (`for update`); a situação de agora tem de ser `aprovado`;
+2. o aplicativo ainda ligado (senão encerra) e sem parada (senão adia);
+3. trava a campanha (a edição, a exclusão e outro disparo esperam) e refaz o plano: mudou, encerra (`plano-mudou`); a
+   Meta não respondeu, adia;
+4. num **ponto de salvamento**: `aprovado` → `executando`, o MESMO disparo da tela (`CampanhaService.disparar`, com o
+   pedido; quem dispara é quem aprovou), a campanha guarda o pedido, `executado`. O disparo recusou (o WhatsApp caiu
+   entre aprovar e executar, ou a Meta não respondeu): só o ponto de salvamento se desfaz, o pedido **segue aprovado** e
+   a rotina tenta de novo até o prazo. `falhou` não é usado nesta versão.
+
+**Rotina** (a cada minuto): vence o que passou do prazo (`vencido`, decidido pelo prazo), manda o lembrete na metade
+(uma vez) e tenta de novo o aprovado parado há mais de 2 minutos, cada um na conta dele.
+
+## O teto do disparo no worker
+
+Antes de cada lote, na mesma trava por conta do orçamento, a campanha disparada por pedido confere o teto **do pedido**
+(`folgaDoTeto`): o gasto é a regra do orçamento da conta restrita à campanha (`enviando` mais o que saiu cobrável, pela
+tarifa de hoje); cabem = o que resta do teto, em micros, dividido pelo preço da mensagem da vez. **Fecha, nunca abre:**
+
+- a moeda da conta diferente da do plano aprovado → nada cabe;
+- uma mensagem que saiu sem tarifa → nada cabe;
+- alguém da vez sem tarifa (o preço da rodada é o maior entre os que TÊM, e não o seguraria) → nada cabe.
+
+Não cabe uma: a campanha pausa com `teto_aprovado`, que **não volta sozinha** e o `retomar` recusa no serviço; o
+pedido executado ganha `motivo = teto-de-gasto`, e quem aprova é avisado no celular. Seguir pede um pedido novo, com
+outro teto (o "continuar" vem com a tela). O registro do hub conta mudanças de situação: o teto, que não muda a
+situação, não vai ao hub.
+
+## Avisos e registro
+
+- **A quem aprova** (dono e autorizados, ativos): e-mail, que nunca traz código, e aviso no celular (só a quem aprova,
+  respeitando a preferência de campanhas), no pedido e no lembrete. Saem depois do commit e não lançam. WhatsApp não (a
+  mensagem é cobrada).
+- **Ao hub:** cada mudança de situação por `ClienteHub.registrarAcao(acaoParaRegistro(...))`, depois de a resposta
+  sair (a transação já confirmou); desligado, nada.
+- **Na trilha:** `acao_pedido.criado` (integração), `aprovado` / `recusado` (a pessoa), `executado` (quem aprovou),
+  `cancelado` (sistema ou quem pediu), `usuario.aprova_disparos` (o dono).
+
+## Testes
+
+- `aprovacao.pg.spec.ts` (Postgres, como `regemcast_app`): os 8 casos comuns do pacote; o gatilho; o `delete` negado;
+  o pedido gravado uma vez na campanha; um pedido aberto por campanha; a chave antes do plano; o limite de 20; o
+  produto de fora; o plano que muda pela variável fixa (encerrado e gravado) e pelo texto na Meta; o aplicativo
+  desligado; a parada do hub; o impedimento; o disparo recusado que deixa o pedido aprovado sem resíduo (o ponto de
+  salvamento) e sai na tentativa seguinte; a rotina (lembrete uma vez, vencido pelo prazo); o cancelamento por quem
+  pediu; o código errado que fica contado e trava; o código usado uma vez; sem o aplicativo autenticador; o operador
+  com e sem a permissão; a folga do teto (preço, gasto, moeda, tarifa).
+- `mcp.porta.spec.ts`: as três ferramentas pela porta HTTP, a recusa estruturada (também a da parada), o cupom fora da
+  forma, a conferência da porta no pedido novo e `DISPARO_SO_COM_APROVACAO` fechando o `campanha_disparar`.
+- O manifesto (`docs/dms-manifesto.json`) regravado: contrato **1.1.0** (aditiva).
+
+## O que fica de fora
+
+- O aviso assinado a quem pediu (PR 3), a tela, o teto na campanha e o "continuar" depois do teto (PR 2).
+- O app Android: a tela de aprovação é do site; o aviso no celular abre o site.
+- O console da distribuição não aprova nada (a aprovação é da conta).

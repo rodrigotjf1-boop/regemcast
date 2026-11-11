@@ -203,6 +203,60 @@ export function emailLigacaoMudouDeForma(
   };
 }
 
+const RODAPE_DO_PEDIDO = 'Este e-mail vai a quem aprova disparos nesta conta. Ele nunca traz código: aprovar só se faz na tela do Regemcast.';
+
+/**
+ * Outro produto da DMS pediu um disparo (Hub DMS, F5 parte B): vai a quem pode
+ * aprovar (o dono e quem ele autorizou), na hora do pedido e no lembrete da
+ * metade do prazo. Nunca traz código: a aprovação pede o aplicativo
+ * autenticador, na tela (decisão F5-1).
+ */
+export function emailPedidoDeDisparo(
+  para: string,
+  d: {
+    nome: string;
+    aplicativo: string;
+    campanha: string;
+    quando: string;
+    pessoas: number;
+    custo: string | null;
+    cupom: string | null;
+    venceEm: string;
+    lembrete: boolean;
+    link: string;
+  },
+): EmailParaEnviar {
+  const primeiroNome = d.nome.trim().split(/\s+/)[0] || d.nome;
+  const assunto = d.lembrete
+    ? `Lembrete: o ${d.aplicativo} espera a sua aprovação para disparar ${d.campanha}`
+    : `O ${d.aplicativo} pede para disparar a campanha ${d.campanha}`;
+  const abertura = d.lembrete
+    ? `${primeiroNome}, o pedido do ${d.aplicativo} para disparar a campanha ${d.campanha} ainda espera uma resposta.`
+    : `${primeiroNome}, ${d.quando}, o ${d.aplicativo} pediu para disparar a campanha ${d.campanha}:`;
+  const itens = [
+    `para ${d.pessoas} ${d.pessoas === 1 ? 'pessoa que aceitou' : 'pessoas que aceitaram'} receber;`,
+    ...(d.custo ? [`custo estimado de cerca de ${d.custo};`] : []),
+    ...(d.cupom ? [`com o cupom ${d.cupom}.`] : []),
+  ];
+  const prazo = `Nada sai sem a aprovação. O pedido vence ${d.venceEm}; vencido, nada é enviado.`;
+  const codigo = 'Para aprovar, o Regemcast pede o código do seu aplicativo autenticador. Este e-mail nunca traz código.';
+
+  return {
+    para,
+    assunto,
+    texto: `${abertura}\n${itens.map((i) => `- ${i}`).join('\n')}\n\n${prazo}\n\n${codigo}\n\nVer o pedido: ${d.link}`,
+    html: moldura(
+      assunto,
+      `${paragrafo(escapar(abertura))}
+${lista(itens)}
+${paragrafo(escapar(prazo))}
+${botao(d.link, 'Ver o pedido')}
+${paragrafo(escapar(codigo))}`,
+      RODAPE_DO_PEDIDO,
+    ),
+  };
+}
+
 /**
  * Aviso de fim do grátis (7 dias, 3 dias e no dia).
  *

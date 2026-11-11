@@ -267,6 +267,12 @@ export const usuario = pgTable('usuario', {
   autorizacaoErros: integer('autorizacao_erros').notNull().default(0),
   autorizacaoErroEm: timestamp('autorizacao_erro_em', { withTimezone: true }),
   autorizacaoTravadaAte: timestamp('autorizacao_travada_ate', { withTimezone: true }),
+  /** A permissão de aprovar disparos pedidos por outro produto, dada pelo dono (migration 048). O dono aprova sempre. */
+  aprovaDisparos: boolean('aprova_disparos').notNull().default(false),
+  /** A trava do código na aprovação de disparos (migration 048), separada da trava da entrada. */
+  aprovacaoErros: integer('aprovacao_erros').notNull().default(0),
+  aprovacaoErroEm: timestamp('aprovacao_erro_em', { withTimezone: true }),
+  aprovacaoTravadaAte: timestamp('aprovacao_travada_ate', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
@@ -630,6 +636,11 @@ export const campanha = pgTable('campanha', {
    * ou campanha anterior à 034.
    */
   variaveisLista: jsonb('variaveis_lista'),
+  /**
+   * O pedido de aprovação que disparou a campanha (migration 048): o worker lê dele o teto de gasto que quem aprovou
+   * fixou. Gravado uma vez (um gatilho não deixa trocar).
+   */
+  acaoPedidoId: uuid('acao_pedido_id'),
   iniciadaEm: timestamp('iniciada_em', { withTimezone: true }),
   concluidaEm: timestamp('concluida_em', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
@@ -1351,4 +1362,49 @@ export const integracaoIdempotencia = pgTable('integracao_idempotencia', {
 }, (t) => ({
   chaveUq: uniqueIndex('idx_integracao_idempotencia_chave').on(t.tokenId, t.ferramenta, t.chave),
   prazoIdx: index('idx_integracao_idempotencia_prazo').on(t.criadoEm),
+}));
+
+/**
+ * O pedido de ação de outro produto da DMS que espera uma pessoa da conta
+ * (Hub DMS, F5 parte B; migration 048): hoje, o disparo de campanha. Preso ao
+ * resumo do plano (o que a pessoa vê), com prazo de 24 horas; a situação anda
+ * só pelas transições do pacote (gatilho `rc_acao_pedido_guarda`). Regras em
+ * `modules/aprovacao/aprovacao.regras.ts`; o desenho, em
+ * `docs/aprovacao-de-disparos.md`.
+ */
+export const acaoPedido = pgTable('acao_pedido', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  contaId: uuid('conta_id').notNull().references(() => conta.id, { onDelete: 'cascade' }),
+  campanhaId: uuid('campanha_id').references(() => campanha.id, { onDelete: 'set null' }),
+  acao: text('acao').notNull(),
+  risco: text('risco').notNull(),
+  situacao: text('situacao').notNull().default('aguardando'),
+  resumoPlano: text('resumo_plano').notNull(),
+  plano: jsonb('plano').notNull(),
+  aplicativo: text('aplicativo').notNull(),
+  tokenId: uuid('token_id').notNull(),
+  ligacaoPrefixo: text('ligacao_prefixo'),
+  pedidoPor: jsonb('pedido_por').notNull(),
+  chaveResumo: text('chave_resumo').notNull(),
+  impressao: text('impressao').notNull(),
+  /** Gravado pelo serviço (o relógio dele), como o prazo: os dois saem do mesmo instante. */
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull(),
+  venceEm: timestamp('vence_em', { withTimezone: true }).notNull(),
+  lembreteEm: timestamp('lembrete_em', { withTimezone: true }).notNull(),
+  lembradoEm: timestamp('lembrado_em', { withTimezone: true }),
+  decididoEm: timestamp('decidido_em', { withTimezone: true }),
+  decididoPorUsuario: uuid('decidido_por_usuario').references(() => usuario.id, { onDelete: 'set null' }),
+  /** dono | autorizado | prazo | quem_pediu | produto (`DecididoPor` do pacote). */
+  decididoPor: text('decidido_por'),
+  tetoGastoCentavos: bigint('teto_gasto_centavos', { mode: 'number' }),
+  motivo: text('motivo'),
+  motivoRecusa: text('motivo_recusa'),
+  executadoEm: timestamp('executado_em', { withTimezone: true }),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  campanhaAtivoUq: uniqueIndex('uq_acao_pedido_campanha_ativo')
+    .on(t.campanhaId)
+    .where(sql`situacao in ('aguardando', 'aprovado', 'executando')`),
+  chaveUq: uniqueIndex('uq_acao_pedido_chave').on(t.contaId, t.aplicativo, t.chaveResumo),
+  contaIdx: index('idx_acao_pedido_conta').on(t.contaId, t.criadoEm),
 }));

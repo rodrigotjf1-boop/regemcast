@@ -23,6 +23,7 @@ import { env } from '../../config/env';
 import {
   ClienteDmsId,
   ClienteHub,
+  type AcaoRegistrada,
   type ChamadaAtendida,
   type ChamadaRegistrada,
   type ErroDoProduto,
@@ -85,6 +86,14 @@ export class HubService implements OnModuleInit, OnApplicationShutdown {
   /** Anota uma chamada da porta para o registro central. Desligado: nada. */
   registrar(chamada: ChamadaRegistrada): void {
     if (this.cliente) this.cliente.registrar(chamada);
+  }
+
+  /**
+   * Anota uma mudança de situação de um pedido de ação (Hub DMS, F5 parte B) para a cadeia de eventos do hub
+   * (`POST /api/v1/acoes`). Nada pessoal: quem decidiu vai pelo papel. Desligado: nada.
+   */
+  registrarAcao(acao: AcaoRegistrada): void {
+    if (this.cliente) this.cliente.registrarAcao(acao);
   }
 
   /** Anota um erro para a lista de erros do hub (o pacote limpa a mensagem). Desligado: nada. */

@@ -405,6 +405,16 @@ export const env = {
   hub: hub(),
 
   /**
+   * A aprovação de disparos do Hub DMS (F5 parte B; `docs/aprovacao-de-disparos.md`). O pedido de aprovação existe
+   * desde sempre (`campanha_disparo_pedir`); `DISPARO_SO_COM_APROVACAO=true` fecha o caminho direto: o
+   * `campanha_disparar` da porta recusa, e o botão Disparar da tela recusa o rascunho que outro produto montou (ele sai
+   * pelo pedido). Desligada por padrão: o dono liga depois que o Liame passar a pedir.
+   */
+  aprovacao: {
+    soComAprovacao: booleana('DISPARO_SO_COM_APROVACAO', false),
+  },
+
+  /**
    * Push do app Android, pelo Firebase Cloud Messaging.
    *
    * O JSON da conta de serviço do projeto Firebase, em texto ou base64. Sem

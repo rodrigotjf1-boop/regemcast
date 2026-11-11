@@ -104,7 +104,8 @@ describe('manifesto da porta de integração (Padrão §13)', () => {
     const m = servido();
     const ferramentas = m['x-dms-ferramentas'];
     expect(ferramentas.map((f) => f.nome)).toEqual(FERRAMENTAS.map((f) => f.nome));
-    expect(ferramentas).toHaveLength(15);
+    // 15 até a 1.0.0; a 1.1.0 (Hub DMS, F5 parte B) acrescentou o pedido de aprovação do disparo: pedir, ler, cancelar.
+    expect(ferramentas).toHaveLength(18);
     for (const [i, f] of ferramentas.entries()) {
       expect(f.permissao).toBe(FERRAMENTAS[i]!.escopo);
       expect(f.descricao.length).toBeGreaterThan(20);
@@ -114,7 +115,7 @@ describe('manifesto da porta de integração (Padrão §13)', () => {
     expect(ferramentas.filter((f) => f.permissao === null).map((f) => f.nome)).toEqual(['integracao_situacao', 'integracao_revogar']);
   });
 
-  it('quem grava diz como é idempotente: as quatro com chaveIdempotencia obrigatória e o revogar, que repetir não muda', () => {
+  it('quem grava diz como é idempotente: as cinco com chaveIdempotencia obrigatória, e o revogar e o cancelar, que repetir não muda', () => {
     const m = servido();
     const ferramentas = m['x-dms-ferramentas'];
     const escritas = Object.fromEntries(ferramentas.filter((f) => f.escrita).map((f) => [f.nome, f.escrita]));
@@ -124,6 +125,9 @@ describe('manifesto da porta de integração (Padrão §13)', () => {
       campanha_rascunhar: 'chave',
       campanha_disparar: 'chave',
       campanha_pausar: 'chave',
+      // O pedido de aprovação do disparo (Hub DMS, F5 parte B): a chave presa ao pedido; cancelar de novo devolve o cancelado.
+      campanha_disparo_pedir: 'chave',
+      acao_pedido_cancelar: 'substituicao',
     });
     for (const f of ferramentas.filter((x) => x.escrita === 'chave')) {
       expect(f.esquemaEntrada.properties).toHaveProperty('chaveIdempotencia');

@@ -25,7 +25,10 @@ import { getStorageToken, ThrottlerStorageService } from '@nestjs/throttler';
 
 import { ErroFilter } from '../../common/erro.filter';
 import { ContextoDb } from '../../db/contexto';
-import type { ChamadaRegistrada, ErroDoProduto } from '../../dms/integracao-dms';
+import { env } from '../../config/env';
+import { ErroProblema, type ChamadaRegistrada, type ErroDoProduto } from '../../dms/integracao-dms';
+import { AprovacaoService } from '../aprovacao/aprovacao.service';
+import { ErroDoPedido } from '../aprovacao/erro-do-pedido';
 import { autorDaIntegracao, type AutorDaIntegracao } from '../auditoria/autor-integracao';
 import { AvisoService } from '../aviso/aviso.service';
 import { CampanhaService } from '../campanha/campanha.service';
@@ -66,7 +69,7 @@ const TODOS_OS_ESCOPOS = [
   'campanhas.disparar',
 ];
 const LEITURAS = ['conta_situacao', 'campanhas_listar', 'campanha_detalhar', 'publicos_listar', 'publico_estimar', 'modelos_listar', 'orcamento_ler'];
-const DISPARO = ['campanha_disparo_planejar', 'campanha_disparar', 'campanha_pausar'];
+const DISPARO = ['campanha_disparo_planejar', 'campanha_disparar', 'campanha_pausar', 'campanha_disparo_pedir', 'acao_pedido_ler', 'acao_pedido_cancelar'];
 const ARGUMENTOS: Record<string, Record<string, unknown>> = {
   campanha_detalhar: { id: CAMPANHA_ID },
   publico_estimar: { origem: 'base' },
@@ -166,8 +169,35 @@ function servicosDeTela() {
     anuncios: { listar: jest.fn(async () => ({ itens: [], proximo_cursor: null, tem_mais: false })) },
     modelos: {},
     avisos: {},
+    // O pedido de aprovação do disparo (Hub DMS, F5 parte B): o serviço de verdade tem a spec dele, com o Postgres.
+    aprovacoes: {
+      agora: () => new Date('2026-11-11T12:00:00Z'),
+      enderecoDaTela: (id: string) => `https://cast.exemplo/campanhas/para-aprovar/${id}`,
+      pedir: jest.fn(async (): Promise<unknown> => ({ pedido: PEDIDO_DE_TESTE, novo: true, plano: null })),
+      depoisDoPedido: jest.fn(),
+      lerDoAplicativo: jest.fn(async (): Promise<unknown> => PEDIDO_DE_TESTE),
+      cancelarPeloAplicativo: jest.fn(async (): Promise<unknown> => ({ pedido: { ...PEDIDO_DE_TESTE, situacao: 'cancelado' }, mudou: true })),
+      depoisDaDecisao: jest.fn(async () => undefined),
+    },
   };
 }
+
+/** Um pedido de aprovação como o serviço devolve (o formato do pacote, seção 11). */
+const PEDIDO_DE_TESTE = {
+  id: '0000aaaa-0000-4000-8000-000000000001',
+  acao: 'campanha_disparar',
+  risco: 'R3',
+  situacao: 'aguardando',
+  resumoDoPlano: 'a'.repeat(64),
+  aplicativo: 'liame',
+  pedidoPor: { tipo: 'agente' },
+  criadoEm: new Date('2026-11-11T12:00:00Z'),
+  venceEm: new Date('2026-11-12T12:00:00Z'),
+  decididoEm: null,
+  tetoDeGastoCentavos: null,
+  motivo: null,
+  motivoDaRecusa: null,
+};
 
 type Porta = {
   app: INestApplication;
@@ -233,6 +263,7 @@ async function subirPorta(): Promise<Porta> {
       { provide: ConversaAnuncioService, useValue: servicos.anuncios },
       { provide: ModeloService, useValue: servicos.modelos },
       { provide: AvisoService, useValue: servicos.avisos },
+      { provide: AprovacaoService, useValue: servicos.aprovacoes },
     ],
   })
   class PortaDeTeste implements NestModule {
@@ -471,6 +502,88 @@ describe('a porta MCP, por HTTP, como o Liame chama', () => {
       });
       expect(r.texto).not.toContain(token);
       expect(r.texto).not.toContain('rct_it_');
+    });
+  });
+
+  describe('o pedido de aprovação do disparo (Hub DMS, F5 parte B)', () => {
+    const PEDIR = { chaveIdempotencia: 'pedido-de-teste-0001', id: CAMPANHA_ID, confirmacao: 'c'.repeat(32), pedidoPor: { tipo: 'agente' } };
+    const configAprovacao = env as { aprovacao?: { soComAprovacao: boolean } };
+    const pedidoDe = (r: Resposta) => (r.json.result?.structuredContent as { pedido?: unknown } | undefined)?.pedido;
+    afterEach(() => {
+      delete configAprovacao.aprovacao;
+    });
+
+    it('pedir: nada sai, o pedido volta aguardando com o link da tela, e quem aprova é avisado depois do commit', async () => {
+      const token = p.token({ classe: 'dms', escopos: ['campanhas.disparar'] });
+      const r = await chamar(p, token, 'campanha_disparo_pedir', PEDIR);
+      expect(r.status).toBe(200);
+      expect(r.json.result?.isError).toBeFalsy();
+      expect(pedidoDe(r)).toMatchObject({
+        id: PEDIDO_DE_TESTE.id,
+        situacao: 'aguardando',
+        risco: 'R3',
+        tela: `https://cast.exemplo/campanhas/para-aprovar/${PEDIDO_DE_TESTE.id}`,
+      });
+      const [quem, pedido] = p.servicos.aprovacoes.pedir.mock.calls[0] as unknown as [Record<string, unknown>, Record<string, unknown>];
+      expect(quem).toMatchObject({ contaId: CONTA_ID, produto: 'liame', classe: 'dms' });
+      expect(quem.ligacaoPrefixo).toMatch(/^rct_it_/);
+      expect(pedido).toMatchObject({ chave: 'pedido-de-teste-0001', campanhaId: CAMPANHA_ID, pedidoPor: { tipo: 'agente' }, cupom: null });
+      expect(p.servicos.aprovacoes.depoisDoPedido).toHaveBeenCalledTimes(1);
+    });
+
+    it('o pedido novo passa pela conferência da porta: a campanha de outro aplicativo é recusada', async () => {
+      p.servicos.aprovacoes.pedir.mockImplementationOnce(async (...args: unknown[]) => {
+        await (args[2] as () => Promise<void>)();
+        return { pedido: PEDIDO_DE_TESTE, novo: true, plano: null };
+      });
+      const r = await chamar(p, p.token({ classe: 'dms', escopos: ['campanhas.disparar'] }), 'campanha_disparo_pedir', PEDIR);
+      expect(r.json.result?.isError).toBe(true);
+      expect(r.json.result?.content?.[0]?.text).toMatch(/que este aplicativo montou/);
+      expect(p.servicos.aprovacoes.depoisDoPedido).not.toHaveBeenCalled();
+    });
+
+    it('a recusa do pedido sai estruturada (problema, mensagem e o id do pedido aberto), também o 503 da parada', async () => {
+      const token = p.token({ classe: 'dms', escopos: ['campanhas.disparar'] });
+      p.servicos.aprovacoes.pedir.mockRejectedValueOnce(
+        new ErroDoPedido(new ErroProblema('aprovacao-pendente', 'A ação espera a aprovação de uma pessoa no produto de destino.'), { pedido: PEDIDO_DE_TESTE.id }),
+      );
+      const r = await chamar(p, token, 'campanha_disparo_pedir', PEDIR);
+      expect(r.status).toBe(200);
+      expect(r.json.result?.isError).toBe(true);
+      expect(r.json.result?.structuredContent).toEqual({ problema: 'aprovacao-pendente', mensagem: expect.stringMatching(/espera a aprovação/), pedido: PEDIDO_DE_TESTE.id });
+      expect(p.servicos.aprovacoes.depoisDoPedido).not.toHaveBeenCalled();
+
+      p.servicos.aprovacoes.lerDoAplicativo.mockRejectedValueOnce(new ErroDoPedido(new ErroProblema('integracao-parada', 'Integração parada.')));
+      const parada = await chamar(p, token, 'acao_pedido_ler', { id: PEDIDO_DE_TESTE.id });
+      expect(parada.json.result?.structuredContent).toMatchObject({ problema: 'integracao-parada' });
+      expect(parada.json.result?.content?.[0]?.text).not.toMatch(/Erro interno/);
+    });
+
+    it('o cupom fora da forma é recusado antes de gravar', async () => {
+      const r = await chamar(p, p.token({ classe: 'dms', escopos: ['campanhas.disparar'] }), 'campanha_disparo_pedir', { ...PEDIR, cupom: { codigo: 'SEXTA 10' } });
+      expect(r.json.result?.structuredContent).toMatchObject({ problema: 'parametro-invalido' });
+      expect(p.servicos.aprovacoes.pedir).not.toHaveBeenCalled();
+    });
+
+    it('ler e cancelar: o pedido do aplicativo; cancelar avisa o hub depois do commit', async () => {
+      const token = p.token({ classe: 'dms', escopos: ['campanhas.disparar'] });
+      const lido = await chamar(p, token, 'acao_pedido_ler', { id: PEDIDO_DE_TESTE.id });
+      expect(pedidoDe(lido)).toMatchObject({ id: PEDIDO_DE_TESTE.id, situacao: 'aguardando' });
+      expect(p.servicos.aprovacoes.lerDoAplicativo).toHaveBeenCalledWith(CONTA_ID, 'liame', PEDIDO_DE_TESTE.id);
+      const cancelado = await chamar(p, token, 'acao_pedido_cancelar', { id: PEDIDO_DE_TESTE.id });
+      expect(pedidoDe(cancelado)).toMatchObject({ situacao: 'cancelado' });
+      expect(p.servicos.aprovacoes.depoisDaDecisao).toHaveBeenCalledWith(CONTA_ID, PEDIDO_DE_TESTE.id, ['cancelado']);
+    });
+
+    it('com DISPARO_SO_COM_APROVACAO, o campanha_disparar recusa (o caminho é o pedido) e nada dispara', async () => {
+      configAprovacao.aprovacao = { soComAprovacao: true };
+      const r = await chamar(p, p.token({ classe: 'dms', escopos: ['campanhas.disparar'] }), 'campanha_disparar', {
+        chaveIdempotencia: 'disparo-direto-0001',
+        id: CAMPANHA_ID,
+        confirmacao: 'c'.repeat(32),
+      });
+      expect(r.json.result?.isError).toBe(true);
+      expect(r.json.result?.content?.[0]?.text).toMatch(/campanha_disparo_pedir/);
     });
   });
 

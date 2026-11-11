@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Porta de integração do Regemcast",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "A porta MCP que os produtos da DMS ligados à conta usam: a situação da conta, as campanhas, os públicos, os modelos, o orçamento e as conversas abertas por anúncio, com o que o dono autorizou, e os rascunhos e o disparo de campanha. Credencial: o token do DMS ID com o segredo da ligação (DMS-Ligacao).",
     "x-dms-produto": "regemcast",
     "x-dms-pacote": "0.7.2"
@@ -669,7 +669,7 @@
     },
     {
       "nome": "campanha_disparar",
-      "descricao": "DISPARA a campanha: as mensagens começam a sair para o público, e a Meta cobra cada uma que for entregue. Não tem volta para o que já saiu. Exige a `confirmacao` devolvida por campanha_disparo_planejar — se o público, o custo ou o orçamento mudaram desde o plano, é recusado e é preciso planejar de novo. Só para campanha que este aplicativo montou, e só com o orçamento de disparos da conta definido. Depois de disparada, a campanha respeita a janela, o ritmo, o plano e o orçamento (que pausa e retoma sozinho); acompanhe com campanha_detalhar. O dono da conta é avisado.",
+      "descricao": "DISPARA a campanha: as mensagens começam a sair para o público, e a Meta cobra cada uma que for entregue. Não tem volta para o que já saiu. Exige a `confirmacao` devolvida por campanha_disparo_planejar — se o público, o custo ou o orçamento mudaram desde o plano, é recusado e é preciso planejar de novo. Só para campanha que este aplicativo montou, e só com o orçamento de disparos da conta definido. Depois de disparada, a campanha respeita a janela, o ritmo, o plano e o orçamento (que pausa e retoma sozinho); acompanhe com campanha_detalhar. O dono da conta é avisado. Recusa a campanha que tem pedido de aprovação aberto (ela sai pelo pedido) e, quando a aprovação obrigatória estiver ligada na conta da distribuição, recusa sempre: o caminho passa a ser campanha_disparo_pedir.",
       "permissao": "campanhas.disparar",
       "esquemaEntrada": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -729,6 +729,140 @@
         "additionalProperties": false
       },
       "escrita": "chave"
+    },
+    {
+      "nome": "campanha_disparo_pedir",
+      "descricao": "Pede o disparo de uma campanha em rascunho que este aplicativo montou. NADA sai agora: uma pessoa da conta (o dono, ou quem ele autorizou) aprova no Regemcast, com o código do aplicativo autenticador, e fixa o teto de gasto; só então as mensagens saem, uma vez. Exige a `confirmacao` de campanha_disparo_planejar. O pedido fica preso ao plano (o texto, as variáveis, quem recebe, o custo e o cupom): se algo mudar, ele se encerra e é preciso pedir de novo. Vence em 24 horas. Um pedido aberto por campanha. Responde o pedido (situação `aguardando` e o link da tela de aprovação); acompanhe com acao_pedido_ler. Repetir com a mesma chave devolve o mesmo pedido como está agora.",
+      "permissao": "campanhas.disparar",
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "chaveIdempotencia": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.:-]{8,100}$",
+            "description": "Uma chave sua, única por pedido (8 a 100 caracteres). A mesma chave com o mesmo pedido devolve o mesmo pedido, como está agora, enquanto ele existir."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "O id da campanha em rascunho."
+          },
+          "confirmacao": {
+            "type": "string",
+            "minLength": 16,
+            "maxLength": 64,
+            "description": "A confirmação que veio em campanha_disparo_planejar."
+          },
+          "pedidoPor": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "tipo": {
+                    "type": "string",
+                    "const": "agente"
+                  }
+                },
+                "required": [
+                  "tipo"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "tipo": {
+                    "type": "string",
+                    "const": "pessoa"
+                  },
+                  "pessoa": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "tipo",
+                  "pessoa"
+                ],
+                "additionalProperties": false
+              }
+            ],
+            "description": "Quem pediu no seu sistema: {\"tipo\":\"agente\"} (sem pessoa) ou {\"tipo\":\"pessoa\",\"pessoa\":\"<SHA-256 hex do e-mail sem espaços e em minúsculas>\"}. Nunca o e-mail: quem pediu não aprova o próprio pedido, e a conferência é pelo resumo."
+          },
+          "cupom": {
+            "description": "O cupom que a mensagem oferece, se houver: quem aprova vê o código e a descrição (a oferta enviada obriga a loja).",
+            "type": "object",
+            "properties": {
+              "codigo": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "descricao": {
+                "type": "string",
+                "maxLength": 200
+              }
+            },
+            "required": [
+              "codigo"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "chaveIdempotencia",
+          "id",
+          "confirmacao",
+          "pedidoPor"
+        ],
+        "additionalProperties": false
+      },
+      "escrita": "chave"
+    },
+    {
+      "nome": "acao_pedido_ler",
+      "descricao": "O pedido de aprovação como está agora: aguardando, aprovado, executado, recusado (com o motivo de quem recusou), vencido ou cancelado (com o motivo, como plano-mudou). O que passou do prazo aparece vencido. Só os pedidos deste aplicativo. Não muda nada.",
+      "permissao": "campanhas.disparar",
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "O id do pedido, como veio em campanha_disparo_pedir."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "nome": "acao_pedido_cancelar",
+      "descricao": "Desiste de um pedido deste aplicativo que ainda espera aprovação (ou foi aprovado e ainda não saiu): ele se encerra, e nada é enviado. Cancelar de novo devolve o mesmo cancelado. O que já foi executado, recusado ou vencido não muda (a recusa diz qual).",
+      "permissao": "campanhas.disparar",
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "O id do pedido."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "escrita": "substituicao"
     }
   ],
   "x-dms-avisos": [],
