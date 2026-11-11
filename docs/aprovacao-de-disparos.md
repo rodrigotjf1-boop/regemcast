@@ -205,7 +205,9 @@ situação, não vai ao hub.
 
 ## O que fica de fora
 
-- O aviso assinado a quem pediu (PR 3) e o "continuar" depois do teto (um pedido novo para a campanha parada no teto,
-  que a execução retoma em vez de disparar): fica para depois do piloto.
+- O aviso assinado a quem pediu é o PR 3, o próximo (decisão F5-7); até ele, quem pediu acompanha pela consulta.
+- O "continuar" depois do teto (um pedido novo para a campanha parada no teto, que a execução retoma em vez de
+  disparar) fica para depois do piloto. Até lá, a campanha parada no teto fica parada; aprovar mais gasto é um disparo
+  novo.
 - O app Android: a tela de aprovação é do site; o aviso no celular abre o site.
 - O console da distribuição não aprova nada (a aprovação é da conta).
