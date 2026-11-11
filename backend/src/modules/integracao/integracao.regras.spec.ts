@@ -168,13 +168,16 @@ describe('as ferramentas de cada token', () => {
     expect(nomes).not.toContain('campanha_rascunhar');
   });
 
-  it('disparar pede a permissão de disparar: planejar, disparar e pausar', () => {
+  it('disparar pede a permissão de disparar: planejar, disparar, pausar e o pedido de aprovação (pedir, ler, cancelar)', () => {
     expect(ferramentasDe({ escopos: ['campanhas.disparar'] }).map((f) => f.nome)).toEqual([
       'integracao_situacao',
       'integracao_revogar',
       'campanha_disparo_planejar',
       'campanha_disparar',
       'campanha_pausar',
+      'campanha_disparo_pedir',
+      'acao_pedido_ler',
+      'acao_pedido_cancelar',
     ]);
   });
 

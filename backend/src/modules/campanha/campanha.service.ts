@@ -34,7 +34,9 @@ import { paraCloudApi } from '../../common/telefone';
 import { formasDosContatos, gemeoEmSql } from '../../common/telefone-sql';
 import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
-import { assinatura, campanha, campanhaDestinatario, conta, contatoLista, modelo as modeloLocal, waNumero } from '../../db/schema';
+import { acaoPedido, assinatura, campanha, campanhaDestinatario, conta, contatoLista, modelo as modeloLocal, waNumero } from '../../db/schema';
+import { anotarTetoNoPedido, cancelarPedidosAbertos, pedidoAbertoDaCampanha, travarCampanha } from '../aprovacao/aprovacao.consulta';
+import { pausaNoTeto, saiPeloPedido, temPedidoAberto } from '../aprovacao/aprovacao.regras';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { autorDaIntegracao } from '../auditoria/autor-integracao';
 import { AvisoService } from '../aviso/aviso.service';
@@ -69,7 +71,7 @@ import { SaudeService } from '../meta/saude.service';
 import { MidiaIndisponivel, MidiaService } from '../midia/midia.service';
 import { custoDaCampanha, custoDoPublico } from '../orcamento/custo.consulta';
 import type { CustoParaTela } from '../orcamento/custo.regras';
-import { estadoDoOrcamento, folgaParaACampanha, registrarAvisos } from '../orcamento/orcamento.consulta';
+import { estadoDoOrcamento, folgaDoTeto, folgaParaACampanha, registrarAvisos } from '../orcamento/orcamento.consulta';
 import {
   avisoDoOrcamento,
   frasePausaPeloOrcamento,
@@ -1160,7 +1162,11 @@ export class CampanhaService {
     campanhaId: string,
     dto: EditarCampanhaDto,
   ): Promise<ResumoCampanha> {
+    // A campanha travada: a execução de um pedido aprovado não cruza com esta edição (Hub DMS, F5 parte B).
+    await travarCampanha(this.ctx.db, contaId, campanhaId);
     const alvo = await this.buscar(contaId, campanhaId);
+    // O rascunho mudou: o pedido de aprovação aberto valia para o plano de antes.
+    if (alvo.status === 'rascunho') await cancelarPedidosAbertos(this.ctx.db, contaId, campanhaId, 'plano-mudou');
 
     if (!['rascunho', 'agendada', 'pausada'].includes(alvo.status)) {
       throw new BadRequestException(
@@ -1324,6 +1330,7 @@ export class CampanhaService {
     usuarioId: string,
     campanhaId: string,
   ): Promise<{ resultado: 'apagada' | 'cancelada' | 'arquivada' }> {
+    await travarCampanha(this.ctx.db, contaId, campanhaId);
     const alvo = await this.buscar(contaId, campanhaId);
 
     if (alvo.status === 'enviando') {
@@ -1333,6 +1340,8 @@ export class CampanhaService {
     }
 
     if (alvo.status === 'rascunho') {
+      // O pedido de aprovação aberto para este rascunho se encerra antes (Hub DMS, F5 parte B): a linha fica como prova.
+      await cancelarPedidosAbertos(this.ctx.db, contaId, campanhaId, 'pedido-cancelado');
       await this.ctx.db
         .delete(campanha)
         .where(and(eq(campanha.id, campanhaId), eq(campanha.contaId, contaId)));
@@ -1425,14 +1434,25 @@ export class CampanhaService {
     // Nulo quando quem dispara é um aplicativo conectado (porta MCP), e não uma pessoa.
     usuarioId: string | null,
     campanhaId: string,
+    /** `pedidoId`: o disparo é a execução de um pedido aprovado (Hub DMS, F5 parte B). */
+    opcoes: { pedidoId?: string } = {},
   ): Promise<ResumoCampanha> {
+    // A campanha travada: a execução de um pedido, a edição e a exclusão não cruzam com este disparo.
+    await travarCampanha(this.ctx.db, contaId, campanhaId);
     const alvo = await this.buscar(contaId, campanhaId);
+    if (!opcoes.pedidoId) {
+      // Com a aprovação obrigatória ligada, o rascunho que outro produto montou só sai pelo pedido aprovado — pela
+      // porta e pelo botão da tela. A trava fica aqui, no serviço, para valer em todo caminho.
+      if (alvo.integracaoProduto && env.aprovacao?.soComAprovacao) throw new BadRequestException(saiPeloPedido(alvo.integracaoProduto));
+      // Com pedido aberto, a campanha sai por ele (também com a chave desligada): ninguém contorna quem aprova.
+      if (await pedidoAbertoDaCampanha(this.ctx.db, contaId, campanhaId)) throw new BadRequestException(temPedidoAberto(alvo.integracaoProduto));
+    }
     await this.conferirAntesDeDisparar(contaId, alvo);
 
     await this.ctx.db
       .update(campanha)
       .set({ status: 'agendada', iniciadaEm: new Date() })
-      .where(eq(campanha.id, campanhaId));
+      .where(and(eq(campanha.id, campanhaId), eq(campanha.status, 'rascunho')));
 
     const [{ total }] = await this.ctx.db
       .select({ total: count(campanhaDestinatario.id) })
@@ -1515,6 +1535,10 @@ export class CampanhaService {
 
     if (alvo.status !== 'pausada') {
       throw new BadRequestException(`Só dá para retomar uma campanha pausada — esta está "${alvo.status}".`);
+    }
+    // Parou no teto de gasto que quem aprovou fixou: seguir pede um pedido novo, com outro teto (decisão F5-6).
+    if (alvo.pausaMotivo === 'teto_aprovado') {
+      throw new BadRequestException(pausaNoTeto(alvo.integracaoProduto));
     }
 
     const credencial = await this.meta.tokenDaConta(contaId);
@@ -1609,6 +1633,11 @@ export class CampanhaService {
           descansoDias: campanha.descansoDias,
           variaveisLista: campanha.variaveisLista,
           envio: campanha.envio,
+          // O pedido que disparou (Hub DMS, F5 parte B) e o teto que quem aprovou fixou nele, com a moeda do plano.
+          acaoPedidoId: campanha.acaoPedidoId,
+          tetoGastoCentavos: acaoPedido.tetoGastoCentavos,
+          tetoMoeda: sql<string | null>`${acaoPedido.plano} -> 'custo' ->> 'moeda'`,
+          integracaoProduto: campanha.integracaoProduto,
           fuso: conta.timezone,
           // O ciclo em que o disparo conta. É o MESMO campo que a tela de Conta
           // usa para ler o consumo — duas definições de ciclo divergiriam.
@@ -1617,6 +1646,7 @@ export class CampanhaService {
         .from(campanha)
         .innerJoin(conta, eq(conta.id, campanha.contaId))
         .leftJoin(assinatura, eq(assinatura.contaId, campanha.contaId))
+        .leftJoin(acaoPedido, and(eq(acaoPedido.id, campanha.acaoPedidoId), eq(acaoPedido.contaId, campanha.contaId)))
         .where(eq(campanha.id, campanhaId))
         .limit(1);
 
@@ -1673,7 +1703,7 @@ export class CampanhaService {
     if (!decisao.pode) return;
 
     // Reivindicação atômica. `SKIP LOCKED` é o que impede envio duplicado.
-    let pausadaPor: 'inadimplencia' | 'teto_plano' | 'orcamento' | null = null;
+    let pausadaPor: 'inadimplencia' | 'teto_plano' | 'orcamento' | 'teto_aprovado' | null = null;
     // Os avisos do orçamento (80% e 100%) que esta rodada fez nascer; saem depois do commit.
     let avisosDoOrcamento: { moeda: string; niveis: NivelAtingido[] } | null = null;
     const reivindicados = await this.ctx.comEscopoSistema('campanha.worker.reivindicar', async (db) => {
@@ -1756,6 +1786,32 @@ export class CampanhaService {
       }
       if (folga.cabem !== null) limite = Math.min(limite, folga.cabem);
 
+      // O teto do disparo que quem aprovou o pedido fixou (Hub DMS, F5 parte B; decisão F5-6), na mesma trava por
+      // conta: o que a campanha já gastou mais o lote não passa dele. Não cabe uma mensagem (ou ela não tem preço, e o
+      // teto não a seguraria): a campanha pausa com `teto_aprovado`, que não volta sozinha — seguir pede um pedido
+      // novo, com outro teto.
+      if (c.acaoPedidoId) {
+        const teto = await folgaDoTeto(
+          db,
+          c.contaId,
+          { id: campanhaId, modeloCategoria: c.modeloCategoria, tetoCentavos: Number(c.tetoGastoCentavos ?? 0), moeda: c.tetoMoeda ?? null },
+          limite,
+        );
+        if (teto.cabem < 1) {
+          const r = await db.execute(sql`
+            update campanha set status = 'pausada', pausa_motivo = 'teto_aprovado'
+             where id = ${campanhaId} and status in ('agendada', 'enviando')
+            returning id
+          `);
+          if (r.rows?.length) {
+            pausadaPor = 'teto_aprovado';
+            if (c.acaoPedidoId) await anotarTetoNoPedido(db, c.contaId, c.acaoPedidoId);
+          }
+          return null;
+        }
+        limite = Math.min(limite, teto.cabem);
+      }
+
       /*
        * A reserva em DUAS etapas, com a primeira MATERIALIZADA. A forma antiga
        * — `update … where id in (select … for update skip locked limit N)` —
@@ -1835,9 +1891,17 @@ export class CampanhaService {
       this.log.log(
         pausadaPor === 'orcamento'
           ? `Campanha ${campanhaId} pausada: o orçamento de disparos da conta ${c.contaId} não tem folga.`
-          : `Campanha ${campanhaId} pausada: a conta ${c.contaId} está sem disparos no plano ou com o pagamento atrasado.`,
+          : pausadaPor === 'teto_aprovado'
+            ? `Campanha ${campanhaId} pausada: chegou ao teto de gasto aprovado no pedido ${c.acaoPedidoId ?? '—'}.`
+            : `Campanha ${campanhaId} pausada: a conta ${c.contaId} está sem disparos no plano ou com o pagamento atrasado.`,
       );
-      if (pausadaPor === 'teto_plano') {
+      if (pausadaPor === 'teto_aprovado') {
+        void this.avisos.avisar(c.contaId, 'campanhas', {
+          titulo: `Campanha pausada no teto: ${c.nome}`,
+          corpo: pausaNoTeto(c.integracaoProduto),
+          dados: { campanhaId },
+        });
+      } else if (pausadaPor === 'teto_plano') {
         void this.avisos.avisar(c.contaId, 'campanhas', {
           titulo: `Campanha pausada: ${c.nome}`,
           corpo: 'Os disparos do seu plano acabaram neste ciclo. Quem faltava continua na fila e sai quando o ciclo virar ou com um plano maior.',
@@ -2636,7 +2700,8 @@ export class CampanhaService {
       modeloIdioma: c.modeloIdioma,
       status: c.status,
       pausaMotivo: c.status === 'pausada' ? c.pausaMotivo : null,
-      pausaTexto: peloOrcamento ? fraseDoOrcamento : null,
+      // A pausa no teto do disparo aprovado (Hub DMS, F5 parte B) não volta sozinha nem pela tela: a frase diz o caminho.
+      pausaTexto: peloOrcamento ? fraseDoOrcamento : c.status === 'pausada' && c.pausaMotivo === 'teto_aprovado' ? pausaNoTeto(c.integracaoProduto) : null,
       pausaAte: peloOrcamento ? c.retomarEm : null,
       pausaErro:
         c.status === 'pausada' && c.pausaErroCodigo != null && PAUSAS_POR_ERRO.includes(c.pausaMotivo ?? '')

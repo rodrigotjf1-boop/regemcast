@@ -111,6 +111,8 @@ export interface UsuarioResumo {
   status: 'ativo' | 'suspenso';
   ultimoLoginEm: string | null;
   criadoEm: string;
+  /** Aprova disparos pedidos por outro produto da DMS: o dono sempre; outro acesso, se o dono deu a permissão. */
+  aprovaDisparos: boolean;
 }
 
 /**
@@ -369,6 +371,7 @@ export class ContaService {
         status: tUsuario.status,
         ultimoLoginEm: tUsuario.ultimoLoginEm,
         criadoEm: tUsuario.criadoEm,
+        aprovaDisparos: tUsuario.aprovaDisparos,
       })
       .from(tUsuario)
       .where(eq(tUsuario.contaId, contaId))
@@ -447,8 +450,8 @@ export class ContaService {
   ): Promise<UsuarioResumo> {
     const contaId = this.ctx.contaObrigatoria();
 
-    if (dto.nome === undefined && dto.status === undefined) {
-      throw new BadRequestException('Informe o que alterar: nome ou status.');
+    if (dto.nome === undefined && dto.status === undefined && dto.aprovaDisparos === undefined) {
+      throw new BadRequestException('Informe o que alterar: nome, status ou a permissão de aprovar disparos.');
     }
 
     // Antes de qualquer ida ao banco: ninguém se tranca para fora sozinho.
@@ -465,6 +468,7 @@ export class ContaService {
         email: tUsuario.email,
         papel: tUsuario.papel,
         status: tUsuario.status,
+        aprovaDisparos: tUsuario.aprovaDisparos,
       })
       .from(tUsuario)
       .where(and(eq(tUsuario.id, id), eq(tUsuario.contaId, contaId)))
@@ -472,6 +476,11 @@ export class ContaService {
 
     if (!alvo) {
       throw new NotFoundException('Não encontramos este usuário na sua conta.');
+    }
+
+    // O dono aprova disparos sempre (decisão F5-2): a permissão é para os outros acessos.
+    if (dto.aprovaDisparos !== undefined && alvo.papel === 'dono') {
+      throw new BadRequestException('O dono da conta aprova disparos sempre: a permissão é para os outros acessos.');
     }
 
     // A conta exige exatamente um dono ativo (índice único no banco), e o dono
@@ -484,8 +493,9 @@ export class ContaService {
       );
     }
 
-    const patch: { nome?: string; status?: string; tokenVersao?: SQL } = {};
+    const patch: { nome?: string; status?: string; tokenVersao?: SQL; aprovaDisparos?: boolean } = {};
     if (dto.nome !== undefined) patch.nome = dto.nome.trim();
+    if (dto.aprovaDisparos !== undefined) patch.aprovaDisparos = dto.aprovaDisparos;
     if (dto.status !== undefined) {
       patch.status = dto.status;
       // Suspender derruba a sessão em andamento na hora, não só barra o
@@ -507,6 +517,7 @@ export class ContaService {
         status: tUsuario.status,
         ultimoLoginEm: tUsuario.ultimoLoginEm,
         criadoEm: tUsuario.criadoEm,
+        aprovaDisparos: tUsuario.aprovaDisparos,
       });
 
     if (!depois) {
@@ -518,7 +529,9 @@ export class ContaService {
         ? 'usuario.suspenso'
         : dto.status === 'ativo' && alvo.status === 'suspenso'
           ? 'usuario.reativado'
-          : 'usuario.atualizado';
+          : dto.aprovaDisparos !== undefined && dto.nome === undefined && dto.status === undefined
+            ? 'usuario.aprova_disparos'
+            : 'usuario.atualizado';
 
     await this.auditoria.registrar({
       contaId,
@@ -528,8 +541,8 @@ export class ContaService {
       entidade: 'usuario',
       entidadeId: id,
       detalhe: {
-        antes: { nome: alvo.nome, status: alvo.status },
-        depois: { nome: dto.nome, status: dto.status },
+        antes: { nome: alvo.nome, status: alvo.status, aprovaDisparos: alvo.aprovaDisparos },
+        depois: { nome: dto.nome, status: dto.status, aprovaDisparos: dto.aprovaDisparos },
         sessaoDerrubada: dto.status === 'suspenso',
       },
       ip: origem.ip,
@@ -642,6 +655,7 @@ export class ContaService {
     status: string;
     ultimoLoginEm: Date | null;
     criadoEm: Date;
+    aprovaDisparos?: boolean;
   }): UsuarioResumo {
     return {
       id: u.id,
@@ -651,6 +665,8 @@ export class ContaService {
       status: u.status as 'ativo' | 'suspenso',
       ultimoLoginEm: iso(u.ultimoLoginEm),
       criadoEm: u.criadoEm.toISOString(),
+      // O dono aprova sempre (decisão F5-2).
+      aprovaDisparos: u.papel === 'dono' || u.aprovaDisparos === true,
     };
   }
 }

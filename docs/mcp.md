@@ -340,8 +340,11 @@ Regras (as do hub, ADR-008 do Liame):
 | `modelo_rascunhar` | `modelos.rascunhar` | grava um **rascunho** de modelo (título em texto, mensagem, rodapé, botões) e devolve o que barraria o envio. Não vai para a Meta. |
 | `campanha_rascunhar` | `campanhas.rascunhar` | monta uma campanha em **rascunho** (modelo aprovado, público de uma lista ou da base, variáveis, janela e ritmo) e devolve quantas pessoas entraram e o custo estimado. Não dispara. |
 | `campanha_disparo_planejar` | `campanhas.disparar` (só `dms`) | o plano do disparo: pessoas, custo estimado, orçamento da conta, o que impede agora e a **confirmação**. Não muda nada. |
-| `campanha_disparar` | `campanhas.disparar` (só `dms`) | **dispara** a campanha, com a confirmação do plano. As mensagens saem e a Meta cobra. O dono é avisado. |
+| `campanha_disparar` | `campanhas.disparar` (só `dms`) | **dispara** a campanha, com a confirmação do plano. As mensagens saem e a Meta cobra. O dono é avisado. Recusa a campanha com pedido de aprovação aberto e, com `DISPARO_SO_COM_APROVACAO`, recusa sempre (o caminho é o pedido). |
 | `campanha_pausar` | `campanhas.disparar` (só `dms`) | pausa uma campanha que o aplicativo disparou. Quem retoma é uma pessoa, na tela. |
+| `campanha_disparo_pedir` | `campanhas.disparar` (só `dms`) | **pede** o disparo: nada sai até uma pessoa da conta aprovar no Regemcast, com o código do aplicativo autenticador, e fixar o teto de gasto. Preso ao plano, vence em 24 horas, executa uma vez (seção "Pedido de aprovação do disparo"). |
+| `acao_pedido_ler` | `campanhas.disparar` (só `dms`) | o pedido de aprovação como está agora (aguardando, aprovado, executado, recusado com o motivo, vencido, cancelado), com o link da tela. |
+| `acao_pedido_cancelar` | `campanhas.disparar` (só `dms`) | quem pediu desiste de um pedido que ainda não saiu. |
 
 As de leitura ficam em `integracao/mcp.leitura.ts`. Cada uma chama o **mesmo
 serviço da tela**, dentro da conta do token, e devolve um recorte curado:
@@ -354,6 +357,20 @@ serviço da tela**, dentro da conta do token, e devolve um recorte curado:
 - **recusa de regra vira erro da ferramenta**, com a frase em português que a
   tela mostraria (campanha de outra conta: "Campanha não encontrada"); erro
   inesperado é registrado e sai como "erro interno", sem detalhe.
+
+## Pedido de aprovação do disparo (Hub DMS F5 parte B, migration 048)
+
+O disparo pedido por outro produto da DMS espera uma pessoa da conta: o dono (ou quem ele autorizou em Conta e
+usuários) aprova na tela, com o código do aplicativo autenticador, e fixa o teto de gasto daquele disparo. O pedido fica
+preso ao plano (o texto do modelo como a Meta o tem, as variáveis, quem recebe, o custo e o cupom), vence em 24 horas e
+executa uma vez; quem pediu acompanha por `acao_pedido_ler`. É o pedido de ação do pacote comum (seção 11). O desenho
+inteiro, as travas e os testes estão em [`aprovacao-de-disparos.md`](aprovacao-de-disparos.md).
+
+- **Nasce aditivo** (contrato 1.1.0): as três ferramentas existem desde o merge, e nada muda para quem não as usa.
+- **Campanha com pedido aberto só sai por ele**, pela porta e pela tela.
+- **`DISPARO_SO_COM_APROVACAO=true`** fecha o caminho direto (`campanha_disparar` recusa, e a tela não dispara o
+  rascunho de outro produto): o dono liga depois que o Liame passar ao pedido.
+- **A recusa** sai `isError`, com a frase comum do pacote e `structuredContent` `{ problema, mensagem, pedido? }`.
 
 ## Disparo (sem migration)
 
@@ -565,8 +582,9 @@ conta**, nunca por iniciativa nossa.
 
 ## O que falta
 
-- Disparo para produto da DMS: planejar (público, custo, saldo do orçamento) e
-  executar, com chave de idempotência.
+- Hub DMS F5 parte B: a tela de aprovação (Campanhas › Para aprovar, PR 2) e o
+  aviso assinado a quem pediu (PR 3); ligar `DISPARO_SO_COM_APROVACAO` depois
+  que o Liame passar ao pedido (parte D).
 - "Aplicativos conectados" e a marca "montada pelo …" no app Android.
 - No Liame: o conector que consome estas ferramentas, e a emenda da ADR-008 e
   da ADR-019 registrando a decisão 2.

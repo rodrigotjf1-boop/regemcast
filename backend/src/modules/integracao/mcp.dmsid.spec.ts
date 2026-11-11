@@ -28,6 +28,7 @@ import { ErroFilter } from '../../common/erro.filter';
 import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
 import { ErroProblema, gerarChave, prefixoVisivel, type ChamadaRegistrada } from '../../dms/integracao-dms';
+import { AprovacaoService } from '../aprovacao/aprovacao.service';
 import { autorDaIntegracao, type AutorDaIntegracao } from '../auditoria/autor-integracao';
 import { AvisoService } from '../aviso/aviso.service';
 import { CampanhaService } from '../campanha/campanha.service';
@@ -172,7 +173,7 @@ async function subirPorta(): Promise<Porta> {
       { provide: IntegracaoService, useValue: { autenticar, autenticarLigacao, trocarPorLigacao: trocar, revogarPeloProprio: jest.fn() } },
       { provide: ContextoDb, useValue: ctx },
       { provide: OrcamentoService, useValue: orcamento() },
-      ...[SaudeService, ContaService, CampanhaService, ContatoService, PublicosService, SegmentacaoService, MetaService, ConversaAnuncioService, ModeloService, AvisoService].map(
+      ...[SaudeService, ContaService, CampanhaService, ContatoService, PublicosService, SegmentacaoService, MetaService, ConversaAnuncioService, ModeloService, AvisoService, AprovacaoService].map(
         (provide) => ({ provide, useValue: {} }),
       ),
     ],

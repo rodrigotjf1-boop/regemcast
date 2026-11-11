@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsIn, IsOptional, IsString, Length } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString, Length } from 'class-validator';
 
 /**
  * Corpo do PATCH /conta/usuarios/:id.
@@ -21,4 +21,13 @@ export class AtualizarUsuarioDto {
   @IsOptional()
   @IsIn(['ativo', 'suspenso'], { message: 'O status precisa ser "ativo" ou "suspenso".' })
   status?: 'ativo' | 'suspenso';
+
+  /**
+   * A permissão de aprovar disparos pedidos por outro produto da DMS (Hub DMS, F5 parte B; decisão F5-2). O dono
+   * aprova sempre; aqui ele dá ou tira de outro acesso. Ausente = mantém.
+   */
+  @ApiPropertyOptional({ type: Boolean })
+  @IsOptional()
+  @IsBoolean({ message: 'Informe a permissão de aprovar disparos como verdadeiro ou falso.' })
+  aprovaDisparos?: boolean;
 }

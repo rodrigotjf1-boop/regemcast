@@ -142,7 +142,8 @@ export class AvisoService {
     contaId: string,
     tipo: TipoAviso | TipoAvisoSempre,
     mensagem: MensagemPush,
-    opcoes: { soDono?: boolean } = {},
+    /** `soQuemAprova`: só o dono e quem ele autorizou a aprovar disparos (Hub DMS, F5 parte B). */
+    opcoes: { soDono?: boolean; soQuemAprova?: boolean } = {},
   ): Promise<void> {
     if (!this.fcm.ligado) return;
     try {
@@ -158,6 +159,7 @@ export class AvisoService {
              and u.status = 'ativo'
              ${tipo === 'seguranca' ? sql`` : sql`and coalesce((d.avisos ->> ${tipo})::boolean, true)`}
              ${opcoes.soDono ? sql`and u.papel = 'dono'` : sql``}
+             ${opcoes.soQuemAprova ? sql`and (u.papel = 'dono' or u.aprova_disparos)` : sql``}
         `);
         return r.rows as { id: string; token_fcm: string }[];
       });

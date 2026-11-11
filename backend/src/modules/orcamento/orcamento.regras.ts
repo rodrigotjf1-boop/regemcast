@@ -165,6 +165,24 @@ function folgaMicros(u: UsoDoPeriodo): number {
 }
 
 /**
+ * Quantas mensagens desse preço ainda cabem no TETO DO DISPARO que quem aprovou
+ * o pedido fixou (Hub DMS, F5 parte B): o que resta do teto, depois do que a
+ * campanha já gastou, dividido pelo preço da mensagem da vez. Diferente do
+ * orçamento da conta, mensagem sem preço conhecido NÃO passa: sem preço, o teto
+ * não seguraria o gasto, e nada cabe.
+ */
+export function quantasCabemNoTeto(tetoCentavos: number, gastoMicros: number, precoMicros: number | null): number {
+  if (!precoMicros || precoMicros <= 0) return 0;
+  const restaMicros = tetoCentavos * MICROS_POR_CENTAVO - Math.max(0, gastoMicros);
+  return Math.max(0, Math.floor(restaMicros / precoMicros));
+}
+
+/** Micros em centavos, arredondando para cima: o gasto nunca aparece menor do que foi. */
+export function microsEmCentavos(micros: number): number {
+  return Math.ceil(Math.max(0, micros) / MICROS_POR_CENTAVO);
+}
+
+/**
  * Quantas mensagens desse preço ainda cabem em todos os tetos. Nulo = nada
  * limita: a conta não tem teto, ou a mensagem não tem preço conhecido.
  */

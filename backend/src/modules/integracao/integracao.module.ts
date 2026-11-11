@@ -1,6 +1,7 @@
 import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 
 import { DrizzleModule } from '../../db/drizzle.module';
+import { AprovacaoModule } from '../aprovacao/aprovacao.module';
 import { CampanhaModule } from '../campanha/campanha.module';
 import { ContaModule } from '../conta/conta.module';
 import { ContatoModule } from '../contato/contato.module';
@@ -45,7 +46,7 @@ import { RegistroDaPorta } from './registro-da-porta.middleware';
  * do `RegistroDaPorta` (`manifesto.ts`; o arquivo do repositório é `docs/dms-manifesto.json`).
  */
 @Module({
-  imports: [DrizzleModule, DistribuicaoModule, CampanhaModule, ContaModule, ContatoModule, MetaModule, ModeloModule, OrcamentoModule],
+  imports: [DrizzleModule, DistribuicaoModule, CampanhaModule, ContaModule, ContatoModule, MetaModule, ModeloModule, OrcamentoModule, AprovacaoModule],
   controllers: [
     McpController,
     DmsIdController,

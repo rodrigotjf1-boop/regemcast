@@ -14,6 +14,8 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import * as z from 'zod/v4';
 
+import { env } from '../../config/env';
+import { CAMINHO_DIRETO_FECHADO } from '../aprovacao/aprovacao.regras';
 import type { ResumoCampanha } from '../campanha/campanha.service';
 import { ORCAMENTO_SEM_MOEDA, ORCAMENTO_SEM_TARIFA } from '../orcamento/orcamento.regras';
 import { avisoDeEspalhar, confirmacaoDoPlano, impedimentosDoPlano, PLANO_MUDOU, SO_A_PROPRIA, SO_DMS } from './disparo.regras';
@@ -94,6 +96,16 @@ async function planejar(c: ContextoDaFerramenta, id: string) {
   };
 }
 
+/**
+ * A conferência do disparo pela porta, sem disparar: a campanha é deste aplicativo, nada impede agora, e a
+ * `confirmacao` é a do plano de agora. É o que o pedido de aprovação novo exige (`campanha_disparo_pedir`).
+ */
+export async function conferirPlanoDoDisparo(c: ContextoDaFerramenta, id: string, confirmacao: string): Promise<void> {
+  const plano = await planejar(c, id);
+  if (!plano.podeDisparar) throw new BadRequestException(plano.impedimentos.join(' '));
+  if (plano.confirmacao !== confirmacao) throw new BadRequestException(PLANO_MUDOU);
+}
+
 const disparoPlanejar: Ferramenta = {
   nome: 'campanha_disparo_planejar',
   escopo: 'campanhas.disparar',
@@ -129,7 +141,7 @@ const campanhaDisparar: Ferramenta = {
       {
         title: 'Disparar uma campanha',
         description:
-          'DISPARA a campanha: as mensagens começam a sair para o público, e a Meta cobra cada uma que for entregue. Não tem volta para o que já saiu. Exige a `confirmacao` devolvida por campanha_disparo_planejar — se o público, o custo ou o orçamento mudaram desde o plano, é recusado e é preciso planejar de novo. Só para campanha que este aplicativo montou, e só com o orçamento de disparos da conta definido. Depois de disparada, a campanha respeita a janela, o ritmo, o plano e o orçamento (que pausa e retoma sozinho); acompanhe com campanha_detalhar. O dono da conta é avisado.',
+          'DISPARA a campanha: as mensagens começam a sair para o público, e a Meta cobra cada uma que for entregue. Não tem volta para o que já saiu. Exige a `confirmacao` devolvida por campanha_disparo_planejar — se o público, o custo ou o orçamento mudaram desde o plano, é recusado e é preciso planejar de novo. Só para campanha que este aplicativo montou, e só com o orçamento de disparos da conta definido. Depois de disparada, a campanha respeita a janela, o ritmo, o plano e o orçamento (que pausa e retoma sozinho); acompanhe com campanha_detalhar. O dono da conta é avisado. Recusa a campanha que tem pedido de aprovação aberto (ela sai pelo pedido) e, quando a aprovação obrigatória estiver ligada na conta da distribuição, recusa sempre: o caminho passa a ser campanha_disparo_pedir.',
         inputSchema: z.object({
           chaveIdempotencia: chaveDeIdempotencia,
           id: z.string().uuid().describe('O id da campanha.'),
@@ -141,8 +153,11 @@ const campanhaDisparar: Ferramenta = {
       async ({ chaveIdempotencia, id, confirmacao }) => {
         // Preenchido só quando o disparo acontece AGORA (não na repetição com a mesma chave).
         let disparada: { nome: string; pessoas: number; custo: string | null } | null = null;
-        const r = await naConta(c, 'campanha_disparar', () =>
-          comIdempotencia(c, 'campanha_disparar', chaveIdempotencia, { id, confirmacao }, async () => {
+        const r = await naConta(c, 'campanha_disparar', () => {
+          // Com a aprovação obrigatória ligada (Hub DMS, F5 parte B), o disparo por aplicativo é só pelo pedido. Antes da
+          // chave: a recusa não reserva a chave de idempotência.
+          if (env.aprovacao?.soComAprovacao) throw new BadRequestException(CAMINHO_DIRETO_FECHADO);
+          return comIdempotencia(c, 'campanha_disparar', chaveIdempotencia, { id, confirmacao }, async () => {
             const plano = await planejar(c, id);
             if (!plano.podeDisparar) throw new BadRequestException(plano.impedimentos.join(' '));
             if (plano.confirmacao !== confirmacao) throw new BadRequestException(PLANO_MUDOU);
@@ -155,8 +170,8 @@ const campanhaDisparar: Ferramenta = {
               proximoPasso:
                 'A campanha entrou na fila de envio. Ela respeita a janela, o ritmo, o plano e o orçamento de disparos da conta. Acompanhe com campanha_detalhar; para parar, campanha_pausar.',
             };
-          }),
-        );
+          });
+        });
         // Depois do commit: o dono fica sabendo que um aplicativo disparou.
         const feita = disparada as { nome: string; pessoas: number; custo: string | null } | null;
         if (feita && !('isError' in r)) {

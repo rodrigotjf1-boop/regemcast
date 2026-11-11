@@ -26,8 +26,11 @@ export const BASE_DO_MANIFESTO = 'https://castapi.dmsregem.com';
 /** A porta MCP: o endereço e a versão da especificação que ela fala (`mcp.servidor.ts`). */
 export const PORTA_MCP = { endereco: `${BASE_DO_MANIFESTO}/api/v1/mcp`, versao: '2026-07-28' } as const;
 
-/** A versão do contrato da porta (Padrão §12): a do servidor MCP. */
-export const VERSAO_DO_CONTRATO = '1.0.0';
+/**
+ * A versão do contrato da porta (Padrão §12): a do servidor MCP. 1.1.0 (aditiva, Hub DMS F5 parte B): o pedido de
+ * aprovação do disparo (`campanha_disparo_pedir`, `acao_pedido_ler`, `acao_pedido_cancelar`).
+ */
+export const VERSAO_DO_CONTRATO = '1.1.0';
 
 /** Dado pessoal ou dinheiro (Padrão §4): o telefone de quem escreveu e o disparo, que gasta na Meta. */
 const SENSIVEIS: readonly string[] = [...PERMISSOES_COM_DADO_PESSOAL, 'campanhas.disparar'];

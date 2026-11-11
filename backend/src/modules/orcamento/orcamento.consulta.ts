@@ -12,11 +12,12 @@ import { sql, type SQL } from 'drizzle-orm';
 
 import { TARIFA_COBRADA } from '../meta/tarifa.regras';
 import { moedaETarifas } from './custo.consulta';
-import { categoriaNaMeta, DIGITOS_DO_PREFIXO, type TarifaDaTabela } from './custo.regras';
+import { categoriaNaMeta, DIGITOS_DO_PREFIXO, tarifaPara, type TarifaDaTabela } from './custo.regras';
 import {
   PERIODOS,
   precoDaRodada,
   quantasCabem,
+  quantasCabemNoTeto,
   usoDoOrcamento,
   type GrupoDoOrcamento,
   type Janelas,
@@ -173,6 +174,86 @@ export async function registrarAvisos(db: Executor, contaId: string, niveis: rea
   `)) as { rows: Array<{ periodo: string; nivel: number }> };
 
   return niveis.filter((n) => r.rows.some((l) => l.periodo === n.periodo && Number(l.nivel) === n.nivel));
+}
+
+export interface FolgaDoTeto {
+  /** O que a campanha já gastou, pela mesma conta do orçamento (quem está saindo e o que saiu cobrável). */
+  gastoMicros: number;
+  /** O preço de uma mensagem da vez (o maior entre os países de quem está na fila). Nulo = alguém da vez sem tarifa. */
+  precoMicros: number | null;
+  /** Quantas ainda cabem no teto do disparo. Sem como pôr preço em tudo, nenhuma. */
+  cabem: number;
+  /** Por que nada cabe, quando não é o teto cheio: o teto não conseguiria segurar o gasto. */
+  semComoContar: 'moeda' | 'tarifa' | null;
+}
+
+/**
+ * A folga do TETO DO DISPARO (Hub DMS, F5 parte B): quanto a campanha já gastou
+ * e quantas mensagens da vez ainda cabem no teto que quem aprovou fixou. A
+ * regra do gasto é a do orçamento da conta (`estadoDoOrcamento`), restrita a
+ * esta campanha e sem janela de período: `enviando`, mais o que a Meta aceitou
+ * (enviada, entregue, lida), menos o que ela avisou que sai de graça; a
+ * categoria é a que a Meta disse, quando já disse, senão a do modelo; o preço é
+ * a tarifa de hoje, no fuso da conta. Roda dentro da trava por conta da rodada.
+ *
+ * Fecha, nunca abre: diferente do orçamento da conta (onde mensagem sem tarifa
+ * não conta), aqui a moeda da conta diferente da do plano aprovado, uma
+ * mensagem que saiu sem tarifa ou alguém da vez sem tarifa param o disparo —
+ * o teto não teria como segurar o gasto.
+ */
+export async function folgaDoTeto(
+  db: Executor,
+  contaId: string,
+  campanha: { id: string; modeloCategoria: string | null; tetoCentavos: number; moeda: string | null },
+  quantas: number,
+): Promise<FolgaDoTeto> {
+  // Em sequência: é a mesma conexão (a transação da rodada).
+  const { moeda, tarifas } = await moedaETarifas(db, contaId);
+  if (!moeda || !campanha.moeda || moeda !== campanha.moeda.toUpperCase()) {
+    return { gastoMicros: 0, precoMicros: null, cabem: 0, semComoContar: 'moeda' };
+  }
+  const hojeR = (await db.execute(
+    sql`select to_char((now() at time zone c.timezone)::date, 'YYYY-MM-DD') as hoje from conta c where c.id = ${contaId}`,
+  )) as { rows: Array<{ hoje: string }> };
+  const hoje = String(hojeR.rows[0]?.hoje ?? '');
+
+  const g = (await db.execute(sql`
+    select left(d.telefone_e164, ${PREFIXO}) as prefixo,
+           d.tarifa_categoria as "daMeta",
+           count(*)::int as quantas
+      from campanha_destinatario d
+     where d.campanha_id = ${campanha.id}
+       and d.conta_id = ${contaId}
+       and d.status in ('enviando', 'enviada', 'entregue', 'lida')
+       and coalesce(d.tarifa_tipo, ${TARIFA_COBRADA}) = ${TARIFA_COBRADA}
+     group by 1, 2
+  `)) as { rows: Array<{ prefixo: string; daMeta: string | null; quantas: number }> };
+
+  let gastoMicros = 0;
+  for (const l of g.rows) {
+    const tarifa = tarifaPara(tarifas, l.prefixo, l.daMeta ?? categoriaNaMeta(campanha.modeloCategoria), hoje);
+    // Saiu mensagem sem tarifa: o gasto não tem como ser contado, e nada mais sai.
+    if (!tarifa) return { gastoMicros, precoMicros: null, cabem: 0, semComoContar: 'tarifa' };
+    gastoMicros += tarifa.valorMicros * Number(l.quantas);
+  }
+
+  const r = (await db.execute(sql`
+    select distinct left(x.telefone_e164, ${PREFIXO}) as prefixo
+      from (select telefone_e164 from campanha_destinatario
+             where campanha_id = ${campanha.id} and status = 'pendente'
+               and (proxima_tentativa_em is null or proxima_tentativa_em <= now())
+             order by criado_em
+             limit ${Math.max(1, Math.trunc(quantas))}) x
+  `)) as { rows: Array<{ prefixo: string }> };
+  const categoria = categoriaNaMeta(campanha.modeloCategoria);
+  // Ninguém da vez (a fila acabou, ou quem falta volta mais tarde): nada a reservar, e nada a parar.
+  if (!r.rows.length) return { gastoMicros, precoMicros: null, cabem: Math.max(0, Math.trunc(quantas)), semComoContar: null };
+  // Alguém da vez sem tarifa: o preço da rodada (o maior entre os que TÊM) não o seguraria. Nada sai.
+  if (r.rows.some((l) => !tarifaPara(tarifas, l.prefixo, categoria, hoje))) {
+    return { gastoMicros, precoMicros: null, cabem: 0, semComoContar: 'tarifa' };
+  }
+  const precoMicros = precoDaRodada(tarifas, r.rows.map((l) => l.prefixo), categoria, hoje);
+  return { gastoMicros, precoMicros, cabem: quantasCabemNoTeto(campanha.tetoCentavos, gastoMicros, precoMicros), semComoContar: null };
 }
 
 /**

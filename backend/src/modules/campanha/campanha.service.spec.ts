@@ -13,6 +13,7 @@ import { BadRequestException, Logger } from '@nestjs/common';
 
 jest.mock('../../config/env', () => ({ env: { mercadoPago: { carenciaDias: 5 } } }));
 
+import { env } from '../../config/env';
 import { MidiaIndisponivel } from '../midia/midia.service';
 import {
   CampanhaService,
@@ -399,7 +400,10 @@ describe('editar — o modelo é conferido na Meta', () => {
   it('números digitados: as variáveis gravadas saem da fila da campanha', async () => {
     const m = montar();
     comRascunho(m, { variaveisLista: null });
-    m.db.execute.mockResolvedValueOnce({ rows: [{ n: 0 }] }); // toda a fila sem variável
+    m.db.execute
+      .mockResolvedValueOnce({ rows: [] }) // a trava da campanha (Hub DMS, F5 parte B)
+      .mockResolvedValueOnce({ rows: [] }) // o pedido de aprovação aberto, encerrado com o rascunho editado
+      .mockResolvedValueOnce({ rows: [{ n: 0 }] }); // toda a fila sem variável
     m.meta.modelos.mockResolvedValue([{ ...MODELO_PROMO, id: '2', nome: 'aviso', variaveis: 1 }]);
 
     await expect(
@@ -450,6 +454,61 @@ describe('disparar', () => {
 
     // Reenviar para quem já recebeu queima o destinatário e cobra de novo.
     expect(m.graph.enviarModelo).not.toHaveBeenCalled();
+  });
+
+  describe('a aprovação de disparos (Hub DMS, F5 parte B): a trava fica no serviço, para a porta e para a tela', () => {
+    const configAprovacao = env as { aprovacao?: { soComAprovacao: boolean } };
+    afterEach(() => {
+      delete configAprovacao.aprovacao;
+    });
+
+    it('campanha com pedido de aprovação aberto não dispara por outro caminho: sai pelo pedido', async () => {
+      const m = montar();
+      m.db.select.mockReturnValueOnce(m.consulta([{ ...CAMPANHA_RASCUNHO, integracaoProduto: 'liame' }]));
+      m.db.execute
+        .mockResolvedValueOnce({ rows: [] }) // a trava da campanha
+        .mockResolvedValueOnce({ rows: [{ id: 'pedido-aberto' }] }); // o pedido aberto dela
+      await expect(m.service.disparar(CONTA, USUARIO, CAMPANHA)).rejects.toThrow(/pedido de aprovação aberto \(o Liame pediu o disparo\)/);
+      expect(m.diario.some((e) => e.valores.status === 'agendada')).toBe(false);
+    });
+
+    it('com DISPARO_SO_COM_APROVACAO, o rascunho de outro produto não dispara sem o pedido; o de uma pessoa, sim', async () => {
+      configAprovacao.aprovacao = { soComAprovacao: true };
+      const m = montar();
+      m.db.select.mockReturnValueOnce(m.consulta([{ ...CAMPANHA_RASCUNHO, integracaoProduto: 'liame' }]));
+      await expect(m.service.disparar(CONTA, USUARIO, CAMPANHA)).rejects.toThrow(/montada pelo Liame e sai pelo pedido de aprovação/);
+      expect(m.diario.some((e) => e.valores.status === 'agendada')).toBe(false);
+
+      const pessoa = montar();
+      pessoa.db.select
+        .mockReturnValueOnce(pessoa.consulta([CAMPANHA_RASCUNHO]))
+        .mockReturnValueOnce(pessoa.consulta([{ phoneNumberId: 'PN1', status: 'registrado' }]))
+        .mockReturnValueOnce(pessoa.consulta([{ total: 1 }]))
+        .mockReturnValueOnce(pessoa.consulta([{ ...CAMPANHA_RASCUNHO, status: 'agendada' }]))
+        .mockReturnValueOnce(pessoa.consulta([]));
+      await pessoa.service.disparar(CONTA, USUARIO, CAMPANHA);
+      expect(pessoa.diario.find((e) => e.valores.status === 'agendada')).toBeDefined();
+    });
+
+    it('a execução de um pedido aprovado (com o pedido) passa pela trava, também com a chave ligada', async () => {
+      configAprovacao.aprovacao = { soComAprovacao: true };
+      const m = montar();
+      m.db.select
+        .mockReturnValueOnce(m.consulta([{ ...CAMPANHA_RASCUNHO, integracaoProduto: 'liame' }]))
+        .mockReturnValueOnce(m.consulta([{ phoneNumberId: 'PN1', status: 'registrado' }]))
+        .mockReturnValueOnce(m.consulta([{ total: 1 }]))
+        .mockReturnValueOnce(m.consulta([{ ...CAMPANHA_RASCUNHO, status: 'agendada' }]))
+        .mockReturnValueOnce(m.consulta([]));
+      await m.service.disparar(CONTA, USUARIO, CAMPANHA, { pedidoId: 'pedido-aprovado' });
+      expect(m.diario.find((e) => e.valores.status === 'agendada')).toBeDefined();
+    });
+
+    it('a pausa no teto aprovado não volta pela tela: seguir pede um pedido novo', async () => {
+      const m = montar();
+      m.db.select.mockReturnValueOnce(m.consulta([{ ...CAMPANHA_RASCUNHO, status: 'pausada', pausaMotivo: 'teto_aprovado', integracaoProduto: 'liame' }]));
+      await expect(m.service.retomar(CONTA, USUARIO, CAMPANHA)).rejects.toThrow(/parou no teto de gasto aprovado. Para seguir, o Liame faz um pedido novo/);
+      expect(m.diario.some((e) => e.valores.status === 'agendada')).toBe(false);
+    });
   });
 
   it('recusa quando não há número pronto — agora, e não horas depois', async () => {

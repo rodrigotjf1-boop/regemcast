@@ -8,6 +8,8 @@ import { HttpException, Logger } from '@nestjs/common';
 import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { ContextoDb } from '../../db/contexto';
+import { ErroDoPedido } from '../aprovacao/erro-do-pedido';
+import type { AprovacaoService } from '../aprovacao/aprovacao.service';
 import { comAutorDaIntegracao } from '../auditoria/autor-integracao';
 import { anotarChamada, problemaDoStatus } from '../hub/chamada-atual';
 import type { AvisoService } from '../aviso/aviso.service';
@@ -37,6 +39,8 @@ export interface ServicosDoMcp {
   modelos: ModeloService;
   avisos: AvisoService;
   integracoes: IntegracaoService;
+  /** O pedido de aprovação do disparo (Hub DMS, F5 parte B). */
+  aprovacoes: AprovacaoService;
 }
 
 /** O que cada ferramenta recebe: quem chamou, a porta para a conta dele e os serviços. */
@@ -81,6 +85,17 @@ export async function naConta<T extends Record<string, unknown>>(c: ContextoDaFe
     const autor = { tokenId: c.quem.tokenId, produto: c.quem.produto, nome: c.quem.nome, classe: c.quem.classe };
     return resposta(await comAutorDaIntegracao(autor, () => c.ctx.comConta(c.quem.contaId, fn)));
   } catch (e) {
+    // A recusa do pedido de aprovação (Hub DMS, F5 parte B): a frase comum do pacote e o envelope estruturado, também
+    // no 503 da parada (é recusa, não erro nosso).
+    if (e instanceof ErroDoPedido) {
+      anotarChamada({ resultado: 'recusada', problema: e.tipo });
+      const mensagem = e.message;
+      return {
+        isError: true as const,
+        content: [{ type: 'text' as const, text: mensagem }],
+        structuredContent: { problema: e.tipo, mensagem, ...(e.dados ?? {}) },
+      };
+    }
     if (e instanceof HttpException && e.getStatus() < 500) {
       anotarChamada({ resultado: 'recusada', problema: problemaDoStatus(e.getStatus()) });
       const corpo = e.getResponse();
