@@ -185,8 +185,27 @@ situação, não vai ao hub.
   forma, a conferência da porta no pedido novo e `DISPARO_SO_COM_APROVACAO` fechando o `campanha_disparar`.
 - O manifesto (`docs/dms-manifesto.json`) regravado: contrato **1.1.0** (aditiva).
 
+## A tela (PR 2)
+
+- **Campanhas › Para aprovar** (`/campanhas/para-aprovar`): os pedidos que esperam (pelo prazo, com o número no menu,
+  lido do resumo da conta: `aprovacoesEsperando`) e os decididos nos últimos 30 dias, cada um numa frase. Qualquer
+  pessoa da conta vê.
+- **O pedido aberto** (`/campanhas/para-aprovar/:id`): quem pede (o agente ou uma pessoa do produto de origem), a
+  mensagem como sai (o corpo do modelo da Meta com o valor das variáveis fixas no lugar e as de cada pessoa como
+  marcador), para quem e quanto, o cupom com o aviso de que a oferta obriga a loja, o código curto do plano e o teto
+  em reais. Aprovar abre o diálogo do código do aplicativo autenticador; recusar, o do motivo (os dois pelo `<dialog>`
+  nativo: o foco preso nele, Esc fecha, o foco volta a quem abriu). Sem o aplicativo ligado, o botão fica desligado e a
+  frase aponta Conta e usuários › Segurança do seu acesso. A operadora vê o pedido e o aviso de que só o dono aprova.
+  Se a Meta não respondeu ao abrir, a tela diz que o plano não foi conferido agora (aprovar confere de novo).
+- **Conta e usuários:** a coluna "Aprova disparos" (o dono: sempre; outro acesso: o dono liga e desliga, `aria-pressed`).
+- **O detalhe da campanha:** o teto e o gasto do disparo aprovado (a MESMA conta do worker, `folgaDoTeto`), e o aviso
+  da pausa no teto.
+- **No menu, o item aceso é o de caminho mais longo** que casa com a página: em "Para aprovar", "Campanhas" não acende
+  junto.
+
 ## O que fica de fora
 
-- O aviso assinado a quem pediu (PR 3), a tela, o teto na campanha e o "continuar" depois do teto (PR 2).
+- O aviso assinado a quem pediu (PR 3) e o "continuar" depois do teto (um pedido novo para a campanha parada no teto,
+  que a execução retoma em vez de disparar): fica para depois do piloto.
 - O app Android: a tela de aprovação é do site; o aviso no celular abre o site.
 - O console da distribuição não aprova nada (a aprovação é da conta).

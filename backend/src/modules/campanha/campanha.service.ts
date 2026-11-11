@@ -34,7 +34,7 @@ import { paraCloudApi } from '../../common/telefone';
 import { formasDosContatos, gemeoEmSql } from '../../common/telefone-sql';
 import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
-import { acaoPedido, assinatura, campanha, campanhaDestinatario, conta, contatoLista, modelo as modeloLocal, waNumero } from '../../db/schema';
+import { acaoPedido, assinatura, campanha, campanhaDestinatario, conta, contatoLista, modelo as modeloLocal, usuario as usuarioDaConta, waNumero } from '../../db/schema';
 import { anotarTetoNoPedido, cancelarPedidosAbertos, pedidoAbertoDaCampanha, travarCampanha } from '../aprovacao/aprovacao.consulta';
 import { pausaNoTeto, saiPeloPedido, temPedidoAberto } from '../aprovacao/aprovacao.regras';
 import { AuditoriaService } from '../auditoria/auditoria.service';
@@ -76,6 +76,7 @@ import {
   avisoDoOrcamento,
   frasePausaPeloOrcamento,
   fraseSemFolga,
+  microsEmCentavos,
   niveisAtingidos,
   periodosCheios,
   voltaEm,
@@ -496,6 +497,19 @@ export interface PreviaDoPublico {
   custo: CustoParaTela | null;
 }
 
+/** O teto do disparo aprovado pelo pedido e quanto a campanha já gastou dele, pela mesma conta do worker. */
+export interface TetoDoDisparo {
+  tetoCentavos: number;
+  gastoCentavos: number;
+  moeda: string | null;
+  pedidoId: string;
+  aplicativo: string;
+  aprovadoPor: string | null;
+  aprovadoEm: Date | null;
+  /** O teto não consegue contar agora (a moeda da conta mudou, ou falta tarifa): o envio está parado. */
+  semComoContar: 'moeda' | 'tarifa' | null;
+}
+
 export interface ResumoCampanha {
   id: string;
   nome: string;
@@ -527,6 +541,8 @@ export interface ResumoCampanha {
    * inteira, e a lista de campanhas não paga por ela.
    */
   custo?: CustoParaTela;
+  /** O teto do disparo aprovado e o gasto dele (Hub DMS, F5 parte B). Só no detalhe, e só na campanha disparada por pedido. */
+  tetoDoDisparo?: TetoDoDisparo | null;
   /** De onde sai a variável do título do modelo; nulo quando o modelo não tem. */
   variavelCabecalho: { origem: string; valor: string } | null;
   criadoEm: Date;
@@ -2509,6 +2525,38 @@ export class CampanhaService {
       ...resumo!,
       falhasPorMotivo: await this.falhasPorMotivo(contaId, campanhaId),
       custo: await custoDaCampanha(this.ctx.db, contaId, achada),
+      tetoDoDisparo: achada.acaoPedidoId ? await this.tetoDoDisparo(contaId, achada) : null,
+    };
+  }
+
+  /**
+   * O teto do disparo aprovado e o que a campanha já gastou dele (Hub DMS, F5 parte B), pela MESMA conta que o worker
+   * confere antes de cada lote (`folgaDoTeto`): o número da tela é o que segura o envio.
+   */
+  private async tetoDoDisparo(contaId: string, c: typeof campanha.$inferSelect): Promise<TetoDoDisparo | null> {
+    const [p] = await this.ctx.db
+      .select({
+        teto: acaoPedido.tetoGastoCentavos,
+        moeda: sql<string | null>`${acaoPedido.plano} -> 'custo' ->> 'moeda'`,
+        aplicativo: acaoPedido.aplicativo,
+        decididoEm: acaoPedido.decididoEm,
+        quem: usuarioDaConta.nome,
+      })
+      .from(acaoPedido)
+      .leftJoin(usuarioDaConta, and(eq(usuarioDaConta.id, acaoPedido.decididoPorUsuario), eq(usuarioDaConta.contaId, acaoPedido.contaId)))
+      .where(and(eq(acaoPedido.id, c.acaoPedidoId!), eq(acaoPedido.contaId, contaId)))
+      .limit(1);
+    if (!p || p.teto === null) return null;
+    const folga = await folgaDoTeto(this.ctx.db, contaId, { id: c.id, modeloCategoria: c.modeloCategoria, tetoCentavos: Number(p.teto), moeda: p.moeda }, 1);
+    return {
+      tetoCentavos: Number(p.teto),
+      gastoCentavos: microsEmCentavos(folga.gastoMicros),
+      moeda: p.moeda,
+      pedidoId: c.acaoPedidoId!,
+      aplicativo: p.aplicativo,
+      aprovadoPor: p.quem ?? null,
+      aprovadoEm: p.decididoEm,
+      semComoContar: folga.semComoContar,
     };
   }
 

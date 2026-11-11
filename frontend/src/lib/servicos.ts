@@ -59,7 +59,28 @@ import type { SituacaoCardapioWeb, SituacaoRegem, Segmento, ResumoSegmentos, Par
   SaudeDaConta,
   SituacaoWhatsapp,
   UsuarioDaConta,
+  ListaDeAprovacoes,
+  PedidoAberto,
+  PedidoDeAprovacao,
+  RespostaDaAprovacao,
 } from './tipos';
+
+/**
+ * A aprovação de disparos (Hub DMS, F5 parte B): o disparo que outro produto da DMS pede espera uma pessoa da conta.
+ * Quem pode aprovar é conferido no servidor; a tela só esconde os botões.
+ */
+export const aprovacoes = {
+  /** `GET /aprovacoes` — os que esperam (pelo prazo) e os decididos nos últimos 30 dias. */
+  listar: (sinal?: AbortSignal) => api.get<ListaDeAprovacoes>('/aprovacoes', { sinal }),
+  /** `GET /aprovacoes/:id` — o pedido, o plano e se ele foi conferido agora (o plano mudado encerra o pedido). */
+  detalhe: (id: string) => api.get<PedidoAberto>(`/aprovacoes/${encodeURIComponent(id)}`),
+  /** `POST /aprovacoes/:id/aprovar` — o código do aplicativo autenticador, o teto do disparo e o plano que a tela mostrou. */
+  aprovar: (id: string, dados: { codigo: string; tetoCentavos: number; resumoVisto: string }) =>
+    api.post<RespostaDaAprovacao>(`/aprovacoes/${encodeURIComponent(id)}/aprovar`, dados),
+  /** `POST /aprovacoes/:id/recusar` — o motivo volta para quem pediu. */
+  recusar: (id: string, motivo: string) =>
+    api.post<{ pedido: PedidoDeAprovacao }>(`/aprovacoes/${encodeURIComponent(id)}/recusar`, { motivo }),
+};
 
 /** Nas rotas de autenticação o 401 é resposta de negócio, não sessão vencida. */
 const SEM_REDIRECT = { redirecionarNo401: false } as const;
@@ -242,6 +263,10 @@ export const conta = {
   /** `PATCH /conta/usuarios/:id` — suspende ou reativa um acesso. */
   mudarStatus: (id: string, status: StatusUsuario) =>
     api.patch<UsuarioDaConta>(`/conta/usuarios/${encodeURIComponent(id)}`, { status }),
+
+  /** `PATCH /conta/usuarios/:id` — dá ou tira a permissão de aprovar disparos (só o dono; ele aprova sempre). */
+  mudarAprovaDisparos: (id: string, aprovaDisparos: boolean) =>
+    api.patch<UsuarioDaConta>(`/conta/usuarios/${encodeURIComponent(id)}`, { aprovaDisparos }),
 
   /** `DELETE /conta/usuarios/:id` — remove um operador (o dono não pode ser removido). */
   removerUsuario: (id: string) =>

@@ -101,6 +101,11 @@ export interface ContaResumo {
    * o menu "Conversas" aparecer. A rota de conversas confere de novo.
    */
   conversasHabilitadas: boolean;
+  /**
+   * Quantos pedidos de disparo de outro produto da DMS esperam uma pessoa da conta (Hub DMS, F5 parte B): o número ao
+   * lado de "Para aprovar" no menu. Os que já passaram do prazo não contam.
+   */
+  aprovacoesEsperando: number;
 }
 
 export interface UsuarioResumo {
@@ -166,6 +171,10 @@ export class ContaService {
         conversasHabilitadas: sql<boolean>`exists (
           select 1 from wa_numero n
            where n.conta_id = conta.id and n.coexistencia and n.integrar_conversas is true
+        )`,
+        aprovacoesEsperando: sql<number>`(
+          select count(*)::int from acao_pedido p
+           where p.conta_id = conta.id and p.situacao = 'aguardando' and p.vence_em > now()
         )`,
       })
       .from(tConta)
@@ -233,6 +242,7 @@ export class ContaService {
       },
       gratisPeloRegem,
       conversasHabilitadas: linha.conversasHabilitadas === true,
+      aprovacoesEsperando: Number(linha.aprovacoesEsperando ?? 0),
     };
   }
 

@@ -92,6 +92,89 @@ export interface ResumoConta {
   gratisPeloRegem?: boolean;
   /** Algum número guarda conversas (coexistência com "sim"): mostra o menu Conversas. */
   conversasHabilitadas: boolean;
+  /** Pedidos de disparo de outro produto da DMS esperando aprovação (Hub DMS, F5 parte B). Ausente numa API antiga. */
+  aprovacoesEsperando?: number;
+}
+
+// ---------------------------------------------- aprovação de disparos (F5)
+
+/** A situação de um pedido de aprovação (pacote comum do Hub DMS, seção 11). */
+export type SituacaoDoPedido = 'aguardando' | 'aprovado' | 'executando' | 'executado' | 'recusado' | 'vencido' | 'cancelado' | 'falhou';
+
+/** O pedido como a API devolve (o `pedidoPublico` do pacote). */
+export interface PedidoDeAprovacao {
+  id: string;
+  acao: string;
+  risco: 'R2' | 'R3';
+  situacao: SituacaoDoPedido;
+  resumo_do_plano: string;
+  criado_em: string;
+  vence_em: string;
+  decidido_em?: string;
+  teto_de_gasto_centavos?: number;
+  /** Por que acabou sem executar, ou parou: `plano-mudou`, `pedido-cancelado`, `teto-de-gasto`. */
+  motivo?: string;
+  motivo_da_recusa?: string;
+  tela?: string;
+}
+
+/** O plano que a pessoa vê para aprovar (o que o resumo prende). */
+export interface PlanoDoDisparo {
+  campanha: string;
+  aplicativo: string;
+  nome: string;
+  modelo: { id: string; nome: string; idioma: string; categoria: string | null; cabecalho: string | null; corpo: string; rodape: string | null; botoes: string[] };
+  /** De onde sai cada variável do corpo (`[{ origem, valor }]`), com o valor das fixas. */
+  variaveis: Array<{ origem: string; valor: string | null }> | null;
+  variavelCabecalho: { origem: string; valor: string } | null;
+  envio: unknown;
+  publico: { rotulo: string | null; destinatarios: number; aceitaram: number; impressao: string };
+  custo: { moeda: string | null; estimadoCentavos: number | null };
+  cupom: { codigo: string; descricao: string | null } | null;
+}
+
+/** Um pedido na tela: o pedido, o plano guardado e quem decidiu. */
+export interface PedidoParaTela {
+  pedido: PedidoDeAprovacao;
+  plano: PlanoDoDisparo;
+  campanhaId: string | null;
+  pedidoPor: 'agente' | 'pessoa';
+  decididoPorNome: string | null;
+}
+
+/** `GET /aprovacoes`. */
+export interface ListaDeAprovacoes {
+  esperando: PedidoParaTela[];
+  decididos: PedidoParaTela[];
+  podeAprovar: boolean;
+  segundoFatorPorApp: boolean;
+}
+
+/** `GET /aprovacoes/:id`. `conferido` falso = a Meta não respondeu e o plano não foi conferido agora. */
+export interface PedidoAberto extends PedidoParaTela {
+  podeAprovar: boolean;
+  segundoFatorPorApp: boolean;
+  conferido: boolean;
+}
+
+/** `POST /aprovacoes/:id/aprovar`: aprovou e disparou, aprovou e o disparo ficou para depois, ou o pedido se encerrou. */
+export interface RespostaDaAprovacao {
+  pedido: PedidoDeAprovacao;
+  resultado: 'executado' | 'adiado' | 'encerrado';
+  aviso: string | null;
+  campanhaId: string | null;
+}
+
+/** O teto do disparo aprovado e o gasto dele, no detalhe da campanha disparada por pedido. */
+export interface TetoDoDisparo {
+  tetoCentavos: number;
+  gastoCentavos: number;
+  moeda: string | null;
+  pedidoId: string;
+  aplicativo: string;
+  aprovadoPor: string | null;
+  aprovadoEm: string | null;
+  semComoContar: 'moeda' | 'tarifa' | null;
 }
 
 // ------------------------------------------------------------------ conversas
@@ -143,6 +226,8 @@ export interface UsuarioDaConta {
   status: StatusUsuario;
   ultimoLoginEm: string | null;
   criadoEm: string;
+  /** Aprova disparos pedidos por outro produto da DMS: o dono sempre; outro acesso, se o dono deu a permissão. */
+  aprovaDisparos?: boolean;
 }
 
 /**
@@ -285,7 +370,9 @@ export interface ResumoCampanha {
    * ou recusou por um problema da conta do WhatsApp na Meta (`conta_meta`:
    * pagamento, restrição, registro do número).
    */
-  pausaMotivo: 'conexao' | 'teto_plano' | 'inadimplencia' | 'manual' | 'modelo' | 'conta_meta' | 'orcamento' | null;
+  pausaMotivo: 'conexao' | 'teto_plano' | 'inadimplencia' | 'manual' | 'modelo' | 'conta_meta' | 'orcamento' | 'teto_aprovado' | null;
+  /** O teto do disparo aprovado pelo pedido e o gasto dele (Hub DMS, F5 parte B). Só em `GET /campanhas/:id`. */
+  tetoDoDisparo?: TetoDoDisparo | null;
   /** Só na pausa pelo orçamento de disparos: qual teto encheu, em uma frase pronta do servidor. */
   pausaTexto?: string | null;
   /** Só na pausa pelo orçamento de disparos: quando a campanha volta sozinha (a virada do período). */
