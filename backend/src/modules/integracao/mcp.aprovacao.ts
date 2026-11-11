@@ -78,13 +78,13 @@ const disparoPedir: Ferramenta = {
       {
         title: 'Pedir a aprovação do disparo de uma campanha',
         description:
-          'Pede o disparo de uma campanha em rascunho que este aplicativo montou. NADA sai agora: uma pessoa da conta (o dono, ou quem ele autorizou) aprova no Regemcast, com o código do aplicativo autenticador, e fixa o teto de gasto; só então as mensagens saem, uma vez. Exige a `confirmacao` de campanha_disparo_planejar. O pedido fica preso ao plano (o texto, as variáveis, quem recebe, o custo e o cupom): se algo mudar, ele se encerra e é preciso pedir de novo. Vence em 24 horas. Um pedido aberto por campanha. Responde o pedido (situação `aguardando` e o link da tela de aprovação); acompanhe com acao_pedido_ler. Repetir com a mesma chave devolve o mesmo pedido como está agora.',
+          'Pede o disparo de uma campanha em rascunho que este aplicativo montou. NADA sai agora: uma pessoa da conta (o dono, ou quem ele autorizou) aprova no Regemcast, com o código do aplicativo autenticador, e fixa o teto de gasto; só então as mensagens saem, uma vez. Exige a `confirmacao` de campanha_disparo_planejar. O pedido fica preso ao plano (o texto, as variáveis, quem recebe, o custo e o cupom): se algo mudar, ele se encerra e é preciso pedir de novo. Vence em 24 horas. Um pedido aberto por campanha. Responde o pedido (situação `aguardando` e o link da tela de aprovação); acompanhe com acao_pedido_ler. Repetir com a mesma chave devolve o mesmo pedido como está agora. A campanha disparada por pedido que parou no teto de gasto aprovado segue por um pedido novo daqui (o "continuar"): quem aprova fixa um teto para a campanha inteira, maior do que ela já gastou, e ela volta a sair para quem falta.',
         inputSchema: z.object({
           chaveIdempotencia: z
             .string()
             .regex(FORMATO_DA_CHAVE)
             .describe('Uma chave sua, única por pedido (8 a 100 caracteres). A mesma chave com o mesmo pedido devolve o mesmo pedido, como está agora, enquanto ele existir.'),
-          id: z.string().uuid().describe('O id da campanha em rascunho.'),
+          id: z.string().uuid().describe('O id da campanha em rascunho, ou da campanha parada no teto de gasto aprovado.'),
           confirmacao: z.string().min(16).max(64).describe('A confirmação que veio em campanha_disparo_planejar.'),
           pedidoPor: z
             .union([

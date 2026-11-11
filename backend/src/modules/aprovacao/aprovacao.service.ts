@@ -61,6 +61,10 @@ import { HubService } from '../hub/hub.service';
 import { quandoNoFuso } from '../integracao/aviso-de-ligacao.service';
 import { decifrarToken } from '../meta/cripto';
 import { MetaService } from '../meta/meta.service';
+import { dinheiro } from '../orcamento/custo.regras';
+import { folgaDoTeto } from '../orcamento/orcamento.consulta';
+import { microsEmCentavos } from '../orcamento/orcamento.regras';
+import { pedidoEmVigor } from './aprovacao.consulta';
 import {
   ACAO_DO_DISPARO,
   adiado,
@@ -78,6 +82,7 @@ import {
   MODELO_SEM_TEXTO,
   montarPlano,
   MOTIVO_OBRIGATORIO,
+  paradaNoTeto,
   PEDIDO_NAO_ENCONTRADO,
   podeAprovar,
   resumoDaChave,
@@ -86,6 +91,7 @@ import {
   SEM_APLICATIVO_AUTENTICADOR,
   SO_QUEM_PODE_APROVAR,
   TETO_FORA,
+  tetoAbaixoDoGasto,
   tetoValido,
   type CupomDoPedido,
   type PlanoDoDisparo,
@@ -187,11 +193,21 @@ export class AprovacaoService {
   async planoAgora(contaId: string, campanhaId: string, aplicativo: string, cupom: CupomDoPedido | null): Promise<PlanoDoDisparo> {
     const r = await this.campanhas.detalhe(contaId, campanhaId);
     const [c] = await this.ctx.db
-      .select({ modeloId: campanha.modeloId, variaveis: campanha.variaveisLista, envio: campanha.envio })
+      .select({
+        modeloId: campanha.modeloId,
+        variaveis: campanha.variaveisLista,
+        envio: campanha.envio,
+        status: campanha.status,
+        pausaMotivo: campanha.pausaMotivo,
+        acaoPedidoId: campanha.acaoPedidoId,
+      })
       .from(campanha)
       .where(and(eq(campanha.id, campanhaId), eq(campanha.contaId, contaId)))
       .limit(1);
     if (!c) throw new NotFoundException('Campanha não encontrada.');
+    // O "continuar": a campanha disparada por pedido parou no teto; este plano a faz seguir para quem falta. A situação
+    // entra no plano: se a campanha sair da pausa no teto (cancelada), o plano muda e o pedido se encerra.
+    const vigor = c.acaoPedidoId && paradaNoTeto(c) ? await pedidoEmVigor(this.ctx.db, contaId, campanhaId) : null;
 
     const naMeta = (await this.meta.modelos(contaId)).find((m) =>
       c.modeloId ? m.id === c.modeloId : m.nome === r.modeloNome && m.idioma === r.modeloIdioma,
@@ -222,7 +238,14 @@ export class AprovacaoService {
       moeda: r.custo?.moeda ?? null,
       estimadoCentavos: r.custo?.aSairCentavos ?? null,
       cupom,
+      continuacao: vigor ? { tetoAnteriorCentavos: vigor.tetoCentavos ?? 0 } : null,
     });
+  }
+
+  /** O que a campanha já gastou (a conta do worker, `folgaDoTeto`), em centavos: o teto do "continuar" tem de passar disso. */
+  private async gastoDaCampanha(contaId: string, plano: PlanoDoDisparo): Promise<number> {
+    const folga = await folgaDoTeto(this.ctx.db, contaId, { id: plano.campanha, modeloCategoria: plano.modelo.categoria, tetoCentavos: 0, moeda: plano.custo.moeda }, 1);
+    return microsEmCentavos(folga.gastoMicros);
   }
 
   /** A impressão de quem recebe: o telefone, as variáveis e a do título de cada um que ainda pode sair, em ordem. */
@@ -371,7 +394,10 @@ export class AprovacaoService {
    * O pedido aberto na tela. Se o plano de agora é outro que o do pedido, o pedido se encerra ali (`cancelado`, motivo
    * `plano-mudou`), na transação da tela. A leitura da Meta que falhar não encerra nada: a tela diz que não conferiu.
    */
-  async detalheParaTela(u: UsuarioAutenticado, id: string): Promise<PedidoParaTela & { podeAprovar: boolean; segundoFatorPorApp: boolean; conferido: boolean }> {
+  async detalheParaTela(
+    u: UsuarioAutenticado,
+    id: string,
+  ): Promise<PedidoParaTela & { podeAprovar: boolean; segundoFatorPorApp: boolean; conferido: boolean; gastoAteAquiCentavos: number | null }> {
     let l = await this.linha(u.contaId, id);
     if (!l) throw new NotFoundException(PEDIDO_NAO_ENCONTRADO);
     let conferido = true;
@@ -385,7 +411,10 @@ export class AprovacaoService {
     }
     const quem = await this.quemAprova(u);
     const nomes = await this.nomesDeQuemDecidiu(u.contaId, [l]);
-    return { ...this.paraTela(l, this.agora(), nomes), podeAprovar: quem.pode, segundoFatorPorApp: quem.app, conferido };
+    // No "continuar", quem aprova vê o que a campanha já gastou: o teto vale para ela inteira e tem de passar disso.
+    const plano = l.plano as PlanoDoDisparo;
+    const gastoAteAquiCentavos = plano?.continuacao && l.campanhaId ? await this.gastoDaCampanha(u.contaId, plano) : null;
+    return { ...this.paraTela(l, this.agora(), nomes), podeAprovar: quem.pode, segundoFatorPorApp: quem.app, conferido, gastoAteAquiCentavos };
   }
 
   // ----------------------------------------------------------- 4. aprovar
@@ -435,6 +464,13 @@ export class AprovacaoService {
     if (l.campanhaId) {
       const impede = await this.campanhas.oQueImpedeODisparo(contaId, l.campanhaId);
       if (impede) throw new BadRequestException(`Não dá para aprovar agora: ${impede}`);
+      // O "continuar": o teto vale para a campanha inteira (a conta do worker soma o gasto de antes) e tem de passar do
+      // que ela já gastou — senão ela pararia de novo na primeira rodada.
+      const plano = l.plano as PlanoDoDisparo;
+      if (plano?.continuacao && typeof a.tetoDeGastoCentavos === 'number') {
+        const gasto = await this.gastoDaCampanha(contaId, plano);
+        if (a.tetoDeGastoCentavos <= gasto) throw new BadRequestException(tetoAbaixoDoGasto(dinheiro(gasto, plano.custo.moeda ?? 'BRL')));
+      }
     }
 
     const decididoPor = decididoPorQuem(a.papel);
@@ -525,8 +561,12 @@ export class AprovacaoService {
     if (!l.campanhaId) return this.encerrado(l, 'pedido-cancelado', problemaDoPedido('pedido-cancelado'));
 
     // A campanha travada: a edição, a exclusão e outro disparo esperam esta execução terminar.
-    const camp = await db.execute<{ id: string }>(sql`select id from campanha where id = ${l.campanhaId} and conta_id = ${contaId} for update`);
+    const camp = await db.execute<{ id: string; status: string; pausaMotivo: string | null }>(sql`
+      select id, status, pausa_motivo as "pausaMotivo" from campanha where id = ${l.campanhaId} and conta_id = ${contaId} for update
+    `);
     if (!camp.rows.length) return this.encerrado(l, 'pedido-cancelado', problemaDoPedido('pedido-cancelado'));
+    // O "continuar" (o plano aprovado era o da campanha parada no teto, e o replanejar abaixo confere que ela segue assim).
+    const continuar = Boolean((l.plano as PlanoDoDisparo)?.continuacao) && paradaNoTeto(camp.rows[0]!);
 
     let plano: PlanoDoDisparo;
     try {
@@ -549,9 +589,15 @@ export class AprovacaoService {
         returning id
       `);
       if (!tomado.rows.length) throw new ErroDoPedido(problemaDoPedido('aprovacao-usada'));
-      // O MESMO disparo da tela, com as conferências de sempre; quem dispara é quem aprovou.
-      const depois = await this.campanhas.disparar(contaId, l.decididoPorUsuario, l.campanhaId, { pedidoId: id });
-      await db.update(campanha).set({ acaoPedidoId: id }).where(and(eq(campanha.id, l.campanhaId), eq(campanha.contaId, contaId)));
+      // O MESMO disparo da tela, com as conferências de sempre; quem dispara é quem aprovou. No "continuar", a campanha
+      // parada no teto volta a andar, e segue guardando o pedido que a disparou (o teto que vale é o deste, em vigor).
+      let depois: ResumoCampanha;
+      if (continuar) {
+        depois = await this.campanhas.continuarNoTeto(contaId, l.decididoPorUsuario, l.campanhaId, { pedidoId: id });
+      } else {
+        depois = await this.campanhas.disparar(contaId, l.decididoPorUsuario, l.campanhaId, { pedidoId: id });
+        await db.update(campanha).set({ acaoPedidoId: id }).where(and(eq(campanha.id, l.campanhaId), eq(campanha.contaId, contaId)));
+      }
       await db.execute(sql`
         update acao_pedido set situacao = 'executado', executado_em = ${agora.toISOString()}::timestamptz
          where id = ${id} and conta_id = ${contaId} and situacao = 'executando'

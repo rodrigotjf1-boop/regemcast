@@ -52,6 +52,14 @@ interface ItemDoMenu {
    * a rota recusa no servidor do mesmo jeito.
    */
   soComConversas?: boolean;
+  /** O número ao lado do rótulo, lido do resumo da conta (os pedidos de disparo esperando aprovação). */
+  contador?: (resumo: ResumoConta | null) => number;
+}
+
+/** O item aceso é o de caminho mais longo que casa com a página: em "Para aprovar", "Campanhas" não acende junto. */
+function itemAtivo(caminho: string, hrefs: readonly string[]): string | null {
+  const casam = hrefs.filter((h) => caminho === h || caminho.startsWith(h + '/'));
+  return casam.sort((a, b) => b.length - a.length)[0] ?? null;
 }
 
 const SECOES: Array<{ titulo: string; itens: ItemDoMenu[] }> = [
@@ -63,6 +71,9 @@ const SECOES: Array<{ titulo: string; itens: ItemDoMenu[] }> = [
       { href: '/modelos', rotulo: 'Modelos', Icone: IconeModelo },
       { href: '/contatos', rotulo: 'Contatos', Icone: IconeContatos },
       { href: '/campanhas', rotulo: 'Campanhas', Icone: IconeCampanha },
+      // Os disparos que outro produto da DMS pediu (Hub DMS, F5 parte B). Qualquer pessoa da conta vê; quem aprova é
+      // conferido no servidor.
+      { href: '/campanhas/para-aprovar', rotulo: 'Para aprovar', Icone: IconeEscudo, contador: (r) => r?.aprovacoesEsperando ?? 0 },
     ],
   },
   {
@@ -174,7 +185,8 @@ export function Casca({ children }: { children: ReactNode }) {
 function Lateral({ aoFechar, caminho }: { aoFechar: () => void; caminho: string }) {
   const { sessao, sair } = useSessao();
   const [saindo, setSaindo] = useState(false);
-  const ativo = (href: string) => caminho === href || caminho.startsWith(href + '/');
+  const aceso = itemAtivo(caminho, SECOES.flatMap((s) => s.itens.map((i) => i.href)));
+  const ativo = (href: string) => href === aceso;
   const resumo = useResumoDaConta();
   const visivel = (item: ItemDoMenu) => !item.soComConversas || resumo?.conversasHabilitadas === true;
 
@@ -216,8 +228,9 @@ function Lateral({ aoFechar, caminho }: { aoFechar: () => void; caminho: string 
               {secao.titulo}
             </p>
             <ul className="space-y-0.5">
-              {secao.itens.filter(visivel).map(({ href, rotulo, Icone }) => {
+              {secao.itens.filter(visivel).map(({ href, rotulo, Icone, contador }) => {
                 const estaAtivo = ativo(href);
+                const quantos = contador ? contador(resumo) : 0;
                 return (
                   <li key={href}>
                     <Link
@@ -236,7 +249,18 @@ function Lateral({ aoFechar, caminho }: { aoFechar: () => void; caminho: string 
                           estaAtivo ? '' : 'group-hover:scale-110',
                         )}
                       />
-                      {rotulo}
+                      <span className="min-w-0 flex-1 truncate">{rotulo}</span>
+                      {quantos > 0 ? (
+                        <span
+                          className={cn(
+                            'numerico grid h-5 min-w-[1.25rem] shrink-0 place-items-center rounded-full px-1.5 text-[0.7rem] font-bold',
+                            estaAtivo ? 'bg-acento-contraste text-acento' : 'bg-acento text-acento-contraste',
+                          )}
+                        >
+                          {quantos}
+                          <span className="sr-only"> {quantos === 1 ? 'pedido esperando' : 'pedidos esperando'}</span>
+                        </span>
+                      ) : null}
                     </Link>
                   </li>
                 );

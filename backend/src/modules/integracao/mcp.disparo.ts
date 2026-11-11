@@ -115,8 +115,8 @@ const disparoPlanejar: Ferramenta = {
       {
         title: 'Planejar o disparo de uma campanha',
         description:
-          'O primeiro passo do disparo: mostra, para uma campanha em rascunho que este aplicativo montou, quantas pessoas vão receber, o custo estimado na Meta (teto), como está o orçamento de disparos da conta e o que impede o disparo agora. Se nada impede, devolve a `confirmacao` que campanha_disparar exige. Não muda nada. A decisão de disparar é de quem aprova do lado de quem chama: mostre estes números a essa pessoa.',
-        inputSchema: z.object({ id: z.string().uuid().describe('O id da campanha em rascunho, como veio em campanha_rascunhar.') }),
+          'O primeiro passo do disparo: mostra, para uma campanha em rascunho que este aplicativo montou, quantas pessoas vão receber, o custo estimado na Meta (teto), como está o orçamento de disparos da conta e o que impede o disparo agora. Se nada impede, devolve a `confirmacao` que campanha_disparar exige. Não muda nada. A decisão de disparar é de quem aprova do lado de quem chama: mostre estes números a essa pessoa. Também planeja o "continuar" da campanha que parou no teto de gasto aprovado (os números são de quem falta); ela só segue por campanha_disparo_pedir.',
+        inputSchema: z.object({ id: z.string().uuid().describe('O id da campanha em rascunho, como veio em campanha_rascunhar, ou da campanha parada no teto de gasto aprovado.') }),
         outputSchema: z.object({
           campanha: esquemaDaCampanha,
           custo: esquemaDoCusto,

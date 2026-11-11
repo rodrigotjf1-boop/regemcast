@@ -417,7 +417,8 @@ describe('a porta MCP, por HTTP, como o Liame chama', () => {
       expect(passou.status).toBe(429);
       expect(Number(passou.cabecalhos.get('retry-after'))).toBeGreaterThanOrEqual(1);
       expect((await pedir(p, b, 'tools/list')).status).toBe(200);
-    });
+      // 122 chamadas HTTP: sozinho leva ~1 s, mas com a suíte inteira na máquina passou de 5 s.
+    }, 20_000);
 
     it('GET e DELETE: 405 com Allow: POST (servidor sem estado, sem sessão para abrir ou fechar)', async () => {
       for (const metodo of ['GET', 'DELETE']) {

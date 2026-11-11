@@ -34,9 +34,9 @@ import { paraCloudApi } from '../../common/telefone';
 import { formasDosContatos, gemeoEmSql } from '../../common/telefone-sql';
 import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
-import { acaoPedido, assinatura, campanha, campanhaDestinatario, conta, contatoLista, modelo as modeloLocal, waNumero } from '../../db/schema';
-import { anotarTetoNoPedido, cancelarPedidosAbertos, pedidoAbertoDaCampanha, travarCampanha } from '../aprovacao/aprovacao.consulta';
-import { pausaNoTeto, saiPeloPedido, temPedidoAberto } from '../aprovacao/aprovacao.regras';
+import { acaoPedido, assinatura, campanha, campanhaDestinatario, conta, contatoLista, modelo as modeloLocal, usuario as usuarioDaConta, waNumero } from '../../db/schema';
+import { anotarTetoNoPedido, cancelarPedidosAbertos, pedidoAbertoDaCampanha, pedidoEmVigor, travarCampanha } from '../aprovacao/aprovacao.consulta';
+import { paradaNoTeto, pausaNoTeto, saiPeloPedido, temPedidoAberto } from '../aprovacao/aprovacao.regras';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { autorDaIntegracao } from '../auditoria/autor-integracao';
 import { AvisoService } from '../aviso/aviso.service';
@@ -76,6 +76,7 @@ import {
   avisoDoOrcamento,
   frasePausaPeloOrcamento,
   fraseSemFolga,
+  microsEmCentavos,
   niveisAtingidos,
   periodosCheios,
   voltaEm,
@@ -496,6 +497,19 @@ export interface PreviaDoPublico {
   custo: CustoParaTela | null;
 }
 
+/** O teto do disparo aprovado pelo pedido e quanto a campanha já gastou dele, pela mesma conta do worker. */
+export interface TetoDoDisparo {
+  tetoCentavos: number;
+  gastoCentavos: number;
+  moeda: string | null;
+  pedidoId: string;
+  aplicativo: string;
+  aprovadoPor: string | null;
+  aprovadoEm: Date | null;
+  /** O teto não consegue contar agora (a moeda da conta mudou, ou falta tarifa): o envio está parado. */
+  semComoContar: 'moeda' | 'tarifa' | null;
+}
+
 export interface ResumoCampanha {
   id: string;
   nome: string;
@@ -527,6 +541,8 @@ export interface ResumoCampanha {
    * inteira, e a lista de campanhas não paga por ela.
    */
   custo?: CustoParaTela;
+  /** O teto do disparo aprovado e o gasto dele (Hub DMS, F5 parte B). Só no detalhe, e só na campanha disparada por pedido. */
+  tetoDoDisparo?: TetoDoDisparo | null;
   /** De onde sai a variável do título do modelo; nulo quando o modelo não tem. */
   variavelCabecalho: { origem: string; valor: string } | null;
   criadoEm: Date;
@@ -1165,8 +1181,9 @@ export class CampanhaService {
     // A campanha travada: a execução de um pedido aprovado não cruza com esta edição (Hub DMS, F5 parte B).
     await travarCampanha(this.ctx.db, contaId, campanhaId);
     const alvo = await this.buscar(contaId, campanhaId);
-    // O rascunho mudou: o pedido de aprovação aberto valia para o plano de antes.
-    if (alvo.status === 'rascunho') await cancelarPedidosAbertos(this.ctx.db, contaId, campanhaId, 'plano-mudou');
+    // O rascunho (ou a campanha parada no teto, com o pedido do "continuar") mudou: o pedido aberto valia para o plano
+    // de antes. Se a edição for recusada abaixo, a transação desfaz o cancelamento junto.
+    if (alvo.status === 'rascunho' || paradaNoTeto(alvo)) await cancelarPedidosAbertos(this.ctx.db, contaId, campanhaId, 'plano-mudou');
 
     if (!['rascunho', 'agendada', 'pausada'].includes(alvo.status)) {
       throw new BadRequestException(
@@ -1350,6 +1367,8 @@ export class CampanhaService {
     }
 
     if (alvo.status === 'agendada' || alvo.status === 'pausada') {
+      // Parada no teto, ela pode ter o pedido do "continuar" aberto: ele se encerra junto (a linha fica como prova).
+      await cancelarPedidosAbertos(this.ctx.db, contaId, campanhaId, 'pedido-cancelado');
       const cancelados = await this.ctx.db.execute(sql`
         with parados as (
           update campanha_destinatario
@@ -1446,6 +1465,8 @@ export class CampanhaService {
       if (alvo.integracaoProduto && env.aprovacao?.soComAprovacao) throw new BadRequestException(saiPeloPedido(alvo.integracaoProduto));
       // Com pedido aberto, a campanha sai por ele (também com a chave desligada): ninguém contorna quem aprova.
       if (await pedidoAbertoDaCampanha(this.ctx.db, contaId, campanhaId)) throw new BadRequestException(temPedidoAberto(alvo.integracaoProduto));
+      // Parada no teto aprovado, ela só segue por um pedido novo (o "continuar"), e a frase diz isso.
+      if (paradaNoTeto(alvo)) throw new BadRequestException(pausaNoTeto(alvo.integracaoProduto));
     }
     await this.conferirAntesDeDisparar(contaId, alvo);
 
@@ -1475,12 +1496,14 @@ export class CampanhaService {
   /**
    * O que o disparo recusaria agora, em uma frase — ou nulo, se nada impede.
    * Não muda a campanha. É o que o plano de disparo da porta MCP mostra antes
-   * de alguém aprovar: as MESMAS conferências do `disparar`, sem disparar.
+   * de alguém aprovar: as MESMAS conferências do `disparar`, sem disparar. A
+   * campanha disparada por pedido e parada no teto aprovado passa pelas do
+   * `continuarNoTeto` (o "continuar": um pedido novo a faz seguir).
    */
   async oQueImpedeODisparo(contaId: string, campanhaId: string): Promise<string | null> {
     const alvo = await this.buscar(contaId, campanhaId);
     try {
-      await this.conferirAntesDeDisparar(contaId, alvo);
+      await this.conferirAntesDeDisparar(contaId, alvo, paradaNoTeto(alvo) && Boolean(alvo.acaoPedidoId));
       return null;
     } catch (erro) {
       if (erro instanceof BadRequestException) return erro.message;
@@ -1488,9 +1511,16 @@ export class CampanhaService {
     }
   }
 
-  /** As conferências do disparo: recusa com a frase, antes de mudar qualquer coisa. */
-  private async conferirAntesDeDisparar(contaId: string, alvo: { status: string }): Promise<void> {
-    if (alvo.status !== 'rascunho') {
+  /**
+   * As conferências do disparo: recusa com a frase, antes de mudar qualquer coisa. `continuar`: a campanha parada no
+   * teto aprovado volta a andar (as mesmas conferências da conexão, do número e do plano; o status é o da pausa).
+   */
+  private async conferirAntesDeDisparar(contaId: string, alvo: { status: string; pausaMotivo?: string | null }, continuar = false): Promise<void> {
+    if (continuar) {
+      if (!paradaNoTeto(alvo)) {
+        throw new BadRequestException(`Esta campanha não está parada no teto de gasto aprovado (está "${alvo.status}"): não há o que continuar.`);
+      }
+    } else if (alvo.status !== 'rascunho') {
       // Disparar de novo reenviaria para quem já recebeu. Mensagem duplicada
       // queima o destinatário e cobra outra vez.
       throw new BadRequestException(
@@ -1583,6 +1613,37 @@ export class CampanhaService {
     return this.detalhe(contaId, campanhaId);
   }
 
+  /**
+   * O "continuar" (Hub DMS, F5 parte B; decisão F5-6): a campanha parada no teto aprovado volta a andar para quem falta,
+   * pela execução de um pedido NOVO aprovado — o único caminho; o Retomar recusa. Só a `AprovacaoService.executar` chama,
+   * com a campanha já travada. A campanha continua guardando o pedido que a disparou; o teto que vale passa a ser o do
+   * pedido em vigor (`pedidoEmVigor`), e o gasto de antes conta nele.
+   */
+  async continuarNoTeto(contaId: string, usuarioId: string | null, campanhaId: string, opcoes: { pedidoId: string }): Promise<ResumoCampanha> {
+    await travarCampanha(this.ctx.db, contaId, campanhaId);
+    const alvo = await this.buscar(contaId, campanhaId);
+    await this.conferirAntesDeDisparar(contaId, alvo, true);
+
+    const voltou = await this.ctx.db
+      .update(campanha)
+      .set({ status: 'agendada', pausaMotivo: null, pausaErroCodigo: null, pausaErroMeta: null, retomarEm: null })
+      .where(and(eq(campanha.id, campanhaId), eq(campanha.contaId, contaId), eq(campanha.status, 'pausada'), eq(campanha.pausaMotivo, 'teto_aprovado')))
+      .returning({ id: campanha.id });
+    if (!voltou.length) throw new BadRequestException('Esta campanha não está mais parada no teto de gasto aprovado.');
+
+    await this.auditoria.registrar({
+      contaId,
+      atorTipo: 'usuario',
+      atorUsuarioId: usuarioId,
+      acao: 'campanha.continuada',
+      entidade: 'campanha',
+      entidadeId: campanhaId,
+      detalhe: { modelo: alvo.modeloNome, pedido: opcoes.pedidoId },
+    });
+
+    return this.detalhe(contaId, campanhaId);
+  }
+
   // ----------------------------------------------------------------- worker
   //
   // Tudo daqui para baixo roda FORA de request, chamado pelo worker. Não há
@@ -1633,10 +1694,8 @@ export class CampanhaService {
           descansoDias: campanha.descansoDias,
           variaveisLista: campanha.variaveisLista,
           envio: campanha.envio,
-          // O pedido que disparou (Hub DMS, F5 parte B) e o teto que quem aprovou fixou nele, com a moeda do plano.
+          // O pedido que disparou (Hub DMS, F5 parte B): a campanha confere o teto do pedido em vigor antes de cada lote.
           acaoPedidoId: campanha.acaoPedidoId,
-          tetoGastoCentavos: acaoPedido.tetoGastoCentavos,
-          tetoMoeda: sql<string | null>`${acaoPedido.plano} -> 'custo' ->> 'moeda'`,
           integracaoProduto: campanha.integracaoProduto,
           fuso: conta.timezone,
           // O ciclo em que o disparo conta. É o MESMO campo que a tela de Conta
@@ -1646,7 +1705,6 @@ export class CampanhaService {
         .from(campanha)
         .innerJoin(conta, eq(conta.id, campanha.contaId))
         .leftJoin(assinatura, eq(assinatura.contaId, campanha.contaId))
-        .leftJoin(acaoPedido, and(eq(acaoPedido.id, campanha.acaoPedidoId), eq(acaoPedido.contaId, campanha.contaId)))
         .where(eq(campanha.id, campanhaId))
         .limit(1);
 
@@ -1704,6 +1762,8 @@ export class CampanhaService {
 
     // Reivindicação atômica. `SKIP LOCKED` é o que impede envio duplicado.
     let pausadaPor: 'inadimplencia' | 'teto_plano' | 'orcamento' | 'teto_aprovado' | null = null;
+    // O pedido em vigor cujo teto a rodada conferiu (para o registro da pausa no teto).
+    let pedidoDoTeto: string | null = null;
     // Os avisos do orçamento (80% e 100%) que esta rodada fez nascer; saem depois do commit.
     let avisosDoOrcamento: { moeda: string; niveis: NivelAtingido[] } | null = null;
     const reivindicados = await this.ctx.comEscopoSistema('campanha.worker.reivindicar', async (db) => {
@@ -1789,12 +1849,15 @@ export class CampanhaService {
       // O teto do disparo que quem aprovou o pedido fixou (Hub DMS, F5 parte B; decisão F5-6), na mesma trava por
       // conta: o que a campanha já gastou mais o lote não passa dele. Não cabe uma mensagem (ou ela não tem preço, e o
       // teto não a seguraria): a campanha pausa com `teto_aprovado`, que não volta sozinha — seguir pede um pedido
-      // novo, com outro teto.
+      // novo, com outro teto (o "continuar"). O teto é o do pedido EM VIGOR: o último executado. Sem ele (não deveria
+      // acontecer), fecha: teto zero, nada sai.
       if (c.acaoPedidoId) {
+        const vigor = (await pedidoEmVigor(db, c.contaId, campanhaId)) ?? { id: c.acaoPedidoId, tetoCentavos: 0, moeda: null };
+        pedidoDoTeto = vigor.id;
         const teto = await folgaDoTeto(
           db,
           c.contaId,
-          { id: campanhaId, modeloCategoria: c.modeloCategoria, tetoCentavos: Number(c.tetoGastoCentavos ?? 0), moeda: c.tetoMoeda ?? null },
+          { id: campanhaId, modeloCategoria: c.modeloCategoria, tetoCentavos: Number(vigor.tetoCentavos ?? 0), moeda: vigor.moeda },
           limite,
         );
         if (teto.cabem < 1) {
@@ -1805,7 +1868,7 @@ export class CampanhaService {
           `);
           if (r.rows?.length) {
             pausadaPor = 'teto_aprovado';
-            if (c.acaoPedidoId) await anotarTetoNoPedido(db, c.contaId, c.acaoPedidoId);
+            await anotarTetoNoPedido(db, c.contaId, vigor.id);
           }
           return null;
         }
@@ -1892,7 +1955,7 @@ export class CampanhaService {
         pausadaPor === 'orcamento'
           ? `Campanha ${campanhaId} pausada: o orçamento de disparos da conta ${c.contaId} não tem folga.`
           : pausadaPor === 'teto_aprovado'
-            ? `Campanha ${campanhaId} pausada: chegou ao teto de gasto aprovado no pedido ${c.acaoPedidoId ?? '—'}.`
+            ? `Campanha ${campanhaId} pausada: chegou ao teto de gasto aprovado no pedido ${pedidoDoTeto ?? c.acaoPedidoId ?? '—'}.`
             : `Campanha ${campanhaId} pausada: a conta ${c.contaId} está sem disparos no plano ou com o pagamento atrasado.`,
       );
       if (pausadaPor === 'teto_aprovado') {
@@ -2509,6 +2572,41 @@ export class CampanhaService {
       ...resumo!,
       falhasPorMotivo: await this.falhasPorMotivo(contaId, campanhaId),
       custo: await custoDaCampanha(this.ctx.db, contaId, achada),
+      tetoDoDisparo: achada.acaoPedidoId ? await this.tetoDoDisparo(contaId, achada) : null,
+    };
+  }
+
+  /**
+   * O teto do disparo aprovado e o que a campanha já gastou dele (Hub DMS, F5 parte B), pela MESMA conta que o worker
+   * confere antes de cada lote (`folgaDoTeto`): o número da tela é o que segura o envio. O teto é o do pedido EM VIGOR
+   * (o último executado: depois de um "continuar", o do pedido novo).
+   */
+  private async tetoDoDisparo(contaId: string, c: typeof campanha.$inferSelect): Promise<TetoDoDisparo | null> {
+    const vigor = await pedidoEmVigor(this.ctx.db, contaId, c.id);
+    if (!vigor) return null;
+    const [p] = await this.ctx.db
+      .select({
+        teto: acaoPedido.tetoGastoCentavos,
+        moeda: sql<string | null>`${acaoPedido.plano} -> 'custo' ->> 'moeda'`,
+        aplicativo: acaoPedido.aplicativo,
+        decididoEm: acaoPedido.decididoEm,
+        quem: usuarioDaConta.nome,
+      })
+      .from(acaoPedido)
+      .leftJoin(usuarioDaConta, and(eq(usuarioDaConta.id, acaoPedido.decididoPorUsuario), eq(usuarioDaConta.contaId, acaoPedido.contaId)))
+      .where(and(eq(acaoPedido.id, vigor.id), eq(acaoPedido.contaId, contaId)))
+      .limit(1);
+    if (!p || p.teto === null) return null;
+    const folga = await folgaDoTeto(this.ctx.db, contaId, { id: c.id, modeloCategoria: c.modeloCategoria, tetoCentavos: Number(p.teto), moeda: p.moeda }, 1);
+    return {
+      tetoCentavos: Number(p.teto),
+      gastoCentavos: microsEmCentavos(folga.gastoMicros),
+      moeda: p.moeda,
+      pedidoId: vigor.id,
+      aplicativo: p.aplicativo,
+      aprovadoPor: p.quem ?? null,
+      aprovadoEm: p.decididoEm,
+      semComoContar: folga.semComoContar,
     };
   }
 

@@ -159,8 +159,26 @@ tarifa de hoje); cabem = o que resta do teto, em micros, dividido pelo preço da
 
 Não cabe uma: a campanha pausa com `teto_aprovado`, que **não volta sozinha** e o `retomar` recusa no serviço; o
 pedido executado ganha `motivo = teto-de-gasto`, e quem aprova é avisado no celular. Seguir pede um pedido novo, com
-outro teto (o "continuar" vem com a tela). O registro do hub conta mudanças de situação: o teto, que não muda a
-situação, não vai ao hub.
+outro teto (o "continuar", abaixo). O registro do hub conta mudanças de situação: o teto, que não muda a situação, não
+vai ao hub.
+
+### O "continuar" (PR 2; decisão F5-6: passar do teto pede aprovação nova)
+
+- **Quem pede:** o mesmo produto, por `campanha_disparo_planejar` e `campanha_disparo_pedir`, com o id da campanha
+  parada no teto. O plano é o de quem falta (`aceitaram` = quem está na fila; o custo, o de quem falta) e leva
+  `continuacao: { tetoAnteriorCentavos }`. Como a situação da campanha entra no plano, se ela sair da pausa no teto
+  (cancelada), o pedido se encerra (`plano-mudou`) e nada sai.
+- **Quem aprova:** o teto vale para a **campanha inteira** (a conta do worker soma o que ela já gastou) e tem de passar
+  do gasto, senão ela pararia de novo na primeira rodada: a aprovação recusa com o gasto em reais. A tela mostra o teto
+  de antes, o gasto, "faltam receber" e sugere o gasto mais o custo de quem falta.
+- **A execução:** `CampanhaService.continuarNoTeto` (a campanha travada, as conferências do disparo para a campanha
+  parada, a volta à fila condicionada a `pausada` + `teto_aprovado`, a auditoria `campanha.continuada` com o pedido). A
+  campanha **segue guardando o pedido que a disparou** (`acao_pedido_id`, gravado uma vez pelo gatilho da 048); o teto
+  que vale é o do **pedido em vigor** — o último executado (`pedidoEmVigor`) —, lido pelo worker, pelo detalhe da
+  campanha e pela aprovação. Sem migration.
+- **O que fecha o caminho:** o Disparar sem pedido recusa a campanha parada no teto (com a frase do pedido novo); o
+  `oQueImpedeODisparo` só enxerga o continuar na campanha disparada por pedido; editar a campanha parada encerra o
+  pedido aberto (`plano-mudou`), e cancelá-la o encerra (`pedido-cancelado`).
 
 ## Avisos e registro
 
@@ -180,13 +198,40 @@ situação, não vai ao hub.
   desligado; a parada do hub; o impedimento; o disparo recusado que deixa o pedido aprovado sem resíduo (o ponto de
   salvamento) e sai na tentativa seguinte; a rotina (lembrete uma vez, vencido pelo prazo); o cancelamento por quem
   pediu; o código errado que fica contado e trava; o código usado uma vez; sem o aplicativo autenticador; o operador
-  com e sem a permissão; a folga do teto (preço, gasto, moeda, tarifa).
+  com e sem a permissão; a folga do teto (preço, gasto, moeda, tarifa); o "continuar" (o teto igual ao gasto
+  recusado, o maior aprovado e executado, a campanha de volta à fila guardando o primeiro pedido, o pedido em vigor
+  com o teto novo) e a campanha cancelada depois do pedido do continuar (`plano-mudou`).
+- `campanha.service.spec.ts`: o Disparar sem pedido da campanha parada no teto; o `oQueImpedeODisparo` do continuar
+  (só por pedido); o `continuarNoTeto` (e a recusa fora da pausa no teto); cancelar a campanha parada encerra o
+  pedido; o worker confere o teto do pedido em vigor e anota a parada nele.
 - `mcp.porta.spec.ts`: as três ferramentas pela porta HTTP, a recusa estruturada (também a da parada), o cupom fora da
   forma, a conferência da porta no pedido novo e `DISPARO_SO_COM_APROVACAO` fechando o `campanha_disparar`.
 - O manifesto (`docs/dms-manifesto.json`) regravado: contrato **1.1.0** (aditiva).
 
+## A tela (PR 2)
+
+- **Campanhas › Para aprovar** (`/campanhas/para-aprovar`): os pedidos que esperam (pelo prazo, com o número no menu,
+  lido do resumo da conta: `aprovacoesEsperando`) e os decididos nos últimos 30 dias, cada um numa frase. Qualquer
+  pessoa da conta vê.
+- **O pedido aberto** (`/campanhas/para-aprovar/:id`): quem pede (o agente ou uma pessoa do produto de origem), a
+  mensagem como sai (o corpo do modelo da Meta com o valor das variáveis fixas no lugar e as de cada pessoa como
+  marcador), para quem e quanto, o cupom com o aviso de que a oferta obriga a loja, o código curto do plano e o teto
+  em reais. Aprovar abre o diálogo do código do aplicativo autenticador; recusar, o do motivo (os dois pelo `<dialog>`
+  nativo: o foco preso nele, Esc fecha, o foco volta a quem abriu). Sem o aplicativo ligado, o botão fica desligado e a
+  frase aponta Conta e usuários › Segurança do seu acesso. A operadora vê o pedido e o aviso de que só o dono aprova.
+  Se a Meta não respondeu ao abrir, a tela diz que o plano não foi conferido agora (aprovar confere de novo).
+- **Conta e usuários:** a coluna "Aprova disparos" (o dono: sempre; outro acesso: o dono liga e desliga, `aria-pressed`).
+- **O detalhe da campanha:** o teto e o gasto do disparo aprovado (a MESMA conta do worker, `folgaDoTeto`, pelo pedido
+  em vigor), e o aviso da pausa no teto.
+- **O pedido do "continuar":** o aviso do teto de antes e do gasto, "faltam receber", o teto "da campanha inteira" com
+  a sugestão do gasto mais o custo de quem falta, e a recusa na própria tela se o teto não passar do gasto.
+- **As frases dizem só o que acontece:** depois de aprovar, "a decisão já aparece no pedido para quem pediu" (o aviso
+  assinado a quem pediu é o PR 3); depois de recusar, "o motivo volta para" quem pediu.
+- **No menu, o item aceso é o de caminho mais longo** que casa com a página: em "Para aprovar", "Campanhas" não acende
+  junto.
+
 ## O que fica de fora
 
-- O aviso assinado a quem pediu (PR 3), a tela, o teto na campanha e o "continuar" depois do teto (PR 2).
+- O aviso assinado a quem pediu é o PR 3, o próximo (decisão F5-7); até ele, quem pediu acompanha pela consulta.
 - O app Android: a tela de aprovação é do site; o aviso no celular abre o site.
 - O console da distribuição não aprova nada (a aprovação é da conta).

@@ -10,7 +10,8 @@
  *   (a variável fixa, o texto do modelo na Meta), o aplicativo desligado e a
  *   parada do hub, a trava do código que sobrevive à recusa, o cancelamento por
  *   quem pediu, o limite de pedidos esperando, o disparo recusado que deixa o
- *   pedido aprovado sem resíduo, e a folga do teto (moeda, tarifa, preço).
+ *   pedido aprovado sem resíduo, a folga do teto (moeda, tarifa, preço) e o
+ *   "continuar" depois do teto (o teto da campanha inteira, maior que o gasto).
  *
  * O disparo e a Meta são dublês (a campanha muda de verdade no banco; a Meta
  * devolve o modelo que o teste escolhe). Precisa de um banco DESCARTÁVEL com as
@@ -50,6 +51,7 @@ import type { HubService } from '../hub/hub.service';
 import { cifrarToken } from '../meta/cripto';
 import type { MetaService } from '../meta/meta.service';
 import { folgaDoTeto } from '../orcamento/orcamento.consulta';
+import { anotarTetoNoPedido, pedidoEmVigor } from './aprovacao.consulta';
 import { AprovacaoService, pedidoDaLinha, type QuemPedePelaPorta } from './aprovacao.service';
 import type { AvisoDeAprovacao } from './aviso-de-aprovacao.service';
 import { ErroDoPedido } from './erro-do-pedido';
@@ -73,6 +75,8 @@ descrever('a aprovação de disparos, no Postgres', () => {
   const efeitos = new Map<string, number>();
   /** O disparo do dublê recusa (como a conferência da tela recusaria) enquanto isto for verdadeiro. */
   let disparoRecusa = false;
+  /** A moeda do custo que o detalhe da campanha devolve (a do plano). */
+  let moedaDoDetalhe = 'BRL';
   const hub = { registrarAcao: jest.fn(), parado: jest.fn((): unknown => null) };
   const avisos = { pedidoNovo: jest.fn(async () => undefined) };
 
@@ -99,7 +103,7 @@ descrever('a aprovação de disparos, no Postgres', () => {
         listaNome: null,
         total,
         porStatus,
-        custo: { moeda: 'BRL', gastoCentavos: 0, aSairCentavos: naFila * 30, linhas: [], avisos: [] },
+        custo: { moeda: moedaDoDetalhe, gastoCentavos: 0, aSairCentavos: naFila * 30, linhas: [], avisos: [] },
       } as unknown as ResumoCampanha;
     },
     oQueImpedeODisparo: jest.fn(async (): Promise<string | null> => null),
@@ -108,6 +112,16 @@ descrever('a aprovação de disparos, no Postgres', () => {
       // Grava antes de recusar: a recusa tem de desfazer o que o disparo já tinha mudado (o ponto de salvamento).
       await ctx.db.execute(sql`update campanha set status = 'agendada' where id = ${id} and conta_id = ${contaId} and status = 'rascunho'`);
       if (disparoRecusa) throw new BadRequestException('Conecte sua conta do WhatsApp antes de disparar.');
+      efeitos.set(id, (efeitos.get(id) ?? 0) + 1);
+      return campanhas.detalhe(contaId, id);
+    },
+    async continuarNoTeto(contaId: string, _usuarioId: string | null, id: string): Promise<ResumoCampanha> {
+      const r = await ctx.db.execute(sql`
+        update campanha set status = 'agendada', pausa_motivo = null
+         where id = ${id} and conta_id = ${contaId} and status = 'pausada' and pausa_motivo = 'teto_aprovado'
+        returning id
+      `);
+      if (!r.rows.length) throw new BadRequestException('Esta campanha não está mais parada no teto de gasto aprovado.');
       efeitos.set(id, (efeitos.get(id) ?? 0) + 1);
       return campanhas.detalhe(contaId, id);
     },
@@ -139,6 +153,7 @@ descrever('a aprovação de disparos, no Postgres', () => {
   beforeEach(() => {
     deslocamento = 0;
     disparoRecusa = false;
+    moedaDoDetalhe = 'BRL';
     textoNaMeta = 'Oi, {{1}}! Sexta tem combo em dobro. Use o cupom {{2}}.';
     hub.parado.mockReturnValue(null);
     campanhas.oQueImpedeODisparo.mockResolvedValue(null);
@@ -458,6 +473,65 @@ descrever('a aprovação de disparos, no Postgres', () => {
       const l = await linha(pedido.id);
       expect(l.situacao).toBe('vencido');
       expect(l.decidido_por).toBe('prazo');
+    });
+  });
+
+  // ------------------------------------------------- o continuar depois do teto
+
+  describe('o "continuar" depois do teto (decisão F5-6: passar do teto pede aprovação nova)', () => {
+    /** A campanha disparada por um pedido com teto de 50 centavos, 2 mensagens de 25 saídas e parada no teto pelo worker. */
+    async function paradaNoTeto(): Promise<{ c: Conta; campanhaId: string; primeiro: string }> {
+      moedaDoDetalhe = 'XTS';
+      const c = await novaConta();
+      await poolSuper.query(`insert into wa_conta (conta_id, waba_id, moeda) values ($1, $2, 'XTS')`, [c.contaId, `000000${randomUUID().slice(0, 8)}`]);
+      await poolSuper.query(
+        `insert into tarifa_meta (moeda, ddi, categoria, vigente_de, valor) values ('XTS', '55', 'marketing', date '2020-01-01', 0.25::numeric)
+         on conflict do nothing`,
+      );
+      const campanhaId = await novaCampanha(c, 4);
+      const { pedido } = await pedir(c, campanhaId);
+      await aprovarComo(c, pedido.id, { teto: 50 });
+      expect((await naConta(c, () => servico.executar(c.contaId, pedido.id))).resultado).toBe('executado');
+      await poolSuper.query(
+        `update campanha_destinatario set status = 'enviada' where id in (select id from campanha_destinatario where campanha_id = $1 order by id limit 2)`,
+        [campanhaId],
+      );
+      await poolSuper.query(`update campanha set status = 'pausada', pausa_motivo = 'teto_aprovado' where id = $1`, [campanhaId]);
+      await naConta(c, () => anotarTetoNoPedido(ctx.db, c.contaId, pedido.id));
+      deslocamento = 60_000;
+      return { c, campanhaId, primeiro: pedido.id };
+    }
+
+    it('segue por um pedido novo: o teto vale para a campanha inteira e tem de passar do gasto; ela guarda o pedido que a disparou', async () => {
+      const { c, campanhaId, primeiro } = await paradaNoTeto();
+      const { pedido, plano } = await pedir(c, campanhaId);
+      expect(plano?.continuacao).toEqual({ tetoAnteriorCentavos: 50 });
+      expect(plano?.publico.aceitaram).toBe(2);
+
+      // Igual ao que já gastou (2 × 0,25): ela pararia na primeira rodada. Recusa, e o pedido segue esperando.
+      await expect(aprovarComo(c, pedido.id, { teto: 50 })).rejects.toThrow(/já gastou XTS 0,50, e o teto deste pedido vale para ela inteira/);
+      expect((await linha(pedido.id)).situacao).toBe('aguardando');
+
+      await aprovarComo(c, pedido.id, { teto: 200 });
+      expect((await naConta(c, () => servico.executar(c.contaId, pedido.id))).resultado).toBe('executado');
+      expect((await poolSuper.query('select status, pausa_motivo, acao_pedido_id from campanha where id = $1', [campanhaId])).rows[0]).toEqual({
+        status: 'agendada',
+        pausa_motivo: null,
+        acao_pedido_id: primeiro,
+      });
+      // O teto que o worker confere agora é o do pedido novo; o primeiro guarda o motivo da parada.
+      expect(await naConta(c, () => pedidoEmVigor(ctx.db, c.contaId, campanhaId))).toEqual({ id: pedido.id, tetoCentavos: 200, moeda: 'XTS' });
+      expect((await linha(primeiro)).motivo).toBe('teto-de-gasto');
+      expect(efeitos.get(campanhaId)).toBe(2);
+    });
+
+    it('a campanha cancelada depois do pedido do continuar: o plano mudou, o pedido se encerra e nada sai', async () => {
+      const { c, campanhaId } = await paradaNoTeto();
+      const { pedido } = await pedir(c, campanhaId);
+      await poolSuper.query(`update campanha set status = 'cancelada', pausa_motivo = null where id = $1`, [campanhaId]);
+      expect((await aprovarComo(c, pedido.id, { teto: 200 })).situacao).toBe('cancelado');
+      expect((await linha(pedido.id)).motivo).toBe('plano-mudou');
+      expect(efeitos.get(campanhaId)).toBe(1);
     });
   });
 

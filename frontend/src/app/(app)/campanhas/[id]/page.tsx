@@ -18,6 +18,7 @@ import { FormularioCampanha } from '@/components/app/formulario-campanha';
 import { CartaoDoCusto } from '@/components/app/custo-na-meta';
 import { AvisoDaSaude } from '@/components/app/saude-da-conta';
 import { BadgeCampanha, BadgeDestinatario, BarraStatus } from '@/components/app/status-campanha';
+import { TetoDoDisparoAprovado } from '@/components/app/teto-do-disparo';
 import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
 import { LoaderDisparo } from '@/components/marca/loader-disparo';
 import { Alerta } from '@/components/ui/alerta';
@@ -421,6 +422,15 @@ export default function PaginaCampanha() {
           </span>
         </Alerta>
       )}
+
+      {campanha.status === 'pausada' && campanha.pausaMotivo === 'teto_aprovado' && (
+        <Alerta tom="atencao">
+          {campanha.pausaTexto ?? 'Esta campanha parou no teto de gasto aprovado. Para seguir, o aplicativo que pediu faz um pedido novo, com outro teto.'}{' '}
+          Ninguém foi marcado como falha: quem faltava continua na fila.
+        </Alerta>
+      )}
+
+      {campanha.tetoDoDisparo ? <TetoDoDisparoAprovado teto={campanha.tetoDoDisparo} /> : null}
 
       {campanha.status === 'pausada' && campanha.pausaMotivo === 'inadimplencia' && (
         <Alerta tom="erro">

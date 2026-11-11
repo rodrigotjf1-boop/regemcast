@@ -120,6 +120,27 @@ export function UsuariosConta({ podeGerenciar, meuId }: { podeGerenciar: boolean
     }
   }
 
+  /** Dá ou tira a permissão de aprovar disparos pedidos por outro produto da DMS (o dono aprova sempre). */
+  async function alternarAprovacao(usuario: UsuarioDaConta) {
+    const novo = !usuario.aprovaDisparos;
+    setMudandoId(usuario.id);
+    setErroAcao(null);
+    setAviso(null);
+    try {
+      await servicoConta.mudarAprovaDisparos(usuario.id, novo);
+      setUsuarios((atual) => atual.map((u) => (u.id === usuario.id ? { ...u, aprovaDisparos: novo } : u)));
+      setAviso(
+        novo
+          ? `${usuario.nome} passa a aprovar disparos pedidos por outro produto da DMS, com o código do aplicativo autenticador.`
+          : `${usuario.nome} não aprova mais disparos.`,
+      );
+    } catch (falha) {
+      setErroAcao(mensagemDoErro(falha));
+    } finally {
+      setMudandoId(null);
+    }
+  }
+
   async function remover(usuario: UsuarioDaConta) {
     setMudandoId(usuario.id);
     setErroAcao(null);
@@ -242,7 +263,7 @@ export function UsuariosConta({ podeGerenciar, meuId }: { podeGerenciar: boolean
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[36rem] border-collapse text-sm">
+            <table className="w-full min-w-[42rem] border-collapse text-sm">
               <caption className="sr-only">
                 Pessoas com acesso à conta, com papel, situação e último acesso.
               </caption>
@@ -252,6 +273,7 @@ export function UsuariosConta({ podeGerenciar, meuId }: { podeGerenciar: boolean
                   <th scope="col" className="py-2 pr-3 font-medium">E-mail</th>
                   <th scope="col" className="py-2 pr-3 font-medium">Papel</th>
                   <th scope="col" className="py-2 pr-3 font-medium">Situação</th>
+                  <th scope="col" className="py-2 pr-3 font-medium">Aprova disparos</th>
                   <th scope="col" className="py-2 pr-3 font-medium">Último acesso</th>
                   {podeGerenciar ? (
                     <th scope="col" className="py-2 text-right font-medium">Ações</th>
@@ -277,6 +299,25 @@ export function UsuariosConta({ podeGerenciar, meuId }: { podeGerenciar: boolean
                         <Badge tom={usuario.status === 'ativo' ? 'sucesso' : 'atencao'}>
                           {usuario.status === 'ativo' ? 'Ativo' : 'Suspenso'}
                         </Badge>
+                      </td>
+                      <td className="py-3 pr-3">
+                        {usuario.papel === 'dono' ? (
+                          <span className="text-xs text-tinta-suave">Sempre</span>
+                        ) : podeGerenciar ? (
+                          <Button
+                            variante="secundario"
+                            tamanho="sm"
+                            aria-pressed={usuario.aprovaDisparos === true}
+                            aria-label={`Aprova disparos: ${usuario.nome}`}
+                            carregando={mudandoId === usuario.id}
+                            disabled={mudandoId !== null && mudandoId !== usuario.id}
+                            onClick={() => void alternarAprovacao(usuario)}
+                          >
+                            {usuario.aprovaDisparos ? 'Sim' : 'Não'}
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-tinta-suave">{usuario.aprovaDisparos ? 'Sim' : 'Não'}</span>
+                        )}
                       </td>
                       <td className="numerico py-3 pr-3 text-xs text-tinta-suave">
                         {formatarDataHora(usuario.ultimoLoginEm)}
