@@ -439,6 +439,12 @@ export const env = {
    */
   aprovacao: {
     soComAprovacao: booleana('DISPARO_SO_COM_APROVACAO', false),
+    /**
+     * Hub DMS F5 parte E (decisão F5-8; `integracao/escrita-pela-ligacao.ts`): o token antigo (`rct_it_`) do Liame perde
+     * a escrita (rascunhos e disparo); ela fica só pela ligação do clique. Desligada: o dono liga depois que o Liame
+     * pedir um disparo de teste pela ligação.
+     */
+    escritaSoPelaLigacao: booleana('LIAME_ESCRITA_SO_PELA_LIGACAO', false),
   },
 
   /**

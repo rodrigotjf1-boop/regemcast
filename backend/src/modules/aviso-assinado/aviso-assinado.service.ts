@@ -20,6 +20,7 @@ import { ContextoDb } from '../../db/contexto';
 import { cabecalhosAviso, ferramentaDoAviso, origemDoDestino, resultadoDoAviso, type AvisoRegistrado } from '../../dms/integracao-dms';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { HubService } from '../hub/hub.service';
+import { escritaSoPelaLigacaoLigada, tokenAindaTem } from '../integracao/escrita-pela-ligacao';
 import { cifrarToken, decifrarToken } from '../meta/cripto';
 import {
   basesDoProduto,
@@ -229,6 +230,9 @@ export class AvisoAssinadoService {
 
   /** Um aviso: confere o registro, a credencial e a parada; manda; grava o desfecho. Devolve se foi entregue. */
   private async entregarUm(d: Devido): Promise<boolean> {
+    // Hub DMS F5 parte E: com a chave, o token antigo do produto que grava pela ligação não conta como credencial que
+    // dispara (a mesma regra da porta, `escrita-pela-ligacao.ts`); só a ligação.
+    const tokenConta = tokenAindaTem(d.produto, PERMISSAO_DO_AVISO, escritaSoPelaLigacaoLigada(env.aprovacao?.escritaSoPelaLigacao));
     const alvo = await this.ctx.comEscopoSistema('aviso.entregar.conferir', async (db) => {
       const r = await db.execute<{ url: string; segredo_cifrado: string; pausado_em: string | null; conta_nome: string | null; prefixo: string | null }>(sql`
         select a.url, a.segredo_cifrado, a.pausado_em, c.nome as conta_nome,
@@ -238,7 +242,7 @@ export class AvisoAssinadoService {
                      and g.escopos ? ${PERMISSAO_DO_AVISO}
                    order by g.criado_em desc limit 1),
                  (select t.prefixo from integracao_token t
-                   where t.conta_id = a.conta_id and t.produto = a.produto and t.revogado_em is null and t.classe = 'dms'
+                   where ${tokenConta} and t.conta_id = a.conta_id and t.produto = a.produto and t.revogado_em is null and t.classe = 'dms'
                      and t.escopos ? ${PERMISSAO_DO_AVISO}
                    order by t.criado_em desc limit 1)) as prefixo
           from integracao_aviso a join conta c on c.id = a.conta_id

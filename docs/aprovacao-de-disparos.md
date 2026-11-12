@@ -283,8 +283,12 @@ pede o disparo e espera o destino, decisão F5-9), a autorização por clique ga
   "pede mais", cada opcional nova tem a sua chave (o dono desliga a que não quer).
 - **A ligação vale com as permissões que ela E o token do DMS ID têm:** o Liame também pede ao DMS ID as permissões de
   gravar do RegemCast.
-- **Fica para depois (parte E do RegemCast):** tirar a escrita do token antigo (`rct_it_`) do Liame, quando ele gravar
-  só pela ligação.
+- **A parte E do RegemCast (decisão F5-8):** a chave `LIAME_ESCRITA_SO_PELA_LIGACAO` (desligada) tira a escrita do
+  token antigo (`rct_it_`) do Liame: `escrita-pela-ligacao.ts` diz, por produto, as permissões que saem
+  (`modelos.rascunhar`, `campanhas.rascunhar`, `campanhas.disparar`); a autenticação pelo token devolve os escopos sem
+  elas (a porta nem lista as ferramentas de gravar para ele), e a conferência do aviso assinado deixa de contar esse
+  token como credencial que dispara. A ligação do clique segue com o que ela e o token do DMS ID têm. Liga-se depois
+  que o Liame pedir um disparo de teste pela ligação.
 
 ## O que fica de fora
 

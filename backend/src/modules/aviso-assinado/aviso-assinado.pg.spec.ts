@@ -25,6 +25,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { createHash, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 
+import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
 import * as schema from '../../db/schema';
 import { conferirAviso, gerarSegredoAviso, type AvisoRegistrado } from '../../dms/integracao-dms';
@@ -315,6 +316,21 @@ descrever('o aviso assinado a quem pediu, no Postgres', () => {
       await mudar(await novoPedido(soLe), 'cancelado', 'pedido-cancelado');
       await servico.entregarDevidos();
       expect((await fila(soLe))[0]!.desistido_em).not.toBeNull();
+      expect(enviados).toHaveLength(0);
+    });
+
+    it('Hub DMS F5 parte E: com LIAME_ESCRITA_SO_PELA_LIGACAO, o token antigo do Liame não conta como credencial que dispara', async () => {
+      const config = env as { aprovacao?: { escritaSoPelaLigacao?: boolean } };
+      const c = await novaConta();
+      await registrar(c);
+      await mudar(await novoPedido(c), 'cancelado', 'pedido-cancelado');
+      config.aprovacao = { escritaSoPelaLigacao: true };
+      try {
+        await servico.entregarDevidos();
+      } finally {
+        delete config.aprovacao;
+      }
+      expect((await fila(c))[0]!.desistido_em).not.toBeNull();
       expect(enviados).toHaveLength(0);
     });
 
