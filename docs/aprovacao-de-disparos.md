@@ -265,6 +265,27 @@ O produto que pediu um disparo fica sabendo na hora que o pedido mudou. É o mod
   valer; a parada; remover; a RLS); `mcp.porta.spec.ts` (as três pela porta HTTP).
 - **Do lado do Liame** (parte D): registrar o endereço ao ligar a conta e ler o pedido a cada aviso.
 
+## O Liame pede pelo clique (F5 parte D, lado do RegemCast)
+
+O Liame só lia o RegemCast pela ligação do clique (decisão B1-3: gravar fica fora até a F5). Para a parte D (o Liame
+pede o disparo e espera o destino, decisão F5-9), a autorização por clique ganhou o que ele precisa para gravar:
+
+- **Catálogo:** as opcionais `modelos.rascunhar`, `campanhas.rascunhar` e `campanhas.disparar` no aplicativo do Liame,
+  com o motivo e o que acontece desligada; nascem desligadas, o dono liga cada uma. Na tela, `campanhas.disparar`
+  aparece como "Pedir o disparo de campanha", que é o que a ligação pode.
+- **O que o servidor garante:** pela ligação, `campanha_disparar` recusa sempre (`SO_PELO_PEDIDO`, conferido pela via
+  de quem chega, `IntegracaoAutenticada.via`, fechado por padrão): o disparo só sai por `campanha_disparo_pedir`, com a
+  aprovação de uma pessoa da conta (código do aplicativo autenticador e teto de gasto). O rascunho e a pausa são só
+  do próprio aplicativo (`aPropria`, `modelo_rascunhar` com `id`).
+- **Tela e e-mail (texto versão 2):** com gravação no pedido, a abertura diz que o disparo só sai com a aprovação aqui,
+  e o "O que não pode" troca "não inclui envio" por "Disparar sem a sua aprovação" e "Mexer no que não é dele"; o
+  e-mail ao dono troca "pode ver" por "Liberado ao …" e diz o que ele não pode. Sem gravação, o texto de sempre. No
+  "pede mais", cada opcional nova tem a sua chave (o dono desliga a que não quer).
+- **A ligação vale com as permissões que ela E o token do DMS ID têm:** o Liame também pede ao DMS ID as permissões de
+  gravar do RegemCast.
+- **Fica para depois (parte E do RegemCast):** tirar a escrita do token antigo (`rct_it_`) do Liame, quando ele gravar
+  só pela ligação.
+
 ## O que fica de fora
 
 - O app Android: a tela de aprovação é do site; o aviso no celular abre o site.

@@ -11,6 +11,7 @@ import {
   gerarCodigo,
   gerarNumeroDoPedido,
   naoPode,
+  PERMISSOES_DE_GRAVAR,
   permissoesLiberadas,
   resumoDoCodigo,
   resumoDoNumero,
@@ -87,6 +88,17 @@ describe('conferir o pedido', () => {
     });
   });
 
+  it('as permissões de gravar do Liame (F5 parte D) entram só como opcionais, na ordem do catálogo', () => {
+    const r = conferirPedido(pedido({ scope: 'campanhas.disparar conta.ler modelos.rascunhar campanhas.rascunhar' }), LIAME, CLIENTE, [VOLTA]);
+    expect(r).toEqual(expect.objectContaining({ necessarias: ['conta.ler'], opcionais: ['modelos.rascunhar', 'campanhas.rascunhar', 'campanhas.disparar'] }));
+    expect(PERMISSOES_DE_GRAVAR.every((p) => LIAME.opcionais.includes(p) && !LIAME.necessarias.includes(p))).toBe(true);
+    // Cada uma com o motivo e o que acontece desligada.
+    for (const p of PERMISSOES_DE_GRAVAR) {
+      expect(LIAME.motivos[p]).toBeTruthy();
+      expect(LIAME.semAOpcional[p]).toBeTruthy();
+    }
+  });
+
   it('o aplicativo pode pedir menos (só o que quer), e o client_id ausente no corpo vale pelo do token', () => {
     const r = conferirPedido(pedido({ scope: 'conta.ler', client_id: undefined, conta_cnpj: '', conta_marca: undefined }), LIAME, CLIENTE, [VOLTA]);
     expect(r).toEqual(expect.objectContaining({ necessarias: ['conta.ler'], opcionais: [], contaQuePede: expect.objectContaining({ cnpj: null, marca: null }) }));
@@ -99,7 +111,6 @@ describe('conferir o pedido', () => {
     ['endereço de volta com barra a mais', { redirect_uri: `${VOLTA}/` }, /redirect_uri/],
     ['escopo vazio', { scope: '  ' }, /scope/],
     ['escopo repetido', { scope: 'conta.ler conta.ler' }, /repetida/],
-    ['escopo de gravar (fora do catálogo do aplicativo)', { scope: 'conta.ler campanhas.disparar' }, /campanhas\.disparar/],
     ['escopo que não existe', { scope: 'conta.ler tudo.ler' }, /tudo\.ler/],
     ['state curto', { state: 'curto' }, /state/],
     ['state com espaço', { state: 'estado com espaço!!' }, /state/],
@@ -173,7 +184,49 @@ describe('a tela montada no servidor', () => {
     expect(t.naoPode).toEqual(naoPode('Liame'));
     expect(t.naoPode.map((n) => n.frase).join(' ')).toContain('O Liame não recebe a sua senha');
     expect(t.jaLigada).toBeNull();
-    expect(t.rodape).toContain('versão 1, de 20/10/2026');
+    expect(t.grava).toBe(false);
+    expect(t.rodape).toContain('versão 2, de 12/11/2026');
+  });
+
+  it('o pedido com gravação: a abertura e o "não pode" de quando ele grava, e o disparo aparece como pedido (o que a ligação pode)', () => {
+    const t = montarTela({ ...entrada, pedido: { ...entrada.pedido, opcionais: ['conversas.anuncio.ler', 'campanhas.rascunhar', 'campanhas.disparar'] } });
+    expect(t.grava).toBe(true);
+    expect(t.abertura).toBe(LIAME.fazComGravacao);
+    expect(t.abertura).toContain('só sai quando você, ou quem você autorizou, aprovar aqui');
+    expect(t.naoPode).toEqual(naoPode('Liame', true));
+    expect(t.naoPode.map((n) => n.rotulo)).toContain('Disparar sem a sua aprovação');
+    expect(t.naoPode.map((n) => n.rotulo)).not.toContain('Enviar mensagens ou disparar campanhas');
+    // O que a ligação pode de verdade: pedir, não disparar.
+    const disparo = t.opcionais.find((o) => o.id === 'campanhas.disparar')!;
+    expect(disparo).toEqual(expect.objectContaining({ rotulo: 'Pedir o disparo de campanha', semEla: LIAME.semAOpcional['campanhas.disparar'], dadoPessoal: false }));
+    expect(disparo.frase).toContain('só sai depois que você, ou quem você autorizou, aprovar aqui');
+    // A de rascunho, com o nome do catálogo.
+    expect(t.opcionais.find((o) => o.id === 'campanhas.rascunhar')!.rotulo).toBe('Criar rascunho de campanha');
+    // Sem gravação no pedido, o texto de sempre (o Liame de hoje pede só leituras).
+    expect(naoPode('Liame')).toEqual(naoPode('Liame', false));
+    expect(naoPode('Liame').map((n) => n.frase)).toContain('Esta autorização não inclui envio.');
+  });
+
+  it('pedir mais com gravação: "pede também", com o rótulo do pedido, e diz que as opcionais se decidem uma a uma', () => {
+    const t = montarTela({
+      ...entrada,
+      pedido: { ...entrada.pedido, opcionais: ['conversas.anuncio.ler', 'campanhas.disparar'] },
+      ligacaoAtiva: { criadoEm: new Date('2026-11-12T03:17:00Z'), escopos: ['conta.ler', 'orcamento.ler', 'campanhas.disparar'] },
+    });
+    // A ligação já tinha o disparo: o rótulo do que já está liberado também é o do pedido.
+    expect(t.jaLigada?.escopos).toContainEqual({ id: 'campanhas.disparar', rotulo: 'Pedir o disparo de campanha' });
+    expect(t.jaLigada?.novas).toEqual(['conversas.anuncio.ler']);
+    expect(t.abertura).toContain('pede para ver também: conversas abertas por anúncio.');
+
+    const grava = montarTela({
+      ...entrada,
+      pedido: { ...entrada.pedido, opcionais: ['conversas.anuncio.ler', 'campanhas.disparar'] },
+      ligacaoAtiva: { criadoEm: new Date('2026-11-12T03:17:00Z'), escopos: ['conta.ler', 'orcamento.ler', 'conversas.anuncio.ler'] },
+    });
+    expect(grava.titulo).toBe('O Liame pede mais uma permissão');
+    expect(grava.abertura).toBe(
+      'O Liame já lê esta conta desde 12/11/2026 e agora pede também: pedir o disparo de campanha. As opcionais, você decide uma a uma abaixo. Se você disser não, ele continua com o que já tinha.',
+    );
   });
 
   it('com a conta já ligada, o pedido de mais permissões diz o que é novo; sem nada novo, é renovar', () => {
@@ -191,7 +244,7 @@ describe('a tela montada no servidor', () => {
   it('o texto guardado é a tela com a decisão: cada opcional ligada ou não, e a confirmação só quando era outra empresa', () => {
     const t = montarTela(entrada);
     const guardado = textoGuardado(t, { opcionaisLigadas: ['conversas.anuncio.ler'], confirmouOutraEmpresa: true });
-    expect(guardado).toEqual(expect.objectContaining({ titulo: t.titulo, versao: 1, confirmouOutraEmpresa: true }));
+    expect(guardado).toEqual(expect.objectContaining({ titulo: t.titulo, versao: 2, confirmouOutraEmpresa: true }));
     expect((guardado.opcionais as { ligada: boolean }[])[0]!.ligada).toBe(true);
 
     const mesma = montarTela({ ...entrada, outraEmpresa: false });

@@ -249,6 +249,7 @@ async function subirPorta(): Promise<Porta> {
       classe: t.classe,
       nome: t.nome,
       escopos: escoposEfetivos(t.escopos, t.classe),
+      via: 'token',
     };
   });
 

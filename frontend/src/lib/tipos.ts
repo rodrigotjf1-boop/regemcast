@@ -796,6 +796,8 @@ export interface TelaDaAutorizacao {
   necessarias: PermissaoNaTela[];
   opcionais: PermissaoNaTela[];
   jaLigada: null | { desde: string; escopos: Array<{ id: string; rotulo: string }>; novas: string[] };
+  /** O pedido traz permissão de gravar (versão 2 do texto). O texto guardado da versão 1 não tem. */
+  grava?: boolean;
   naoPode: Array<{ rotulo: string; frase: string }>;
   nota: string;
   rodape: string;

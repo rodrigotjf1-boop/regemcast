@@ -15,8 +15,11 @@
  *    servidor, com o verificador PKCE (S256). Só aí a ligação nasce ou muda.
  *
  * Quem pode usar a página é a lista curta do código (a classe `dms` do Padrão
- * §1): o catálogo abaixo. O aplicativo só pede o que está nele, e nele não há
- * permissão de gravar (decisão B1-3: gravar fica fora até a F5).
+ * §1): o catálogo abaixo. O aplicativo só pede o que está nele. Gravar ficou
+ * fora até a F5 (decisão B1-3); na F5 parte D, o Liame ganha as opcionais de
+ * rascunho e a de PEDIR o disparo, desligadas até o dono ligar. Pela ligação, o
+ * disparo só sai por pedido aprovado aqui (`campanha_disparar` recusa a ligação:
+ * `SO_PELO_PEDIDO`), e é isso que a tela promete.
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
@@ -31,7 +34,13 @@ export const MAX_ERROS_SENHA_AUTORIZACAO = 5;
 export const MINUTOS_TRAVA_AUTORIZACAO = 15;
 
 /** A versão do texto da tela. Mudou uma frase que o dono lê? Sobe a versão: a prova diz qual ele aceitou. */
-export const VERSAO_DO_TEXTO = 1;
+export const VERSAO_DO_TEXTO = 2;
+
+/** As permissões de GRAVAR que a página pode liberar (F5 parte D). As outras do catálogo só leem. */
+export const PERMISSOES_DE_GRAVAR: readonly string[] = ['modelos.rascunhar', 'campanhas.rascunhar', 'campanhas.disparar'];
+
+/** O pedido (ou a ligação) tem alguma permissão de gravar? */
+export const temGravacao = (ids: readonly string[]) => ids.some((id) => PERMISSOES_DE_GRAVAR.includes(id));
 
 /** O prefixo do número do pedido (RFC 9126 §2.2) e o do código de uso único. */
 const PREFIXO_DO_PEDIDO = 'urn:ietf:params:oauth:request_uri:rct_';
@@ -43,6 +52,8 @@ export interface AplicativoDaAutorizacao {
   nome: string;
   /** A abertura da tela: o que o aplicativo faz e o que ele NÃO faz (só o que o servidor garante). */
   faz: string;
+  /** A abertura quando o pedido traz permissão de gravar (F5 parte D). Sem ela, vale `faz`. */
+  fazComGravacao?: string;
   /** Sem chave na tela: sem elas o aplicativo não funciona. */
   necessarias: readonly string[];
   /** O dono decide; nascem desligadas. */
@@ -51,6 +62,11 @@ export interface AplicativoDaAutorizacao {
   motivos: Readonly<Record<string, string>>;
   /** O que acontece com a opcional desligada. */
   semAOpcional: Readonly<Record<string, string>>;
+  /**
+   * Como a permissão aparece na tela e no e-mail quando o nome do catálogo diria mais do que a ligação pode. Ex.:
+   * `campanhas.disparar` pela ligação só PEDE o disparo (o servidor recusa o disparo direto).
+   */
+  nomes?: Readonly<Record<string, { rotulo: string; frase: string }>>;
   /** Para onde o código volta: só estes, comparados por inteiro. A variável AUTORIZACAO_ENDERECOS_DE_VOLTA troca a lista. */
   enderecosDeVolta: readonly string[];
   /** O endereço do aplicativo para o "Voltar" de quando o pedido não vale: o cadastrado, nunca um que veio no link. */
@@ -62,8 +78,10 @@ export const APLICATIVOS_DA_AUTORIZACAO: Readonly<Record<string, AplicativoDaAut
     produto: 'liame',
     nome: 'Liame',
     faz: 'O Liame mede quais anúncios viraram conversa e venda. Ele só lê o que está listado aqui: não envia mensagem e não muda nada na conta.',
+    fazComGravacao:
+      'O Liame mede quais anúncios viraram conversa e venda. Se você ligar as opções de campanha, ele também monta campanhas em rascunho e pede o disparo, que só sai quando você, ou quem você autorizou, aprovar aqui.',
     necessarias: ['conta.ler', 'campanhas.ler', 'publicos.ler', 'modelos.ler', 'orcamento.ler'],
-    opcionais: ['conversas.anuncio.ler'],
+    opcionais: ['conversas.anuncio.ler', 'modelos.rascunhar', 'campanhas.rascunhar', 'campanhas.disparar'],
     motivos: {
       'conta.ler': 'Para não propor campanha quando a conta não pode enviar.',
       'campanhas.ler': 'Para comparar o que saiu daqui com o que os anúncios trouxeram.',
@@ -71,9 +89,21 @@ export const APLICATIVOS_DA_AUTORIZACAO: Readonly<Record<string, AplicativoDaAut
       'modelos.ler': 'Para propor campanha só com modelo aprovado pela Meta.',
       'orcamento.ler': 'Para nenhuma proposta passar do teto que você definiu.',
       'conversas.anuncio.ler': 'Para saber qual anúncio trouxe cada conversa.',
+      'modelos.rascunhar': 'Para deixar pronto o texto de um modelo novo. Quem envia o modelo para a Meta aprovar é alguém da sua conta, em Modelos.',
+      'campanhas.rascunhar': 'Para deixar pronta, em rascunho, a campanha que ele propõe, com o público e o custo estimado.',
+      'campanhas.disparar': 'Para pedir o disparo da campanha que ele propôs, sem ninguém digitar tudo de novo. Você aprova aqui, em Para aprovar.',
     },
     semAOpcional: {
       'conversas.anuncio.ler': 'Desligada: o Liame não liga conversa a anúncio. O resto funciona.',
+      'modelos.rascunhar': 'Desligada: o Liame não escreve modelo aqui. Ele propõe só com os modelos que você já tem.',
+      'campanhas.rascunhar': 'Desligada: o Liame não monta campanha aqui. O resto funciona.',
+      'campanhas.disparar': 'Desligada: o Liame não pede disparo. A campanha que ele montar, alguém da sua conta dispara em Campanhas.',
+    },
+    nomes: {
+      'campanhas.disparar': {
+        rotulo: 'Pedir o disparo de campanha',
+        frase: 'Pedir o disparo de uma campanha que ele montou e pausar as dele. O disparo só sai depois que você, ou quem você autorizou, aprovar aqui.',
+      },
     },
     enderecosDeVolta: ['https://api.agencialiame.com/v1/oauth/callback'],
     inicio: 'https://app.agencialiame.com',
@@ -83,15 +113,38 @@ export const APLICATIVOS_DA_AUTORIZACAO: Readonly<Record<string, AplicativoDaAut
 /** As permissões com telefone ou conteúdo de cliente: num bloco próprio da tela ("Dados dos seus clientes"). */
 export const PERMISSOES_COM_DADO_PESSOAL: readonly string[] = ['conversas.anuncio.ler'];
 
+/** O rótulo de uma permissão para este aplicativo: o do catálogo, ou o que o aplicativo pode de verdade (`nomes`). */
+export function rotuloNoAplicativo(app: AplicativoDaAutorizacao | undefined, id: string, doCatalogo: string): string {
+  return app?.nomes?.[id]?.rotulo ?? doCatalogo;
+}
+
 /**
  * O que o aplicativo NÃO pode pela autorização por clique. Só o que o servidor
- * garante: o catálogo acima não tem permissão de gravar, e nenhuma permissão do
- * RegemCast entrega nome, telefone da base ou conteúdo de conversa.
+ * garante: nenhuma permissão do RegemCast entrega nome, telefone da base ou
+ * conteúdo de conversa; o rascunho de modelo só muda o que o próprio aplicativo
+ * criou e não vai à Meta (`modelo_rascunhar`); a campanha e a pausa, só as dele
+ * (`aPropria`); e pela ligação o disparo só sai por pedido aprovado aqui com o
+ * código do aplicativo autenticador e o teto de gasto (`SO_PELO_PEDIDO`, F5-1 e
+ * F5-6). `grava`: o pedido traz alguma permissão de gravar (ligada ou não).
  */
-export function naoPode(nome: string): { rotulo: string; frase: string }[] {
+export function naoPode(nome: string, grava = false): { rotulo: string; frase: string }[] {
+  const envio = grava
+    ? [
+        {
+          rotulo: 'Disparar sem a sua aprovação',
+          frase: `Cada disparo que o ${nome} pede espera você, ou quem você autorizou, aprovar aqui, com o código do aplicativo autenticador e um teto de gasto. Sem "Pedir o disparo de campanha" ligado, ele nem pede.`,
+        },
+        {
+          rotulo: 'Mexer no que não é dele',
+          frase: `Com os rascunhos ligados, o ${nome} só cria rascunhos e muda os que ele mesmo criou. Enviar um modelo para a Meta é com a sua conta.`,
+        },
+      ]
+    : [
+        { rotulo: 'Enviar mensagens ou disparar campanhas', frase: 'Esta autorização não inclui envio.' },
+        { rotulo: 'Criar ou mudar campanhas e modelos', frase: `O ${nome} só lê.` },
+      ];
   return [
-    { rotulo: 'Enviar mensagens ou disparar campanhas', frase: 'Esta autorização não inclui envio.' },
-    { rotulo: 'Criar ou mudar campanhas e modelos', frase: `O ${nome} só lê.` },
+    ...envio,
     { rotulo: 'Ver a sua lista de contatos', frase: `Nome e telefone da sua base ficam aqui. O ${nome} vê só quantos são em cada público.` },
     { rotulo: 'Ler o conteúdo das conversas', frase: 'Nem com as conversas por anúncio ligadas.' },
     { rotulo: 'Entrar na sua conta', frase: `O ${nome} não recebe a sua senha nem a sua sessão.` },

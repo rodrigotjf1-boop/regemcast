@@ -60,6 +60,8 @@ export interface IntegracaoAutenticada {
   classe: ClasseDoToken;
   nome: string;
   escopos: string[];
+  /** Por onde chegou: o token de integração (`rct_it_`) ou a ligação do DMS ID. Pela ligação, o disparo é só pelo pedido. */
+  via: 'token' | 'ligacao';
 }
 
 /** Um token como as telas mostram. Nunca o hash, nunca o token em claro. */
@@ -545,6 +547,7 @@ export class IntegracaoService {
         classe: l.classe as ClasseDoToken,
         nome: l.nome,
         escopos: escoposEfetivos(l.escopos, l.classe),
+        via: 'token',
       };
     });
   }
@@ -613,6 +616,7 @@ export class IntegracaoService {
         classe: l.classe as ClasseDoToken,
         nome: l.nome,
         escopos: permissoesDaLigacao(l, doToken.permissoes),
+        via: 'ligacao',
       };
     });
   }

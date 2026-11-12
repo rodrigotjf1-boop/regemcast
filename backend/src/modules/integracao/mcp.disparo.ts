@@ -18,7 +18,7 @@ import { env } from '../../config/env';
 import { CAMINHO_DIRETO_FECHADO } from '../aprovacao/aprovacao.regras';
 import type { ResumoCampanha } from '../campanha/campanha.service';
 import { ORCAMENTO_SEM_MOEDA, ORCAMENTO_SEM_TARIFA } from '../orcamento/orcamento.regras';
-import { avisoDeEspalhar, confirmacaoDoPlano, impedimentosDoPlano, PLANO_MUDOU, SO_A_PROPRIA, SO_DMS } from './disparo.regras';
+import { avisoDeEspalhar, confirmacaoDoPlano, impedimentosDoPlano, PLANO_MUDOU, SO_A_PROPRIA, SO_DMS, SO_PELO_PEDIDO } from './disparo.regras';
 import { FORMATO_DA_CHAVE, PRAZO_HORAS } from './idempotencia.regras';
 import { comIdempotencia } from './mcp.escrita';
 import { LEITURA, naConta, type ContextoDaFerramenta, type Ferramenta } from './mcp.ferramenta';
@@ -141,7 +141,7 @@ const campanhaDisparar: Ferramenta = {
       {
         title: 'Disparar uma campanha',
         description:
-          'DISPARA a campanha: as mensagens começam a sair para o público, e a Meta cobra cada uma que for entregue. Não tem volta para o que já saiu. Exige a `confirmacao` devolvida por campanha_disparo_planejar — se o público, o custo ou o orçamento mudaram desde o plano, é recusado e é preciso planejar de novo. Só para campanha que este aplicativo montou, e só com o orçamento de disparos da conta definido. Depois de disparada, a campanha respeita a janela, o ritmo, o plano e o orçamento (que pausa e retoma sozinho); acompanhe com campanha_detalhar. O dono da conta é avisado. Recusa a campanha que tem pedido de aprovação aberto (ela sai pelo pedido) e, quando a aprovação obrigatória estiver ligada na conta da distribuição, recusa sempre: o caminho passa a ser campanha_disparo_pedir.',
+          'DISPARA a campanha: as mensagens começam a sair para o público, e a Meta cobra cada uma que for entregue. Não tem volta para o que já saiu. Exige a `confirmacao` devolvida por campanha_disparo_planejar — se o público, o custo ou o orçamento mudaram desde o plano, é recusado e é preciso planejar de novo. Só para campanha que este aplicativo montou, e só com o orçamento de disparos da conta definido. Depois de disparada, a campanha respeita a janela, o ritmo, o plano e o orçamento (que pausa e retoma sozinho); acompanhe com campanha_detalhar. O dono da conta é avisado. Recusa a campanha que tem pedido de aprovação aberto (ela sai pelo pedido); recusa sempre quem chega pela ligação da autorização por clique (o disparo dela é só por campanha_disparo_pedir) e, quando a aprovação obrigatória estiver ligada na conta da distribuição, recusa sempre: o caminho passa a ser campanha_disparo_pedir.',
         inputSchema: z.object({
           chaveIdempotencia: chaveDeIdempotencia,
           id: z.string().uuid().describe('O id da campanha.'),
@@ -157,6 +157,8 @@ const campanhaDisparar: Ferramenta = {
           // Com a aprovação obrigatória ligada (Hub DMS, F5 parte B), o disparo por aplicativo é só pelo pedido. Antes da
           // chave: a recusa não reserva a chave de idempotência.
           if (env.aprovacao?.soComAprovacao) throw new BadRequestException(CAMINHO_DIRETO_FECHADO);
+          // Pela ligação do clique, SEMPRE só pelo pedido (F5 parte D): a tela da autorização promete isso ao dono.
+          if (c.quem.via !== 'token') throw new BadRequestException(SO_PELO_PEDIDO);
           return comIdempotencia(c, 'campanha_disparar', chaveIdempotencia, { id, confirmacao }, async () => {
             const plano = await planejar(c, id);
             if (!plano.podeDisparar) throw new BadRequestException(plano.impedimentos.join(' '));
