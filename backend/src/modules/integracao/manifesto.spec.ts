@@ -72,9 +72,16 @@ describe('manifesto da porta de integração (Padrão §13)', () => {
     expect(m.security).toEqual([{ dmsId: [] }]);
     expect(Object.keys(m.components.securitySchemes)).toEqual(['dmsId']);
     expect(m['x-dms-limite']).toEqual({ porMinuto: LIMITE_POR_MINUTO, por: 'ligacao' });
-    // a porta é só MCP: nenhuma rota REST e nenhum aviso
+    // a porta é só MCP: nenhuma rota REST; um aviso, o do pedido de ação (1.2.0, F5 parte B, PR 3), só o gatilho
     expect(m.paths).toEqual({});
-    expect(m['x-dms-avisos']).toEqual([]);
+    expect(m['x-dms-avisos']).toEqual([
+      {
+        tipo: 'acao.alterada',
+        permissao: 'campanhas.disparar',
+        descricao: expect.stringContaining('acao_pedido_ler'),
+        exemplo: { tipo: 'acao.alterada', id: expect.any(String) },
+      },
+    ]);
   });
 
   it('a porta MCP declarada é a do McpController, debaixo do prefixo, na versão que a porta fala', () => {
@@ -104,15 +111,22 @@ describe('manifesto da porta de integração (Padrão §13)', () => {
     const m = servido();
     const ferramentas = m['x-dms-ferramentas'];
     expect(ferramentas.map((f) => f.nome)).toEqual(FERRAMENTAS.map((f) => f.nome));
-    // 15 até a 1.0.0; a 1.1.0 (Hub DMS, F5 parte B) acrescentou o pedido de aprovação do disparo: pedir, ler, cancelar.
-    expect(ferramentas).toHaveLength(18);
+    // 15 até a 1.0.0; a 1.1.0 (Hub DMS, F5 parte B) acrescentou o pedido de aprovação do disparo: pedir, ler, cancelar;
+    // a 1.2.0 (PR 3), o registro do aviso: registrar, ler, remover.
+    expect(ferramentas).toHaveLength(21);
     for (const [i, f] of ferramentas.entries()) {
       expect(f.permissao).toBe(FERRAMENTAS[i]!.escopo);
       expect(f.descricao.length).toBeGreaterThan(20);
       expect(f.esquemaEntrada.type).toBe('object');
     }
-    // sem permissão, só as duas da própria ligação: ver a situação dela e desligá-la (qualquer ligação válida)
-    expect(ferramentas.filter((f) => f.permissao === null).map((f) => f.nome)).toEqual(['integracao_situacao', 'integracao_revogar']);
+    // sem permissão, só as da própria ligação: ver a situação dela, desligá-la e o endereço do aviso dela
+    expect(ferramentas.filter((f) => f.permissao === null).map((f) => f.nome)).toEqual([
+      'integracao_situacao',
+      'integracao_revogar',
+      'aviso_registrar',
+      'aviso_ler',
+      'aviso_remover',
+    ]);
   });
 
   it('quem grava diz como é idempotente: as cinco com chaveIdempotencia obrigatória, e o revogar e o cancelar, que repetir não muda', () => {
@@ -128,6 +142,9 @@ describe('manifesto da porta de integração (Padrão §13)', () => {
       // O pedido de aprovação do disparo (Hub DMS, F5 parte B): a chave presa ao pedido; cancelar de novo devolve o cancelado.
       campanha_disparo_pedir: 'chave',
       acao_pedido_cancelar: 'substituicao',
+      // O aviso (PR 3): registrar de novo troca o registro; remover de novo responde removido = false.
+      aviso_registrar: 'substituicao',
+      aviso_remover: 'substituicao',
     });
     for (const f of ferramentas.filter((x) => x.escrita === 'chave')) {
       expect(f.esquemaEntrada.properties).toHaveProperty('chaveIdempotencia');

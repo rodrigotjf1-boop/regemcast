@@ -228,6 +228,33 @@ function autorizacao(): { ligada: boolean; empresa: string; cnpj: string; endere
 }
 
 /**
+ * As bases de aviso de teste (`AVISO_BASES`, JSON produto → lista de bases em https). Vazia: valem as do código.
+ */
+function avisoAQuemPediu(): { bases: Record<string, string[]> } {
+  const bruto = opcional('AVISO_BASES');
+  if (!bruto) return { bases: {} };
+  let lido: unknown;
+  try {
+    lido = JSON.parse(bruto);
+  } catch {
+    throw new Error('Variável AVISO_BASES precisa ser um JSON, como {"liame":["https://…/v1/inbox/regemcast/"]}.');
+  }
+  const valido =
+    lido !== null &&
+    typeof lido === 'object' &&
+    !Array.isArray(lido) &&
+    Object.entries(lido).every(
+      ([produto, lista]) =>
+        /^[a-z][a-z0-9_-]{1,39}$/.test(produto) &&
+        Array.isArray(lista) &&
+        lista.length > 0 &&
+        lista.every((e) => typeof e === 'string' && /^https:\/\/[^\s]+\/$/.test(e.trim())),
+    );
+  if (!valido) throw new Error('Variável AVISO_BASES precisa mapear produto → lista de bases https terminadas em "/", como {"liame":["https://…/"]}.');
+  return { bases: Object.fromEntries(Object.entries(lido as Record<string, string[]>).map(([p, lista]) => [p, lista.map((e) => e.trim())])) };
+}
+
+/**
  * O hub da DMS (Hub DMS, F2, etapa 2 da A4): a porta MCP manda ao hub o registro de cada chamada (quem chamou, o quê,
  * o resultado e a duração; nunca o conteúdo) e os erros da API, e consulta a lista de parada. Nasce DESLIGADO: quem
  * liga em produção é o dono, depois de o hub estar no ar e de o aplicativo do RegemCast existir no DMS ID. Ligado, o
@@ -413,6 +440,12 @@ export const env = {
   aprovacao: {
     soComAprovacao: booleana('DISPARO_SO_COM_APROVACAO', false),
   },
+
+  /**
+   * O aviso assinado a quem pediu (F5 parte B, PR 3; `aviso/aviso.regras.ts`). As bases de cada produto são as do
+   * código; `AVISO_BASES` (JSON produto → lista) troca a de um produto, só para teste e desenvolvimento.
+   */
+  aviso: avisoAQuemPediu(),
 
   /**
    * Push do app Android, pelo Firebase Cloud Messaging.

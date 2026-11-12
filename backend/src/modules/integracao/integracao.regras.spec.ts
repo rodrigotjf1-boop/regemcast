@@ -132,13 +132,18 @@ describe('as ferramentas de cada token', () => {
     for (const f of FERRAMENTAS) expect(f.escopo === null || ids.has(f.escopo)).toBe(true);
   });
 
-  it('a situação da integração vale para qualquer token; o resto, só com o escopo', () => {
-    expect(ferramentasDe({ escopos: [] }).map((f) => f.nome)).toEqual(['integracao_situacao', 'integracao_revogar']);
+  // O aviso assinado (F5 parte B, PR 3) vale para qualquer credencial, como a situação: registrar é só para produto da
+  // DMS (o serviço recusa o de fora), e o aviso só sai com a permissão de disparar.
+  const AVISO = ['aviso_registrar', 'aviso_ler', 'aviso_remover'];
+
+  it('a situação da integração (e o registro do aviso) vale para qualquer token; o resto, só com o escopo', () => {
+    expect(ferramentasDe({ escopos: [] }).map((f) => f.nome)).toEqual(['integracao_situacao', 'integracao_revogar', ...AVISO]);
     expect(ferramentasDe({ escopos: ['campanhas.ler'] }).map((f) => f.nome)).toEqual([
       'integracao_situacao',
       'integracao_revogar',
       'campanhas_listar',
       'campanha_detalhar',
+      ...AVISO,
     ]);
     expect(ferramentasDe({ escopos: ['publicos.ler', 'orcamento.ler'] }).map((f) => f.nome)).toEqual([
       'integracao_situacao',
@@ -146,6 +151,7 @@ describe('as ferramentas de cada token', () => {
       'publicos_listar',
       'publico_estimar',
       'orcamento_ler',
+      ...AVISO,
     ]);
   });
 
@@ -154,14 +160,15 @@ describe('as ferramentas de cada token', () => {
       'integracao_situacao',
       'integracao_revogar',
       'conversas_anuncio_listar',
+      ...AVISO,
     ]);
     const leitura = ['conta.ler', 'campanhas.ler', 'publicos.ler', 'modelos.ler', 'orcamento.ler'];
     expect(ferramentasDe({ escopos: leitura }).map((f) => f.nome)).not.toContain('conversas_anuncio_listar');
   });
 
   it('rascunhar pede a permissão de rascunhar: quem só lê não grava', () => {
-    expect(ferramentasDe({ escopos: ['modelos.rascunhar'] }).map((f) => f.nome)).toEqual(['integracao_situacao', 'integracao_revogar', 'modelo_rascunhar']);
-    expect(ferramentasDe({ escopos: ['campanhas.rascunhar'] }).map((f) => f.nome)).toEqual(['integracao_situacao', 'integracao_revogar', 'campanha_rascunhar']);
+    expect(ferramentasDe({ escopos: ['modelos.rascunhar'] }).map((f) => f.nome)).toEqual(['integracao_situacao', 'integracao_revogar', 'modelo_rascunhar', ...AVISO]);
+    expect(ferramentasDe({ escopos: ['campanhas.rascunhar'] }).map((f) => f.nome)).toEqual(['integracao_situacao', 'integracao_revogar', 'campanha_rascunhar', ...AVISO]);
     const leitura = ['conta.ler', 'campanhas.ler', 'publicos.ler', 'modelos.ler', 'orcamento.ler', 'conversas.anuncio.ler'];
     const nomes = ferramentasDe({ escopos: leitura }).map((f) => f.nome);
     expect(nomes).not.toContain('modelo_rascunhar');
@@ -178,6 +185,7 @@ describe('as ferramentas de cada token', () => {
       'campanha_disparo_pedir',
       'acao_pedido_ler',
       'acao_pedido_cancelar',
+      ...AVISO,
     ]);
   });
 
@@ -195,8 +203,12 @@ describe('as ferramentas de cada token', () => {
     expect(ferramentasDe({ escopos: efetivos }).map((f) => f.nome)).not.toContain('campanha_disparar');
   });
 
-  it('nenhuma ferramenta de leitura fica sem escopo: só a situação e a revogação do próprio token são de todos', () => {
-    expect(FERRAMENTAS.filter((f) => f.escopo === null).map((f) => f.nome)).toEqual(['integracao_situacao', 'integracao_revogar']);
+  it('nenhuma ferramenta de leitura de dados da conta fica sem escopo: só as do próprio acesso (situação, revogação e o aviso dele) são de todos', () => {
+    expect(FERRAMENTAS.filter((f) => f.escopo === null).map((f) => f.nome)).toEqual([
+      'integracao_situacao',
+      'integracao_revogar',
+      ...AVISO,
+    ]);
   });
 
   it('não há duas ferramentas com o mesmo nome', () => {

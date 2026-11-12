@@ -12,6 +12,7 @@
 jest.mock('../../config/env', () => ({ env: {} }));
 
 import {
+  BadRequestException,
   ForbiddenException,
   Module,
   NotFoundException,
@@ -29,6 +30,7 @@ import { env } from '../../config/env';
 import { ErroProblema, type ChamadaRegistrada, type ErroDoProduto } from '../../dms/integracao-dms';
 import { AprovacaoService } from '../aprovacao/aprovacao.service';
 import { ErroDoPedido } from '../aprovacao/erro-do-pedido';
+import { AvisoAssinadoService } from '../aviso-assinado/aviso-assinado.service';
 import { autorDaIntegracao, type AutorDaIntegracao } from '../auditoria/autor-integracao';
 import { AvisoService } from '../aviso/aviso.service';
 import { CampanhaService } from '../campanha/campanha.service';
@@ -179,6 +181,17 @@ function servicosDeTela() {
       cancelarPeloAplicativo: jest.fn(async (): Promise<unknown> => ({ pedido: { ...PEDIDO_DE_TESTE, situacao: 'cancelado' }, mudou: true })),
       depoisDaDecisao: jest.fn(async () => undefined),
     },
+    // O aviso assinado a quem pediu (F5 parte B, PR 3): o serviço de verdade tem a spec dele, com o Postgres.
+    avisoAssinado: {
+      registrar: jest.fn(async (_q: unknown, r: { url: string }): Promise<unknown> => {
+        if (!String(r.url).startsWith('https://api.agencialiame.com/v1/inbox/regemcast/')) {
+          throw new BadRequestException('O endereço tem de ser uma destas bases mais UM trecho (o id da conexão do seu lado), em https.');
+        }
+        return { registrado: true, url: r.url, pausado: false, na_fila: 0, tipos: ['acao.alterada'] };
+      }),
+      ler: jest.fn(async (): Promise<unknown> => ({ registrado: false, tipos: ['acao.alterada'] })),
+      remover: jest.fn(async (): Promise<unknown> => ({ removido: false })),
+    },
   };
 }
 
@@ -264,6 +277,7 @@ async function subirPorta(): Promise<Porta> {
       { provide: ModeloService, useValue: servicos.modelos },
       { provide: AvisoService, useValue: servicos.avisos },
       { provide: AprovacaoService, useValue: servicos.aprovacoes },
+      { provide: AvisoAssinadoService, useValue: servicos.avisoAssinado },
     ],
   })
   class PortaDeTeste implements NestModule {
@@ -465,7 +479,7 @@ describe('a porta MCP, por HTTP, como o Liame chama', () => {
 
   describe('o servidor: o que cada token enxerga', () => {
     it('a lista mostra só o que o escopo libera', async () => {
-      expect(await nomesDaLista(p, p.token({ classe: 'dms', escopos: ['conta.ler'] }))).toEqual(['conta_situacao', 'integracao_revogar', 'integracao_situacao']);
+      expect(await nomesDaLista(p, p.token({ classe: 'dms', escopos: ['conta.ler'] }))).toEqual(['aviso_ler', 'aviso_registrar', 'aviso_remover', 'conta_situacao', 'integracao_revogar', 'integracao_situacao']);
       expect(await nomesDaLista(p, p.token({ classe: 'dms', escopos: TODOS_OS_ESCOPOS }))).toEqual(FERRAMENTAS.map((f) => f.nome).sort());
     });
 
@@ -503,6 +517,27 @@ describe('a porta MCP, por HTTP, como o Liame chama', () => {
       });
       expect(r.texto).not.toContain(token);
       expect(r.texto).not.toContain('rct_it_');
+    });
+  });
+
+  describe('o aviso assinado a quem pediu (Hub DMS, F5 parte B, PR 3)', () => {
+    it('qualquer credencial vê as três ferramentas; registrar entrega a situação, e o endereço fora da base volta como recusa', async () => {
+      const token = p.token({ classe: 'dms', escopos: ['conta.ler'] });
+      const url = 'https://api.agencialiame.com/v1/inbox/regemcast/0190f1aa-1111-7222-8333-444455556666';
+      const ok = await chamar(p, token, 'aviso_registrar', { url, segredo: `whsec_${'A'.repeat(43)}=` });
+      expect(ok.json.result?.isError).toBeFalsy();
+      expect(ok.json.result?.structuredContent).toMatchObject({ registrado: true, url, tipos: ['acao.alterada'] });
+      const [quem] = p.servicos.avisoAssinado.registrar.mock.calls[0] as unknown as [Record<string, unknown>];
+      expect(quem).toMatchObject({ contaId: CONTA_ID, produto: 'liame', classe: 'dms' });
+
+      const fora = await chamar(p, token, 'aviso_registrar', { url: 'https://outro.exemplo/v1/inbox/regemcast/x', segredo: `whsec_${'A'.repeat(43)}=` });
+      expect(fora.json.result?.isError).toBe(true);
+      expect(fora.json.result?.content?.[0]?.text).toMatch(/UM trecho/);
+
+      const lido = await chamar(p, token, 'aviso_ler', {});
+      expect(lido.json.result?.structuredContent).toEqual({ registrado: false, tipos: ['acao.alterada'] });
+      const removido = await chamar(p, token, 'aviso_remover', {});
+      expect(removido.json.result?.structuredContent).toEqual({ removido: false });
     });
   });
 
@@ -634,7 +669,7 @@ describe('a porta MCP, por HTTP, como o Liame chama', () => {
       { jsonrpc: '2.0', id: 7, method: 'tools/list', params: {} },
     );
     expect(r.status).toBe(200);
-    expect((r.json.result?.tools ?? []).map((t) => t.name).sort()).toEqual(['conta_situacao', 'integracao_revogar', 'integracao_situacao']);
+    expect((r.json.result?.tools ?? []).map((t) => t.name).sort()).toEqual(['aviso_ler', 'aviso_registrar', 'aviso_remover', 'conta_situacao', 'integracao_revogar', 'integracao_situacao']);
   });
 
   describe('o hub da DMS: registro central, chave própria e lista de parada', () => {

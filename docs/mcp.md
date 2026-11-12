@@ -345,6 +345,9 @@ Regras (as do hub, ADR-008 do Liame):
 | `campanha_disparo_pedir` | `campanhas.disparar` (só `dms`) | **pede** o disparo: nada sai até uma pessoa da conta aprovar no Regemcast, com o código do aplicativo autenticador, e fixar o teto de gasto. Preso ao plano, vence em 24 horas, executa uma vez (seção "Pedido de aprovação do disparo"). |
 | `acao_pedido_ler` | `campanhas.disparar` (só `dms`) | o pedido de aprovação como está agora (aguardando, aprovado, executado, recusado com o motivo, vencido, cancelado), com o link da tela. |
 | `acao_pedido_cancelar` | `campanhas.disparar` (só `dms`) | quem pediu desiste de um pedido que ainda não saiu. |
+| `aviso_registrar` | qualquer (só `dms`) | registra (ou troca) o endereço e o segredo do aviso assinado `acao.alterada` deste aplicativo na conta: a base do aplicativo mais UM trecho. Registrar de novo religa o pausado. |
+| `aviso_ler` | qualquer | o aviso deste aplicativo na conta: o endereço, se está pausado, o último envio e quantos esperam. Nunca o segredo. |
+| `aviso_remover` | qualquer | para os avisos: apaga o endereço e o segredo, e o que estava na fila não sai mais. |
 
 As de leitura ficam em `integracao/mcp.leitura.ts`. Cada uma chama o **mesmo
 serviço da tela**, dentro da conta do token, e devolve um recorte curado:
@@ -374,6 +377,12 @@ inteiro, as travas e os testes estão em [`aprovacao-de-disparos.md`](aprovacao-
 - **O "continuar" depois do teto:** a campanha disparada por pedido que parou no teto aprovado segue por um pedido novo
   (planejar e pedir com o id dela; o plano é o de quem falta e leva `continuacao`). Quem aprova fixa um teto para a
   campanha inteira, maior do que ela já gastou.
+- **O aviso assinado a quem pediu** (contrato 1.2.0; migration 049): `aviso_registrar { url, segredo }`, `aviso_ler` e
+  `aviso_remover`, para qualquer credencial de produto da DMS. A cada mudança de um pedido do aplicativo, um POST
+  Standard Webhooks com `{"tipo":"acao.alterada","id":"<id do pedido>"}` — só gatilho: leia por `acao_pedido_ler`. O
+  endereço é a base do aplicativo fixa no Regemcast mais UM trecho; o aviso só sai com `campanhas.disparar` na
+  credencial; recuo de até 8 tentativas; 20 falhas seguidas pausam (registrar de novo religa). Detalhe na seção "O
+  aviso assinado" de [`aprovacao-de-disparos.md`](aprovacao-de-disparos.md).
 
 ## Disparo (sem migration)
 

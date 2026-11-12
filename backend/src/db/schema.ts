@@ -1408,3 +1408,51 @@ export const acaoPedido = pgTable('acao_pedido', {
   chaveUq: uniqueIndex('uq_acao_pedido_chave').on(t.contaId, t.aplicativo, t.chaveResumo),
   contaIdx: index('idx_acao_pedido_conta').on(t.contaId, t.criadoEm),
 }));
+
+/**
+ * Para onde avisar o produto da DMS que pediu um disparo, e com que segredo (Hub DMS, F5 parte B, PR 3; migration
+ * 049). Um por conta e produto, registrado pela porta MCP (`aviso_registrar`); o endereço só vale dentro das bases do
+ * produto, fixas no código. O segredo `whsec_` fica cifrado com a chave das integrações e nunca volta para fora.
+ */
+export const integracaoAviso = pgTable('integracao_aviso', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  contaId: uuid('conta_id').notNull().references(() => conta.id, { onDelete: 'cascade' }),
+  produto: text('produto').notNull(),
+  url: text('url').notNull(),
+  segredoCifrado: text('segredo_cifrado').notNull(),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+  falhasSeguidas: integer('falhas_seguidas').notNull().default(0),
+  falhandoDesde: timestamp('falhando_desde', { withTimezone: true }),
+  pausadoEm: timestamp('pausado_em', { withTimezone: true }),
+  pausaMotivo: text('pausa_motivo'),
+  ultimoEnvioEm: timestamp('ultimo_envio_em', { withTimezone: true }),
+  ultimoStatus: integer('ultimo_status'),
+}, (t) => ({
+  contaProdutoUq: uniqueIndex('uq_integracao_aviso_conta_produto').on(t.contaId, t.produto),
+}));
+
+/**
+ * A fila de entrega dos avisos (migration 049). O `id` é o `webhook-id`, o mesmo em todas as tentativas. Um pendente
+ * por pedido: o gatilho `rc_acao_pedido_aviso` põe na fila (ou marca `mudouEm`) a cada mudança de situação do pedido.
+ */
+export const avisoSaida = pgTable('aviso_saida', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  contaId: uuid('conta_id').notNull().references(() => conta.id, { onDelete: 'cascade' }),
+  produto: text('produto').notNull(),
+  tipo: text('tipo').notNull(),
+  recursoId: uuid('recurso_id').notNull(),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().default(sql`clock_timestamp()`),
+  mudouEm: timestamp('mudou_em', { withTimezone: true }).notNull().default(sql`clock_timestamp()`),
+  proximaEm: timestamp('proxima_em', { withTimezone: true }).notNull().default(sql`clock_timestamp()`),
+  tentativas: integer('tentativas').notNull().default(0),
+  entregueEm: timestamp('entregue_em', { withTimezone: true }),
+  desistidoEm: timestamp('desistido_em', { withTimezone: true }),
+  ultimoStatus: integer('ultimo_status'),
+  ultimoErro: text('ultimo_erro'),
+}, (t) => ({
+  pendenteUq: uniqueIndex('uq_aviso_saida_pendente')
+    .on(t.contaId, t.produto, t.tipo, t.recursoId)
+    .where(sql`entregue_em is null and desistido_em is null`),
+  contaIdx: index('idx_aviso_saida_conta').on(t.contaId, t.criadoEm),
+}));

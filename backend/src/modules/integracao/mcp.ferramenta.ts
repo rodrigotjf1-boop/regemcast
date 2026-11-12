@@ -13,6 +13,7 @@ import type { AprovacaoService } from '../aprovacao/aprovacao.service';
 import { comAutorDaIntegracao } from '../auditoria/autor-integracao';
 import { anotarChamada, problemaDoStatus } from '../hub/chamada-atual';
 import type { AvisoService } from '../aviso/aviso.service';
+import type { AvisoAssinadoService } from '../aviso-assinado/aviso-assinado.service';
 import type { CampanhaService } from '../campanha/campanha.service';
 import type { ContaService } from '../conta/conta.service';
 import type { ContatoService } from '../contato/contato.service';
@@ -41,6 +42,8 @@ export interface ServicosDoMcp {
   integracoes: IntegracaoService;
   /** O pedido de aprovação do disparo (Hub DMS, F5 parte B). */
   aprovacoes: AprovacaoService;
+  /** O aviso assinado a quem pediu (Hub DMS, F5 parte B, PR 3). */
+  avisoAssinado: AvisoAssinadoService;
 }
 
 /** O que cada ferramenta recebe: quem chamou, a porta para a conta dele e os serviços. */
