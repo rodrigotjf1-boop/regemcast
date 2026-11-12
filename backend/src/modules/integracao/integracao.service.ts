@@ -16,6 +16,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional, UnauthorizedException } from '@nestjs/common';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
+import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
 import { auditoria, conta, integracaoAutorizacao, integracaoLigacao, integracaoToken } from '../../db/schema';
 import { ErroProblema, gerarChave, resumoChave, type TokenDmsId } from '../../dms/integracao-dms';
@@ -23,6 +24,7 @@ import { AuditoriaService } from '../auditoria/auditoria.service';
 import { comAutorDaIntegracao } from '../auditoria/autor-integracao';
 import { APLICATIVOS_DA_AUTORIZACAO, type ContaQuePede } from './autorizacao.regras';
 import { AvisoDeLigacao } from './aviso-de-ligacao.service';
+import { escritaForaDoToken, escritaSoPelaLigacaoLigada } from './escrita-pela-ligacao';
 import {
   conferirEmissao,
   descreverEscopos,
@@ -546,7 +548,8 @@ export class IntegracaoService {
         produto: l.produto,
         classe: l.classe as ClasseDoToken,
         nome: l.nome,
-        escopos: escoposEfetivos(l.escopos, l.classe),
+        // Hub DMS F5 parte E: com a chave, o token antigo do produto que grava pela ligação perde a escrita.
+        escopos: escritaForaDoToken(l.produto, escoposEfetivos(l.escopos, l.classe), escritaSoPelaLigacaoLigada(env.aprovacao?.escritaSoPelaLigacao)),
         via: 'token',
       };
     });

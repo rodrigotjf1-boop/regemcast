@@ -18,6 +18,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 
+import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
 import * as schema from '../../db/schema';
 import { ErroProblema, resumoChave } from '../../dms/integracao-dms';
@@ -269,5 +270,23 @@ descrever('a ligação do Hub DMS no Postgres', () => {
       [contaId, APP_A, resumoChave(randomUUID())],
     );
     expect(await anuncios.registrar(phoneNumberId, aviso('wamid.com-ligacao'))).toBe(1);
+  });
+
+  it('Hub DMS F5 parte E: com LIAME_ESCRITA_SO_PELA_LIGACAO, o token antigo do Liame perde a escrita e segue lendo; o de outro produto, não', async () => {
+    const config = env as { aprovacao?: { escritaSoPelaLigacao?: boolean } };
+    const contaId = await novaConta();
+    const liame = await emitir(contaId, { escopos: ['conta.ler', 'campanhas.ler', 'campanhas.rascunhar', 'campanhas.disparar'] });
+    const outro = await emitir(contaId, { produto: 'gogem', escopos: ['conta.ler', 'campanhas.disparar'] });
+    try {
+      expect((await servico.autenticar(liame.token)).escopos).toEqual(['conta.ler', 'campanhas.ler', 'campanhas.rascunhar', 'campanhas.disparar']);
+      config.aprovacao = { escritaSoPelaLigacao: true };
+      expect((await servico.autenticar(liame.token)).escopos).toEqual(['conta.ler', 'campanhas.ler']);
+      expect((await servico.autenticar(outro.token)).escopos).toEqual(['conta.ler', 'campanhas.disparar']);
+      // A ligação do clique segue com o que ela e o token do DMS ID têm.
+      const { ligacao } = await servico.trocarPorLigacao(liame.token, APP_A, APLICATIVOS);
+      expect((await servico.autenticarLigacao(ligacao, { aplicativo: APP_A, permissoes: ['campanhas.disparar', 'conta.ler'] }, APLICATIVOS)).escopos).toEqual(['conta.ler', 'campanhas.disparar']);
+    } finally {
+      delete config.aprovacao;
+    }
   });
 });
