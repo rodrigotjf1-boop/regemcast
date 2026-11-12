@@ -24,8 +24,8 @@ recebia: provava que o plano não mudou, não que alguém aprovou (documento "F5
    e o lembrete, os avisos a quem aprova, o registro no hub e a permissão de aprovar em Conta e usuários.
 2. **Tela:** Campanhas › Para aprovar, o pedido aberto, os diálogos de aprovar e recusar, a permissão em Conta e
    usuários, o teto e o gasto na campanha (pela MESMA conta do worker), e o "continuar" depois do teto.
-3. **Aviso assinado a quem pediu** (F5-7): o Regemcast passa a mandar aviso (Standard Webhooks, pacote seção 7). Até
-   ele, quem pediu acompanha pela consulta (`acao_pedido_ler`).
+3. **Aviso assinado a quem pediu** (F5-7; migration 049): o Regemcast passa a mandar aviso (Standard Webhooks, pacote
+   seção 7), registrado pela porta (`aviso_registrar`). A consulta (`acao_pedido_ler`) segue valendo, como reserva.
 
 ## O que nasce desligado e o que não
 
@@ -230,8 +230,42 @@ vai ao hub.
 - **No menu, o item aceso é o de caminho mais longo** que casa com a página: em "Para aprovar", "Campanhas" não acende
   junto.
 
+## O aviso assinado a quem pediu (PR 3; decisão F5-7; migration 049)
+
+O produto que pediu um disparo fica sabendo na hora que o pedido mudou. É o modelo do Regem para os produtos da DMS
+(`webhook-integracao.ts` de lá; Padrão §9).
+
+- **O registro, pela porta MCP:** `aviso_registrar { url, segredo }`, `aviso_ler` e `aviso_remover` valem para qualquer
+  credencial; o serviço recusa o produto de fora (403). O endereço só vale dentro da base do produto, fixa no código
+  (`BASES_DE_AVISO`: o Liame recebe em `https://api.agencialiame.com/v1/inbox/regemcast/<id da conexão>`, a caixa de
+  entrada por conexão que ele já tem), pela regra do pacote (`destinoAvisoPermitido`). O segredo `whsec_` é do produto;
+  fica cifrado com a chave das integrações (`integracao_aviso`) e nunca volta. Um por conta e produto; registrar de
+  novo troca e religa o pausado.
+- **A fila:** o gatilho `rc_acao_pedido_aviso` (a cada mudança de situação, ou do motivo — o teto) põe o aviso em
+  `aviso_saida`, se o produto registrou e não está pausado. Criar o pedido não avisa (quem pediu já tem a resposta).
+  Um pendente por pedido: a mudança que chega com outro na fila só marca `mudou_em` e adianta a tentativa.
+- **O corpo:** `{"tipo":"acao.alterada","id":"<id do pedido>"}` — só o gatilho, nunca dado pessoal. Quem recebe lê o
+  pedido por `acao_pedido_ler`. Assinatura Standard Webhooks (`cabecalhosAviso` do pacote); o `webhook-id` é o id da
+  linha, o mesmo em todas as tentativas (quem recebe descarta o repetido).
+- **A entrega (`AvisoAssinadoJob`, a cada 15 s):** reserva os devidos (`skip locked`, a próxima tentativa empurrada 2
+  minutos), manda cada um FORA de transação (POST, sem seguir redirecionamento, 10 s de prazo) e grava o desfecho:
+  - **2xx:** entregue — mas só se o pedido não mudou depois da reserva (`mudou_em`); se mudou, sai de novo;
+  - **falha** (outro status ou sem resposta): recuo de 30 s, 2 min, 10 min, 30 min, 2 h, 6 h, 12 h e 24 h; depois,
+    desiste daquele aviso (a consulta continua valendo). **20 falhas seguidas** do produto na conta pausam o registro;
+  - **antes de mandar:** a credencial do produto na conta tem de seguir valendo, com `campanhas.disparar` (a ligação
+    revogada não recebe o que estava na fila — desiste); a parada do hub (o aplicativo, a ligação ou `aviso
+    acao.alterada`) segura sem contar falha;
+  - **cada tentativa vai ao registro do hub** (`registrarAviso`): para quem, o tipo, o resultado, a tentativa e só a
+    origem do destino. Nunca o conteúdo.
+- **Contrato 1.2.0 (aditiva):** as três ferramentas e o aviso `acao.alterada` no manifesto (`x-dms-avisos`).
+- **Testes:** `aviso-assinado.regras.spec.ts` (a base, o registro, o corpo, o recuo); `aviso-assinado.pg.spec.ts`
+  (Postgres, como `regemcast_app`: o registro cifrado e as recusas; o gatilho — sem registro nada, um pendente por
+  pedido, a mudança que só marca, pausado não recebe; a assinatura que confere com o segredo registrado e o webhook-id
+  da linha; a falha que recua e desiste; a pausa; a mudança durante o envio, que sai de novo; a credencial que deixou de
+  valer; a parada; remover; a RLS); `mcp.porta.spec.ts` (as três pela porta HTTP).
+- **Do lado do Liame** (parte D): registrar o endereço ao ligar a conta e ler o pedido a cada aviso.
+
 ## O que fica de fora
 
-- O aviso assinado a quem pediu é o PR 3, o próximo (decisão F5-7); até ele, quem pediu acompanha pela consulta.
 - O app Android: a tela de aprovação é do site; o aviso no celular abre o site.
 - O console da distribuição não aprova nada (a aprovação é da conta).

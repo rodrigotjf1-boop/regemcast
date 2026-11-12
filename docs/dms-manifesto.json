@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Porta de integração do Regemcast",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "A porta MCP que os produtos da DMS ligados à conta usam: a situação da conta, as campanhas, os públicos, os modelos, o orçamento e as conversas abertas por anúncio, com o que o dono autorizou, e os rascunhos e o disparo de campanha. Credencial: o token do DMS ID com o segredo da ligação (DMS-Ligacao).",
     "x-dms-produto": "regemcast",
     "x-dms-pacote": "0.7.2"
@@ -863,9 +863,71 @@
         "additionalProperties": false
       },
       "escrita": "substituicao"
+    },
+    {
+      "nome": "aviso_registrar",
+      "descricao": "Registra (ou troca) para onde o Regemcast avisa este aplicativo, e com que segredo, nesta conta. O aviso é um POST assinado no padrão Standard Webhooks (webhook-id, webhook-timestamp, webhook-signature) com o corpo {\"tipo\":\"acao.alterada\",\"id\":\"<id do pedido>\"} a cada mudança de um pedido de ação deste aplicativo (aprovado, recusado, vencido, cancelado, executado, parou no teto): é só gatilho, leia o pedido por acao_pedido_ler. O endereço tem de ser a base do aplicativo cadastrada no Regemcast mais UM trecho (o id da conexão do seu lado), em https. O segredo vai no formato whsec_ (24 a 64 bytes em base64) e nunca volta. Registrar de novo religa o aviso pausado. Só produto da DMS. O aviso só sai enquanto a credencial do aplicativo na conta tiver a permissão campanhas.disparar.",
+      "permissao": null,
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "minLength": 12,
+            "maxLength": 500,
+            "description": "A base do aplicativo mais UM trecho (o id da conexão do seu lado), em https."
+          },
+          "segredo": {
+            "type": "string",
+            "minLength": 30,
+            "maxLength": 200,
+            "description": "whsec_ seguido de 24 a 64 bytes em base64. Guarde do seu lado: ele não volta."
+          }
+        },
+        "required": [
+          "url",
+          "segredo"
+        ],
+        "additionalProperties": false
+      },
+      "escrita": "substituicao"
+    },
+    {
+      "nome": "aviso_ler",
+      "descricao": "O aviso deste aplicativo nesta conta: o endereço, quando foi registrado, se está pausado (e por quê), o último envio, o status que o destino respondeu e quantos esperam na fila. Nunca o segredo. Sem registro: registrado = false.",
+      "permissao": null,
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "nome": "aviso_remover",
+      "descricao": "Apaga o endereço e o segredo do aviso deste aplicativo nesta conta: o que estava na fila não sai mais. Sem registro, responde removido = false. Os pedidos seguem legíveis por acao_pedido_ler.",
+      "permissao": null,
+      "esquemaEntrada": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "escrita": "substituicao"
     }
   ],
-  "x-dms-avisos": [],
+  "x-dms-avisos": [
+    {
+      "tipo": "acao.alterada",
+      "permissao": "campanhas.disparar",
+      "descricao": "Um pedido de ação deste aplicativo mudou (aprovado, recusado, vencido, cancelado, executado ou parou no teto de gasto). POST assinado no padrão Standard Webhooks para o endereço registrado por aviso_registrar; leia o pedido por acao_pedido_ler.",
+      "exemplo": {
+        "tipo": "acao.alterada",
+        "id": "00000000-0000-4000-8000-000000000000"
+      }
+    }
+  ],
   "x-dms-mcp": {
     "endereco": "https://castapi.dmsregem.com/api/v1/mcp",
     "versao": "2026-07-28"

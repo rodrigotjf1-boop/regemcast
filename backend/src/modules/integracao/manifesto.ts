@@ -28,9 +28,21 @@ export const PORTA_MCP = { endereco: `${BASE_DO_MANIFESTO}/api/v1/mcp`, versao: 
 
 /**
  * A versão do contrato da porta (Padrão §12): a do servidor MCP. 1.1.0 (aditiva, Hub DMS F5 parte B): o pedido de
- * aprovação do disparo (`campanha_disparo_pedir`, `acao_pedido_ler`, `acao_pedido_cancelar`).
+ * aprovação do disparo (`campanha_disparo_pedir`, `acao_pedido_ler`, `acao_pedido_cancelar`). 1.2.0 (aditiva, F5 parte
+ * B, PR 3): o aviso assinado `acao.alterada` e o registro dele (`aviso_registrar`, `aviso_ler`, `aviso_remover`).
  */
-export const VERSAO_DO_CONTRATO = '1.1.0';
+export const VERSAO_DO_CONTRATO = '1.2.0';
+
+/** Os avisos que a porta manda (Padrão §9): só o gatilho, o tipo e o id. */
+const AVISOS = [
+  {
+    tipo: 'acao.alterada',
+    permissao: 'campanhas.disparar',
+    descricao:
+      'Um pedido de ação deste aplicativo mudou (aprovado, recusado, vencido, cancelado, executado ou parou no teto de gasto). POST assinado no padrão Standard Webhooks para o endereço registrado por aviso_registrar; leia o pedido por acao_pedido_ler.',
+    exemplo: { tipo: 'acao.alterada', id: '00000000-0000-4000-8000-000000000000' },
+  },
+] as const;
 
 /** Dado pessoal ou dinheiro (Padrão §4): o telefone de quem escreveu e o disparo, que gasta na Meta. */
 const SENSIVEIS: readonly string[] = [...PERMISSOES_COM_DADO_PESSOAL, 'campanhas.disparar'];
@@ -93,7 +105,7 @@ export function manifestoDaPorta(): ManifestoDms {
     limite: { porMinuto: LIMITE_POR_MINUTO, por: 'ligacao' },
     rotas: [],
     ferramentas: ferramentasDoCatalogo(),
-    avisos: [],
+    avisos: AVISOS.map((a) => ({ ...a, exemplo: { ...a.exemplo } })),
     credenciais: ['dms_id'],
     mcp: PORTA_MCP,
   });

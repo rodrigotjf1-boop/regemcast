@@ -29,6 +29,7 @@ import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
 import { ErroProblema, gerarChave, prefixoVisivel, type ChamadaRegistrada } from '../../dms/integracao-dms';
 import { AprovacaoService } from '../aprovacao/aprovacao.service';
+import { AvisoAssinadoService } from '../aviso-assinado/aviso-assinado.service';
 import { autorDaIntegracao, type AutorDaIntegracao } from '../auditoria/autor-integracao';
 import { AvisoService } from '../aviso/aviso.service';
 import { CampanhaService } from '../campanha/campanha.service';
@@ -173,7 +174,7 @@ async function subirPorta(): Promise<Porta> {
       { provide: IntegracaoService, useValue: { autenticar, autenticarLigacao, trocarPorLigacao: trocar, revogarPeloProprio: jest.fn() } },
       { provide: ContextoDb, useValue: ctx },
       { provide: OrcamentoService, useValue: orcamento() },
-      ...[SaudeService, ContaService, CampanhaService, ContatoService, PublicosService, SegmentacaoService, MetaService, ConversaAnuncioService, ModeloService, AvisoService, AprovacaoService].map(
+      ...[SaudeService, ContaService, CampanhaService, ContatoService, PublicosService, SegmentacaoService, MetaService, ConversaAnuncioService, ModeloService, AvisoService, AprovacaoService, AvisoAssinadoService].map(
         (provide) => ({ provide, useValue: {} }),
       ),
     ],
@@ -383,7 +384,7 @@ describe('a porta MCP pela via do DMS ID', () => {
 
     const lista = await chamarMcp(p, { token, ligacao, metodo: 'tools/list' });
     expect(lista.status).toBe(200);
-    expect((lista.corpo.result.tools as Array<{ name: string }>).map((t) => t.name).sort()).toEqual(['integracao_revogar', 'integracao_situacao', 'orcamento_ler']);
+    expect((lista.corpo.result.tools as Array<{ name: string }>).map((t) => t.name).sort()).toEqual(['aviso_ler', 'aviso_registrar', 'aviso_remover', 'integracao_revogar', 'integracao_situacao', 'orcamento_ler']);
 
     const r = await chamarMcp(p, { token, ligacao, nome: 'orcamento_ler' });
     expect(r.status).toBe(200);

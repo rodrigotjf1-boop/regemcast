@@ -24,6 +24,7 @@ import {
   ClienteDmsId,
   ClienteHub,
   type AcaoRegistrada,
+  type AvisoRegistrado,
   type ChamadaAtendida,
   type ChamadaRegistrada,
   type ErroDoProduto,
@@ -94,6 +95,14 @@ export class HubService implements OnModuleInit, OnApplicationShutdown {
    */
   registrarAcao(acao: AcaoRegistrada): void {
     if (this.cliente) this.cliente.registrarAcao(acao);
+  }
+
+  /**
+   * Anota um envio de aviso (Padrão §9; F5 parte B, PR 3) para o registro do hub: para quem, o tipo, o resultado, a
+   * tentativa e só a origem do destino. Nunca o conteúdo. Desligado: nada.
+   */
+  registrarAviso(aviso: AvisoRegistrado): void {
+    if (this.cliente) this.cliente.registrarAviso(aviso);
   }
 
   /** Anota um erro para a lista de erros do hub (o pacote limpa a mensagem). Desligado: nada. */
