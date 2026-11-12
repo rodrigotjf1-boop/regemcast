@@ -43,6 +43,7 @@ import { SaudeService } from '../meta/saude.service';
 import { ModeloService } from '../modelo/modelo.service';
 import { OrcamentoService } from '../orcamento/orcamento.service';
 import { HubService } from '../hub/hub.service';
+import { SO_PELO_PEDIDO } from './disparo.regras';
 import { DmsIdController } from './dms-id.controller';
 import { DmsIdService } from './dms-id.service';
 import { IntegracaoGuard, LIMITE_POR_MINUTO } from './integracao.guard';
@@ -137,7 +138,7 @@ async function subirPorta(): Promise<Porta> {
   };
   const ligacoes = new Map<string, LigacaoGuardada>();
   const tokens = new Map<string, { id: string; escopos: string[]; revogado: boolean }>();
-  const quem = (id: string, escopos: string[]): IntegracaoAutenticada => ({
+  const quem = (id: string, escopos: string[], via: IntegracaoAutenticada['via']): IntegracaoAutenticada => ({
     tokenId: id,
     contaId: CONTA_ID,
     contaNome: 'Loja de teste',
@@ -146,18 +147,19 @@ async function subirPorta(): Promise<Porta> {
     classe: 'dms',
     nome: 'Liame (teste)',
     escopos,
+    via,
   });
   // As decisões do serviço, com as regras dele: ligação que não vale dá SEMPRE a mesma recusa.
   const autenticarLigacao = jest.fn(async (segredo: string | null, doToken: { aplicativo: string; permissoes: string[] }, aplicativos: Record<string, string>) => {
     const l = segredo ? ligacoes.get(segredo) : undefined;
     if (!ligacaoVale(l, doToken.aplicativo, aplicativos)) throw new ErroProblema('ligacao-invalida', LIGACAO_INVALIDA);
     if (l.contaSuspensa) throw new ErroProblema('conta-bloqueada', 'A conta desta ligação está suspensa ou cancelada.');
-    return quem((l as LigacaoGuardada).id, permissoesDaLigacao(l, doToken.permissoes));
+    return quem((l as LigacaoGuardada).id, permissoesDaLigacao(l, doToken.permissoes), 'ligacao');
   });
   const autenticar = jest.fn(async (token: string) => {
     const t = tokens.get(token);
     if (!t || t.revogado) throw new UnauthorizedException('Token de integração inválido ou revogado.');
-    return quem(t.id, escoposEfetivos(t.escopos, 'dms'));
+    return quem(t.id, escoposEfetivos(t.escopos, 'dms'), 'token');
   });
   const trocar = jest.fn();
 
@@ -216,7 +218,10 @@ async function subirPorta(): Promise<Porta> {
 
 type Resposta = { status: number; tipo: string; cabecalhos: Headers; corpo: any }; // eslint-disable-line @typescript-eslint/no-explicit-any
 
-async function chamarMcp(p: Porta, o: { token?: string; ligacao?: string; metodo?: string; nome?: string }): Promise<Resposta> {
+async function chamarMcp(
+  p: Porta,
+  o: { token?: string; ligacao?: string; metodo?: string; nome?: string; argumentos?: Record<string, unknown> },
+): Promise<Resposta> {
   const metodo = o.metodo ?? 'tools/call';
   const cabecalhos: Record<string, string> = {
     'content-type': 'application/json',
@@ -234,7 +239,7 @@ async function chamarMcp(p: Porta, o: { token?: string; ligacao?: string; metodo
       'io.modelcontextprotocol/clientCapabilities': {},
     },
   };
-  if (o.nome) Object.assign(params, { name: o.nome, arguments: {} });
+  if (o.nome) Object.assign(params, { name: o.nome, arguments: o.argumentos ?? {} });
   const r = await fetch(`${p.origem}/api/v1/mcp`, { method: 'POST', headers: cabecalhos, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: metodo, params }) });
   return ler(r);
 }
@@ -391,6 +396,20 @@ describe('a porta MCP pela via do DMS ID', () => {
     expect(r.corpo.result.isError).toBeUndefined();
     expect(p.contas).toEqual([CONTA_ID]);
     expect(p.autores[0]).toEqual(expect.objectContaining({ tokenId: '00000000-0000-4000-9000-000000000001', produto: 'liame' }));
+  });
+
+  it('pela ligação, o disparo direto é recusado mesmo com campanhas.disparar: só pelo pedido (F5 parte D, o que a tela promete)', async () => {
+    const ligacao = p.ligacao({ aplicativo: APP_A, classe: 'dms', escopos: ['campanhas.disparar'] });
+    const token = dmsId.emitir({ scope: 'campanhas.disparar' });
+    const r = await chamarMcp(p, {
+      token,
+      ligacao,
+      nome: 'campanha_disparar',
+      argumentos: { chaveIdempotencia: 'liame-teste-0001', id: '00000000-0000-4000-9000-0000000000aa', confirmacao: 'c'.repeat(32) },
+    });
+    expect(r.status).toBe(200);
+    expect(r.corpo.result.isError).toBe(true);
+    expect(JSON.stringify(r.corpo.result.content)).toContain(SO_PELO_PEDIDO);
   });
 
   it('nem o token nem o segredo da ligação passam da porta para o SDK', async () => {

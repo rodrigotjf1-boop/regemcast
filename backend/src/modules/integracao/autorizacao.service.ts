@@ -17,7 +17,6 @@ import {
   ForbiddenException,
   GoneException,
   HttpException,
-  HttpStatus,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -559,6 +558,7 @@ export class AutorizacaoService {
     });
 
     void this.avisos.ligacaoPorClique(a.conta_id, {
+      produto: quem.app.produto,
       aplicativo: quem.app.nome,
       contaQuePede: a.conta_que_pede,
       escopos,

@@ -6,19 +6,23 @@
  * com a versão). Assim a prova é o que a tela mostrou, não uma cópia que pode
  * divergir. Os textos são os do protótipo aprovado pelo dono em 20/10/2026
  * (página "Autorização por clique" do Hub DMS); o nome do produto segue a regra
- * da marca ("Regemcast").
+ * da marca ("Regemcast"). Versão 2 (12/11/2026, F5 parte D): as opcionais de
+ * gravar, a abertura e o "não pode" de quando o pedido traz gravação, e a chave
+ * de cada opcional nova também no "pede mais".
  */
 import { descreverEscopos } from './integracao.regras';
 import {
   naoPode,
   PERMISSOES_COM_DADO_PESSOAL,
+  rotuloNoAplicativo,
+  temGravacao,
   VERSAO_DO_TEXTO,
   type AplicativoDaAutorizacao,
   type ContaQuePede,
 } from './autorizacao.regras';
 
 /** A data da versão atual do texto (sobe junto com VERSAO_DO_TEXTO). */
-export const DATA_DO_TEXTO = '20/10/2026';
+export const DATA_DO_TEXTO = '12/11/2026';
 
 export interface PermissaoNaTela {
   id: string;
@@ -41,6 +45,8 @@ export interface TelaDaAutorizacao {
   opcionais: PermissaoNaTela[];
   /** A conta já tem uma ligação ativa com o aplicativo: o pedido é "mais permissões" (ou renovar). */
   jaLigada: null | { desde: string; escopos: { id: string; rotulo: string }[]; novas: string[] };
+  /** O pedido traz permissão de gravar: a seção vira "O que o X vai ver e fazer". */
+  grava: boolean;
   naoPode: { rotulo: string; frase: string }[];
   nota: string;
   rodape: string;
@@ -69,8 +75,8 @@ const dataCurta = (d: Date) =>
 function naTela(ids: readonly string[], app: AplicativoDaAutorizacao): PermissaoNaTela[] {
   return descreverEscopos(ids).map((e) => ({
     id: e.id,
-    rotulo: e.rotulo,
-    frase: e.descricao,
+    rotulo: rotuloNoAplicativo(app, e.id, e.rotulo),
+    frase: app.nomes?.[e.id]?.frase ?? e.descricao,
     motivo: app.motivos[e.id] ?? '',
     dadoPessoal: PERMISSOES_COM_DADO_PESSOAL.includes(e.id),
     semEla: app.semAOpcional[e.id] ?? null,
@@ -80,22 +86,28 @@ function naTela(ids: readonly string[], app: AplicativoDaAutorizacao): Permissao
 export function montarTela(e: EntradaDaTela): TelaDaAutorizacao {
   const { app } = e;
   const pedidas = [...e.pedido.necessarias, ...e.pedido.opcionais];
+  const grava = temGravacao(pedidas);
   const jaLigada = e.ligacaoAtiva
     ? {
         desde: e.ligacaoAtiva.criadoEm.toISOString(),
-        escopos: descreverEscopos(e.ligacaoAtiva.escopos).map(({ id, rotulo }) => ({ id, rotulo })),
+        escopos: descreverEscopos(e.ligacaoAtiva.escopos).map(({ id, rotulo }) => ({ id, rotulo: rotuloNoAplicativo(app, id, rotulo) })),
         novas: pedidas.filter((p) => !e.ligacaoAtiva!.escopos.includes(p)),
       }
     : null;
 
   let titulo = `O ${app.nome} quer acessar a sua conta do Regemcast`;
-  let abertura = app.faz;
+  let abertura = grava ? (app.fazComGravacao ?? app.faz) : app.faz;
   if (jaLigada) {
     const desde = dataCurta(e.ligacaoAtiva!.criadoEm);
     if (jaLigada.novas.length) {
       titulo = jaLigada.novas.length === 1 ? `O ${app.nome} pede mais uma permissão` : `O ${app.nome} pede mais ${jaLigada.novas.length} permissões`;
-      const rotulos = descreverEscopos(jaLigada.novas).map((p) => p.rotulo.toLowerCase());
-      abertura = `O ${app.nome} já lê esta conta desde ${desde} e agora pede para ver também: ${rotulos.join(', ')}. Se você disser não, ele continua com o que já tinha.`;
+      const rotulos = descreverEscopos(jaLigada.novas).map((p) => rotuloNoAplicativo(app, p.id, p.rotulo).toLowerCase());
+      const novasGravam = temGravacao(jaLigada.novas);
+      const temOpcional = jaLigada.novas.some((p) => e.pedido.opcionais.includes(p));
+      abertura =
+        `O ${app.nome} já lê esta conta desde ${desde} e agora pede ${novasGravam ? 'também' : 'para ver também'}: ${rotulos.join(', ')}.` +
+        (temOpcional ? ' As opcionais, você decide uma a uma abaixo.' : '') +
+        ' Se você disser não, ele continua com o que já tinha.';
     } else {
       titulo = `O ${app.nome} pede para renovar o acesso à sua conta`;
       abertura = `O ${app.nome} já lê esta conta desde ${desde}. Autorizar de novo troca o acesso dele: o anterior para de valer quando ele receber o novo. Se você disser não, nada muda.`;
@@ -120,7 +132,8 @@ export function montarTela(e: EntradaDaTela): TelaDaAutorizacao {
     necessarias: naTela(e.pedido.necessarias, app),
     opcionais: naTela(e.pedido.opcionais, app),
     jaLigada,
-    naoPode: naoPode(app.nome),
+    grava,
+    naoPode: naoPode(app.nome, grava),
     nota: `A ligação vai direto do Regemcast para o ${app.nome}: ninguém vê nem copia código ou senha. Vale até você desligar, em Integrações › Aplicativos conectados, ou no próprio ${app.nome}.`,
     rodape: `Fica registrado: quem autorizou, quando, este texto (versão ${VERSAO_DO_TEXTO}, de ${DATA_DO_TEXTO}) e o que foi liberado. Você recebe um e-mail e um aviso no celular.`,
   };

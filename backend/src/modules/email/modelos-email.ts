@@ -145,6 +145,8 @@ export function emailAplicativoLigado(
     contaQuePede: { nome: string; cnpj: string | null };
     quando: string;
     liberadas: readonly string[];
+    /** Alguma das liberadas grava (rascunho ou pedido de disparo, F5 parte D): as frases do que ele pode e não pode mudam. */
+    grava?: boolean;
     /** `nova`: a primeira ligação; `mais`: ganhou permissões; `renovada`: autorizou de novo, com as mesmas. */
     tipo: 'nova' | 'mais' | 'renovada';
     link: string;
@@ -161,17 +163,22 @@ export function emailAplicativoLigado(
   const feito =
     d.tipo === 'nova' ? `foi ligada ao ${d.aplicativo}` : d.tipo === 'mais' ? `liberou mais permissões ao ${d.aplicativo}` : `autorizou de novo o ${d.aplicativo}`;
   const abertura = `${primeiroNome}, ${d.quando}, a conta ${d.contaNome} do RegemCast ${feito}, a pedido da conta ${quem}.`;
-  const naoPode = `Ele não pode enviar mensagens, mudar campanhas nem ver a sua lista de contatos.`;
+  // Com gravação, o "pode ver" e o "não pode enviar" deixariam de ser verdade: pela ligação, o disparo só sai por pedido
+  // aprovado na conta (`SO_PELO_PEDIDO`), e o rascunho e a pausa são só os do próprio aplicativo.
+  const naoPode = d.grava
+    ? `Ele não pode disparar sem você, ou quem você autorizou, aprovar no RegemCast, mexer no que não é dele nem ver a sua lista de contatos.`
+    : `Ele não pode enviar mensagens, mudar campanhas nem ver a sua lista de contatos.`;
+  const liberado = d.grava ? `Liberado ao ${d.aplicativo}:` : `O ${d.aplicativo} pode ver:`;
   const conferir = 'Foi você? Não precisa fazer nada. Não foi você? Desligue agora em Integrações › Aplicativos conectados e troque a sua senha.';
 
   return {
     para,
     assunto,
-    texto: `${abertura}\n\nO ${d.aplicativo} pode ver:\n${d.liberadas.map((l) => `- ${l}`).join('\n')}\n\n${naoPode}\n\n${conferir}\n\nAplicativos conectados: ${d.link}`,
+    texto: `${abertura}\n\n${liberado}\n${d.liberadas.map((l) => `- ${l}`).join('\n')}\n\n${naoPode}\n\n${conferir}\n\nAplicativos conectados: ${d.link}`,
     html: moldura(
       assunto,
       `${paragrafo(escapar(abertura))}
-<p style="margin:0 0 8px;font-size:15px;color:${AMEIXA}"><strong>O ${escapar(d.aplicativo)} pode ver:</strong></p>
+<p style="margin:0 0 8px;font-size:15px;color:${AMEIXA}"><strong>${escapar(liberado)}</strong></p>
 ${lista(d.liberadas)}
 ${paragrafo(escapar(naoPode))}
 ${paragrafo(`<strong style="color:${AMEIXA}">Foi você?</strong> Não precisa fazer nada. <strong style="color:${AMEIXA}">Não foi você?</strong> Desligue agora em Integrações › Aplicativos conectados e troque a sua senha.`)}

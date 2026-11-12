@@ -61,7 +61,8 @@ export function FormularioAutorizacao({
   const app = tela.aplicativo.nome;
   const jaLigada = tela.jaLigada;
   const pedeMais = Boolean(jaLigada?.novas.length);
-  // Já ligada: as opcionais que a ligação já tem continuam ligadas; "Liberar" liga as novas. Primeira vez: nascem desligadas.
+  // Já ligada: as opcionais que a ligação já tem continuam ligadas e as novas vêm ligadas, cada uma com a sua chave (o
+  // dono desliga a que não quer). Primeira vez: nascem desligadas.
   const [ligadas, setLigadas] = useState<string[]>(() =>
     jaLigada ? tela.opcionais.map((o) => o.id).filter((id) => jaLigada.escopos.some((e) => e.id === id) || jaLigada.novas.includes(id)) : [],
   );
@@ -97,7 +98,10 @@ export function FormularioAutorizacao({
   }
 
   const novas = jaLigada ? [...tela.necessarias, ...tela.opcionais].filter((p) => jaLigada.novas.includes(p.id)) : [];
-  const temDadoPessoal = tela.opcionais.some((o) => o.dadoPessoal);
+  const ehOpcional = (id: string) => tela.opcionais.some((o) => o.id === id);
+  // As opcionais em dois grupos: as com dado de cliente num bloco próprio, as outras (ex.: as de campanha) à parte.
+  const opcionaisComDado = tela.opcionais.filter((o) => o.dadoPessoal);
+  const opcionaisSemDado = tela.opcionais.filter((o) => !o.dadoPessoal);
 
   return (
     <form
@@ -168,7 +172,14 @@ export function FormularioAutorizacao({
         <Secao numero={2} titulo="O que muda" id="secao-muda">
           <ul className={lista}>
             {novas.map((p) => (
-              <ItemPermissao key={p.id} permissao={p} nomeDoAplicativo={app} icone="nova" novo />
+              <ItemPermissao
+                key={p.id}
+                permissao={p}
+                nomeDoAplicativo={app}
+                icone="nova"
+                novo
+                chave={ehOpcional(p.id) ? { ligada: ligadas.includes(p.id), alternar: () => alternar(p.id) } : undefined}
+              />
             ))}
           </ul>
           <details className="group grid gap-2 text-[13px]">
@@ -186,7 +197,7 @@ export function FormularioAutorizacao({
           </details>
         </Secao>
       ) : (
-        <Secao numero={2} titulo={`O que o ${app} vai ver`} id="secao-ve">
+        <Secao numero={2} titulo={tela.grava ? `O que o ${app} vai ver e fazer` : `O que o ${app} vai ver`} id="secao-ve">
           <h3 className="text-[11.5px] font-semibold uppercase tracking-wider text-tinta-suave">Necessárias</h3>
           <p className="-mt-1 text-xs text-tinta-suave">Sem estas, o {app} não funciona. Para não liberar, cancele.</p>
           <ul className={lista}>
@@ -194,18 +205,21 @@ export function FormularioAutorizacao({
               <ItemPermissao key={p.id} permissao={p} nomeDoAplicativo={app} />
             ))}
           </ul>
-          {tela.opcionais.length ? (
-            <>
-              <h3 className="mt-1 text-[11.5px] font-semibold uppercase tracking-wider text-tinta-suave">
-                {temDadoPessoal ? 'Dados dos seus clientes · você decide' : 'Opcional · você decide'}
-              </h3>
-              <ul className={lista}>
-                {tela.opcionais.map((p) => (
-                  <ItemPermissao key={p.id} permissao={p} nomeDoAplicativo={app} chave={{ ligada: ligadas.includes(p.id), alternar: () => alternar(p.id) }} />
-                ))}
-              </ul>
-            </>
-          ) : null}
+          {[
+            { titulo: 'Dados dos seus clientes · você decide', itens: opcionaisComDado },
+            { titulo: 'Opcional · você decide', itens: opcionaisSemDado },
+          ].map((g) =>
+            g.itens.length ? (
+              <div key={g.titulo} className="grid gap-2">
+                <h3 className="mt-1 text-[11.5px] font-semibold uppercase tracking-wider text-tinta-suave">{g.titulo}</h3>
+                <ul className={lista}>
+                  {g.itens.map((p) => (
+                    <ItemPermissao key={p.id} permissao={p} nomeDoAplicativo={app} chave={{ ligada: ligadas.includes(p.id), alternar: () => alternar(p.id) }} />
+                  ))}
+                </ul>
+              </div>
+            ) : null,
+          )}
         </Secao>
       )}
 

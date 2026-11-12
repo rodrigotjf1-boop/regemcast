@@ -20,6 +20,7 @@ import { conta, usuario } from '../../db/schema';
 import { AvisoService } from '../aviso/aviso.service';
 import { EmailService } from '../email/email.service';
 import { emailAplicativoLigado, emailLigacaoMudouDeForma } from '../email/modelos-email';
+import { APLICATIVOS_DA_AUTORIZACAO, rotuloNoAplicativo, temGravacao } from './autorizacao.regras';
 import { descreverEscopos } from './integracao.regras';
 
 export type TipoDeLigacaoNova = 'nova' | 'mais' | 'renovada';
@@ -62,7 +63,14 @@ export class AvisoDeLigacao {
 
   async ligacaoPorClique(
     contaId: string,
-    d: { aplicativo: string; contaQuePede: { nome: string; cnpj: string | null }; escopos: readonly string[]; tipo: TipoDeLigacaoNova; quando: Date },
+    d: {
+      produto: string;
+      aplicativo: string;
+      contaQuePede: { nome: string; cnpj: string | null };
+      escopos: readonly string[];
+      tipo: TipoDeLigacaoNova;
+      quando: Date;
+    },
   ): Promise<void> {
     try {
       const dono = await this.dono(contaId);
@@ -70,7 +78,10 @@ export class AvisoDeLigacao {
         this.log.warn(`Aviso de ligação do ${d.aplicativo} não saiu: a conta ${contaId} não tem dono ativo.`);
         return;
       }
-      const liberadas = descreverEscopos(d.escopos).map((e) => e.rotulo.toLowerCase());
+      // O rótulo que o dono leu na tela (ex.: "pedir o disparo de campanha", não "disparar campanha").
+      const app = Object.hasOwn(APLICATIVOS_DA_AUTORIZACAO, d.produto) ? APLICATIVOS_DA_AUTORIZACAO[d.produto] : undefined;
+      const liberadas = descreverEscopos(d.escopos).map((e) => rotuloNoAplicativo(app, e.id, e.rotulo).toLowerCase());
+      const grava = temGravacao(d.escopos);
       const titulo =
         d.tipo === 'nova' ? `${d.aplicativo} ligado à sua conta` : d.tipo === 'mais' ? `${d.aplicativo} com mais permissões` : `${d.aplicativo} autorizado de novo`;
       await Promise.all([
@@ -83,6 +94,7 @@ export class AvisoDeLigacao {
               contaQuePede: d.contaQuePede,
               quando: quandoNoFuso(d.quando, dono.fuso),
               liberadas,
+              grava,
               tipo: d.tipo,
               link: this.linkDaTela,
             }),

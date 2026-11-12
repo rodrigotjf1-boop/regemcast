@@ -230,8 +230,14 @@ O caminho:
 Regras que moram no servidor:
 
 - O catálogo de quem pode usar a página está no código (a classe `dms` do Padrão
-  §1): o aplicativo só pede o que está nele, e nele não há permissão de gravar
-  (decisão B1-3: gravar fica fora até a F5). Os endereços de volta são os do
+  §1): o aplicativo só pede o que está nele. Gravar ficou fora até a F5 (decisão
+  B1-3); na F5 parte D o Liame ganhou as opcionais `modelos.rascunhar`,
+  `campanhas.rascunhar` e `campanhas.disparar`, desligadas até o dono ligar. Pela
+  ligação, `campanhas.disparar` só PEDE o disparo: `campanha_disparar` recusa quem
+  chega pela ligação (`SO_PELO_PEDIDO`; o caminho é `campanha_disparo_pedir`), e a
+  tela mostra a permissão como "Pedir o disparo de campanha". Com gravação no
+  pedido, a abertura e o "O que não pode" da tela mudam (texto versão 2), e o
+  e-mail ao dono também. No "pede mais", cada opcional nova tem a sua chave. Os endereços de volta são os do
   catálogo, comparados por inteiro (`AUTORIZACAO_ENDERECOS_DE_VOLTA` troca a lista
   para teste).
 - O código vale 10 minutos e uma vez só, e é gasto antes das conferências:
@@ -340,7 +346,7 @@ Regras (as do hub, ADR-008 do Liame):
 | `modelo_rascunhar` | `modelos.rascunhar` | grava um **rascunho** de modelo (título em texto, mensagem, rodapé, botões) e devolve o que barraria o envio. Não vai para a Meta. |
 | `campanha_rascunhar` | `campanhas.rascunhar` | monta uma campanha em **rascunho** (modelo aprovado, público de uma lista ou da base, variáveis, janela e ritmo) e devolve quantas pessoas entraram e o custo estimado. Não dispara. |
 | `campanha_disparo_planejar` | `campanhas.disparar` (só `dms`) | o plano do disparo: pessoas, custo estimado, orçamento da conta, o que impede agora e a **confirmação**. Não muda nada. |
-| `campanha_disparar` | `campanhas.disparar` (só `dms`) | **dispara** a campanha, com a confirmação do plano. As mensagens saem e a Meta cobra. O dono é avisado. Recusa a campanha com pedido de aprovação aberto e, com `DISPARO_SO_COM_APROVACAO`, recusa sempre (o caminho é o pedido). |
+| `campanha_disparar` | `campanhas.disparar` (só `dms`) | **dispara** a campanha, com a confirmação do plano. As mensagens saem e a Meta cobra. O dono é avisado. Recusa a campanha com pedido de aprovação aberto, recusa sempre quem chega pela ligação do DMS ID (F5 parte D: pela ligação, só o pedido) e, com `DISPARO_SO_COM_APROVACAO`, recusa sempre (o caminho é o pedido). |
 | `campanha_pausar` | `campanhas.disparar` (só `dms`) | pausa uma campanha que o aplicativo disparou. Quem retoma é uma pessoa, na tela. |
 | `campanha_disparo_pedir` | `campanhas.disparar` (só `dms`) | **pede** o disparo: nada sai até uma pessoa da conta aprovar no Regemcast, com o código do aplicativo autenticador, e fixar o teto de gasto. Preso ao plano, vence em 24 horas, executa uma vez (seção "Pedido de aprovação do disparo"). |
 | `acao_pedido_ler` | `campanhas.disparar` (só `dms`) | o pedido de aprovação como está agora (aguardando, aprovado, executado, recusado com o motivo, vencido, cancelado), com o link da tela. |

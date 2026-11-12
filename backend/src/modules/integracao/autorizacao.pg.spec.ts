@@ -47,6 +47,7 @@ import { gerarHashSenha } from '../auth/argon2';
 import { HubService } from '../hub/hub.service';
 import { AutorizacaoPortaController } from './autorizacao-porta.controller';
 import { AutorizacaoController } from './autorizacao.controller';
+import { VERSAO_DO_TEXTO } from './autorizacao.regras';
 import { AutorizacaoService } from './autorizacao.service';
 import { AvisoDeLigacao } from './aviso-de-ligacao.service';
 import { DmsIdService } from './dms-id.service';
@@ -330,7 +331,7 @@ descrever('a autorização por clique, por HTTP, no Postgres', () => {
       expect(a.iss).toBe('https://castapi.exemplo');
 
       const prova = (await poolSuper.query('select * from integracao_autorizacao where conta_id = $1', [contaId])).rows[0] as Record<string, unknown>;
-      expect(prova).toEqual(expect.objectContaining({ usuario_id: dono.id, usuario_nome: 'Paulo Exemplo', texto_versao: 1, outra_empresa: false, ligacao_id: null }));
+      expect(prova).toEqual(expect.objectContaining({ usuario_id: dono.id, usuario_nome: 'Paulo Exemplo', texto_versao: VERSAO_DO_TEXTO, outra_empresa: false, ligacao_id: null }));
       expect(prova.escopos).toEqual(['conta.ler', 'campanhas.ler', 'publicos.ler', 'modelos.ler', 'orcamento.ler', 'conversas.anuncio.ler']);
       expect((prova.texto as { titulo: string }).titulo).toBe('O Liame quer acessar a sua conta do Regemcast');
       expect(JSON.stringify(prova)).not.toContain(a.code);
@@ -659,9 +660,9 @@ descrever('a autorização por clique, por HTTP, no Postgres', () => {
       expect(lista).toHaveLength(1);
       const [app_] = lista;
       expect(app_).toEqual(expect.objectContaining({ via: 'clique', produto: 'liame', nome: 'Liame', revogadoEm: null, criadoPor: 'Paulo Exemplo' }));
-      expect(app_!.autorizacao).toEqual(expect.objectContaining({ por: 'Paulo Exemplo', versao: 1, outraEmpresa: false }));
+      expect(app_!.autorizacao).toEqual(expect.objectContaining({ por: 'Paulo Exemplo', versao: VERSAO_DO_TEXTO, outraEmpresa: false }));
       expect((app_!.autorizacao!.texto as { titulo: string }).titulo).toBe('O Liame quer acessar a sua conta do Regemcast');
-      expect(app_!.historico.map((h) => h.texto)).toContain('Paulo Exemplo autorizou com a senha (texto versão 1).');
+      expect(app_!.historico.map((h) => h.texto)).toContain(`Paulo Exemplo autorizou com a senha (texto versão ${VERSAO_DO_TEXTO}).`);
 
       const depois = await ctx.comConta(contaId, () => servico().revogarPelaConta(contaId, { id: dono.id, nome: dono.nome }, app_!.id));
       expect(depois[0]!.revogadoEm).not.toBeNull();

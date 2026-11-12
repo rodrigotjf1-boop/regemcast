@@ -98,7 +98,7 @@ descrever('a ligação do Hub DMS no Postgres', () => {
     const { ligacao } = await servico.trocarPorLigacao(token, APP_A, APLICATIVOS);
 
     const quem = await servico.autenticarLigacao(ligacao, { aplicativo: APP_A, permissoes: ['orcamento.ler', 'campanhas.ler'] }, APLICATIVOS);
-    expect(quem).toEqual({ tokenId: id, contaId, contaNome: 'Loja de teste', contaFuso: 'America/Sao_Paulo', produto: 'liame', classe: 'dms', nome: 'Liame (teste)', escopos: ['orcamento.ler'] });
+    expect(quem).toEqual({ tokenId: id, contaId, contaNome: 'Loja de teste', contaFuso: 'America/Sao_Paulo', produto: 'liame', classe: 'dms', nome: 'Liame (teste)', escopos: ['orcamento.ler'], via: 'ligacao' });
 
     const usos = await poolSuper.query(
       'select (select ultimo_uso_em from integracao_ligacao where id = $1) is not null as da_ligacao, (select ultimo_uso_em from integracao_token where id = $1) is not null as do_token',

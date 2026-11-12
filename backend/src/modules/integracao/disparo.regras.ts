@@ -32,6 +32,12 @@ export const NINGUEM_NA_FILA = 'Ninguém do público desta campanha pode receber
 export const SO_A_PROPRIA =
   'Pelo MCP só dá para disparar ou pausar uma campanha que este aplicativo montou. As outras são de uma pessoa da conta, na tela.';
 export const SO_DMS = 'O disparo por aplicativo só existe para produtos da DMS.';
+/**
+ * Pela ligação da autorização por clique (Hub DMS, F5 parte D), o disparo sai só por pedido aprovado por uma pessoa da
+ * conta: é o que a tela da autorização promete ao dono ("Disparar sem a sua aprovação" no que ele não pode).
+ */
+export const SO_PELO_PEDIDO =
+  'Pela autorização por clique, o disparo só sai por pedido aprovado por uma pessoa da conta: use campanha_disparo_pedir e acompanhe com acao_pedido_ler.';
 export const PLANO_MUDOU =
   'O que o plano mostrava mudou (o público, o custo ou o orçamento), ou a confirmação não é deste plano. Planeje de novo e dispare com a confirmação nova.';
 
