@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { ClientesDa99Regem } from '@/components/app/integracoes/clientes-99-regem';
-import { ClientesRegem } from '@/components/app/integracoes/clientes-regem';
+import { ClientesRegem, Declaracao } from '@/components/app/integracoes/clientes-regem';
 import { ComprasRegem } from '@/components/app/integracoes/compras-regem';
 import { useSessao } from '@/components/app/sessao';
 import { Alerta } from '@/components/ui/alerta';
@@ -21,12 +21,32 @@ const RELEITURA_CLIENTES_MS = 3_000;
 const RELEITURA_VENDAS_MS = 8_000;
 const EMAIL_SUPORTE = 'suporte@dmsregem.com';
 
+/** "Indo para o Regem": só endereço https (ou da própria máquina, em teste) — o servidor monta, a tela confere. */
+function paginaDoRegem(url: string): string | null {
+  try {
+    const u = new URL(url);
+    const local = u.hostname === 'localhost' || u.hostname === '127.0.0.1';
+    return u.protocol === 'https:' || (u.protocol === 'http:' && local) ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** "15/11/2026". */
+function dia(iso: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('pt-BR');
+}
+
 /**
  * A empresa no Regem inteira num cartão: os clientes, as compras e a 99.
  *
- * Quem liga a conta ao Regem é a equipe do Regemcast (a loja não copia token
- * nenhum). Tudo roda no servidor — a pessoa pode fechar a tela no meio.
- * Enquanto a leitura completa anda, a tela relê a situação sozinha.
+ * Quem liga a conta ao Regem: o dono, pelo "Conectar pelo Regem" (o presidente
+ * da empresa autoriza no próprio Regem), ou a equipe do Regemcast, quando o
+ * botão não está ligado no servidor. A loja não copia token nenhum. Tudo roda
+ * no servidor — a pessoa pode fechar a tela no meio. Enquanto a leitura
+ * completa anda, a tela relê a situação sozinha.
  */
 export function IntegracaoRegem() {
   const { sessao } = useSessao();
@@ -37,6 +57,22 @@ export function IntegracaoRegem() {
   const [erro, setErro] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const [desligando, setDesligando] = useState(false);
+  const [indo, setIndo] = useState(false);
+
+  /** "Conectar pelo Regem": o servidor abre o pedido lá e devolve a página; o navegador vai para ela. */
+  async function conectar(consentimento?: boolean, evidencia?: string) {
+    setErro('');
+    setIndo(true);
+    try {
+      const { url } = await regem.conectar(consentimento, evidencia);
+      const destino = paginaDoRegem(url);
+      if (!destino) throw new Error('O endereço do Regem veio errado. Fale com o suporte do Regemcast.');
+      window.location.assign(destino);
+    } catch (e) {
+      setErro(mensagemDoErro(e));
+      setIndo(false);
+    }
+  }
 
   const carregar = useCallback(async () => {
     try {
@@ -113,6 +149,34 @@ export function IntegracaoRegem() {
               <Esqueleto className="h-10 w-full max-w-md" />
             </div>
           )
+        ) : !s.ligado && s.cliqueDisponivel ? (
+          <div className="space-y-3">
+            <p className="max-w-prose text-sm leading-relaxed text-tinta-suave">
+              Usa o Regem na sua empresa? Os clientes e o histórico de compras de cada um chegam direto, sem planilha —
+              e <strong className="text-tinta">quem usa o Regem não paga o Regemcast</strong>. Você não copia nenhum
+              código: o presidente da empresa autoriza no próprio Regem.
+            </p>
+            {erro && <Alerta tom="erro">{erro}</Alerta>}
+            {!ehDono ? (
+              <Alerta tom="informacao">Só o dono da conta conecta o Regemcast ao Regem.</Alerta>
+            ) : indo ? (
+              <p className="text-sm text-tinta" role="status">
+                Indo para o Regem…
+              </p>
+            ) : (
+              <>
+                <Declaracao
+                  ocupado={indo}
+                  rotulo="Conectar pelo Regem"
+                  aoConfirmar={(consentimento, evidencia) => void conectar(consentimento, evidencia)}
+                />
+                <p className="max-w-prose text-xs leading-relaxed text-tinta-suave">
+                  Abre a página do Regem. Lá, o presidente vê o que o Regemcast vai ler e confirma com a senha. Na volta, a
+                  primeira importação começa sozinha.
+                </p>
+              </>
+            )}
+          </div>
         ) : !s.ligado ? (
           <div className="space-y-3">
             <p className="max-w-prose text-sm leading-relaxed text-tinta-suave">
@@ -135,7 +199,8 @@ export function IntegracaoRegem() {
           <>
             {erro && <Alerta tom="erro">{erro}</Alerta>}
             <p className="text-sm text-tinta">
-              Empresa ligada: <strong>{s.empresaNome}</strong>
+              {s.origem === 'clique' ? 'Ligada pelo Regem' : 'Empresa ligada'}: <strong>{s.empresaNome}</strong>
+              {s.origem === 'clique' && ', a empresa inteira'}
               {s.lojas.length > 0 && (
                 <span className="text-tinta-suave">
                   {' '}
@@ -143,6 +208,31 @@ export function IntegracaoRegem() {
                 </span>
               )}
             </p>
+            {s.origem === 'clique' && (
+              <p className="text-xs leading-relaxed text-tinta-suave">
+                {s.ligadaPor ? `Quem conectou: ${s.ligadaPor}, em ${dia(s.ligadaEm)}. ` : ''}Para desligar: aqui, ou no Regem, em
+                Configurações › Aplicativos conectados.
+              </p>
+            )}
+            {ehDono && s.cliqueDisponivel && (
+              <div className="flex flex-col gap-2 rounded-lg bg-superficie-2 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="max-w-prose text-xs leading-relaxed text-tinta-suave">
+                  {s.origem === 'clique'
+                    ? 'O Regem recusou a conexão, o presidente revogou lá ou falta liberar a 99? Conecte de novo: a importação continua de onde parou.'
+                    : 'Hoje a ligação usa a chave que a nossa equipe colou. Pelo Regem, o presidente autoriza sem chave nenhuma, e a importação continua de onde parou.'}
+                </p>
+                <Button
+                  variante="secundario"
+                  tamanho="sm"
+                  className="sm:shrink-0"
+                  carregando={indo}
+                  disabled={ocupado}
+                  onClick={() => void conectar()}
+                >
+                  {s.origem === 'clique' ? 'Conectar de novo pelo Regem' : 'Conectar pelo Regem'}
+                </Button>
+              </div>
+            )}
             <p className="text-sm text-tinta-suave">
               Com a integração ativa, o Regemcast é <strong className="text-tinta">grátis</strong> para a sua empresa, sem
               teto de disparos do plano.
@@ -178,7 +268,8 @@ export function IntegracaoRegem() {
               <div className="flex flex-col gap-3 border-t border-borda pt-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="max-w-prose text-xs leading-relaxed text-tinta-suave">
                   Desligar para de trazer clientes e compras do Regem, e a gratuidade acaba: sem plano pago, os disparos
-                  param em {s.carenciaDias ?? 5} dias. O que já está na sua base fica. Para ligar de novo, fale com o suporte.
+                  param em {s.carenciaDias ?? 5} dias. O que já está na sua base fica.{' '}
+                  {s.cliqueDisponivel ? 'Para ligar de novo, use “Conectar pelo Regem”.' : 'Para ligar de novo, fale com o suporte.'}
                 </p>
                 {desligando ? (
                   <div className="flex flex-wrap items-center gap-2 sm:shrink-0">

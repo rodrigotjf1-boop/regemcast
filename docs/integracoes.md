@@ -311,8 +311,53 @@ precisa dos escopos `clientes.ler`, `pedidos.ler` e `clientes.telefone.ler`, e
 Na tela: em **Configuração → Integrações**, o cartão **Regem** mostra a
 situação, a importação com a declaração do dono, a 99 (com o texto que o
 servidor devolve), **Atualizar agora** e **Desligar do Regem**; sem ligação,
-ele pede a ligação ao suporte. No console da distribuição, a aba **Regem** liga
-uma conta (conta + token), troca o token, desliga e mostra o que espera por nós.
+ele pede a ligação ao suporte (ou, com o clique ligado, mostra o **Conectar
+pelo Regem**, abaixo). No console da distribuição, a aba **Regem** liga uma
+conta (conta + token), troca o token, desliga e mostra o que espera por nós.
+
+### Conexão — pelo dono: "Conectar pelo Regem" (migration 050)
+
+Hub DMS, F6, plano "Clique RegemCast → Regem" (15/11/2026; protótipo
+`prototipos/clique-empresa-inteira.html` do hub). Com `REGEM_CLIQUE=true`
+([`deploy.md`](deploy.md)), o **dono** liga a conta sozinho e o presidente da
+empresa autoriza no próprio Regem — ninguém copia token. O contrato é o da
+autorização por clique do Regem (`docs/integracao-regemcast.md` de lá, seção
+1.1), na variante da **empresa inteira**:
+
+1. **No cartão** (conta ainda não ligada): o dono faz a declaração de sempre
+   (os clientes autorizaram receber mensagens) e clica **Conectar pelo Regem**
+   (`POST /integracoes/regem/clique`). O servidor empurra o pedido ao Regem com
+   o token do DMS ID do RegemCast (RFC 9126: PKCE S256, `state` preso a quem
+   começou, a conta com o nome e o CNPJ dela) e devolve a página do Regem. A 99
+   só entra no pedido quando o dono já a autorizou aqui. O pedido (só o resumo
+   do `state`, o verificador cifrado e a declaração) vale 10 minutos e uma vez
+   (`integracao_regem_pedido`).
+2. **No Regem:** o presidente vê "O RegemCast quer ler os clientes e as compras
+   da sua empresa", a empresa inteira (as lojas de hoje e as que abrirem
+   depois), o que ele lê e não pode, e confirma com a senha.
+3. **A volta** (`/integracoes/regem/volta` → `POST /integracoes/regem/clique/volta`):
+   o servidor confere o `iss` do Regem (RFC 9207) e o `state`, gasta o pedido,
+   troca o código pela **ligação da empresa** (`dms_lg_regem_…`, uma só, sem
+   loja), confere a empresa por ela (`GET /integracao/loja`, as mesmas leituras
+   necessárias do token) e grava como o console grava, na mesma coluna e
+   cifrada (`origem = 'clique'`). Com a declaração do passo 1, a **primeira
+   importação começa sozinha**. O presidente recusou: nada muda.
+
+- **Lendo:** `Authorization: Bearer <token do DMS ID>` + `DMS-Ligacao`; no 401,
+  pede outro token ao DMS ID e tenta uma vez mais. Vale "o que a empresa
+  autorizou E o que o token do DMS ID tem".
+- **A conta já ligada pela chave do console:** o cartão oferece **Conectar pelo
+  Regem**; a ligação troca o token (o Regem revoga o antigo na troca) e a
+  leitura continua de onde parou (o cursor é da empresa). Sem declaração nova.
+- **A ligação sem as leituras** (o DMS ID ainda não libera ao RegemCast o que o
+  presidente autorizou): é revogada no Regem e nada é guardado; a conta lê que
+  falta liberar e fala com o suporte.
+- **A 99 depois:** o dono autoriza aqui e usa **Conectar de novo pelo Regem**;
+  o pedido leva a 99 e o presidente a liga na página do Regem.
+- **Desligar** (aqui) revoga a ligação também no Regem
+  (`POST /integracao/autorizacao/revogar`, melhor esforço). O presidente pode
+  revogar no Regem, em Configurações › Aplicativos conectados: a leitura
+  seguinte volta 401 e o cartão diz para conectar de novo.
 
 ### Quem usa o Regem não paga o Regemcast
 
@@ -338,8 +383,9 @@ na assinatura:
   demais ganham a **carência** (`CARENCIA_DIAS`, 5) — o grátis termina naquele
   instante, sai o aviso por e-mail com a frase própria, e os disparos param
   depois da carência se a conta não tiver plano. O teto do plano volta junto.
-- Só a distribuição liga uma conta, então só cliente de verdade do Regem
-  recebe a gratuidade. O console mostra quantas contas estão "grátis pelo
+- Só cliente de verdade do Regem liga uma conta — a distribuição, pelo
+  console, ou o presidente de uma empresa do Regem, autorizando no próprio
+  Regem (o "Conectar pelo Regem") —, então só ele recebe a gratuidade. O console mostra quantas contas estão "grátis pelo
   Regem" e tira essas contas das contagens de "em grátis" e "inadimplentes".
 
 ### Clientes

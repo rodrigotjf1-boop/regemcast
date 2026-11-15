@@ -1,8 +1,8 @@
 /**
  * Quem usa o Regem não paga o Regemcast (decisão do dono, 30/09/2026).
  *
- * A conta LIGADA ao Regem (a integração de `modules/regem`, que só a
- * distribuição liga) é grátis enquanto estiver ligada:
+ * A conta LIGADA ao Regem (a integração de `modules/regem`, que só um cliente do Regem liga: a
+ * distribuição, pelo console, ou o presidente da empresa, autorizando no Regem) é grátis enquanto estiver ligada:
  *
  * - não tem teto de disparos do plano — vale só o limite da própria conta do
  *   WhatsApp na Meta (`capacidadeDaMeta`);

@@ -124,8 +124,11 @@ export function ClientesRegem({
   );
 }
 
-/** A declaração do dono (a condição da Meta) e o botão que começa a leitura completa. */
-function Declaracao({
+/**
+ * A declaração do dono (a condição da Meta) e o botão que começa a leitura completa. O cartão do Regem
+ * também a usa antes do "Conectar pelo Regem": na volta, a primeira importação começa sozinha.
+ */
+export function Declaracao({
   ocupado,
   rotulo,
   aoConfirmar,

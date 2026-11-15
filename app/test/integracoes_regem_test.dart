@@ -38,10 +38,12 @@ Map<String, dynamic> _rg({
   bool incluir99 = false,
   bool escopo99 = false,
   bool cardapioWebDireto = false,
+  bool cliqueDisponivel = false,
   String? erroClientes,
   String? erroVendas,
 }) => {
   'ligado': ligado,
+  'cliqueDisponivel': cliqueDisponivel,
   'empresaNome': ligado ? 'Grupo Sabor' : null,
   'lojas': ligado
       ? [
@@ -237,6 +239,32 @@ void main() {
     expect(find.textContaining('você não copia nenhum token'), findsOneWidget);
     expect(find.byKey(const ValueKey('importar-regem')), findsNothing);
   });
+
+  testWidgets(
+    'não ligada com o "Conectar pelo Regem" ligado: aponta o site, sem o e-mail do suporte',
+    (t) async {
+      final s = _Servidor([
+        _rg(
+          ligado: false,
+          clientes: 'parado',
+          vendas: 'parado',
+          cliqueDisponivel: true,
+        ),
+      ]);
+      await _abrir(t, s);
+
+      expect(
+        find.byKey(const ValueKey('conectar-pelo-site-regem')),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('em Configuração › Integrações › Regem'),
+        findsOneWidget,
+      );
+      expect(find.text('cast.dmsregem.com'), findsOneWidget);
+      expect(find.byKey(const ValueKey('pedir-ligacao-regem')), findsNothing);
+    },
+  );
 
   testWidgets(
     'importar pede a declaração e leva a evidência (o corpo do site)',

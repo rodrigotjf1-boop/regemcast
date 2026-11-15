@@ -1317,6 +1317,12 @@ export interface SituacaoRegem {
   empresaNome: string | null;
   lojas: { id: string; nome: string }[];
   ligadaEm: string | null;
+  /** Como a conexão nasceu: `chave` (a nossa equipe ligou) ou `clique` (o presidente autorizou no Regem). */
+  origem?: 'chave' | 'clique' | null;
+  /** No clique, quem conectou aqui. */
+  ligadaPor?: string | null;
+  /** O "Conectar pelo Regem" está ligado no servidor. */
+  cliqueDisponivel?: boolean;
   /** O Regem já entrega os clientes e as vendas da 99 para esta conta. */
   escopo99: boolean;
   /** O dono autorizou usar os clientes da 99, sob a responsabilidade da empresa. */
