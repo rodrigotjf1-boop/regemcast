@@ -104,9 +104,14 @@ class SituacaoRegem {
     this.empresaNome,
     this.autorizacao99Em,
     this.carenciaDias = 5,
+    this.cliqueDisponivel = false,
   });
 
   final bool ligado;
+
+  /// O "Conectar pelo Regem" está ligado no servidor: o dono conecta pelo site
+  /// (a volta do Regem é uma página do site, onde está a sessão).
+  final bool cliqueDisponivel;
   final String? empresaNome;
   final List<String> lojas;
 
@@ -147,6 +152,7 @@ class SituacaoRegem {
     carenciaDias: j['carenciaDias'] is num
         ? (j['carenciaDias'] as num).toInt()
         : 5,
+    cliqueDisponivel: j['cliqueDisponivel'] == true,
     clientes: ClientesDoRegem.deJson(_mapa(j['clientes'])),
     vendas: VendasDoRegem.deJson(_mapa(j['pedidos'])),
   );

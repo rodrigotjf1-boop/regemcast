@@ -1059,8 +1059,12 @@ export const integracaoRegem = pgTable('integracao_regem', {
   lojas: jsonb('lojas').notNull().default(sql`'[]'::jsonb`),
   escopos: text('escopos').array().notNull().default(sql`'{}'`),
   ligadaEm: timestamp('ligada_em', { withTimezone: true }),
-  /** Quem ligou pela distribuição (e-mail do operador). */
+  /** Quem ligou: o e-mail do operador da distribuição, ou o nome do dono que conectou pelo Regem. */
   ligadaPor: text('ligada_por'),
+  /** Como a conexão nasceu (migration 050): `chave` (o token do console) ou `clique` (a ligação do DMS ID). */
+  origem: text('origem').notNull().default('chave'),
+  /** O começo do segredo da ligação do clique, para o suporte reconhecer (nunca o segredo). */
+  ligacaoPrefixo: text('ligacao_prefixo'),
   incluir99: boolean('incluir_99').notNull().default(false),
   autorizacao99Por: uuid('autorizacao_99_por'),
   autorizacao99Em: timestamp('autorizacao_99_em', { withTimezone: true }),
@@ -1093,6 +1097,23 @@ export const integracaoRegem = pgTable('integracao_regem', {
   proximoEm: timestamp('proximo_em', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * "Conectar pelo Regem" (migration 050): o pedido em andamento. O `state` só pelo resumo, o
+ * verificador do PKCE cifrado e a declaração do dono; preso a quem começou, 10 minutos, uma vez.
+ */
+export const integracaoRegemPedido = pgTable('integracao_regem_pedido', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contaId: uuid('conta_id').notNull(),
+  usuarioId: uuid('usuario_id').notNull(),
+  estadoHash: text('estado_hash').notNull(),
+  verificadorCifrado: text('verificador_cifrado').notNull(),
+  consentimento: boolean('consentimento').notNull().default(false),
+  evidencia: text('evidencia'),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  venceEm: timestamp('vence_em', { withTimezone: true }).notNull(),
+  usadoEm: timestamp('usado_em', { withTimezone: true }),
 });
 
 /** O cliente do Regem ligado ao contato (migration 035). */

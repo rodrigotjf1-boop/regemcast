@@ -140,6 +140,24 @@ class _CartaoRegemState extends ConsumerState<CartaoRegem> {
               },
             )
           : const Esqueleto(altura: 90);
+    } else if (!s.ligado && s.cliqueDisponivel) {
+      // "Conectar pelo Regem" (migration 050): a volta do Regem é uma página do
+      // site, onde está a sessão — no app, a tela aponta o caminho no site.
+      corpo = Column(
+        key: const ValueKey('conectar-pelo-site-regem'),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Usa o Regem na sua empresa? Os clientes e o histórico de compras de cada um chegam direto, sem planilha — e quem usa o Regem não paga o Regemcast. Você não copia nenhum código: o dono conecta pelo site do Regemcast, em Configuração › Integrações › Regem, e o presidente da empresa autoriza no próprio Regem.',
+            style: TextStyle(color: c.tintaSuave, height: 1.45),
+          ),
+          const SizedBox(height: 6),
+          SelectableText(
+            'cast.dmsregem.com',
+            style: TextStyle(color: c.tintaSuave, fontSize: 12.5),
+          ),
+        ],
+      );
     } else if (!s.ligado) {
       corpo = Column(
         crossAxisAlignment: CrossAxisAlignment.start,

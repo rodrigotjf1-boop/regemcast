@@ -35,7 +35,7 @@ import { emPartes } from '../../common/em-partes';
 import { MARCA_REGEM_DESLIGADO } from '../../common/gratuidade-regem';
 import { env } from '../../config/env';
 import { ContextoDb, type Db } from '../../db/contexto';
-import { contatoLista, importacao, integracaoCardapioweb, integracaoRegem } from '../../db/schema';
+import { contatoLista, importacao, integracaoCardapioweb, integracaoRegem, integracaoRegemPedido } from '../../db/schema';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { retomarPausadasPorTeto } from '../campanha/campanha.service';
 import { anonimizarContatos } from '../contato/anonimizar';
@@ -47,6 +47,18 @@ import {
   recalcularTotais,
 } from '../contato/compras';
 import { cifrarToken, decifrarToken } from '../meta/cripto';
+import {
+  VALIDADE_DO_PEDIDO_MS,
+  cnpjDaConta,
+  conferirVolta,
+  corpoDoPedido,
+  ehLigacao,
+  formatoDoNumero,
+  gerarPedido,
+  hashDoEstado,
+  ligacaoDaTroca,
+  urlDaPagina,
+} from './regem-clique.regras';
 import { ErroRegem, RegemCliente } from './regem.cliente';
 import {
   CANAL_99,
@@ -65,6 +77,20 @@ import {
 } from './regem.regras';
 
 const NOME_LISTA = 'Clientes Regem';
+
+const COMECE_DE_NOVO = 'Comece de novo pelo botão "Conectar pelo Regem".';
+
+/** A frase do Regem numa recusa da porta de autorização (para o log da distribuição, nunca para a conta). */
+function motivoDoRegem(corpo: unknown): string {
+  const d = (corpo as { detail?: unknown; message?: unknown } | null) ?? {};
+  return String(d.detail ?? d.message ?? '')
+    .replace(/\s+/g, ' ')
+    .slice(0, 200);
+}
+
+/** O código do Postgres no erro (o `pg` põe no erro; o Drizzle às vezes embrulha em `cause`). */
+const codigoPg = (e: unknown): string | undefined =>
+  (e as { code?: string })?.code ?? (e as { cause?: { code?: string } })?.cause?.code;
 
 type Linha = typeof integracaoRegem.$inferSelect;
 type Status = 'parado' | 'carga' | 'em_dia' | 'falhou';
@@ -89,6 +115,12 @@ export interface SituacaoRegem {
   empresaNome: string | null;
   lojas: { id: string; nome: string }[];
   ligadaEm: Date | null;
+  /** Como a conexão nasceu: `chave` (a nossa equipe colou o token) ou `clique` (o presidente autorizou no Regem). */
+  origem: 'chave' | 'clique' | null;
+  /** No clique, o nome de quem conectou aqui (no console, o operador da distribuição não aparece). */
+  ligadaPor: string | null;
+  /** O "Conectar pelo Regem" está ligado neste servidor (a distribuição configura). */
+  cliqueDisponivel: boolean;
   /** O token no Regem libera os clientes e as vendas da 99. */
   escopo99: boolean;
   /** O dono autorizou usar os clientes da 99, sob a responsabilidade dele. */
@@ -176,6 +208,9 @@ export class RegemService {
         empresaNome: l?.empresaNome ?? null,
         lojas: Array.isArray(l?.lojas) ? (l.lojas as { id: string; nome: string }[]) : [],
         ligadaEm: l?.ligadaEm ?? null,
+        origem: l?.credencialCifrada ? (l.origem === 'clique' ? 'clique' : 'chave') : null,
+        ligadaPor: l?.credencialCifrada && l.origem === 'clique' ? (l.ligadaPor ?? null) : null,
+        cliqueDisponivel: this.cliqueDisponivel,
         escopo99: Boolean(l?.escopos?.includes(ESCOPO_99)),
         incluir99: Boolean(l?.incluir99),
         autorizacao99Em: l?.autorizacao99Em ?? null,
@@ -240,72 +275,7 @@ export class RegemService {
     }
 
     await this.ctx.comConta(contaId, async (db) => {
-      const existe = await db.execute(sql`select 1 from conta where id = ${contaId}`);
-      if (!existe.rows.length) throw new NotFoundException('Conta não encontrada.');
-
-      const [antes] = await db
-        .select()
-        .from(integracaoRegem)
-        .where(eq(integracaoRegem.contaId, contaId))
-        .limit(1)
-        .for('update');
-      const empresa = (x: { empresaId: string | null; empresaNome: string | null }) => x.empresaId ?? x.empresaNome;
-      const outraEmpresa = Boolean(antes?.credencialCifrada) && empresa(antes!) !== empresa(loja);
-      const ganhou99 = !antes?.escopos.includes(ESCOPO_99) && loja.escopos.includes(ESCOPO_99);
-
-      const conexao = {
-        credencialCifrada: cifrarToken(bruto, segredo),
-        empresaId: loja.empresaId,
-        empresaNome: loja.empresaNome,
-        lojas: loja.lojas,
-        escopos: loja.escopos,
-        ligadaEm: new Date(),
-        ligadaPor: operador,
-        clientesErro: null,
-        pedidosErro: null,
-        proximoEm: null,
-      };
-
-      let releitura = false;
-      if (!antes) {
-        await db.insert(integracaoRegem).values({ contaId, ...conexao });
-      } else if (outraEmpresa) {
-        await db
-          .update(integracaoRegem)
-          .set({
-            ...conexao,
-            ...LEITURA_DO_ZERO,
-            clientesStatus: 'parado',
-            incluir99: false,
-            autorizacao99Por: null,
-            autorizacao99Em: null,
-            autorizacao99Texto: null,
-            consentimentoPor: null,
-            consentimentoEm: null,
-            consentimentoEvidencia: null,
-            importacaoId: null,
-          })
-          .where(eq(integracaoRegem.contaId, contaId));
-        await db.execute(sql`delete from integracao_regem_cliente where conta_id = ${contaId}`);
-      } else {
-        await db
-          .update(integracaoRegem)
-          // Parou por recusa (token revogado, escopo tirado): o token novo
-          // retoma do ponto em que parou.
-          .set({ ...conexao, ...RETOMAR_DA_FALHA })
-          .where(eq(integracaoRegem.contaId, contaId));
-        // A 99 que o dono autorizou chegou agora: os clientes e as vendas dela
-        // ficaram para trás no cursor — lê tudo de novo.
-        if (ganhou99 && antes.incluir99 && antes.consentimentoEm) {
-          await this.comecarLeitura(db, contaId, antes.autorizacao99Por ?? antes.consentimentoPor, loja.empresaNome, true);
-          releitura = true;
-        }
-      }
-
-      // Ligada ao Regem, a conta não paga nem tem teto do plano: as campanhas
-      // paradas por falta de saldo ou de pagamento voltam à fila.
-      const retomadas = await retomarPausadasPorTeto(db, [contaId], ['teto_plano', 'inadimplencia']);
-
+      const g = await this.gravarConexao(db, contaId, cifrarToken(bruto, segredo), loja, { origem: 'chave', ligadaPor: operador, prefixo: null });
       await this.auditoria.registrar({
         contaId,
         atorTipo: 'distribuicao',
@@ -316,13 +286,90 @@ export class RegemService {
           lojas: loja.lojas.length,
           escopos: loja.escopos,
           operador,
-          ...(outraEmpresa ? { outraEmpresa: true } : {}),
-          ...(releitura ? { releitura: 'a 99 autorizada foi liberada no Regem' } : {}),
-          ...(retomadas ? { campanhasRetomadas: retomadas } : {}),
+          ...(g.outraEmpresa ? { outraEmpresa: true } : {}),
+          ...(g.releitura ? { releitura: 'a 99 autorizada foi liberada no Regem' } : {}),
+          ...(g.retomadas ? { campanhasRetomadas: g.retomadas } : {}),
         },
       });
     });
     return loja;
+  }
+
+  /**
+   * Grava a conexão (a credencial já cifrada e a empresa que ela abre), com a linha travada. Credencial
+   * nova da MESMA empresa (token trocado, a ligação do clique no lugar do token) continua de onde parou;
+   * se ela trouxe a 99 que o dono já tinha autorizado, relê tudo do começo. OUTRA empresa zera a conexão:
+   * a declaração do dono e a autorização da 99 eram sobre a empresa antiga. Ligada ao Regem, a conta não
+   * paga: as campanhas paradas por falta de saldo ou de pagamento voltam à fila.
+   */
+  private async gravarConexao(
+    db: Db,
+    contaId: string,
+    credencialCifrada: string,
+    loja: LojaDoRegem,
+    d: { origem: 'chave' | 'clique'; ligadaPor: string; prefixo: string | null },
+  ): Promise<{ outraEmpresa: boolean; releitura: boolean; retomadas: number }> {
+    const existe = await db.execute(sql`select 1 from conta where id = ${contaId}`);
+    if (!existe.rows.length) throw new NotFoundException('Conta não encontrada.');
+
+    const [antes] = await db.select().from(integracaoRegem).where(eq(integracaoRegem.contaId, contaId)).limit(1).for('update');
+    const empresa = (x: { empresaId: string | null; empresaNome: string | null }) => x.empresaId ?? x.empresaNome;
+    const outraEmpresa = Boolean(antes?.credencialCifrada) && empresa(antes!) !== empresa(loja);
+    const ganhou99 = !antes?.escopos.includes(ESCOPO_99) && loja.escopos.includes(ESCOPO_99);
+
+    const conexao = {
+      credencialCifrada,
+      empresaId: loja.empresaId,
+      empresaNome: loja.empresaNome,
+      lojas: loja.lojas,
+      escopos: loja.escopos,
+      ligadaEm: new Date(),
+      ligadaPor: d.ligadaPor,
+      origem: d.origem,
+      ligacaoPrefixo: d.prefixo,
+      clientesErro: null,
+      pedidosErro: null,
+      proximoEm: null,
+    };
+
+    let releitura = false;
+    if (!antes) {
+      await db.insert(integracaoRegem).values({ contaId, ...conexao });
+    } else if (outraEmpresa) {
+      await db
+        .update(integracaoRegem)
+        .set({
+          ...conexao,
+          ...LEITURA_DO_ZERO,
+          clientesStatus: 'parado',
+          incluir99: false,
+          autorizacao99Por: null,
+          autorizacao99Em: null,
+          autorizacao99Texto: null,
+          consentimentoPor: null,
+          consentimentoEm: null,
+          consentimentoEvidencia: null,
+          importacaoId: null,
+        })
+        .where(eq(integracaoRegem.contaId, contaId));
+      await db.execute(sql`delete from integracao_regem_cliente where conta_id = ${contaId}`);
+    } else {
+      await db
+        .update(integracaoRegem)
+        // Parou por recusa (token revogado, escopo tirado): a credencial nova
+        // retoma do ponto em que parou.
+        .set({ ...conexao, ...RETOMAR_DA_FALHA })
+        .where(eq(integracaoRegem.contaId, contaId));
+      // A 99 que o dono autorizou chegou agora: os clientes e as vendas dela
+      // ficaram para trás no cursor — lê tudo de novo.
+      if (ganhou99 && antes.incluir99 && antes.consentimentoEm) {
+        await this.comecarLeitura(db, contaId, antes.autorizacao99Por ?? antes.consentimentoPor, loja.empresaNome, true);
+        releitura = true;
+      }
+    }
+
+    const retomadas = await retomarPausadasPorTeto(db, [contaId], ['teto_plano', 'inadimplencia']);
+    return { outraEmpresa, releitura, retomadas };
   }
 
   /**
@@ -331,13 +378,13 @@ export class RegemService {
    * Regem acaba junto (`encerrarGratuidade`).
    */
   async desligar(contaId: string, por: { usuarioId: string } | { operador: string }): Promise<void> {
-    await this.ctx.comConta(contaId, async (db) => {
+    const ligacao = await this.ctx.comConta(contaId, async (db) => {
       const apagada = await db
         .delete(integracaoRegem)
         .where(eq(integracaoRegem.contaId, contaId))
-        .returning({ id: integracaoRegem.id });
+        .returning({ id: integracaoRegem.id, credencialCifrada: integracaoRegem.credencialCifrada, origem: integracaoRegem.origem });
       await db.execute(sql`delete from integracao_regem_cliente where conta_id = ${contaId}`);
-      if (!apagada.length) return;
+      if (!apagada.length) return null;
       const cobranca = await encerrarGratuidade(db, contaId);
       await this.auditoria.registrar({
         contaId,
@@ -347,7 +394,233 @@ export class RegemService {
         acao: 'regem.desligado',
         entidade: 'integracao_regem',
       });
+      const a = apagada[0]!;
+      if (a.origem !== 'clique' || !a.credencialCifrada || !env.integracoes.chave) return null;
+      try {
+        const credencial = decifrarToken(a.credencialCifrada, env.integracoes.chave);
+        return ehLigacao(credencial) ? credencial : null;
+      } catch {
+        return null;
+      }
     });
+    // A ligação do clique para de valer também no Regem (melhor esforço, fora da transação: aqui ela já
+    // foi apagada). Se o Regem não responder, o presidente ainda revoga em Aplicativos conectados.
+    if (ligacao) {
+      const ok = await this.cliente.revogarLigacao(ligacao);
+      if (!ok) this.log.warn(`Regem: conta ${contaId}: a ligação não foi revogada no Regem (ficou só apagada aqui)`);
+    }
+  }
+
+  // ------------------------------------------------------------ conectar pelo Regem (o clique)
+
+  /** O "Conectar pelo Regem" está ligado: a configuração certa e a chave das integrações (a ligação fica cifrada). */
+  get cliqueDisponivel(): boolean {
+    return this.cliente.clique.config.ligado && Boolean(env.integracoes.chave);
+  }
+
+  /**
+   * O dono começa a conexão: o Regemcast empurra o pedido ao Regem (com o token do DMS ID) e devolve a
+   * página do Regem para onde o navegador vai. Nada é ligado aqui. A declaração do dono (o consentimento
+   * dos clientes) é pedida AQUI quando a conta ainda não está ligada: na volta, a primeira importação começa
+   * sozinha. A 99 só entra no pedido quando o dono já a autorizou nesta conta.
+   */
+  async iniciarClique(
+    contaId: string,
+    u: { id: string; email: string },
+    dados: { consentimento?: boolean; evidencia?: string },
+  ): Promise<{ url: string }> {
+    const segredo = this.chave();
+    const c = this.cliente.clique.config;
+    if (!c.ligado) throw new ServiceUnavailableException('A conexão pelo Regem ainda não está disponível. Fale com o suporte do RegemCast.');
+
+    const { conta, linha } = await this.ctx.comConta(contaId, async (db) => {
+      const [k] = (await db.execute(sql`select nome, cnpj from conta where id = ${contaId}`)).rows as { nome: string; cnpj: string | null }[];
+      if (!k) throw new NotFoundException('Conta não encontrada.');
+      const [l] = await db.select().from(integracaoRegem).where(eq(integracaoRegem.contaId, contaId)).limit(1);
+      return { conta: k, linha: l ?? null };
+    });
+    // A conta ainda não ligada declara aqui (a importação começa na volta); a já ligada declara no cartão dos clientes.
+    const precisaDeclarar = !linha?.credencialCifrada;
+    if (precisaDeclarar && dados.consentimento !== true) {
+      throw new BadRequestException(
+        'Confirme que os clientes da sua empresa autorizaram receber mensagens da empresa. Sem esse aceite não importamos.',
+      );
+    }
+
+    const p = gerarPedido();
+    let r: { status: number; corpo: unknown };
+    try {
+      r = await this.cliente.postarNaPorta(
+        '/integracao/autorizacao/pedido',
+        corpoDoPedido({
+          volta: c.volta,
+          estado: p.estado,
+          desafio: p.desafio,
+          incluir99: Boolean(linha?.incluir99),
+          contaNome: conta.nome,
+          contaCnpj: cnpjDaConta(conta.cnpj),
+          contaEmail: u.email,
+        }),
+      );
+    } catch (erro) {
+      if (erro instanceof ErroRegem) throw new ServiceUnavailableException(erro.message);
+      throw erro;
+    }
+    const numero = (r.corpo as { request_uri?: unknown } | null)?.request_uri;
+    if (r.status !== 201 || !formatoDoNumero(numero)) {
+      // O motivo é para a distribuição (aplicativo fora da lista do Regem, endereço de volta não cadastrado...).
+      this.log.error(`Regem: o pedido de conexão da conta ${contaId} foi recusado (${r.status}): ${motivoDoRegem(r.corpo)}`);
+      if (r.status === 503) throw new ServiceUnavailableException('O Regem está com as integrações pausadas agora. Tente de novo mais tarde.');
+      throw new ServiceUnavailableException('O Regem não aceitou abrir a conexão agora. Fale com o suporte do RegemCast.');
+    }
+
+    await this.ctx.comConta(contaId, async (db) => {
+      await db.insert(integracaoRegemPedido).values({
+        contaId,
+        usuarioId: u.id,
+        estadoHash: p.estadoHash,
+        verificadorCifrado: cifrarToken(p.verificador, segredo),
+        consentimento: dados.consentimento === true,
+        evidencia: dados.evidencia?.trim().slice(0, 500) || null,
+        venceEm: new Date(Date.now() + VALIDADE_DO_PEDIDO_MS),
+      });
+      // Os pedidos velhos da conta saem aqui (não há rotina para eles).
+      await db.execute(sql`delete from integracao_regem_pedido where conta_id = ${contaId} and vence_em < now() - interval '1 day'`);
+    });
+    return { url: urlDaPagina(c.pagina, c.aplicativo, numero) };
+  }
+
+  /**
+   * A volta do Regem. Confere o `iss` e o `state`, GASTA o pedido (uma vez só, de quem começou) e troca o
+   * código pela ligação da empresa inteira, conferida pela leitura da empresa (a mesma do console). Grava
+   * como o console grava (mesma empresa continua; outra zera) e, com a declaração feita no começo, a
+   * primeira importação começa. O presidente recusou: nada muda.
+   */
+  async concluirClique(
+    contaId: string,
+    u: { id: string; nome: string },
+    q: { code?: unknown; state?: unknown; iss?: unknown; error?: unknown },
+  ): Promise<{ situacao: 'conectado'; regem: SituacaoRegem } | { situacao: 'recusado' }> {
+    const segredo = this.chave();
+    const c = this.cliente.clique.config;
+    if (!c.ligado) throw new ServiceUnavailableException('A conexão pelo Regem ainda não está disponível. Fale com o suporte do RegemCast.');
+    const v = conferirVolta(q, c.api);
+    if (v.tipo === 'invalida') throw new BadRequestException(`Não deu para concluir: ${v.motivo}. ${COMECE_DE_NOVO}`);
+
+    const pedido = await this.ctx.comConta(contaId, async (db) => {
+      const r = await db.execute(sql`
+        update integracao_regem_pedido set usado_em = now()
+         where estado_hash = ${hashDoEstado(v.estado)} and conta_id = ${contaId} and usuario_id = ${u.id}
+           and usado_em is null and vence_em > now()
+         returning verificador_cifrado, consentimento, evidencia`);
+      return (r.rows[0] as { verificador_cifrado: string; consentimento: boolean; evidencia: string | null } | undefined) ?? null;
+    });
+    if (!pedido) {
+      throw new BadRequestException(`Este pedido de conexão não vale mais: já foi usado, venceu ou foi aberto por outra pessoa. ${COMECE_DE_NOVO}`);
+    }
+    if (v.tipo === 'recusa') {
+      if (v.motivo === 'recusado') return { situacao: 'recusado' };
+      throw new BadRequestException(`O Regem não reconheceu o pedido de conexão. ${COMECE_DE_NOVO}`);
+    }
+
+    let r: { status: number; corpo: unknown };
+    try {
+      r = await this.cliente.postarNaPorta('/integracao/autorizacao/token', {
+        grant_type: 'authorization_code',
+        code: v.codigo,
+        code_verifier: decifrarToken(pedido.verificador_cifrado, segredo),
+        redirect_uri: c.volta,
+      });
+    } catch (erro) {
+      if (erro instanceof ErroRegem) throw new ServiceUnavailableException(erro.message);
+      throw erro;
+    }
+    if (r.status !== 200) {
+      this.log.error(`Regem: a troca do código da conta ${contaId} foi recusada (${r.status}): ${motivoDoRegem(r.corpo)}`);
+      throw new BadRequestException(`O Regem não aceitou concluir a conexão. ${COMECE_DE_NOVO}`);
+    }
+    const lg = ligacaoDaTroca(r.corpo);
+    if (!lg) {
+      this.log.error(`Regem: a troca do código da conta ${contaId} veio sem a ligação da empresa: nada foi guardado`);
+      throw new ServiceUnavailableException('O Regem respondeu de um jeito que o Regemcast não entendeu. Nada foi guardado; fale com o suporte do RegemCast.');
+    }
+
+    // A ligação lê a empresa (a mesma conferência do console). Sem as leituras necessárias — o DMS ID
+    // ainda não libera ao Regemcast o que o presidente autorizou —, a ligação não serve: é revogada lá e
+    // nada é guardado aqui.
+    let loja: LojaDoRegem;
+    try {
+      loja = await this.cliente.loja(lg.ligacao);
+    } catch (erro) {
+      await this.cliente.revogarLigacao(lg.ligacao);
+      if (erro instanceof ErroRegem) throw new ServiceUnavailableException(`${erro.message} Nada foi guardado.`);
+      throw erro;
+    }
+    const faltam = escoposQueFaltam(loja.escopos);
+    if (faltam.length) {
+      this.log.error(`Regem: a ligação da conta ${contaId} não lê ${faltam.join(', ')} (o DMS ID não libera ao Regemcast): revogada`);
+      await this.cliente.revogarLigacao(lg.ligacao);
+      throw new ServiceUnavailableException(
+        `O Regem autorizou, mas o Regemcast ainda não está liberado para ler ${faltam.join(', ')}. Nada foi guardado; fale com o suporte do RegemCast.`,
+      );
+    }
+
+    const gravar = () =>
+      this.ctx.comConta(contaId, async (db) => {
+        const g = await this.gravarConexao(db, contaId, cifrarToken(lg.ligacao, segredo), loja, {
+          origem: 'clique',
+          ligadaPor: u.nome.trim().slice(0, 120) || 'dono da conta',
+          prefixo: lg.prefixo,
+        });
+        // A declaração feita no começo: a primeira importação começa sozinha (a conta que já declarou
+        // continua de onde parou, como no console).
+        const [agora] = await db.select().from(integracaoRegem).where(eq(integracaoRegem.contaId, contaId)).limit(1);
+        let importacaoId: string | null = null;
+        if (pedido.consentimento && agora && !agora.consentimentoEm) {
+          await db
+            .update(integracaoRegem)
+            .set({ consentimentoPor: u.id, consentimentoEm: new Date(), consentimentoEvidencia: pedido.evidencia })
+            .where(eq(integracaoRegem.contaId, contaId));
+          importacaoId = await this.comecarLeitura(db, contaId, u.id, loja.empresaNome, false);
+        }
+        await this.auditoria.registrar({
+          contaId,
+          atorTipo: 'usuario',
+          atorUsuarioId: u.id,
+          acao: 'regem.ligado',
+          entidade: 'integracao_regem',
+          detalhe: {
+            origem: 'clique',
+            empresa: loja.empresaNome,
+            lojas: loja.lojas.length,
+            escopos: loja.escopos,
+            prefixo: lg.prefixo,
+            ...(g.outraEmpresa ? { outraEmpresa: true } : {}),
+            ...(g.releitura ? { releitura: 'a 99 autorizada foi liberada no Regem' } : {}),
+            ...(g.retomadas ? { campanhasRetomadas: g.retomadas } : {}),
+          },
+        });
+        if (importacaoId) {
+          await this.auditoria.registrar({
+            contaId,
+            atorTipo: 'usuario',
+            atorUsuarioId: u.id,
+            acao: 'regem.importacao_iniciada',
+            entidade: 'importacao',
+            entidadeId: importacaoId,
+            detalhe: { empresa: loja.empresaNome, evidencia: pedido.evidencia, origem: 'clique' },
+          });
+        }
+      });
+    try {
+      await gravar();
+    } catch (erro) {
+      // A primeira conexão de todas não tem linha para travar: duas voltas ao mesmo tempo, o índice único
+      // decide e a segunda grava de novo, agora pela linha (a última ligação trocada no Regem é a que vale).
+      if (codigoPg(erro) !== '23505') throw erro;
+      await gravar();
+    }
+    return { situacao: 'conectado', regem: await this.situacao(contaId) };
   }
 
   /** O console: as contas ligadas ao Regem, primeiro as que esperam por nós (a 99). */

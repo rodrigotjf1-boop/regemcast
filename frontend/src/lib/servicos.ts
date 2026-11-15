@@ -404,10 +404,18 @@ export const cardapioWeb = {
   desconectar: () => api.delete<void>('/integracoes/cardapioweb'),
 };
 
-/** A empresa no Regem. Ligar é da equipe do Regemcast (console); o resto é do dono. */
+/** A empresa no Regem. Ligar: a equipe do Regemcast (console) ou o dono, pelo "Conectar pelo Regem"; o resto é do dono. */
 export const regem = {
   /** `GET /integracoes/regem` */
   situacao: () => api.get<SituacaoRegem>('/integracoes/regem'),
+
+  /** `POST /integracoes/regem/clique` — abre o pedido no Regem; devolve a página de lá, para onde o navegador vai. */
+  conectar: (consentimento?: boolean, evidencia?: string) =>
+    api.post<{ url: string }>('/integracoes/regem/clique', { consentimento, evidencia }),
+
+  /** `POST /integracoes/regem/clique/volta` — o que o Regem devolveu ao navegador, tal como veio. */
+  concluir: (volta: { code?: string; state?: string; iss?: string; error?: string }) =>
+    api.post<{ situacao: 'conectado'; regem: SituacaoRegem } | { situacao: 'recusado' }>('/integracoes/regem/clique/volta', volta),
 
   /** `POST /integracoes/regem/importar` — a declaração do dono e a leitura completa, em segundo plano. */
   importar: (consentimento: boolean, evidencia?: string) =>

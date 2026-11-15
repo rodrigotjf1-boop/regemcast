@@ -14,7 +14,8 @@ import type { SituacaoRegem } from '@/lib/tipos';
  * não deu aceite de promoções à loja: por isso a decisão é dele, registrada
  * aqui com o texto que ele aceitou (o texto vem do servidor, que é quem grava).
  *
- * O Regem só entrega a 99 quando a equipe do Regemcast libera no token; até
+ * O Regem só entrega a 99 quando ela é liberada lá — pela equipe do Regemcast, no token, ou pelo presidente,
+ * conectando de novo pelo Regem com a 99 ligada; até
  * lá, a autorização fica registrada e a tela diz que falta a liberação.
  */
 export function ClientesDa99Regem({
@@ -89,6 +90,13 @@ export function ClientesDa99Regem({
           {s.escopo99 ? (
             <p className="text-sm leading-relaxed text-tinta">
               Os clientes e as compras da 99 estão incluídos, com a autorização de {formatarData(s.autorizacao99Em)}.
+            </p>
+          ) : s.origem === 'clique' ? (
+            // Ligada pelo Regem: quem libera a 99 é o presidente, na página do Regem (o pedido leva a 99 agora).
+            <p className="text-sm leading-relaxed text-tinta">
+              Autorização registrada em {formatarData(s.autorizacao99Em)}. Falta o presidente liberar a 99 no Regem: use
+              “Conectar de novo pelo Regem”, acima, e ligue a 99 na página de lá. Quando sair, os clientes e as vendas da 99
+              são lidos do começo.
             </p>
           ) : (
             <p className="text-sm leading-relaxed text-tinta">

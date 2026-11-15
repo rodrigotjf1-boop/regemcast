@@ -116,3 +116,127 @@ describe('RegemCliente', () => {
     expect(e.message).toContain('cursor inválido');
   });
 });
+
+/**
+ * "Conectar pelo Regem" (migration 050): a credencial guardada é a LIGAÇÃO. A leitura vai com o token do
+ * DMS ID do Regemcast e o `DMS-Ligacao`; o token do DMS ID é pedido uma vez e guardado; o 401 pede outro e
+ * tenta uma vez mais. A configuração vem do ambiente (montado do zero aqui, V48).
+ */
+describe('RegemCliente pela ligação do clique', () => {
+  const fetchOriginal = global.fetch;
+  const NOMES = ['REGEM_CLIQUE', 'REGEM_API_URL', 'REGEM_APP_URL', 'APP_URL', 'DMS_ID_EMISSOR', 'HUB_APLICATIVO', 'HUB_SEGREDO'];
+  const antes: Record<string, string | undefined> = {};
+  const LIGACAO = `dms_lg_regem_${'a'.repeat(43)}_${'b'.repeat(6)}`;
+  let tokens = 0;
+
+  beforeEach(() => {
+    for (const n of NOMES) {
+      antes[n] = process.env[n];
+      delete process.env[n];
+    }
+    Object.assign(process.env, {
+      REGEM_CLIQUE: 'true',
+      REGEM_API_URL: 'https://regem.exemplo/api/v1',
+      DMS_ID_EMISSOR: 'https://id.exemplo/oidc',
+      HUB_APLICATIVO: 'app-cast-de-teste',
+      HUB_SEGREDO: 'segredo-de-teste-123456',
+    });
+    tokens = 0;
+  });
+  afterEach(() => {
+    global.fetch = fetchOriginal;
+    for (const n of NOMES) {
+      if (antes[n] === undefined) delete process.env[n];
+      else process.env[n] = antes[n];
+    }
+  });
+
+  type Chamada = { url: string; metodo: string; cabecalhos: Headers; corpo: string | null };
+
+  /** O DMS ID responde sozinho (um token novo a cada pedido); o Regem responde a fila, na ordem. */
+  function servir(...doRegem: Response[]) {
+    const chamadas: Chamada[] = [];
+    global.fetch = jest.fn(async (url: string | URL, init?: RequestInit) => {
+      const c = { url: String(url), metodo: init?.method ?? 'GET', cabecalhos: new Headers(init?.headers), corpo: (init?.body as string) ?? null };
+      chamadas.push(c);
+      if (c.url === 'https://id.exemplo/oidc/token') return resposta({ access_token: `token-do-dms-id-${++tokens}`, expires_in: 3600 });
+      const r = doRegem.shift();
+      if (!r) throw new Error('chamada a mais');
+      return r;
+    }) as unknown as typeof fetch;
+    return chamadas;
+  }
+
+  it('lê pela ligação: o token do DMS ID (pedido uma vez, para o recurso do Regem) e o DMS-Ligacao', async () => {
+    const chamadas = servir(
+      resposta({ empresa_id: 'e1', empresa_nome: 'Brasa', lojas: [], escopos: ['clientes.ler'] }),
+      resposta({ itens: [], proximo_cursor: 'c1', tem_mais: false }),
+    );
+    const cliente = new RegemCliente();
+    await cliente.loja(LIGACAO);
+    await cliente.clientes(LIGACAO, null);
+    const doDmsId = chamadas.filter((c) => c.url.startsWith('https://id.exemplo'));
+    expect(doDmsId).toHaveLength(1);
+    expect(new URLSearchParams(doDmsId[0]!.corpo ?? '').get('resource')).toBe('https://regem.exemplo/api/v1/integracao');
+    const doRegem = chamadas.filter((c) => c.url.startsWith('https://regem.exemplo'));
+    for (const c of doRegem) {
+      expect(c.cabecalhos.get('authorization')).toBe('Bearer token-do-dms-id-1');
+      expect(c.cabecalhos.get('dms-ligacao')).toBe(LIGACAO);
+    }
+    // o segredo da ligação nunca vai na URL
+    expect(doRegem.every((c) => !c.url.includes(LIGACAO))).toBe(true);
+  });
+
+  it('o 401 pede outro token ao DMS ID e tenta uma vez mais; o segundo 401 vira a frase do clique', async () => {
+    const chamadas = servir(resposta({}, { status: 401 }), resposta({ empresa_nome: 'Brasa', lojas: [], escopos: [] }));
+    await new RegemCliente().loja(LIGACAO);
+    const doRegem = chamadas.filter((c) => c.url.startsWith('https://regem.exemplo'));
+    expect(doRegem.map((c) => c.cabecalhos.get('authorization'))).toEqual(['Bearer token-do-dms-id-1', 'Bearer token-do-dms-id-2']);
+
+    servir(resposta({}, { status: 401 }), resposta({}, { status: 401 }));
+    const e = await new RegemCliente()
+      .loja(LIGACAO)
+      .then(() => null)
+      .catch((x: unknown) => x as ErroRegem);
+    expect(e).toMatchObject({ status: 401, passageiro: false });
+    expect(e?.message).toContain('conecta de novo em Integrações › Regem');
+  });
+
+  it('o token rgm_it_ segue como antes: Bearer do próprio token, sem DMS ID', async () => {
+    const chamadas = servir(resposta({ empresa_nome: 'Brasa', lojas: [], escopos: [] }));
+    await new RegemCliente().loja(TOKEN);
+    expect(chamadas).toHaveLength(1);
+    expect(chamadas[0]!.cabecalhos.get('authorization')).toBe(`Bearer ${TOKEN}`);
+    expect(chamadas[0]!.cabecalhos.get('dms-ligacao')).toBeNull();
+  });
+
+  it('o pedido e a troca vão à porta com o token do DMS ID e devolvem o status e o corpo', async () => {
+    const chamadas = servir(resposta({ request_uri: 'urn:x' }, { status: 201 }));
+    const r = await new RegemCliente().postarNaPorta('/integracao/autorizacao/pedido', { response_type: 'code' });
+    expect(r).toEqual({ status: 201, corpo: { request_uri: 'urn:x' } });
+    const post = chamadas.find((c) => c.url === 'https://regem.exemplo/api/v1/integracao/autorizacao/pedido');
+    expect(post).toMatchObject({ metodo: 'POST', corpo: JSON.stringify({ response_type: 'code' }) });
+    expect(post!.cabecalhos.get('authorization')).toBe('Bearer token-do-dms-id-1');
+  });
+
+  it('revogar a ligação no Regem: 200 ou 401 confirmam; o token rgm_it_ nunca é mandado para lá', async () => {
+    servir(resposta({}, { status: 200 }));
+    expect(await new RegemCliente().revogarLigacao(LIGACAO)).toBe(true);
+    servir(resposta({}, { status: 401 }), resposta({}, { status: 401 }));
+    expect(await new RegemCliente().revogarLigacao(LIGACAO)).toBe(true);
+    const chamadas = servir();
+    expect(await new RegemCliente().revogarLigacao(TOKEN)).toBe(false);
+    expect(chamadas).toHaveLength(0);
+  });
+
+  it('com o clique desligado no servidor, a ligação não é lida (e o motivo é para o suporte)', async () => {
+    delete process.env.REGEM_CLIQUE;
+    servir();
+    const e = await new RegemCliente()
+      .loja(LIGACAO)
+      .then(() => null)
+      .catch((x: unknown) => x as ErroRegem);
+    expect(e).toBeInstanceOf(ErroRegem);
+    expect(e?.message).toContain('não está ligada neste servidor');
+  });
+});
