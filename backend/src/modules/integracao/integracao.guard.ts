@@ -31,6 +31,7 @@ import { CanActivate, ExecutionContext, ForbiddenException, HttpException, HttpS
 import { InjectThrottlerStorage, type ThrottlerStorage } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 
+import { anunciarRetiradaNaResposta } from '../../common/retirada-credencial';
 import { ErroProblema, prefixoVisivel, problemaDaParada } from '../../dms/integracao-dms';
 import { anotarChamada, ferramentasDoCorpo } from '../hub/chamada-atual';
 import { HubService } from '../hub/hub.service';
@@ -67,6 +68,9 @@ export class IntegracaoGuard implements CanActivate {
     const ligacao = peloDmsId ? ligacaoDoCabecalho(req.headers[CABECALHO_LIGACAO_NO_NODE]) : null;
     const prefixo = token ? prefixoDoToken(token) : ligacao ? prefixoVisivel(ligacao) : null;
     anotarChamada({ credencial: peloDmsId ? 'dms_id' : 'token_integracao', ligacaoPrefixo: prefixo ?? undefined });
+    // O `rct_it_` é credencial antiga (Hub DMS F6, plano "Fim das portas antigas", P-3): toda resposta a ele leva o
+    // anúncio da retirada (`Deprecation` e `Sunset`), também na recusa e na parada. A ligação nunca leva.
+    if (token) anunciarRetiradaNaResposta(res);
     if (!this.hub.aceitaIntegracoes) throw problemaDaParada();
 
     if (peloDmsId) {

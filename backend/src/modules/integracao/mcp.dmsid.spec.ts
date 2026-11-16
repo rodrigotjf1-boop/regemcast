@@ -25,6 +25,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { ErroFilter } from '../../common/erro.filter';
+import { esquecerRetiradaLida } from '../../common/retirada-credencial';
 import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
 import { ErroProblema, gerarChave, prefixoVisivel, type ChamadaRegistrada } from '../../dms/integracao-dms';
@@ -396,6 +397,20 @@ describe('a porta MCP pela via do DMS ID', () => {
     expect(r.corpo.result.isError).toBeUndefined();
     expect(p.contas).toEqual([CONTA_ID]);
     expect(p.autores[0]).toEqual(expect.objectContaining({ tokenId: '00000000-0000-4000-9000-000000000001', produto: 'liame' }));
+  });
+
+  it('o anúncio da retirada (Hub DMS F6, P-3) é só do rct_it_: a ligação nunca leva Deprecation nem Sunset', async () => {
+    const ligacao = p.ligacao({ aplicativo: APP_A, classe: 'dms', escopos: ['orcamento.ler'] });
+    const token = dmsId.emitir({ scope: 'orcamento.ler conta.ler' });
+    process.env.INTEGRACAO_ANTIGA_ANUNCIO = '2026-11-17';
+    esquecerRetiradaLida();
+    try {
+      const r = await chamarMcp(p, { token, ligacao, nome: 'orcamento_ler' });
+      expect([r.status, r.cabecalhos.get('deprecation'), r.cabecalhos.get('sunset')]).toEqual([200, null, null]);
+    } finally {
+      delete process.env.INTEGRACAO_ANTIGA_ANUNCIO;
+      esquecerRetiradaLida();
+    }
   });
 
   it('pela ligação, o disparo direto é recusado mesmo com campanhas.disparar: só pelo pedido (F5 parte D, o que a tela promete)', async () => {

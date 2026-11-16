@@ -264,6 +264,29 @@ Como se prova: `autorizacao.regras.spec.ts` (as regras puras e a tela) e
 `autorizacao.pg.spec.ts` (por HTTP, com os controladores e o serviço de verdade,
 o DMS ID de mentira e o Postgres descartável; pula sem as duas variáveis).
 
+## O anúncio da retirada do `rct_it_` (Hub DMS F6, P-3; sem migration, nasce desligado)
+
+O token colado (`rct_it_`) sai com o aviso de 90 dias do Padrão DMS §12, no mesmo dia
+e com o mesmo `Sunset` das credenciais antigas do Regem (um anúncio só, P-1). No dia
+do anúncio, **toda resposta** ao `rct_it_` (também a recusa 401/403/429 e a parada
+503) passa a levar `Deprecation: @<segundos>` (RFC 9745), `Sunset: <data HTTP>`
+(RFC 8594) e, se configurado, `Link: <endereço>; rel="deprecation"`. A ligação do DMS
+ID nunca leva. O token segue valendo até o `Sunset`; a recusa depois dele é outra peça.
+
+Configuração da distribuição (EasyPanel do `regemcast-api`), as mesmas do Regem:
+
+| Variável | O que é | Sem ela |
+|---|---|---|
+| `INTEGRACAO_ANTIGA_ANUNCIO` | o dia do anúncio, `AAAA-MM-DD` | desligado |
+| `INTEGRACAO_ANTIGA_SUNSET` | o último dia, 90 dias ou mais depois | anúncio + 90 dias |
+| `INTEGRACAO_ANTIGA_LINK` | a página que explica o clique (só `https`) | sem `Link` |
+
+Data torta, `Sunset` a menos de 90 dias ou link sem `https`: não liga, e o motivo vai
+ao log da API (`RetiradaDaCredencialAntiga`) uma vez. Onde: `common/retirada-credencial.ts`,
+chamado no `IntegracaoGuard`. Testes: `common/retirada-credencial.spec.ts`,
+`mcp.porta.spec.ts` e `mcp.dmsid.spec.ts` ("o anúncio da retirada"). Em 16/11/2026
+não havia nenhum `rct_it_` vivo.
+
 ## O hub da DMS: registro, erros e parada (sem migration)
 
 A etapa 2 da A4 do Hub DMS: a porta passa a falar com o serviço do hub, pelo
