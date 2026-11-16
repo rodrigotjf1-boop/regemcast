@@ -25,6 +25,7 @@ import { Test } from '@nestjs/testing';
 import { getStorageToken, ThrottlerStorageService } from '@nestjs/throttler';
 
 import { ErroFilter } from '../../common/erro.filter';
+import { esquecerRetiradaLida } from '../../common/retirada-credencial';
 import { ContextoDb } from '../../db/contexto';
 import { env } from '../../config/env';
 import { ErroProblema, type ChamadaRegistrada, type ErroDoProduto } from '../../dms/integracao-dms';
@@ -453,6 +454,29 @@ describe('a porta MCP, por HTTP, como o Liame chama', () => {
       expect(r.status).toBe(415);
       expect(r.json.mensagem).toMatch(/JSON, em UTF-8/);
       expect(p.autenticar).not.toHaveBeenCalled();
+    });
+
+    it('o anúncio da retirada (Hub DMS F6, P-3): com o dia A, toda resposta ao rct_it_ leva Deprecation e Sunset, até a recusa', async () => {
+      const valido = p.token({ classe: 'dms', escopos: ['conta.ler'] });
+      const revogado = p.token({ classe: 'dms', escopos: ['conta.ler'], revogado: true });
+      const cabecalhos = (r: Resposta) => [r.status, r.cabecalhos.get('deprecation'), r.cabecalhos.get('sunset')];
+      esquecerRetiradaLida();
+      // Desligado (sem a variável): nada muda.
+      expect(cabecalhos(await pedir(p, valido, 'tools/list'))).toEqual([200, null, null]);
+
+      process.env.INTEGRACAO_ANTIGA_ANUNCIO = '2026-11-17';
+      try {
+        const anuncio = `@${Date.UTC(2026, 10, 17) / 1000}`;
+        const sunset = 'Mon, 15 Feb 2027 00:00:00 GMT';
+        expect(cabecalhos(await pedir(p, valido, 'tools/list'))).toEqual([200, anuncio, sunset]);
+        expect(cabecalhos(await pedir(p, revogado, 'tools/list'))).toEqual([401, anuncio, sunset]);
+        // Sem token (ou o que não tem a cara de um token nosso): não é a credencial antiga, sem anúncio.
+        expect(cabecalhos(await pedir(p, null, 'tools/list'))).toEqual([401, null, null]);
+        expect(cabecalhos(await pedir(p, 'x', 'tools/list', {}, { authorization: 'Bearer abc' }))).toEqual([401, null, null]);
+      } finally {
+        delete process.env.INTEGRACAO_ANTIGA_ANUNCIO;
+        esquecerRetiradaLida();
+      }
     });
   });
 
