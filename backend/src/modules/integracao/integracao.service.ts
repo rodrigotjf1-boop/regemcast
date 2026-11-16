@@ -563,9 +563,12 @@ export class IntegracaoService {
    * de cliente de fora ou de outro aplicativo: 401 `ligacao-invalida`, a MESMA
    * resposta para todos. Conta suspensa ou cancelada: 403 `conta-bloqueada`.
    *
-   * O `tokenId` devolvido é o id da ligação, que é o do token de onde ela veio:
-   * o limite por minuto, a idempotência e a revogação seguem a mesma chave pelas
-   * duas vias. Valem as permissões que a ligação tem E o token também.
+   * O `tokenId` devolvido é o id da ligação. Na da troca automática ele é o do
+   * token de onde ela veio (o limite por minuto, a idempotência e a revogação
+   * seguem a mesma chave pelas duas vias); na do CLIQUE não há token de origem, e
+   * ele é um id que só existe em `integracao_ligacao` — por isso a idempotência
+   * não aponta para `integracao_token` (migration 051). Valem as permissões que a
+   * ligação tem E o token também.
    */
   async autenticarLigacao(
     segredo: string | null,

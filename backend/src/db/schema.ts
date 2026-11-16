@@ -1370,11 +1370,13 @@ export const conversaAnuncio = pgTable('conversa_anuncio', {
  * Chave de idempotência das ferramentas de escrita da porta MCP (migration
  * 045). A linha nasce na transação da ação e guarda a resposta dela; a mesma
  * chave com o mesmo pedido devolve essa resposta. Sai depois de 24 horas.
+ * `tokenId` = a credencial que pediu: o token (rct_it_) OU a ligação do DMS ID — sem chave estrangeira desde a
+ * migration 051 (a ligação do clique não vem de token: o id dela não existe em `integracao_token`).
  */
 export const integracaoIdempotencia = pgTable('integracao_idempotencia', {
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   contaId: uuid('conta_id').notNull().references(() => conta.id, { onDelete: 'cascade' }),
-  tokenId: uuid('token_id').notNull().references(() => integracaoToken.id, { onDelete: 'cascade' }),
+  tokenId: uuid('token_id').notNull(),
   ferramenta: text('ferramenta').notNull(),
   chave: text('chave').notNull(),
   pedidoHash: text('pedido_hash').notNull(),
