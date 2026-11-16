@@ -21,10 +21,12 @@ import { Pool } from 'pg';
 import { env } from '../../config/env';
 import { ContextoDb } from '../../db/contexto';
 import * as schema from '../../db/schema';
-import { ErroProblema, resumoChave } from '../../dms/integracao-dms';
+import { ErroProblema, gerarChave, resumoChave } from '../../dms/integracao-dms';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { ConversaAnuncioService } from '../meta/anuncio.service';
 import { IntegracaoService } from './integracao.service';
+import { comIdempotencia } from './mcp.escrita';
+import type { ContextoDaFerramenta } from './mcp.ferramenta';
 import { LIGACAO_INVALIDA, TROCA_RECUSADA } from './ligacao.regras';
 
 const URL_APP = process.env.REGEMCAST_TESTE_PG_URL;
@@ -288,5 +290,30 @@ descrever('a ligação do Hub DMS no Postgres', () => {
     } finally {
       delete config.aprovacao;
     }
+  });
+
+  // Hub DMS F5, piloto G (16/11/2026): a ligação que nasce do CLIQUE não vem de token nenhum (`origem_token_id` nulo, id
+  // novo). Pela ligação, `quem.tokenId` é o id DELA — e a chave de idempotência apontava para `integracao_token(id)`: toda
+  // escrita (rascunho de modelo e de campanha, pausa) caía com "Erro interno", e o Liame lia "fora do ar" (ERR-058).
+  it('Hub DMS F5, piloto G: a escrita pela ligação do CLIQUE (sem token de origem) grava a chave de idempotência e repete a resposta', async () => {
+    const contaId = await novaConta();
+    const { chave: segredo, resumo, prefixo } = gerarChave('lg', 'regemcast');
+    const ligacaoId = randomUUID();
+    await poolSuper.query(
+      `insert into integracao_ligacao (id, conta_id, aplicativo, produto, classe, nome, segredo_hash, prefixo, escopos, segredo_em)
+       values ($1, $2, $3, 'liame', 'dms', 'Liame (pelo clique)', $4, $5, $6::jsonb, now())`,
+      [ligacaoId, contaId, APP_A, resumo, prefixo, JSON.stringify(['modelos.ler', 'modelos.rascunhar'])],
+    );
+    const quem = await servico.autenticarLigacao(segredo, { aplicativo: APP_A, permissoes: ['modelos.ler', 'modelos.rascunhar'] }, APLICATIVOS);
+    expect({ tokenId: quem.tokenId, via: quem.via }).toEqual({ tokenId: ligacaoId, via: 'ligacao' });
+
+    const c = { quem, ctx, servicos: {} } as unknown as ContextoDaFerramenta;
+    let vezes = 0;
+    const acao = async () => ({ id: `rascunho-${++vezes}` });
+    const primeira = await ctx.comConta(contaId, () => comIdempotencia(c, 'modelo_rascunhar', 'liame:modelo:teste-1', { nome: 'a' }, acao));
+    const repetida = await ctx.comConta(contaId, () => comIdempotencia(c, 'modelo_rascunhar', 'liame:modelo:teste-1', { nome: 'a' }, acao));
+    expect([primeira, repetida, vezes]).toEqual([{ id: 'rascunho-1' }, { id: 'rascunho-1' }, 1]);
+    const [linha] = (await poolSuper.query('select token_id from integracao_idempotencia where conta_id = $1', [contaId])).rows;
+    expect(linha.token_id).toBe(ligacaoId);
   });
 });
