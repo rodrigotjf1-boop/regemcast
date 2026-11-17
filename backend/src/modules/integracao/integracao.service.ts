@@ -17,6 +17,14 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException,
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { env } from '../../config/env';
+import { credencialAntigaDesligada } from '../../common/retirada-credencial';
+
+/** A emissão pelo console da distribuição, com a credencial antiga desligada (P-4). */
+export const EMISSAO_RETIRADA =
+  'O token colado foi retirado: não se emite mais por aqui. A integração nova é pela autorização por clique do DMS ID.';
+/** A troca automática do token colado pela ligação, com a credencial antiga desligada (P-4 e P-8). */
+export const TROCA_AUTOMATICA_RETIRADA =
+  'A troca do token colado pela ligação foi retirada. Conecte pela autorização por clique do DMS ID (Padrão DMS §3).';
 import { ContextoDb } from '../../db/contexto';
 import { auditoria, conta, integracaoAutorizacao, integracaoLigacao, integracaoToken } from '../../db/schema';
 import { ErroProblema, gerarChave, resumoChave, type TokenDmsId } from '../../dms/integracao-dms';
@@ -202,6 +210,8 @@ export class IntegracaoService {
    * é guardado e não dá para ler de novo.
    */
   async emitir(contaId: string, dados: DadosDaEmissao, operador: string): Promise<{ token: string; emitido: TokenNoConsole }> {
+    // Desligado pela distribuição (P-4): integração nova é pela autorização por clique.
+    if (credencialAntigaDesligada()) throw new BadRequestException(EMISSAO_RETIRADA);
     const conferido = conferirEmissao(dados);
     if ('erro' in conferido) throw new BadRequestException(conferido.erro);
 
@@ -638,6 +648,8 @@ export class IntegracaoService {
    * de fora ou de outro produto: a mesma recusa (`ligacao-invalida`).
    */
   async trocarPorLigacao(tokenIntegracao: unknown, aplicativo: string, aplicativos: Readonly<Record<string, string>>): Promise<LigacaoEntregue> {
+    // Desligado pela distribuição (P-4): sem token colado, não há o que trocar (P-8).
+    if (credencialAntigaDesligada()) throw new ErroProblema('nao-encontrado', TROCA_AUTOMATICA_RETIRADA);
     if (!ehTokenDeIntegracao(tokenIntegracao)) throw new ErroProblema('ligacao-invalida', TROCA_RECUSADA);
     const hash = hashDoToken(tokenIntegracao);
     const { chave, resumo, prefixo } = gerarChave('lg', 'regemcast');

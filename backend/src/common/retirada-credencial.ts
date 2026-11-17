@@ -105,3 +105,23 @@ export function anunciarRetiradaNaResposta(res: { setHeader?: (nome: string, val
 export function esquecerRetiradaLida(): void {
   lido = null;
 }
+
+/**
+ * O DESLIGAMENTO DA CREDENCIAL ANTIGA (Hub DMS F6, plano "Fim das portas antigas", decisão P-4).
+ *
+ * Com `INTEGRACAO_ANTIGA_DESLIGADA=true` no ambiente (a distribuição põe no EasyPanel; só esse valor liga), o token
+ * colado da porta MCP (`rct_it_`) deixa de valer, e nada mais o cria ou troca (a emissão pelo console da distribuição e
+ * a troca automática pela ligação). A recusa é a de token inválido (401), com a frase que diz o caminho do clique.
+ * Volta atrás apagando a variável. A ligação do clique não muda.
+ *
+ * O Padrão DMS §12 pede o anúncio com 90 dias antes de desligar (a peça de cima). Em 17/11/2026 o dono decidiu desligar
+ * SEM o prazo: não havia parceiro de fora e nenhum `rct_it_` estava vivo (0 de 2 na recontagem do banco). O anúncio
+ * continua no código e o §12 continua valendo para quando houver parceiro.
+ */
+export const CREDENCIAL_RETIRADA =
+  'Esta credencial foi retirada: o token colado não vale mais. Conecte pela autorização por clique do DMS ID (Padrão DMS §3).';
+
+/** A credencial antiga está desligada neste ambiente? */
+export function credencialAntigaDesligada(env: Record<string, string | undefined> = process.env): boolean {
+  return (env.INTEGRACAO_ANTIGA_DESLIGADA ?? '').trim().toLowerCase() === 'true';
+}
