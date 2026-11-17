@@ -287,6 +287,14 @@ chamado no `IntegracaoGuard`. Testes: `common/retirada-credencial.spec.ts`,
 `mcp.porta.spec.ts` e `mcp.dmsid.spec.ts` ("o anúncio da retirada"). Em 16/11/2026
 não havia nenhum `rct_it_` vivo.
 
+**O desligamento (P-4, sem migration, nasce desligado):** com `INTEGRACAO_ANTIGA_DESLIGADA=true` no EasyPanel do
+`regemcast-api` (só esse valor liga), o `rct_it_` é recusado no `IntegracaoGuard` (401 com a frase do clique, sem ir ao
+banco), a emissão pelo console da distribuição é recusada (400) e a troca automática pela ligação responde 404
+`nao-encontrado`. A ligação do clique não muda. Volta atrás apagando a variável. Liga **sem os 90 dias** do §12,
+por decisão do dono em 17/11/2026: não havia parceiro de fora nem `rct_it_` vivo (0 de 2). O anúncio continua no código
+para quando houver parceiro. Onde: `common/retirada-credencial.ts` (`credencialAntigaDesligada`), `IntegracaoGuard`,
+`IntegracaoService` (`emitir`, `trocarPorLigacao`). Teste: `integracao/credencial-antiga-desligada.spec.ts`.
+
 ## O hub da DMS: registro, erros e parada (sem migration)
 
 A etapa 2 da A4 do Hub DMS: a porta passa a falar com o serviço do hub, pelo

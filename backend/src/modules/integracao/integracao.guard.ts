@@ -31,7 +31,7 @@ import { CanActivate, ExecutionContext, ForbiddenException, HttpException, HttpS
 import { InjectThrottlerStorage, type ThrottlerStorage } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 
-import { anunciarRetiradaNaResposta } from '../../common/retirada-credencial';
+import { anunciarRetiradaNaResposta, credencialAntigaDesligada, CREDENCIAL_RETIRADA } from '../../common/retirada-credencial';
 import { ErroProblema, prefixoVisivel, problemaDaParada } from '../../dms/integracao-dms';
 import { anotarChamada, ferramentasDoCorpo } from '../hub/chamada-atual';
 import { HubService } from '../hub/hub.service';
@@ -72,6 +72,12 @@ export class IntegracaoGuard implements CanActivate {
     // anúncio da retirada (`Deprecation` e `Sunset`), também na recusa e na parada. A ligação nunca leva.
     if (token) anunciarRetiradaNaResposta(res);
     if (!this.hub.aceitaIntegracoes) throw problemaDaParada();
+    // Desligado pela distribuição (P-4): o `rct_it_` é recusado antes de ir ao banco.
+    if (token && credencialAntigaDesligada()) {
+      res.setHeader('WWW-Authenticate', 'Bearer error="invalid_token"');
+      anotarChamada({ problema: 'token-invalido' });
+      throw new UnauthorizedException(CREDENCIAL_RETIRADA);
+    }
 
     if (peloDmsId) {
       req.integracao = await this.pelaViaDoDmsId(req, res);
