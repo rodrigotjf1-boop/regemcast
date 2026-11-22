@@ -1361,3 +1361,20 @@ export interface SituacaoRegem {
     ultima: string | null;
   };
 }
+
+/** O DMS Graph (o produto da DMS, não a Graph API da Meta) para esta conta. */
+export interface SituacaoDmsGraph {
+  /** A distribuição ligou o Graph para esta conta. Falso: a tela não mostra nada. */
+  disponivel: boolean;
+  podeLigar: boolean;
+  contaTemCnpj: boolean;
+  ligacao: null | { contaNome: string | null; desde: string; por: string | null; permissoes: string[]; ultimoUso: string | null };
+  desligadaPeloGraphEm: string | null;
+}
+
+export type ProporcaoDoVideo = '16:9' | '9:16' | '1:1';
+
+export type AjusteDeVideo =
+  | { id: string; situacao: 'processando' }
+  | { id: string; situacao: 'pronto'; referencia: string; bytes: number; largura: number | null; altura: number | null; duracaoMs: number | null }
+  | { id: string; situacao: 'erro'; frase: string; podeRepetir: boolean };

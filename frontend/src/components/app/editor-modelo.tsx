@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 
+import { AjustarVideo } from '@/components/app/ajustar-video';
 import { PreviaWhatsapp } from '@/components/app/previa-whatsapp';
 import { Alerta } from '@/components/ui/alerta';
 import { Button } from '@/components/ui/button';
@@ -960,6 +961,8 @@ function SeletorDeMidia({
   const [erro, setErro] = useState('');
   const [nome, setNome] = useState('');
   const [porEndereco, setPorEndereco] = useState(() => /^https?:/i.test(valor));
+  /** O resumo do último ajuste pelo DMS Graph: sai quando a pessoa escolhe outro arquivo. */
+  const [ajustado, setAjustado] = useState('');
   const campo = useRef<HTMLInputElement>(null);
 
   const rotulo = formato === 'IMAGE' ? 'imagem' : formato === 'VIDEO' ? 'vídeo' : 'documento';
@@ -979,6 +982,7 @@ function SeletorDeMidia({
     try {
       const r = await midia.enviar(arquivo);
       setNome(r.nome);
+      setAjustado('');
       aoMudar(r.referencia);
     } catch (e) {
       setErro(mensagemDoErro(e));
@@ -1043,6 +1047,21 @@ function SeletorDeMidia({
 
       {erro && <p className="text-xs text-erro">{erro}</p>}
 
+      {ajustado && <Alerta tom="sucesso">Vídeo ajustado: {ajustado} Ao salvar, ele fica guardado no modelo.</Alerta>}
+
+      {formato === 'VIDEO' && !compacto && !porEndereco && valor.startsWith('midia:') && (
+        <AjustarVideo
+          // Cada vídeo com os seus controles: o trecho de um não vale para o outro.
+          key={valor}
+          referencia={valor}
+          aoAjustar={(nova, resumo) => {
+            setNome('Vídeo ajustado');
+            setAjustado(resumo);
+            aoMudar(nova);
+          }}
+        />
+      )}
+
       <button
         type="button"
         onClick={() => {
@@ -1050,6 +1069,7 @@ function SeletorDeMidia({
           aoMudar('');
           setNome('');
           setErro('');
+          setAjustado('');
         }}
         className="text-xs text-tinta-suave underline-offset-4 hover:text-tinta hover:underline"
       >

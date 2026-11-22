@@ -470,3 +470,20 @@ fonte e sem descadastro — o descadastro fica, para o número não voltar).
 | 401 | Token revogado ou trocado: as duas fases param (`falhou`); a distribuição liga de novo. |
 | 403 e demais 4xx | A fase para (`falhou`), com o motivo do Regem (`detail` do problem+json) na tela. |
 | Erro nosso (banco, código) | Motivo genérico na tela, detalhe no log; tenta de novo em 5 min. |
+
+## DMS Graph
+
+O DMS Graph é o produto da DMS que trata imagem e vídeo. **Não é a Graph API da Meta**: por isso o código usa o nome
+`dms-graph` e as tabelas `dms_graph_*` (migration 052). Nasce desligado (`DMS_GRAPH_LIGADO`, ver [`deploy.md`](deploy.md)).
+
+- **Quem conecta:** o dono da conta, em Configuração → Integrações. A conta precisa de CNPJ, porque a conta da empresa no
+  Graph nasce por ele. O responsável entra com o DMS ID na página do Graph e autoriza. A volta é
+  `APP_URL` + `/integracoes/graph/volta`.
+- **O que o Regemcast pede:** só `videos.ajustar`, que não usa IA nem franquia. Editar e criar imagem ficam para quando o
+  editor tiver a tela delas.
+- **Onde se usa:** no editor do modelo, no cabeçalho com vídeo enviado do computador: trecho, proporção e texto curto. O
+  resultado sai em MP4 720p e vira uma **mídia nova**. A original não muda, e o modelo só passa a usar a nova ao salvar.
+- **Limites:** o ajuste aceita até 12 MB e 3 minutos, e devolve até 16 MB. O vídeo de 12 a 16 MB segue valendo no modelo, só
+  não passa pelo ajuste. A empresa ajusta um vídeo por vez.
+- **Idempotência:** a mesma mídia com o mesmo pedido cai no mesmo ajuste e gera uma mídia só. Se o resultado vencer no
+  Graph (24 horas), a próxima tentativa nasce numa linha nova, com outra chave.

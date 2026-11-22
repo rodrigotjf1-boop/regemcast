@@ -105,7 +105,7 @@ mesmo tempo; com o `rct_it_` no cabeçalho, ele tem a vez. Variáveis em
 
 Tabela `integracao_ligacao`. Regras em `integracao/ligacao.regras.ts`; token do
 DMS ID em `dms-id.service.ts`, com o pacote comum do hub copiado em
-`src/dms/integracao-dms.ts` (versão 0.7.2, igual byte a byte; não editar aqui).
+`src/dms/integracao-dms.ts` (versão 0.12.0, igual byte a byte; não editar aqui).
 
 - **O pedido:** `Authorization: Bearer <token do DMS ID>` e
   `DMS-Ligacao: dms_lg_regemcast_…`. O token é conferido pela assinatura (ES384
