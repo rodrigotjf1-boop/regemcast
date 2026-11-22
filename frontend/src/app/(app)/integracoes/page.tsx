@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { IconeImportar, IconeIntegracao } from '@/components/app/icones';
 import { AplicativosConectados } from '@/components/app/integracoes/aplicativos-conectados';
 import { IntegracaoCardapioWeb } from '@/components/app/integracoes/cardapio-web';
+import { IntegracaoDmsGraph } from '@/components/app/integracoes/dms-graph';
 import { IntegracaoRegem } from '@/components/app/integracoes/regem';
 import { Button } from '@/components/ui/button';
 import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
@@ -31,6 +32,8 @@ export default function IntegracoesPage() {
       <IntegracaoCardapioWeb />
 
       <IntegracaoRegem />
+
+      <IntegracaoDmsGraph />
 
       <AplicativosConectados />
 

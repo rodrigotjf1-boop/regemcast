@@ -10,7 +10,7 @@
 import { createHash, createHmac, createPublicKey, randomBytes, randomUUID, timingSafeEqual, verify as conferirAssinatura, type JsonWebKey, type KeyObject } from 'node:crypto';
 import { isIP } from 'node:net';
 
-export const VERSAO_PACOTE = '0.7.2';
+export const VERSAO_PACOTE = '0.12.0';
 
 const DIA_MS = 86_400_000;
 
@@ -18,7 +18,7 @@ const DIA_MS = 86_400_000;
 // 1. Produtos e classes (Padrão §1)
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export const PRODUTOS = ['regem', 'regemcast', 'liame', 'farol', 'gogem', 'regemboard', 'orzuni', 'muraljob'] as const;
+export const PRODUTOS = ['regem', 'regemcast', 'liame', 'farol', 'gogem', 'regemboard', 'orzuni', 'muraljob', 'graph', 'pulso'] as const;
 export type Produto = (typeof PRODUTOS)[number];
 
 export function ehProduto(v: unknown): v is Produto {
@@ -503,10 +503,11 @@ export function conferirAviso(
 /**
  * O destino de um aviso está dentro da lista aprovada do aplicativo? Só HTTPS, na porta padrão, sem usuário e senha,
  * sem pergunta (`?`) nem fragmento, mesma origem de uma base da lista e o caminho = o caminho da base + UM trecho
- * (o id da ligação no aplicativo). Comparado com `new URL()`, nunca pelo começo do texto (LIC-119).
+ * (o id da ligação no aplicativo), de até 64 caracteres, e o endereço inteiro até 500 (os tetos do Regem, que guarda o
+ * endereço numa coluna de 500; 0.9.0). Comparado com `new URL()`, nunca pelo começo do texto (LIC-119).
  */
 export function destinoAvisoPermitido(endereco: unknown, bases: readonly string[]): boolean {
-  if (typeof endereco !== 'string' || endereco.length > 2048) return false;
+  if (typeof endereco !== 'string' || endereco.length > TETO_DO_ENDERECO_DE_AVISO) return false;
   let u: URL;
   try {
     u = new URL(endereco);
@@ -525,9 +526,36 @@ export function destinoAvisoPermitido(endereco: unknown, bases: readonly string[
     const caminhoBase = b.pathname.endsWith('/') ? b.pathname : b.pathname + '/';
     if (!u.pathname.startsWith(caminhoBase)) continue;
     const resto = u.pathname.slice(caminhoBase.length);
-    if (/^[A-Za-z0-9_-]{1,128}$/.test(resto)) return true;
+    if (/^[A-Za-z0-9_-]{1,64}$/.test(resto)) return true;
   }
   return false;
+}
+
+/** O endereço inteiro do aviso, no máximo (o do Regem). */
+export const TETO_DO_ENDERECO_DE_AVISO = 500;
+
+/**
+ * A base de aviso que se aprova para um aplicativo de parceiro (F4-11, 24/10/2026): https na porta padrão, um nome (não
+ * um IP), sem usuário e senha, sem pergunta nem fragmento, com o caminho terminado em barra (o aviso vai para a base +
+ * UM trecho), até 300 caracteres. Nulo = serve. `producao`: recusa também `localhost`.
+ */
+export function problemaDaBaseDeAviso(base: unknown, o: { producao: boolean }): string | null {
+  if (typeof base !== 'string' || !base.length || base.length > 300) return 'precisa ser um endereço de até 300 caracteres';
+  let u: URL;
+  try {
+    u = new URL(base);
+  } catch {
+    return 'não é um endereço';
+  }
+  if (u.protocol !== 'https:') return 'precisa ser https';
+  if (u.port !== '') return 'precisa usar a porta padrão do https (443)';
+  if (u.username || u.password) return 'não pode ter usuário e senha';
+  if (u.search || u.hash) return 'não pode ter ? nem #';
+  const host = u.hostname.replace(/^\[|\]$/g, '');
+  if (isIP(host)) return 'precisa ser um nome, não um IP';
+  if (o.producao && (host === 'localhost' || host.endsWith('.localhost'))) return 'não pode ser localhost';
+  if (!u.pathname.endsWith('/')) return 'o caminho termina em barra (o aviso vai para a base + o id da ligação)';
+  return null;
 }
 
 function ipv4ParaNumero(ip: string): number {
@@ -1126,6 +1154,417 @@ export class ClienteIntegracao {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// 8c. O cliente pronto de uma porta MCP do Padrão: a ferramenta, o token, a ligação e cada erro no seu tipo (Padrão §6
+//     e §14; 0.10.0, 05/11/2026 — primeiro uso: o Regem chamando a porta do Orzuni)
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** A geração da especificação MCP do Padrão (§6): sem estado, cada chamada é um POST com um pedido JSON-RPC. */
+export const VERSAO_MCP = '2026-07-28';
+
+/**
+ * Monta a `chaveIdempotencia` de uma ferramenta que grava (8 a 100 caracteres, Padrão §6). Sem partes: uma chave nova
+ * — guarde-a e use a MESMA ao repetir a operação. Com partes: a mesma operação de negócio dá sempre a mesma chave, até
+ * depois de reiniciar o processo; ponha nas partes tudo o que distingue a operação (o produto, o valor, a versão),
+ * porque a mesma chave com outro pedido é recusada pela porta (`chave-reutilizada`).
+ */
+export function montarChaveIdempotencia(...partes: readonly (string | number)[]): string {
+  if (partes.length === 0) return randomUUID();
+  return `dms_${createHash('sha256').update(jsonCanonico(partes), 'utf8').digest('hex').slice(0, 48)}`;
+}
+
+/**
+ * As permissões que faltam, lidas do `WWW-Authenticate` de um 403 da porta MCP (`error="insufficient_scope"`,
+ * `scope="a b"`: TODAS de uma vez, Padrão §6). Vazio quando o cabeçalho não diz.
+ */
+export function permissoesQueFaltam(cabecalho: string | null): string[] {
+  if (!cabecalho || !cabecalho.includes('error="insufficient_scope"')) return [];
+  const inicio = cabecalho.indexOf('scope="');
+  if (inicio < 0) return [];
+  const fim = cabecalho.indexOf('"', inicio + 7);
+  if (fim < 0) return [];
+  return cabecalho
+    .slice(inicio + 7, fim)
+    .split(' ')
+    .filter((p) => p !== '');
+}
+
+/**
+ * O tipo de cada falha, para quem chama decidir sem ler mensagem:
+ * - `ferramenta`: a ferramenta recusou (`isError`); `frase` é o texto em pt-BR que a tela mostraria;
+ * - `protocolo`: erro JSON-RPC, ou outro 4xx (cabeçalho que não bate com o corpo, versão que a porta não fala);
+ * - `token`: 401 mesmo depois de pedir outro token ao DMS ID;
+ * - `ligacao`: 401 `ligacao-invalida` — a loja desfez a ligação, outro token não ajuda (só ela liga de novo);
+ * - `permissao`: 403 sem a permissão (`faltando` traz todas), ou a ferramenta não existe para esta credencial (a porta
+ *   nem lista o que a credencial não pode usar, Padrão §6);
+ * - `recusada`: outro 403 (`conta-bloqueada`, `ligacao-suspensa`, `chave-suspensa`, em `problema`);
+ * - `limite`: 429 depois das tentativas (`retryAfter`);
+ * - `indisponivel`: 502, 503 (inclusive `integracao-parada`) ou 504 depois das tentativas;
+ * - `sem-resposta`: queda ou tempo esgotado depois das tentativas;
+ * - `resposta-invalida`: 2xx que não é a resposta JSON-RPC desta chamada.
+ */
+export type TipoErroMcp =
+  | 'ferramenta'
+  | 'protocolo'
+  | 'token'
+  | 'ligacao'
+  | 'permissao'
+  | 'recusada'
+  | 'limite'
+  | 'indisponivel'
+  | 'sem-resposta'
+  | 'resposta-invalida';
+
+/** Uma chamada MCP que não deu certo. Nunca leva o token, o segredo da ligação nem os argumentos. */
+export class ErroMcp extends Error {
+  readonly tipo: TipoErroMcp;
+  /** A ferramenta chamada (`tools/list` no `listar`). */
+  readonly ferramenta: string;
+  readonly status: number;
+  /** O nome do problema do Padrão (`problem+json`) ou o motivo local (`cursor-repetido`, `chave-idempotencia-invalida`). */
+  readonly problema: string;
+  /** O código do erro JSON-RPC, quando veio um. */
+  readonly codigo: number | null;
+  /** No 403 de permissão: todas as que faltam (do `WWW-Authenticate`). */
+  readonly faltando: string[];
+  readonly retryAfter: string | null;
+  readonly wwwAuthenticate: string | null;
+  /** No `ferramenta`: o texto da recusa (até 300 caracteres). */
+  readonly frase: string;
+  /**
+   * No `ferramenta` (0.10.1): o que a recusa trouxe de estruturado — o `structuredContent` (ou, sem ele, o texto que é
+   * JSON), onde o produto põe o código da regra e se pode repetir (o Orzuni: `codigo`, `pode_repetir`, `situacao`).
+   * `null` quando não veio. Nunca entra na mensagem do erro (pode ter dado da loja).
+   */
+  readonly dados: unknown;
+  /** Repetir mais tarde com os MESMOS argumentos (a mesma `chaveIdempotencia`) não faz mal. */
+  readonly podeRepetir: boolean;
+  readonly tentativas: number;
+
+  constructor(o: {
+    tipo: TipoErroMcp;
+    ferramenta: string;
+    status?: number;
+    problema?: string;
+    codigo?: number | null;
+    faltando?: readonly string[];
+    retryAfter?: string | null;
+    wwwAuthenticate?: string | null;
+    frase?: string;
+    dados?: unknown;
+    podeRepetir?: boolean;
+    tentativas?: number;
+  }) {
+    const detalhe = o.frase ? `: ${o.frase}` : o.problema ? ` (${o.problema})` : o.codigo !== undefined && o.codigo !== null ? ` (código ${o.codigo})` : '';
+    super(`${o.ferramenta}: ${o.tipo}${o.status ? ` ${o.status}` : ''}${detalhe}`);
+    this.name = 'ErroMcp';
+    this.tipo = o.tipo;
+    this.ferramenta = o.ferramenta;
+    this.status = o.status ?? 0;
+    this.problema = o.problema ?? '';
+    this.codigo = o.codigo ?? null;
+    this.faltando = [...(o.faltando ?? [])];
+    this.retryAfter = o.retryAfter ?? null;
+    this.wwwAuthenticate = o.wwwAuthenticate ?? null;
+    this.frase = o.frase ?? '';
+    this.dados = o.dados === undefined ? null : o.dados;
+    this.podeRepetir = o.podeRepetir ?? false;
+    this.tentativas = o.tentativas ?? 0;
+  }
+}
+
+export type OpcoesClienteMcp = {
+  /** O endereço da porta MCP (`https://api.orzuni.com/v1/mcp`). */
+  endereco: string;
+  /** O destino do token: o recurso do produto no DMS ID (na porta MCP, o mesmo endereço da porta). */
+  recurso: string;
+  /** As permissões que o token pede (a porta ainda confere a da ligação: vale a menor das duas). */
+  permissoes: readonly string[];
+  dmsId: ClienteDmsId;
+  /** O segredo da ligação da loja, no cabeçalho `DMS-Ligacao`. Sem ele, a chamada vai só com o token. */
+  ligacao?: string;
+  /** Quem chama, no `clientInfo` do pedido (padrão: `dms` e a versão do pacote). */
+  cliente?: { nome: string; versao: string };
+  buscar?: typeof fetch;
+  /** Quantas tentativas ao todo, a primeira inclusive (padrão 4). */
+  tentativas?: number;
+  recuo?: Partial<RecuoDaRepeticao>;
+  tempoLimiteMs?: number;
+  /** Teto de páginas do `listar` (padrão 50). */
+  maxPaginas?: number;
+  esperar?: (ms: number) => Promise<void>;
+  sorteio?: () => number;
+  relogio?: () => number;
+};
+
+/** Uma ferramenta da porta, como o `tools/list` devolve. */
+export type FerramentaMcp = {
+  name: string;
+  title?: string;
+  description?: string;
+  inputSchema?: unknown;
+  outputSchema?: unknown;
+  annotations?: unknown;
+};
+
+export type OpcoesChamadaMcp = {
+  /**
+   * A ferramenta só lê: repete sozinha na queda, no limite e no produto fora. A que grava repete só com uma
+   * `chaveIdempotencia` válida nos argumentos (Padrão §6), e a repetição leva a MESMA chave.
+   */
+  leitura?: boolean;
+};
+
+/** As mensagens JSON-RPC de uma resposta em fluxo (`text/event-stream`): uma por evento com `data:`. */
+function mensagensDoFluxo(texto: string): unknown[] {
+  const saida: unknown[] = [];
+  let dados: string[] = [];
+  const fecharEvento = () => {
+    if (dados.length === 0) return;
+    try {
+      saida.push(JSON.parse(dados.join('\n')) as unknown);
+    } catch {
+      // Evento que não é JSON (comentário, ping): não é a resposta.
+    }
+    dados = [];
+  };
+  for (const cru of texto.split('\n')) {
+    const linha = cru.endsWith('\r') ? cru.slice(0, -1) : cru;
+    if (linha === '') fecharEvento();
+    else if (linha.startsWith('data:')) dados.push(linha.slice(linha.startsWith('data: ') ? 6 : 5));
+  }
+  fecharEvento();
+  return saida;
+}
+
+/**
+ * O resultado lido de uma ferramenta: o `structuredContent` quando vem (Padrão §6: esquema de saída declarado); senão,
+ * o único conteúdo de texto, quando ele é um objeto ou uma lista em JSON (a porta que ainda manda o resultado só como
+ * texto, como o Orzuni de 04/11/2026); senão, `null` (a ferramenta não devolveu dado).
+ */
+function dadosDoResultado(result: Record<string, unknown>): unknown {
+  if (result.structuredContent !== undefined) return result.structuredContent;
+  const conteudo = result.content;
+  if (!Array.isArray(conteudo) || conteudo.length !== 1) return null;
+  const unico = conteudo[0] as { type?: unknown; text?: unknown } | null;
+  if (!unico || unico.type !== 'text' || typeof unico.text !== 'string') return null;
+  const texto = unico.text.trim();
+  // Só objeto ou lista: começando por `{` ou `[`, o que o JSON lê é sempre um dos dois.
+  if (!texto.startsWith('{') && !texto.startsWith('[')) return null;
+  try {
+    return JSON.parse(texto) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+/** O texto da recusa de uma ferramenta (`isError`): o primeiro conteúdo de texto, com os espaços juntos, até 300. */
+function fraseDoConteudo(conteudo: unknown): string {
+  if (!Array.isArray(conteudo)) return '';
+  for (const c of conteudo as unknown[]) {
+    if (c && typeof c === 'object' && (c as { type?: unknown }).type === 'text') {
+      const texto = (c as { text?: unknown }).text;
+      if (typeof texto === 'string') return texto.split(/\s+/).filter((p) => p !== '').join(' ').slice(0, 300);
+    }
+  }
+  return '';
+}
+
+/**
+ * O cliente pronto de uma porta MCP do Padrão (§6 e §14), geração 2026-07-28 sem estado. Cada chamada é um POST com
+ * o pedido JSON-RPC, a versão no `_meta` e nos cabeçalhos que a especificação manda a porta conferir contra o corpo
+ * (`MCP-Method`, `MCP-Name`, `MCP-Protocol-Version`), o token do DMS ID (destino = o recurso) e o segredo da ligação.
+ * Lê a resposta em JSON ou em fluxo. O limite (429) e o produto fora (502, 503, 504, sem resposta) repetem com recuo,
+ * só em leitura ou com `chaveIdempotencia`; o 401 pede outro token uma vez, menos `ligacao-invalida`. Não segue
+ * redirecionamento: o token não vai a outro lugar. Cada falha sai como `ErroMcp`, com o tipo separado.
+ */
+export class ClienteMcp {
+  private readonly endereco: string;
+  private readonly recurso: string;
+  private readonly permissoes: readonly string[];
+  private readonly dmsId: ClienteDmsId;
+  private readonly ligacao: string | undefined;
+  private readonly cliente: { name: string; version: string };
+  private readonly buscar: typeof fetch;
+  private readonly tentativas: number;
+  private readonly recuo: RecuoDaRepeticao;
+  private readonly tempoLimiteMs: number;
+  private readonly maxPaginas: number;
+  private readonly esperar: (ms: number) => Promise<void>;
+  private readonly sorteio: () => number;
+  private readonly relogio: () => number;
+  private ultimoId = 0;
+
+  constructor(o: OpcoesClienteMcp) {
+    this.endereco = new URL(o.endereco).href;
+    this.recurso = o.recurso;
+    this.permissoes = [...o.permissoes];
+    this.dmsId = o.dmsId;
+    this.ligacao = o.ligacao;
+    this.cliente = { name: o.cliente?.nome ?? 'dms', version: o.cliente?.versao ?? VERSAO_PACOTE };
+    this.buscar = o.buscar ?? fetch;
+    this.tentativas = Math.max(1, Math.floor(o.tentativas ?? 4));
+    this.recuo = { ...RECUO_PADRAO, ...o.recuo };
+    this.tempoLimiteMs = o.tempoLimiteMs ?? 15_000;
+    this.maxPaginas = Math.max(1, Math.floor(o.maxPaginas ?? 50));
+    this.esperar = o.esperar ?? ((ms) => new Promise((resolver) => setTimeout(resolver, ms)));
+    this.sorteio = o.sorteio ?? Math.random;
+    this.relogio = o.relogio ?? Date.now;
+  }
+
+  /**
+   * Chama uma ferramenta e devolve o resultado já lido: o `structuredContent`; na porta que ainda manda só texto, o
+   * JSON desse texto; `null` se a ferramenta não devolveu dado. A recusa da ferramenta (`isError`) e toda outra falha
+   * saem como `ErroMcp`.
+   */
+  async chamar<T = unknown>(ferramenta: string, argumentos: Readonly<Record<string, unknown>> = {}, o: OpcoesChamadaMcp = {}): Promise<T> {
+    const chave = argumentos.chaveIdempotencia;
+    if (chave !== undefined && !chaveIdempotenciaMcpValida(chave)) {
+      throw new ErroMcp({ tipo: 'protocolo', ferramenta, problema: 'chave-idempotencia-invalida' });
+    }
+    const repete = o.leitura === true || chave !== undefined;
+    const { result, tentativas } = await this.enviar('tools/call', { name: ferramenta, arguments: argumentos }, ferramenta, repete);
+    if (result.isError === true) {
+      const frase = fraseDoConteudo(result.content);
+      const dados = dadosDoResultado(result);
+      throw new ErroMcp({ tipo: 'ferramenta', ferramenta, status: 200, frase, dados, podeRepetir: frase.toLowerCase().startsWith('erro interno'), tentativas });
+    }
+    return dadosDoResultado(result) as T;
+  }
+
+  /** As ferramentas que a credencial pode usar (`tools/list`, todas as páginas). Repete como uma leitura. */
+  async listar(): Promise<FerramentaMcp[]> {
+    const ferramentas: FerramentaMcp[] = [];
+    const vistos = new Set<string>();
+    let cursor: string | undefined;
+    for (let pagina = 1; pagina <= this.maxPaginas; pagina += 1) {
+      const { result, tentativas } = await this.enviar('tools/list', cursor === undefined ? {} : { cursor }, undefined, true);
+      const lista = result.tools;
+      if (!Array.isArray(lista)) throw new ErroMcp({ tipo: 'resposta-invalida', ferramenta: 'tools/list', status: 200, problema: 'sem-ferramentas', tentativas });
+      for (const f of lista as unknown[]) {
+        if (f && typeof f === 'object' && typeof (f as { name?: unknown }).name === 'string') ferramentas.push(f as FerramentaMcp);
+      }
+      const proximo = result.nextCursor;
+      if (typeof proximo !== 'string' || proximo === '') return ferramentas;
+      if (vistos.has(proximo)) throw new ErroMcp({ tipo: 'resposta-invalida', ferramenta: 'tools/list', status: 200, problema: 'cursor-repetido', tentativas });
+      vistos.add(proximo);
+      cursor = proximo;
+    }
+    throw new ErroMcp({ tipo: 'resposta-invalida', ferramenta: 'tools/list', status: 200, problema: 'paginas-demais' });
+  }
+
+  private async enviar(
+    metodo: 'tools/call' | 'tools/list',
+    params: Record<string, unknown>,
+    nome: string | undefined,
+    repete: boolean,
+  ): Promise<{ result: Record<string, unknown>; tentativas: number }> {
+    const rotulo = nome ?? metodo;
+    let renovou = false;
+    let tentativa = 0;
+    for (;;) {
+      tentativa += 1;
+      this.ultimoId = (this.ultimoId % 1_000_000_000) + 1;
+      const id = this.ultimoId;
+      const token = await this.dmsId.token(this.recurso, this.permissoes);
+      const cabecalhos: Record<string, string> = {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        'mcp-method': metodo,
+        'mcp-protocol-version': VERSAO_MCP,
+      };
+      if (nome !== undefined) cabecalhos['mcp-name'] = nome;
+      if (this.ligacao) cabecalhos[CABECALHO_LIGACAO] = this.ligacao;
+      const corpo = {
+        jsonrpc: '2.0',
+        id,
+        method: metodo,
+        params: {
+          ...params,
+          _meta: {
+            'io.modelcontextprotocol/protocolVersion': VERSAO_MCP,
+            'io.modelcontextprotocol/clientInfo': this.cliente,
+            'io.modelcontextprotocol/clientCapabilities': {},
+          },
+        },
+      };
+      let r: Response | null = null;
+      let texto = '';
+      try {
+        r = await this.buscar(this.endereco, {
+          method: 'POST',
+          headers: cabecalhos,
+          body: JSON.stringify(corpo),
+          redirect: 'error',
+          signal: AbortSignal.timeout(this.tempoLimiteMs),
+        });
+        texto = await r.text();
+      } catch {
+        r = null;
+      }
+      const status = r ? r.status : 0;
+      const retryAfter = r ? r.headers.get('retry-after') : null;
+      const tipoConteudo = r ? (r.headers.get('content-type') ?? '') : '';
+      const emFluxo = tipoConteudo.toLowerCase().startsWith('text/event-stream');
+      let lido: unknown = null;
+      if (!emFluxo && texto !== '') {
+        try {
+          lido = JSON.parse(texto) as unknown;
+        } catch {
+          lido = null;
+        }
+      }
+      const problema = problemaDaResposta(lido);
+
+      if (status === 401 && !renovou && problema !== 'ligacao-invalida') {
+        renovou = true;
+        tentativa -= 1;
+        this.dmsId.esquecer(this.recurso, this.permissoes);
+        continue;
+      }
+      if (repete && respostaParaRepetir(status) && tentativa < this.tentativas) {
+        await this.esperar(esperaDaRepeticao(tentativa, retryAfter, this.recuo, this.sorteio(), this.relogio()));
+        continue;
+      }
+      const base = { ferramenta: rotulo, status, problema, retryAfter, tentativas: tentativa };
+      if (!r) throw new ErroMcp({ ...base, tipo: 'sem-resposta', problema: 'sem-resposta', podeRepetir: true });
+      const www = r.headers.get('www-authenticate');
+      if (status === 401) throw new ErroMcp({ ...base, tipo: problema === 'ligacao-invalida' ? 'ligacao' : 'token', wwwAuthenticate: www });
+      if (status === 403) {
+        const faltando = permissoesQueFaltam(www);
+        const semPermissao = faltando.length > 0 || problema === 'escopo-insuficiente';
+        throw new ErroMcp({ ...base, tipo: semPermissao ? 'permissao' : 'recusada', faltando, wwwAuthenticate: www });
+      }
+      if (status === 429) throw new ErroMcp({ ...base, tipo: 'limite', podeRepetir: true });
+      if (respostaParaRepetir(status)) throw new ErroMcp({ ...base, tipo: 'indisponivel', podeRepetir: true });
+
+      const mensagens = emFluxo ? mensagensDoFluxo(texto) : [lido];
+      const resposta = mensagens.find(
+        (m): m is { jsonrpc?: unknown; id?: unknown; result?: unknown; error?: unknown } =>
+          !!m && typeof m === 'object' && (m as { id?: unknown }).id === id && ('result' in m || 'error' in m),
+      );
+      // No 4xx, a porta pode devolver o erro JSON-RPC com o id nulo (corpo que nem chegou a ser lido como pedido).
+      const comErro =
+        resposta ??
+        (status >= 400 ? (mensagens.find((m) => !!m && typeof m === 'object' && 'error' in m) as { error?: unknown } | undefined) : undefined);
+      if (comErro && comErro.error && typeof comErro.error === 'object') {
+        const erro = comErro.error as { code?: unknown; message?: unknown };
+        const codigo = typeof erro.code === 'number' ? erro.code : null;
+        const mensagem = typeof erro.message === 'string' ? erro.message : '';
+        // A porta não lista o que a credencial não pode usar: chamar mesmo assim responde "não encontrada" (§6).
+        const ausente = codigo === -32602 && nome !== undefined && mensagem === `Tool ${nome} not found`;
+        throw new ErroMcp({ ...base, tipo: ausente ? 'permissao' : 'protocolo', codigo, problema: ausente ? 'ferramenta-ausente' : problema });
+      }
+      if (status < 200 || status >= 300) throw new ErroMcp({ ...base, tipo: 'protocolo' });
+      if (!resposta || !resposta.result || typeof resposta.result !== 'object') {
+        throw new ErroMcp({ ...base, tipo: 'resposta-invalida', problema: 'sem-resultado' });
+      }
+      return { result: resposta.result as Record<string, unknown>, tentativas: tentativa };
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 // 9. O cliente do hub: registro central, erros, lista de parada e batida (Padrão §10 e §11; A4 da F2, 17/10/2026)
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -1243,6 +1682,89 @@ export function problemaDaParada(): ErroProblema {
   return new ErroProblema('integracao-parada', 'Esta integração está parada pela DMS no momento. Tente de novo mais tarde.', { retryAfterSeg: 60 });
 }
 
+// A lista de aplicativos de PARCEIRO aprovados pela DMS (F4, parte B; decisões F4-2, F4-5 e F4-6). Só acrescenta
+// parceiro: os produtos DMS seguem na lista do código de cada produto, que vence (um client_id que o código conhece é
+// `dms`, mesmo se aparecer aqui). A lista diz o que a DMS aprovou; o teto da classe `parceiro` continua no código do
+// produto (`permissoesEfetivas`, Padrão §1), e quem para um aplicativo é a lista de parada (nível `aplicativo`, alvo =
+// o client_id), não a saída desta lista.
+
+/** A permissão do recurso do hub para ler a lista de aprovados. Vai num token À PARTE: o registro, a parada e a batida não dependem dela. */
+export const PERMISSAO_APLICATIVOS_HUB = 'aplicativos.ler';
+
+/** A etapa do aplicativo de parceiro (F4-6): teste com até 3 lojas, só leitura e sem dado pessoal; depois, produção. */
+export type EtapaDoParceiro = 'teste' | 'producao';
+
+export type AplicativoAprovado = {
+  /** O client_id do aplicativo de produção no DMS ID (o `client_id` do token), criado pelo console na aprovação (F4-5). */
+  aplicativo: string;
+  nome: string;
+  /** O que o dono da loja lê na tela do clique (Padrão §3). */
+  para_que_serve: string;
+  /** A empresa conferida pela DMS: o selo "verificado pela DMS" é a própria aprovação. */
+  empresa: { razao_social: string; cnpj: string };
+  etapa: EtapaDoParceiro;
+  /**
+   * Só as permissões APROVADAS, com o motivo que o parceiro declarou (o dono da loja lê) e se ela é NECESSÁRIA para o
+   * aplicativo funcionar; as opcionais aparecem desligadas na tela do clique (F4-14, 0.9.0).
+   */
+  permissoes: Array<{ nome: string; motivo: string; necessaria: boolean }>;
+  /** Os endereços de volta da autorização por clique (https). */
+  enderecos_de_volta: string[];
+  /**
+   * As BASES de onde o aplicativo pode receber avisos (Padrão §9; F4-11, 0.9.0): https, caminho terminado em barra; o
+   * endereço do aviso é a base + UM trecho (o id da ligação no aplicativo), pela regra de `destinoAvisoPermitido`.
+   */
+  bases_dos_avisos: string[];
+  /** Na etapa de teste, 3 lojas por APLICATIVO, somando todas as empresas (F4-12); na produção, nulo (sem teto do hub). */
+  lojas_max: number | null;
+  so_leitura: boolean;
+  dado_pessoal: boolean;
+  aprovado_em: string;
+};
+export type ListaDeAprovados = { versao: number; itens: AplicativoAprovado[] };
+
+const ehListaDeTextos = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string');
+
+/** A lista veio no formato do hub (o produto não usa uma lista torta: fica com a anterior). */
+export function listaDeAprovadosValida(v: unknown): v is ListaDeAprovados {
+  if (!v || typeof v !== 'object') return false;
+  const l = v as { versao?: unknown; itens?: unknown };
+  if (typeof l.versao !== 'number' || !Number.isInteger(l.versao) || !Array.isArray(l.itens)) return false;
+  return l.itens.every((i: unknown) => {
+    const a = i as Record<string, unknown> | null;
+    if (!a || typeof a !== 'object') return false;
+    const empresa = a.empresa as { razao_social?: unknown; cnpj?: unknown } | null;
+    const permissoes = a.permissoes;
+    return (
+      typeof a.aplicativo === 'string' &&
+      a.aplicativo.length > 0 &&
+      typeof a.nome === 'string' &&
+      typeof a.para_que_serve === 'string' &&
+      !!empresa &&
+      typeof empresa.razao_social === 'string' &&
+      typeof empresa.cnpj === 'string' &&
+      (a.etapa === 'teste' || a.etapa === 'producao') &&
+      Array.isArray(permissoes) &&
+      permissoes.every((p: unknown) => {
+        const x = p as { nome?: unknown; motivo?: unknown; necessaria?: unknown } | null;
+        return !!x && typeof x.nome === 'string' && typeof x.motivo === 'string' && typeof x.necessaria === 'boolean';
+      }) &&
+      ehListaDeTextos(a.enderecos_de_volta) &&
+      ehListaDeTextos(a.bases_dos_avisos) &&
+      (a.lojas_max === null || (typeof a.lojas_max === 'number' && Number.isInteger(a.lojas_max) && a.lojas_max > 0)) &&
+      typeof a.so_leitura === 'boolean' &&
+      typeof a.dado_pessoal === 'boolean' &&
+      typeof a.aprovado_em === 'string'
+    );
+  });
+}
+
+/** O aplicativo de parceiro aprovado para este client_id, ou nulo (desconhecido para o hub: o produto recusa parceiro). */
+export function aprovadoQueVale(lista: ListaDeAprovados | null, aplicativo: string | null | undefined): AplicativoAprovado | null {
+  if (!lista || !aplicativo) return null;
+  return lista.itens.find((i) => i.aplicativo === aplicativo) ?? null;
+}
+
 /**
  * O que sai da mensagem de erro antes de ir ao hub (Padrão §11): segredo e token, e-mail, endereço com parâmetros,
  * identificador, documento, telefone e número longo. Toda expressão é linear (sem repetição aninhada) e o texto é
@@ -1304,6 +1826,12 @@ export type OpcoesClienteHub = {
   aoMudarLista?: (lista: ListaDeParada) => void;
   /** Cada falha de envio ou de leitura, com o motivo (sem dado). */
   aoFalhar?: (motivo: string) => void;
+  /**
+   * Ler a lista de aplicativos de parceiro aprovados (0.8.0; F4, parte B). Só com esta opção o cliente pede o token com
+   * `aplicativos.ler` (um token à parte) e lê a lista: ao iniciar e quando a batida mostra versão mais nova. `inicial`
+   * é a cópia que o produto guardou (vale até o hub responder); `aoMudar`, para ele guardar a nova.
+   */
+  aprovados?: { inicial?: ListaDeAprovados | null; aoMudar?: (lista: ListaDeAprovados) => void };
   buscar?: typeof fetch;
   relogio?: () => number;
   tempoLimiteMs?: number;
@@ -1323,6 +1851,8 @@ export const PAUSA_AVISOS_SEM_ROTA_MS = 30 * 60_000;
  * novo. As mudanças ficam na fila (são eventos de segurança), até o teto dela.
  */
 export const PAUSA_ACOES_SEM_ROTA_MS = 30 * 60_000;
+/** O hub que ainda não tem a rota da lista de aprovados (404, antes da 0.8.0): o cliente espera este tempo e lê de novo. */
+export const PAUSA_APROVADOS_SEM_ROTA_MS = 30 * 60_000;
 
 const motivoDe = (erro: unknown) => (erro instanceof ErroDmsId ? erro.message : erro instanceof Error ? `${erro.name}: ${erro.message}`.slice(0, 200) : String(erro).slice(0, 200));
 
@@ -1352,6 +1882,11 @@ export class ClienteHub {
   private readonly aceitaIntegracoes: (() => boolean) | undefined;
   private readonly aoMudarLista: ((lista: ListaDeParada) => void) | undefined;
   private readonly aoFalhar: ((motivo: string) => void) | undefined;
+  private readonly lerAprovadosLigado: boolean;
+  private readonly aoMudarAprovados: ((lista: ListaDeAprovados) => void) | undefined;
+  private aprovadosLista: ListaDeAprovados | null;
+  private aprovadosLidaEm: number | null = null;
+  private aprovadosParadosAte = 0;
   private readonly buscar: typeof fetch;
   private readonly relogio: () => number;
   private readonly tempoLimiteMs: number;
@@ -1388,6 +1923,9 @@ export class ClienteHub {
     this.teto = o.tetoDaFila ?? 5_000;
     this.intervalos = { paradaMs: o.intervalos?.paradaMs ?? 15_000, envioMs: o.intervalos?.envioMs ?? 5_000, batidaMs: o.intervalos?.batidaMs ?? 60_000 };
     this.lista = o.listaInicial ?? null;
+    this.lerAprovadosLigado = !!o.aprovados;
+    this.aoMudarAprovados = o.aprovados?.aoMudar;
+    this.aprovadosLista = o.aprovados?.inicial ?? null;
   }
 
   /** Anota uma chamada para o registro central. */
@@ -1479,7 +2017,23 @@ export class ClienteHub {
     return paradaQueVale(this.lista, this.produto, c);
   }
 
-  get estado(): { fila: number; avisos: number; acoes: number; erros: number; descartadas: number; paradaVersao: number | null; paradaLidaEm: number | null; ultimaFalha: string | null } {
+  /** O aplicativo de parceiro aprovado para este client_id, pela última lista recebida (só com a opção `aprovados`). */
+  aprovado(aplicativo: string | null | undefined): AplicativoAprovado | null {
+    return aprovadoQueVale(this.aprovadosLista, aplicativo);
+  }
+
+  get estado(): {
+    fila: number;
+    avisos: number;
+    acoes: number;
+    erros: number;
+    descartadas: number;
+    paradaVersao: number | null;
+    paradaLidaEm: number | null;
+    aprovadosVersao: number | null;
+    aprovadosLidaEm: number | null;
+    ultimaFalha: string | null;
+  } {
     return {
       fila: this.chamadas.length,
       avisos: this.avisos.length,
@@ -1488,6 +2042,8 @@ export class ClienteHub {
       descartadas: this.descartadas,
       paradaVersao: this.lista ? this.lista.versao : null,
       paradaLidaEm: this.listaLidaEm,
+      aprovadosVersao: this.aprovadosLista ? this.aprovadosLista.versao : null,
+      aprovadosLidaEm: this.aprovadosLidaEm,
       ultimaFalha: this.ultimaFalha,
     };
   }
@@ -1497,11 +2053,14 @@ export class ClienteHub {
     if (this.aoFalhar) this.aoFalhar(motivo);
   }
 
-  /** Um pedido ao hub com o token do DMS ID; o 401 joga o token fora e tenta uma vez de novo. */
-  private async pedir(metodo: string, caminho: string, corpo?: unknown, cabecalhos: Record<string, string> = {}): Promise<Response> {
+  /**
+   * Um pedido ao hub com o token do DMS ID; o 401 joga o token fora e tenta uma vez de novo. A lista de aprovados vai com
+   * outro conjunto de permissões (outro token, guardado à parte pelo cliente do DMS ID).
+   */
+  private async pedir(metodo: string, caminho: string, corpo?: unknown, cabecalhos: Record<string, string> = {}, permissoes: readonly string[] = PERMISSOES_HUB): Promise<Response> {
     let ultima: Response | null = null;
     for (let tentativa = 0; tentativa < 2; tentativa++) {
-      const token = await this.dmsId.token(this.recurso, PERMISSOES_HUB);
+      const token = await this.dmsId.token(this.recurso, permissoes);
       ultima = await this.buscar(`${this.url}${caminho}`, {
         method: metodo,
         headers: { authorization: `Bearer ${token}`, ...(corpo === undefined ? {} : { 'content-type': 'application/json' }), ...cabecalhos },
@@ -1510,7 +2069,7 @@ export class ClienteHub {
       });
       if (ultima.status !== 401 || tentativa === 1) return ultima;
       await ultima.arrayBuffer().catch(() => null);
-      this.dmsId.esquecer(this.recurso, PERMISSOES_HUB);
+      this.dmsId.esquecer(this.recurso, permissoes);
     }
     return ultima as Response;
   }
@@ -1644,6 +2203,44 @@ export class ClienteHub {
     return this.lista;
   }
 
+  /**
+   * Lê a lista de aplicativos de parceiro aprovados (0.8.0; só com a opção `aprovados`), com ETag. Falhou, recusou (403:
+   * a permissão `aplicativos.ler` ainda não está no papel do produto) ou veio torta: fica a última, nunca uma vazia. O
+   * hub de antes (404) faz esperar `PAUSA_APROVADOS_SEM_ROTA_MS`.
+   */
+  async lerAprovados(): Promise<ListaDeAprovados | null> {
+    if (!this.lerAprovadosLigado || this.relogio() < this.aprovadosParadosAte) return this.aprovadosLista;
+    let r: Response;
+    try {
+      const cabecalhos: Record<string, string> = this.aprovadosLista ? { 'if-none-match': `"v${this.aprovadosLista.versao}"` } : {};
+      r = await this.pedir('GET', '/api/v1/aplicativos', undefined, cabecalhos, [PERMISSAO_APLICATIVOS_HUB]);
+    } catch (erro) {
+      this.falhou(`sem resposta do hub na lista de aprovados (${motivoDe(erro)})`);
+      return this.aprovadosLista;
+    }
+    if (r.status === 304) {
+      await r.arrayBuffer().catch(() => null);
+      this.aprovadosLidaEm = this.relogio();
+      return this.aprovadosLista;
+    }
+    if (!r.ok) {
+      await r.arrayBuffer().catch(() => null);
+      if (r.status === 404) this.aprovadosParadosAte = this.relogio() + PAUSA_APROVADOS_SEM_ROTA_MS;
+      this.falhou(`o hub respondeu ${r.status} na lista de aprovados`);
+      return this.aprovadosLista;
+    }
+    const j: unknown = await r.json().catch(() => null);
+    if (!listaDeAprovadosValida(j)) {
+      this.falhou('a lista de aprovados veio fora do formato');
+      return this.aprovadosLista;
+    }
+    const mudou = !this.aprovadosLista || this.aprovadosLista.versao !== j.versao;
+    this.aprovadosLista = j;
+    this.aprovadosLidaEm = this.relogio();
+    if (mudou && this.aoMudarAprovados) this.aoMudarAprovados(j);
+    return this.aprovadosLista;
+  }
+
   /** A batida: a versão, desde quando, a chave própria e a lista lida. A lista mais nova no hub faz ler na hora. */
   async bater(): Promise<boolean> {
     const corpo: Record<string, unknown> = { versao: this.versao.slice(0, 80), iniciado_em: this.iniciadoEm.toISOString() };
@@ -1661,8 +2258,12 @@ export class ClienteHub {
       this.falhou(`o hub respondeu ${r.status} na batida`);
       return false;
     }
-    const j = (await r.json().catch(() => null)) as { parada_versao?: unknown } | null;
+    const j = (await r.json().catch(() => null)) as { parada_versao?: unknown; aplicativos_versao?: unknown } | null;
     if (j && typeof j.parada_versao === 'number' && (!this.lista || j.parada_versao > this.lista.versao)) await this.lerParada();
+    // a lista de aprovados também vem pela batida (o hub de antes não manda o campo: nada muda)
+    if (this.lerAprovadosLigado && j && typeof j.aplicativos_versao === 'number' && (!this.aprovadosLista || j.aplicativos_versao > this.aprovadosLista.versao)) {
+      await this.lerAprovados();
+    }
     return true;
   }
 
@@ -1680,6 +2281,7 @@ export class ClienteHub {
     cada(this.intervalos.envioMs, () => this.enviar());
     cada(this.intervalos.batidaMs, () => this.bater());
     this.bater().catch((erro: unknown) => this.falhou(motivoDe(erro)));
+    if (this.lerAprovadosLigado) this.lerAprovados().catch((erro: unknown) => this.falhou(motivoDe(erro)));
   }
 
   /** Desliga os relógios e manda o que falta (uma vez). */
@@ -1724,6 +2326,12 @@ export type RotaNoManifesto = {
   resumo: string;
   /** A permissão que a rota exige; nula = qualquer credencial válida da empresa. */
   permissao: string | null;
+  /**
+   * As classes que alcançam ESTA rota (0.10.2), quando são menos que as da permissão: a rota só de produto da DMS que
+   * usa uma permissão que o parceiro também tem (`['dms']`). Sem isto, vale o teto da permissão. Quem recusa de
+   * verdade é o produto (403); aqui é o contrato: o portal não mostra ao parceiro a rota que ele não alcança.
+   */
+  classes?: readonly Classe[];
   /** Só na escrita: `chave` = `Idempotency-Key` obrigatória; `substituicao` = o envio troca o conjunto inteiro (§5). */
   escrita?: 'chave' | 'substituicao';
   /** Sem isto, vale o limite do manifesto. */
@@ -1817,6 +2425,8 @@ export function montarManifesto(e: EntradaManifesto): ManifestoDms {
   const paths: Record<string, Record<string, unknown>> = {};
   for (const r of e.rotas) {
     const operacao: Record<string, unknown> = { operationId: idDaOperacao(r.metodo, r.caminho), summary: r.resumo, 'x-dms-permissao': r.permissao };
+    // só quando a rota alcança menos classes que a permissão (0.10.2); sem o campo, vale o teto da permissão
+    if (r.classes) operacao['x-dms-classes'] = [...r.classes];
     if (r.escrita) operacao['x-dms-escrita'] = r.escrita;
     if (r.limite) operacao['x-dms-limite'] = copiaDosLimites(r.limite);
     const parametros: Record<string, unknown>[] = parametrosDoCaminho(r.caminho).map((nome) => ({ name: nome, in: 'path', required: true, schema: { type: 'string' } }));
@@ -1948,6 +2558,8 @@ export function conferirManifesto(doc: unknown): string[] {
   if (!credenciaisBoas) problemas.push('falta dizer as credenciais que a porta aceita (security com dmsId ou acessoProprio, declarados em components.securitySchemes)');
 
   const declaradas = new Set<string>();
+  // o teto de cada permissão bem declarada, para a rota com `x-dms-classes` só poder reduzir (0.10.2)
+  const tetoDe = new Map<string, readonly unknown[]>();
   const permissoes = doc['x-dms-permissoes'];
   if (!ehObjetoSimples(permissoes)) problemas.push('falta x-dms-permissoes');
   else {
@@ -1962,6 +2574,7 @@ export function conferirManifesto(doc: unknown): string[] {
       const classes = v.classes;
       const classesBoas = Array.isArray(classes) && classes.length > 0 && new Set(classes).size === classes.length && classes.every((c) => CLASSES_DO_PADRAO.includes(c as Classe));
       if (!classesBoas) problemas.push(`a permissão "${nome}" precisa das classes que podem tê-la, sem repetir (dms, parceiro, proprio)`);
+      else tetoDe.set(nome, classes as readonly unknown[]);
       if (typeof v.sensivel !== 'boolean') problemas.push(`a permissão "${nome}" precisa dizer se é sensível`);
     }
   }
@@ -1992,6 +2605,22 @@ export function conferirManifesto(doc: unknown): string[] {
         if (typeof op.summary !== 'string' || !op.summary.trim()) problemas.push(`${onde}: falta o resumo (summary)`);
         if (!('x-dms-permissao' in op)) problemas.push(`${onde}: falta x-dms-permissao (o nome, ou null para qualquer credencial)`);
         else usa(onde, op['x-dms-permissao']);
+        // as classes da rota (0.10.2): uma lista do Padrão, sem repetir, que só REDUZ o teto da permissão dela
+        const classesDaRota = op['x-dms-classes'];
+        if (classesDaRota !== undefined) {
+          const boas =
+            Array.isArray(classesDaRota) &&
+            classesDaRota.length > 0 &&
+            new Set(classesDaRota).size === classesDaRota.length &&
+            classesDaRota.every((c) => CLASSES_DO_PADRAO.includes(c as Classe));
+          if (!boas) problemas.push(`${onde}: x-dms-classes precisa ser uma lista de classes do Padrão, sem repetir (dms, parceiro, proprio)`);
+          else {
+            const teto = typeof op['x-dms-permissao'] === 'string' ? tetoDe.get(op['x-dms-permissao']) : undefined;
+            if (teto && !(classesDaRota as unknown[]).every((c) => teto.includes(c))) {
+              problemas.push(`${onde}: x-dms-classes só pode reduzir as classes da permissão "${String(op['x-dms-permissao'])}"`);
+            }
+          }
+        }
         if (op['x-dms-limite'] !== undefined) problemas.push(...problemasDoLimite(op['x-dms-limite'], onde));
         if (metodo !== 'get' && op['x-dms-escrita'] !== 'chave' && op['x-dms-escrita'] !== 'substituicao') {
           problemas.push(`${onde}: a escrita precisa de x-dms-escrita (chave ou substituicao, Padrão §5)`);

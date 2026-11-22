@@ -11,7 +11,7 @@
  * campo a mais no corpo não é ignorado — é 400 na cara do usuário.
  */
 import { api, enderecoDaApi } from './api';
-import type { SituacaoCardapioWeb, SituacaoRegem, Segmento, ResumoSegmentos, ParametrosSegmentacao,
+import type { AjusteDeVideo, ProporcaoDoVideo, SituacaoDmsGraph, SituacaoCardapioWeb, SituacaoRegem, Segmento, ResumoSegmentos, ParametrosSegmentacao,
   AlvoDePublico,
   ImportacaoDaBase,
   OrcamentoDeDisparos,
@@ -586,6 +586,32 @@ export const modelos = {
 
   /** `DELETE /modelos/:id` — apaga aqui e, quando o modelo está lá, também na Meta. */
   excluir: (id: string) => api.delete<{ ok: boolean; naMeta: boolean }>(`/modelos/${id}`),
+};
+
+/** O DMS Graph (o produto da DMS, não a Graph API da Meta): a ligação da conta e o ajuste do vídeo. */
+export const dmsGraph = {
+  /** `GET /integracoes/dms-graph` */
+  situacao: () => api.get<SituacaoDmsGraph>('/integracoes/dms-graph'),
+
+  /** `POST /integracoes/dms-graph/clique` — abre o pedido no Graph; devolve a página de lá. */
+  conectar: () => api.post<{ url: string }>('/integracoes/dms-graph/clique', {}),
+
+  /** `POST /integracoes/dms-graph/clique/volta` — o que o Graph devolveu ao navegador, tal como veio. */
+  concluir: (volta: { code?: string; state?: string; iss?: string; error?: string }) =>
+    api.post<{ situacao: 'conectado'; contaNome: string | null } | { situacao: 'recusado' }>('/integracoes/dms-graph/clique/volta', volta),
+
+  /** `POST /integracoes/dms-graph/desligar` */
+  desligar: () => api.post<{ desligada: boolean }>('/integracoes/dms-graph/desligar', {}),
+
+  /** `GET /integracoes/dms-graph/midia/:id` — dá para ajustar este vídeo? */
+  midia: (id: string) => api.get<{ bytes: number; podeAjustar: boolean; motivo: string | null }>(`/integracoes/dms-graph/midia/${id}`),
+
+  /** `POST /integracoes/dms-graph/ajustes` — a mesma mídia com o mesmo pedido cai no mesmo ajuste. */
+  ajustar: (dados: { referencia: string; inicioSegundos?: number; fimSegundos?: number; proporcao?: ProporcaoDoVideo; texto?: string }) =>
+    api.post<AjusteDeVideo>('/integracoes/dms-graph/ajustes', dados),
+
+  /** `GET /integracoes/dms-graph/ajustes/:id` */
+  consultarAjuste: (id: string) => api.get<AjusteDeVideo>(`/integracoes/dms-graph/ajustes/${id}`),
 };
 
 export const midia = {
