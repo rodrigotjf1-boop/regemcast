@@ -5,6 +5,8 @@ import { AuditoriaModule } from '../auditoria/auditoria.module';
 import { ContatoController } from './contato.controller';
 import { ContatoService } from './contato.service';
 import { DivisaoService } from './divisao.service';
+import { PublicoSalvoController } from './publico-salvo.controller';
+import { PublicoSalvoService } from './publico-salvo.service';
 import { PublicosService } from './publicos.service';
 import { SegmentacaoService } from './segmentacao.service';
 
@@ -18,8 +20,8 @@ import { SegmentacaoService } from './segmentacao.service';
  */
 @Module({
   imports: [DrizzleModule, AuditoriaModule],
-  controllers: [ContatoController],
-  providers: [ContatoService, SegmentacaoService, DivisaoService, PublicosService],
+  controllers: [ContatoController, PublicoSalvoController],
+  providers: [ContatoService, SegmentacaoService, DivisaoService, PublicosService, PublicoSalvoService],
   exports: [ContatoService, PublicosService, SegmentacaoService],
 })
 export class ContatoModule {}

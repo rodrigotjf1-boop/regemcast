@@ -59,6 +59,33 @@ export async function gravarSaldos(
 }
 
 /**
+ * Grava quando cada contato se cadastrou na loja (`cadastro_origem_em`,
+ * migration 053), nas duas formas do celular. Como o saldo: só de quem pode
+ * receber, e a linha só é escrita quando a data muda. Os três caminhos que
+ * leem clientes (importação, leitura diária e busca de pedidos) chamam — a
+ * leitura das 4h preenche quem já estava na base.
+ */
+export async function gravarCadastros(db: Db, contaId: string, datas: Map<string, string>): Promise<number> {
+  let gravados = 0;
+  for (const parte of emPartes([...datas.entries()], 500)) {
+    const r = await db.execute(sql`
+      update contato c
+         set cadastro_origem_em = v.desde
+        from (values ${sql.join(
+          parte.map(([telefone, desde]) => sql`(${telefone}::text, ${desde}::timestamptz)`),
+          sql`, `,
+        )}) as v(telefone, desde)
+       where c.conta_id = ${contaId}
+         and c.telefone_e164 = v.telefone
+         and c.opt_out = false
+         and c.cadastro_origem_em is distinct from v.desde
+    `);
+    gravados += r.rowCount ?? 0;
+  }
+  return gravados;
+}
+
+/**
  * Quem desligou o WhatsApp no Cardápio Web (`notifications_enabled = false`):
  * entra descadastrado ou passa a estar. Um descadastro que já existia não é
  * tocado, e nenhum é desfeito. A linha criada para quem não estava na base

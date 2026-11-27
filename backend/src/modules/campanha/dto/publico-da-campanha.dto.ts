@@ -1,19 +1,71 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength, ValidateIf } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  ValidateIf,
+  ValidateNested,
+} from 'class-validator';
 
-import { ORIGENS_DO_PUBLICO, type OrigemDoPublico } from '../../contato/origem-do-publico';
+import { RegraDoPublicoDto } from '../../contato/dto/regra-do-publico.dto';
+import { ORIGENS_DA_TELA, type OrigemDaTela } from '../../contato/origem-do-publico';
 import { PUBLICOS, TAMANHO_MAXIMO_VALOR, type Publico } from '../../contato/publicos';
+import { MAX_REGRAS } from '../../contato/regras-do-publico';
 import { SEGMENTOS, type Segmento } from '../../contato/segmentacao';
 
 /**
  * De onde sai o público da campanha: uma lista, ou um público da base — toda a
- * base, uma importação, um perfil, um estado (pelo DDD) ou um público pronto.
- * Os mesmos campos da divisão em blocos (`origem-do-publico.ts`).
+ * base, uma importação, um perfil, um estado (pelo DDD), um público pronto ou
+ * um público montado com regras (migration 053). Os mesmos campos da divisão
+ * em blocos (`origem-do-publico.ts`), mais as regras.
  */
 export class PublicoDaCampanhaDto {
-  @ApiProperty({ enum: ORIGENS_DO_PUBLICO, description: 'De onde saem os contatos.' })
-  @IsIn(ORIGENS_DO_PUBLICO, { message: 'Escolha de onde sai o público.' })
-  origem!: OrigemDoPublico;
+  @ApiProperty({ enum: ORIGENS_DA_TELA, description: 'De onde saem os contatos.' })
+  @IsIn(ORIGENS_DA_TELA, { message: 'Escolha de onde sai o público.' })
+  origem!: OrigemDaTela;
+
+  @ApiProperty({
+    required: false,
+    type: [RegraDoPublicoDto],
+    description: 'As regras, quando a origem é `regras` sem público salvo. O contato precisa cumprir todas.',
+  })
+  @ValidateIf((d: PublicoDaCampanhaDto) => d.origem === 'regras' && !d.publicoSalvoId)
+  @IsArray({ message: 'Monte ao menos uma regra.' })
+  @ArrayMinSize(1, { message: 'Monte ao menos uma regra.' })
+  @ArrayMaxSize(MAX_REGRAS, { message: `São no máximo ${MAX_REGRAS} regras.` })
+  @ValidateNested({ each: true })
+  @Type(() => RegraDoPublicoDto)
+  regras?: RegraDoPublicoDto[];
+
+  @ApiProperty({ required: false, description: 'O público salvo. Com ele, valem as regras gravadas, não as do pedido.' })
+  @IsOptional()
+  @IsUUID('4', { message: 'Escolha o público salvo.' })
+  publicoSalvoId?: string;
+
+  @ApiProperty({ required: false, example: 1, description: 'Só uma parte: do contato N (a partir de 1), na ordem em que entraram na base.' })
+  @IsOptional()
+  @IsInt({ message: 'A parte vai de um contato a outro: números inteiros.' })
+  @Min(1)
+  @Max(1_000_000)
+  parteDe?: number;
+
+  @ApiProperty({ required: false, example: 500, description: 'Só uma parte: até o contato N.' })
+  @IsOptional()
+  @IsInt({ message: 'A parte vai de um contato a outro: números inteiros.' })
+  @Min(1)
+  @Max(1_000_000)
+  parteAte?: number;
 
   @ApiProperty({ required: false, description: 'A lista ou a importação, quando a origem é uma delas.' })
   @ValidateIf((d: PublicoDaCampanhaDto) => d.origem === 'lista' || d.origem === 'importacao')

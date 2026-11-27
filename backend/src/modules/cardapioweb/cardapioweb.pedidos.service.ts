@@ -49,8 +49,8 @@ import {
   type PedidoDetalhe,
   type PedidoResumo,
 } from './cardapioweb.pedidos.regras';
-import { decidir, saldosDaPagina, type ClienteCardapioWeb } from './cardapioweb.regras';
-import { bloquearClientes, gravarSaldos } from './cardapioweb.saldos';
+import { cadastrosDaPagina, decidir, saldosDaPagina, type ClienteCardapioWeb } from './cardapioweb.regras';
+import { bloquearClientes, gravarCadastros, gravarSaldos } from './cardapioweb.saldos';
 
 const PAUSA_ENTRE_PEDIDOS_MS = 650;
 /** Entre dois passos da mesma loja: a consulta de histórico é 5 por minuto. */
@@ -360,7 +360,11 @@ export class PedidosCardapiowebService {
     // 4. Gravar: clientes novos, o cashback de quem foi lido, compras de quem pode receber, totais.
     const gravadas = await this.ctx.comConta(contaId, async (db) => {
       if (clientesNovos.length) await gravarClientesNovos(db, contaId, l, clientesNovos);
-      if (lidos.length) await gravarSaldos(db, contaId, saldosDaPagina(lidos), new Date());
+      if (lidos.length) {
+        const agora = new Date();
+        await gravarSaldos(db, contaId, saldosDaPagina(lidos), agora);
+        await gravarCadastros(db, contaId, cadastrosDaPagina(lidos, agora));
+      }
       const contatos = await contatosPorTelefone(db, contaId, compras.map((c) => c.telefone));
 
       const linhas: { compra: CompraNormalizada; contatoId: string }[] = [];

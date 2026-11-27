@@ -33,6 +33,28 @@ import type {
 /** Números digitados: o mesmo teto do servidor. Público maior vem de uma lista. */
 const TETO_DESTINATARIOS = 500;
 
+/** Com as regras, a prévia espera a pessoa parar de digitar por este tempo. */
+const ESPERA_DA_PREVIA_MS = 400;
+
+/**
+ * O "Da base" com que o formulário abre: o rascunho montado com regras volta
+ * com as regras e a parte; "Usar em campanha" de um público salvo abre com ele
+ * (com o `publicoSalvoId`, o servidor usa as regras gravadas).
+ */
+function daBaseQueAbre(campanha: ResumoCampanha | undefined, publicoSalvoInicial: string | undefined): PublicoDaCampanha | null {
+  if (campanha) {
+    if (campanha.publicoOrigem !== 'regras' || !campanha.publicoRegras?.regras.length) return null;
+    const parte = campanha.publicoRegras.parte;
+    return {
+      origem: 'regras',
+      regras: campanha.publicoRegras.regras,
+      ...(campanha.publicoSalvoId ? { publicoSalvoId: campanha.publicoSalvoId } : {}),
+      ...(parte ? { parteDe: parte.de, parteAte: parte.ate } : {}),
+    };
+  }
+  return publicoSalvoInicial ? { origem: 'regras', publicoSalvoId: publicoSalvoInicial } : null;
+}
+
 const ROTULO_ORIGEM: Record<VariavelDeLista['origem'], string> = {
   nome: 'Nome do contato',
   primeiro_nome: 'Primeiro nome do contato',
@@ -149,6 +171,7 @@ export function FormularioCampanha({
   aoConcluir,
   aoCancelar,
   listaInicial,
+  publicoSalvoInicial,
 }: {
   /** Presente = edição. Ausente = campanha nova. */
   campanha?: ResumoCampanha;
@@ -156,9 +179,13 @@ export function FormularioCampanha({
   aoCancelar?: () => void;
   /** Lista (ou bloco) já escolhida — quando se chega por "Usar em campanha". */
   listaInicial?: string;
+  /** Público salvo já escolhido — quando se chega por "Usar em campanha" em Contatos › Públicos salvos. */
+  publicoSalvoInicial?: string;
 }) {
   const editando = Boolean(campanha);
   const podeTrocarConteudo = !editando || campanha?.status === 'rascunho';
+  // O rascunho montado com regras reabre com as regras; "Usar em campanha" de um público salvo abre com ele.
+  const [daBaseInicial] = useState<PublicoDaCampanha | null>(() => daBaseQueAbre(campanha, publicoSalvoInicial));
   const [modelos, setModelos] = useState<ModeloDeMensagem[] | null>(null);
   const [erroModelos, setErroModelos] = useState('');
   const [nome, setNome] = useState(campanha?.nome ?? '');
@@ -166,12 +193,14 @@ export function FormularioCampanha({
   const [telefones, setTelefones] = useState('');
   const [variaveis, setVariaveis] = useState<string[]>([]);
   const [listas, setListas] = useState<ListaDeContatos[] | null>(null);
-  const [publico, setPublico] = useState<'lista' | 'base' | 'numeros'>('lista');
+  const [publico, setPublico] = useState<'lista' | 'base' | 'numeros'>(daBaseInicial ? 'base' : 'lista');
   const [listaId, setListaId] = useState('');
-  /** "Da base": toda a base, uma importação, um perfil ou um público pronto. */
-  const [daBase, setDaBase] = useState<PublicoDaCampanha | null>(null);
+  /** "Da base": toda a base, uma importação, um perfil, um público pronto ou as regras. */
+  const [daBase, setDaBase] = useState<PublicoDaCampanha | null>(daBaseInicial);
   /** Do público escolhido (lista ou da base): quantos podem receber, descanso e horário. */
   const [previa, setPrevia] = useState<PreviaDoPublico | null>(null);
+  /** Por que a prévia não veio: com as regras, é por aqui que a regra recusada pelo servidor aparece. */
+  const [erroDaPrevia, setErroDaPrevia] = useState('');
   const [ignorarDescanso, setIgnorarDescanso] = useState(false);
   const { sessao } = useSessao();
   const ehDono = sessao.usuario.papel === 'dono';
@@ -271,14 +300,25 @@ export function FormularioCampanha({
   const categoriaEscolhida = modelos?.find((m) => m.id === modeloId)?.categoria ?? '';
   useEffect(() => {
     setPrevia(null);
+    setErroDaPrevia('');
     if (!chaveDoAlvo) return;
     let vivo = true;
-    campanhas
-      .previa(JSON.parse(chaveDoAlvo) as PublicoDaCampanha, comCashback, categoriaEscolhida)
-      .then((r) => vivo && setPrevia(r))
-      .catch(() => vivo && setPrevia(null));
+    const pedido = JSON.parse(chaveDoAlvo) as PublicoDaCampanha;
+    const buscar = () =>
+      campanhas
+        .previa(pedido, comCashback, categoriaEscolhida)
+        .then((r) => vivo && setPrevia(r))
+        .catch((e) => {
+          if (!vivo) return;
+          setPrevia(null);
+          setErroDaPrevia(mensagemDoErro(e));
+        });
+    // Com as regras, cada tecla muda o público: a prévia espera a pessoa parar de digitar.
+    const espera = pedido.origem === 'regras' ? setTimeout(() => void buscar(), ESPERA_DA_PREVIA_MS) : null;
+    if (!espera) void buscar();
     return () => {
       vivo = false;
+      if (espera) clearTimeout(espera);
     };
   }, [chaveDoAlvo, comCashback, categoriaEscolhida]);
   const alcance = previa ? previa.total : null;
@@ -365,7 +405,9 @@ export function FormularioCampanha({
       }
     } else if (publico === 'base') {
       if (!daBase) {
-        setErro('Escolha de onde sai o público: toda a base, uma importação, um perfil ou um público pronto.');
+        setErro(
+          'Escolha de onde sai o público: toda a base, uma importação, um perfil, um público pronto ou as regras — com as regras, preencha o valor de cada uma.',
+        );
         return;
       }
       if (alcance === 0) {
@@ -758,19 +800,25 @@ export function FormularioCampanha({
 
           {publico === 'base' && (
             <div className="space-y-2">
-              <PublicoDaBase valor={daBase} aoMudar={setDaBase} />
-              <p className="text-xs text-tinta-suave">
-                {daBase && alcance !== null ? (
-                  <>
-                    <strong className="numerico text-tinta">{formatarNumero(alcance)}</strong>{' '}
-                    {alcance === 1 ? 'pessoa vai receber' : 'pessoas vão receber'}
-                    <SoComCashback previa={previa} />. O público é copiado ao montar a campanha: quem entrar na base
-                    depois não recebe esta.
-                  </>
-                ) : (
-                  'Toda a base, uma importação (os contatos importados sem lista estão aqui), um perfil ou um público pronto. Quem pediu para sair fica de fora automaticamente.'
-                )}
-              </p>
+              <PublicoDaBase valor={daBase} aoMudar={setDaBase} previa={previa} erroDaPrevia={erroDaPrevia} />
+              {daBase && alcance !== null ? (
+                <p className="text-xs text-tinta-suave">
+                  <strong className="numerico text-tinta">{formatarNumero(alcance)}</strong>{' '}
+                  {alcance === 1 ? 'pessoa vai receber' : 'pessoas vão receber'}
+                  <SoComCashback previa={previa} />. O público é copiado ao montar a campanha: quem entrar na base
+                  depois não recebe esta.
+                </p>
+              ) : daBase && erroDaPrevia && daBase.origem !== 'regras' ? (
+                // Com as regras, o erro aparece na contagem delas.
+                <p className="text-xs text-erro" role="alert">
+                  Não consegui contar este público: {erroDaPrevia}
+                </p>
+              ) : !daBase ? (
+                <p className="text-xs text-tinta-suave">
+                  Toda a base, uma importação (os contatos importados sem lista estão aqui), um perfil, um público pronto
+                  ou as regras que você monta. Quem pediu para sair fica de fora automaticamente.
+                </p>
+              ) : null}
             </div>
           )}
 

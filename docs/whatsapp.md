@@ -457,6 +457,48 @@ Como funciona:
   vira campanha de lista, com `lista_id`. Assim "já enviado em…" e o
   resultado por bloco continuam valendo.
 
+## Público montado com regras (migration 053)
+
+"Quem recebe → Da base → **Montar com regras**", no modelo do "Escolher
+clientes" do Cardápio Web (pedido do dono, 27/11/2026):
+
+- **Regra = campo + comparação + valor.** As comparações são as seis do
+  Cardápio Web (é igual a, não é igual a, é maior que, é menor que, é maior
+  ou igual a, é menor ou igual a); nas datas, "é no dia", "é antes de",
+  "é depois de"…; nas listas, "é" e "não é". O contato precisa cumprir
+  **todas**, até 10.
+- **Campos** (`GET /publicos-salvos/campos`, a tela não guarda lista
+  própria): total de pedidos, total gasto, ticket médio, datas do primeiro e
+  do último pedido, dias desde o último pedido, já comprou o produto, data e
+  dias do próximo aniversário (29/02 vira 28/02 nos anos sem 29), dias desde
+  a última campanha recebida (só as do Regemcast; quem nunca recebeu conta
+  como há muito tempo), data e dias do cadastro no Cardápio Web
+  (`contato.cadastro_origem_em`, gravado pela importação, pela leitura das 4h
+  e pela busca de pedidos), data em que entrou no Regemcast, perfil (RFV),
+  saldo de cashback válido, dias para o cashback vencer, bairro, estado pelo
+  DDD, jeito de comprar e período do dia. "Data do último acesso ao site" do
+  Cardápio Web fica de fora: a API não entrega.
+- **Datas e "dias desde" são do calendário, no fuso da conta.** "Não é
+  igual a" (e "não é") inclui quem não tem o dado; as outras comparações não
+  — quem nunca comprou não entra em "dias desde o último pedido > 45".
+- **Mandar só para uma parte:** do contato X ao Y, numerados entre quem
+  **pode receber** (sem descadastro e com WhatsApp), na ordem em que entraram
+  na base. A ordem é fixa: o "do 1 ao 500" da prévia é o da montagem. A
+  prévia devolve `total` (a parte) e `publicoInteiro`.
+- **Públicos salvos** (`/publicos-salvos`; Contatos › Públicos salvos):
+  guardam as **regras**, não as pessoas — a contagem "podem receber hoje" é
+  feita na hora. Com `publicoSalvoId`, a campanha usa as regras **gravadas**,
+  não as do pedido. O nome não se repete na conta (`nome_chave`, calculada no
+  servidor em pt-BR: o `lower()` do banco depende do `lc_ctype`). Excluir é
+  só do dono e não mexe em campanha: `campanha.publico_salvo_id` fica para
+  contar os usos. Regra gravada que saiu da lista: a tela mostra o problema e
+  a campanha recusa.
+- **Cartão e reabrir:** a campanha guarda `publico_regras` (as regras e a
+  parte usadas — a foto) e o rótulo pronto ("Público salvo: X" ou as regras
+  numa frase).
+- **Fora da porta MCP nesta versão:** a origem `regras` está em
+  `ORIGENS_DA_TELA`, não em `ORIGENS_DO_PUBLICO` (o esquema das ferramentas).
+
 ## Cashback na campanha (Fase 4C, migration 034)
 
 Duas variáveis saem do cashback do Cardápio Web (o saldo é lido como está em

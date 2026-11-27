@@ -626,10 +626,17 @@ export const campanha = pgTable('campanha', {
   retomarEm: timestamp('retomar_em', { withTimezone: true }),
   /** Descanso desta campanha, copiado da conta ao criar; nulo = sem descanso (migration 031). */
   descansoDias: integer('descanso_dias'),
-  /** De onde saiu o público (migration 033): lista | numeros | base | importacao | perfil | publico | regiao. */
+  /** De onde saiu o público (migration 033; `regras` na 053): lista | numeros | base | importacao | perfil | publico | regiao | regras. */
   publicoOrigem: text('publico_origem'),
   /** O nome do público no cartão ("Toda a base", "Pedem à noite"…); nulo para lista e números. */
   publicoRotulo: text('publico_rotulo'),
+  /**
+   * As regras do público montado com regras, como foram usadas na montagem (migration 053):
+   * `{ regras: [{ campo, comparacao, valor }], parte: { de, ate } | null }`. Nulo nas outras origens.
+   */
+  publicoRegras: jsonb('publico_regras'),
+  /** O público salvo de onde vieram as regras (migration 053). Sem FK: excluir o público salvo não mexe aqui. */
+  publicoSalvoId: uuid('publico_salvo_id'),
   /**
    * De onde sai cada variável, em ordem (migration 034): `[{ origem, valor }]`.
    * A conferência do cashback na hora do envio usa. Nulo = números digitados
@@ -732,6 +739,30 @@ export const contatoLista = pgTable('contato_lista', {
 }));
 
 /**
+ * Públicos salvos (migration 053): regras com nome, por conta. Guardam as
+ * REGRAS, não as pessoas — a cada uso o servidor confere de novo quem combina
+ * (`contato/regras-do-publico.ts`). RLS ligada.
+ */
+export const publicoSalvo = pgTable('publico_salvo', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contaId: uuid('conta_id').notNull(),
+  nome: text('nome').notNull(),
+  /**
+   * O nome sem diferença de maiúscula, calculado no servidor (`chaveDoNome`): o
+   * índice único da conta é nele. O `lower()` do banco depende do `lc_ctype` e,
+   * em "C", não baixa letra acentuada (ERR-059).
+   */
+  nomeChave: text('nome_chave').notNull(),
+  /** `[{ campo, comparacao, valor }]`, de 1 a 10. */
+  regras: jsonb('regras').notNull(),
+  criadoPor: uuid('criado_por'),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  contaIdx: index('idx_publico_salvo_conta').on(t.contaId, t.criadoEm),
+}));
+
+/**
  * A base dividida em blocos (migration 028). Cada bloco é uma `contato_lista`
  * com `divisao_id` e `bloco`; aqui fica de onde os blocos saíram e com que
  * regra. É uma foto do momento da divisão.
@@ -829,6 +860,8 @@ export const contato = pgTable('contato', {
   cashbackEm: timestamp('cashback_em', { withTimezone: true }),
   metricasEm: timestamp('metricas_em', { withTimezone: true }),
   metricasOrigem: text('metricas_origem'),
+  /** Quando o cliente se cadastrou no sistema da loja — o `created_at` do Cardápio Web (migration 053). Dado pessoal. */
+  cadastroOrigemEm: timestamp('cadastro_origem_em', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
   atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
