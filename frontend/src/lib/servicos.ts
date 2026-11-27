@@ -22,6 +22,9 @@ import type { AjusteDeVideo, ProporcaoDoVideo, SituacaoDmsGraph, SituacaoCardapi
   ProdutoDaBase,
   Publico,
   PublicoDaCampanha,
+  CatalogoDasRegras,
+  PublicoSalvo,
+  RegraDoPublico,
   ResumoPublicos,
   ResultadoContratacao,
   SituacaoCobranca,
@@ -547,6 +550,31 @@ export const contatos = {
 
   /** `DELETE /contatos/:id` — marca como descadastrado; não apaga. */
   descadastrar: (id: string) => api.delete<{ ok: boolean }>(`/contatos/${id}`),
+};
+
+/**
+ * Públicos salvos: regras com nome. Guardam as regras, não as pessoas — a cada
+ * uso o servidor confere de novo quem combina.
+ */
+export const publicosSalvos = {
+  /** `GET /publicos-salvos/campos` — os campos das regras, as comparações de cada tipo e o máximo de regras. */
+  campos: () => api.get<CatalogoDasRegras>('/publicos-salvos/campos'),
+
+  /** `GET /publicos-salvos` — com quantos podem receber hoje e os usos de cada um. */
+  listar: () => api.get<{ publicos: PublicoSalvo[] }>('/publicos-salvos'),
+
+  /** `POST /publicos-salvos` */
+  criar: (nome: string, regras: RegraDoPublico[]) => api.post<PublicoSalvo>('/publicos-salvos', { nome, regras }),
+
+  /** `PATCH /publicos-salvos/:id` — o nome, as regras ou os dois. */
+  editar: (id: string, dados: { nome?: string; regras?: RegraDoPublico[] }) =>
+    api.patch<PublicoSalvo>(`/publicos-salvos/${encodeURIComponent(id)}`, dados),
+
+  /** `POST /publicos-salvos/:id/duplicar` — nasce como "Cópia de …". */
+  duplicar: (id: string) => api.post<PublicoSalvo>(`/publicos-salvos/${encodeURIComponent(id)}/duplicar`),
+
+  /** `DELETE /publicos-salvos/:id` — só o dono. As campanhas que já usaram continuam como estão. */
+  excluir: (id: string) => api.delete<{ excluido: true }>(`/publicos-salvos/${encodeURIComponent(id)}`),
 };
 
 export const modelos = {

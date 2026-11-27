@@ -37,8 +37,8 @@ import { cifrarToken, decifrarToken } from '../meta/cripto';
 import { CardapiowebCliente, ErroCardapioWeb, type Credencial } from './cardapioweb.cliente';
 import { prepararCargaDePedidos } from './cardapioweb.pedidos.service';
 import { progressoDaCarga } from './cardapioweb.pedidos.regras';
-import { saldosDaPagina, separarPagina } from './cardapioweb.regras';
-import { bloquearClientes, gravarSaldos, proximaLeituraSql } from './cardapioweb.saldos';
+import { cadastrosDaPagina, saldosDaPagina, separarPagina } from './cardapioweb.regras';
+import { bloquearClientes, gravarCadastros, gravarSaldos, proximaLeituraSql } from './cardapioweb.saldos';
 
 const NOME_LISTA = 'Clientes Cardápio Web';
 /** 300 req a cada 3 min por loja = 1 a cada 0,6 s. Folga para não bater no teto. */
@@ -539,6 +539,8 @@ export class CardapiowebService {
 
       // O cashback de quem está na base (inclusive quem acabou de entrar).
       await gravarSaldos(db, contaId, saldosDaPagina(dados.customers), agora);
+      // E desde quando cada um é cliente da loja (a regra "Data do cadastro no Cardápio Web").
+      await gravarCadastros(db, contaId, cadastrosDaPagina(dados.customers, agora));
 
       await db
         .update(integracaoCardapioweb)

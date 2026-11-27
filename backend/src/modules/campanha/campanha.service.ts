@@ -43,6 +43,7 @@ import { AvisoService } from '../aviso/aviso.service';
 import { cashbackValido, hojeDaConta, hojeNoFuso } from '../contato/cashback';
 import { PERIODOS, sugerirHorario, type Periodo, type SugestaoDeHorario } from '../contato/habitos';
 import { origemDoPublico, type PedidoDeOrigem } from '../contato/origem-do-publico';
+import type { RegrasDaCampanha } from '../contato/regras-do-publico';
 import { ERRO_SEM_WHATSAPP, marcarSemWhatsappNaFila, registrarFalhaSemWhatsapp } from '../contato/sem-whatsapp';
 import {
   CabecalhoSemValor,
@@ -470,6 +471,16 @@ interface PublicoMontado {
   rotulo: string | null;
   /** De onde sai cada variável (lista e "Da base"); nulo para números digitados. */
   variaveis: VariavelDaLista[] | null;
+  /** O público montado com regras: as regras e a parte que valeram (a foto) e o público salvo. Nulo nas outras origens. */
+  regras: (RegrasDaCampanha & { publicoSalvoId: string | null }) | null;
+}
+
+/** As colunas das regras (migration 053): preenchidas na origem `regras`, limpas nas outras (a edição pode trocar a origem). */
+function regrasParaGravar(publico: PublicoMontado): { publicoRegras: RegrasDaCampanha | null; publicoSalvoId: string | null } {
+  return {
+    publicoRegras: publico.regras ? { regras: publico.regras.regras, parte: publico.regras.parte } : null,
+    publicoSalvoId: publico.regras?.publicoSalvoId ?? null,
+  };
 }
 
 /** O que o modelo exige no envio, resolvido para esta campanha. */
@@ -495,6 +506,11 @@ export interface PreviaDoPublico {
    * tela escolheu. Nulo enquanto não há modelo escolhido.
    */
   custo: CustoParaTela | null;
+  /**
+   * Com "mandar só para uma parte" (origem `regras`), `total` é o da parte; aqui,
+   * quantos podem receber no público inteiro. Nulo sem parte.
+   */
+  publicoInteiro: number | null;
 }
 
 /** O teto do disparo aprovado pelo pedido e quanto a campanha já gastou dele, pela mesma conta do worker. */
@@ -555,9 +571,13 @@ export interface ResumoCampanha {
   listaNome: string | null;
   /** A categoria do modelo, traduzida: marketing, utilidade, autenticação. */
   modeloCategoria: string | null;
-  /** De onde saiu o público (lista, números, base, importação, perfil, público) e o nome dele no cartão. */
+  /** De onde saiu o público (lista, números, base, importação, perfil, público, regras) e o nome dele no cartão. */
   publicoOrigem: string | null;
   publicoRotulo: string | null;
+  /** Na origem `regras`: as regras e a parte usadas na montagem, para reabrir o rascunho como está. */
+  publicoRegras: RegrasDaCampanha | null;
+  /** O público salvo de onde vieram as regras. */
+  publicoSalvoId: string | null;
   /** O que a tela de edição precisa para reabrir a campanha como ela está. */
   modeloId: string | null;
   listaId: string | null;
@@ -700,6 +720,7 @@ export class CampanhaService {
         publicoOrigem: publico.origem,
         publicoRotulo: publico.rotulo,
         variaveisLista: publico.variaveis,
+        ...regrasParaGravar(publico),
       })
       .where(eq(campanha.id, criada!.id));
 
@@ -1068,7 +1089,7 @@ export class CampanhaService {
             : `A lista "${escolhida.nome}" não tem ninguém que possa receber: está vazia ou todos pediram para sair.`,
         );
       }
-      return { total, listaId: escolhida.id, origem: 'lista', rotulo: null, variaveis: lista };
+      return { total, listaId: escolhida.id, origem: 'lista', rotulo: null, variaveis: lista, regras: null };
     }
 
     if (daBase) {
@@ -1099,7 +1120,7 @@ export class CampanhaService {
             : `"${rotulo}" não tem ninguém que possa receber agora.`,
         );
       }
-      return { total, listaId: null, origem: daBase.origem, rotulo, variaveis: lista };
+      return { total, listaId: null, origem: daBase.origem, rotulo, variaveis: lista, regras: o.regras ?? null };
     }
 
     const normalizados = this.conferirNumeros(dto.destinatarios ?? []);
@@ -1115,7 +1136,7 @@ export class CampanhaService {
       })),
     );
 
-    return { total: normalizados.length, listaId: null, origem: 'numeros', rotulo: null, variaveis: null };
+    return { total: normalizados.length, listaId: null, origem: 'numeros', rotulo: null, variaveis: null, regras: null };
   }
 
   /**
@@ -1310,6 +1331,7 @@ export class CampanhaService {
           publicoOrigem: publico.origem,
           publicoRotulo: publico.rotulo,
           variaveisLista: publico.variaveis,
+          ...regrasParaGravar(publico),
         })
         .where(and(eq(campanha.id, campanhaId), eq(campanha.contaId, contaId)));
       await marcarDescadastrados(this.ctx.db, contaId, sql`d.campanha_id = ${campanhaId}`);
@@ -2534,9 +2556,18 @@ export class CampanhaService {
       const quemEntra = comCashback
         ? sql`${quemPode} and ${cashbackValido('contato', hojeDaConta(contaId))}`
         : quemPode;
+      // Com "mandar só para uma parte": o público inteiro, para a tela dizer "X de N".
+      const inteiro = o.filtroSemParte
+        ? sql`, (select count(*)::int from contato
+                   where contato.conta_id = ${contaId}
+                     and contato.opt_out = false
+                     and contato.sem_whatsapp_em is null
+                     and ${o.filtroSemParte}) as publico_inteiro`
+        : sql``;
       const r = await db.execute(sql`
         select count(*)::int as total, ${emDescanso} as em_descanso, ${sql.join(periodos, sql`, `)}
                ${comCashback ? sql`, (select count(*)::int from contato where ${quemPode}) as do_publico` : sql``}
+               ${inteiro}
           from contato
          where ${quemEntra}
       `);
@@ -2550,6 +2581,7 @@ export class CampanhaService {
         cashback: comCashback ? { doPublico: Number(linha.do_publico ?? 0) } : null,
         // Os mesmos contatos do total acima, pela tarifa de hoje.
         custo: await custoDoPublico(db, contaId, quemEntra, pedido.categoria),
+        publicoInteiro: o.filtroSemParte ? Number(linha.publico_inteiro ?? 0) : null,
       };
     });
   }
@@ -2815,6 +2847,8 @@ export class CampanhaService {
       modeloCategoria: c.modeloCategoria ?? null,
       publicoOrigem: c.publicoOrigem ?? null,
       publicoRotulo: c.publicoRotulo ?? null,
+      publicoRegras: (c.publicoRegras as RegrasDaCampanha | null) ?? null,
+      publicoSalvoId: c.publicoSalvoId ?? null,
       modeloId: c.modeloId,
       listaId: c.listaId,
       janelaDias: (c.janelaDias as number[] | null) ?? [],

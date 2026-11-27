@@ -401,6 +401,10 @@ export interface ResumoCampanha {
   /** De onde saiu o público e o nome dele no cartão ("Toda a base", "Pedem à noite"…). */
   publicoOrigem?: OrigemDaCampanha | null;
   publicoRotulo?: string | null;
+  /** Com o público montado com regras: as regras e a parte usadas na montagem. */
+  publicoRegras?: { regras: RegraDoPublico[]; parte: { de: number; ate: number } | null } | null;
+  /** O público salvo de onde vieram as regras, quando veio de um. */
+  publicoSalvoId?: string | null;
   /** O que a tela de edição usa para reabrir a campanha como ela está. */
   modeloId: string | null;
   listaId: string | null;
@@ -694,7 +698,7 @@ export type Publico =
   | 'produto';
 
 /** De onde sai o público da campanha (`POST /campanhas/previa` e a montagem). */
-export type OrigemDoPublico = 'lista' | 'importacao' | 'base' | 'perfil' | 'regiao' | 'publico';
+export type OrigemDoPublico = 'lista' | 'importacao' | 'base' | 'perfil' | 'regiao' | 'publico' | 'regras';
 export type OrigemDaCampanha = OrigemDoPublico | 'numeros';
 
 /** O público escolhido em "Quem recebe": uma lista, ou um público da base. */
@@ -706,6 +710,71 @@ export interface PublicoDaCampanha {
   uf?: string;
   publico?: Publico;
   publicoValor?: string;
+  /** "Montar com regras": o contato precisa cumprir todas. */
+  regras?: RegraDoPublico[];
+  /**
+   * O público salvo de onde vieram as regras. Com ele, o servidor usa as
+   * regras GRAVADAS do público salvo — por isso só vai enquanto as regras da
+   * tela são as dele.
+   */
+  publicoSalvoId?: string;
+  /** "Mandar só para uma parte": do contato `parteDe` ao `parteAte`, na ordem em que entraram na base. */
+  parteDe?: number;
+  parteAte?: number;
+}
+
+/** O tipo do valor de uma regra: decide a comparação e o campo da tela. */
+export type TipoDoCampoDaRegra = 'numero' | 'reais' | 'dias' | 'data' | 'lista';
+
+/** As seis comparações; a lista só aceita `=` e `!=`. */
+export type ComparacaoDaRegra = '=' | '!=' | '>' | '<' | '>=' | '<=';
+
+/**
+ * Uma regra do público: campo + comparação + valor. O valor vai sempre em
+ * texto: inteiro (número e dias), reais com ponto ("80.50"), `AAAA-MM-DD`
+ * (data) ou o valor da opção (lista).
+ */
+export interface RegraDoPublico {
+  campo: string;
+  comparacao: ComparacaoDaRegra;
+  valor: string;
+}
+
+/** Um campo que a regra pode usar, como o servidor descreve (`GET /publicos-salvos/campos`). */
+export interface CampoDaRegra {
+  id: string;
+  nome: string;
+  grupo: string;
+  tipo: TipoDoCampoDaRegra;
+  /** As opções fixas de um campo de lista (perfil, estado, jeito de comprar, período). */
+  opcoes?: { valor: string; nome: string }[];
+  /** As opções que a tela busca na base: os bairros das entregas ou os produtos comprados. */
+  opcoesDe?: 'bairros' | 'produtos';
+  /** Uma frase sobre como o campo conta. */
+  ajuda?: string;
+}
+
+/** `GET /publicos-salvos/campos` — o catálogo das regras. A tela não guarda lista própria. */
+export interface CatalogoDasRegras {
+  campos: CampoDaRegra[];
+  comparacoes: Record<TipoDoCampoDaRegra, { valor: ComparacaoDaRegra; nome: string }[]>;
+  maxRegras: number;
+}
+
+/** `GET /publicos-salvos` — regras com nome. Guardam as regras, não as pessoas. */
+export interface PublicoSalvo {
+  id: string;
+  nome: string;
+  regras: RegraDoPublico[];
+  /** Uma frase por regra, pronta para mostrar. */
+  resumo: string[];
+  /** Quantos podem receber hoje. Nulo quando o público tem uma regra que não vale mais. */
+  total: number | null;
+  /** O que impede o público de ser usado como está (uma regra que não vale mais). */
+  problema: string | null;
+  usos: { campanhas: number; ultimaEm: string | null };
+  criadoEm: string;
+  atualizadoEm: string;
 }
 
 /**
@@ -855,6 +924,11 @@ export interface PreviaDoPublico {
   cashback?: { doPublico: number } | null;
   /** O custo estimado na Meta, quando o pedido leva a categoria do modelo escolhido. */
   custo?: CustoNaMeta | null;
+  /**
+   * Com "mandar só para uma parte": quantos o público inteiro tem (sem a
+   * parte). `total` já é o da parte. Nulo quando não foi pedida parte.
+   */
+  publicoInteiro?: number | null;
 }
 
 /** `GET /contatos/importacoes` — uma importação e quantos dela ainda podem receber. */

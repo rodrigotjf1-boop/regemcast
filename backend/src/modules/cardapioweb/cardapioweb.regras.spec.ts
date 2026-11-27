@@ -5,7 +5,42 @@
  * ou transformar um celular gaúcho (DDD 55) em número inválido por confundir o
  * DDD com o DDI.
  */
-import { decidir, saldoDoCliente, saldosDaPagina, separarPagina, telefoneDoCliente } from './cardapioweb.regras';
+import {
+  cadastroDoCliente,
+  cadastrosDaPagina,
+  decidir,
+  saldoDoCliente,
+  saldosDaPagina,
+  separarPagina,
+  telefoneDoCliente,
+} from './cardapioweb.regras';
+
+describe('data do cadastro do cliente (migration 053)', () => {
+  const agora = new Date('2026-11-27T15:00:00Z');
+
+  it('lê o created_at do Cardápio Web como instante', () => {
+    expect(cadastroDoCliente({ created_at: '2023-05-10T17:43:40.521-03:00' }, agora)).toBe('2023-05-10T20:43:40.521Z');
+  });
+
+  it.each([null, undefined, '', 'ontem', '2026-13-01T00:00:00Z', '1999-12-31T23:00:00Z', '2026-11-29T00:00:00Z'])(
+    '%p não serve (ausente, ilegível, antes de 2000 ou do futuro): fica como está',
+    (created_at) => expect(cadastroDoCliente({ created_at }, agora)).toBeNull(),
+  );
+
+  it('na página: as duas formas do celular, e o mais antigo quando o número se repete', () => {
+    const r = cadastrosDaPagina(
+      [
+        { id: 1, ddi: '55', phone_number: '21960000001', created_at: '2024-05-01T10:00:00-03:00' },
+        { id: 2, ddi: '55', phone_number: '21960000001', created_at: '2023-01-01T10:00:00-03:00' },
+        { id: 3, ddi: '55', phone_number: '21960000002', created_at: 'ontem' },
+      ],
+      agora,
+    );
+    expect(r.get('5521960000001')).toBe('2023-01-01T13:00:00.000Z');
+    expect(r.get('552160000001')).toBe('2023-01-01T13:00:00.000Z');
+    expect(r.size).toBe(2);
+  });
+});
 
 describe('telefoneDoCliente', () => {
   it('junta DDI e número', () => {

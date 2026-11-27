@@ -2,10 +2,10 @@
  * O nome do público no cartão da campanha. Puro: nenhum banco, nenhum
  * serviço — o teste chama direto.
  */
-import type { OrigemDoPublico } from '../contato/origem-do-publico';
+import type { OrigemDaTela } from '../contato/origem-do-publico';
 
-/** De onde saiu o público da campanha: os números digitados, ou uma das origens da base. */
-export type OrigemDaCampanha = OrigemDoPublico | 'numeros';
+/** De onde saiu o público da campanha: os números digitados, ou uma das origens da base (com as regras). */
+export type OrigemDaCampanha = OrigemDaTela | 'numeros';
 
 /**
  * Lista e números não precisam: o cartão já mostra a lista (ou nada, para
@@ -25,6 +25,9 @@ export function rotuloDoPublico(origem: OrigemDaCampanha, nome: string): string 
     case 'regiao':
       return `Estado: ${nome}`;
     case 'publico':
+      return nome;
+    case 'regras':
+      // Já vem pronto de `origem-do-publico.ts`: "Público salvo: X" ou as regras numa frase.
       return nome;
   }
 }

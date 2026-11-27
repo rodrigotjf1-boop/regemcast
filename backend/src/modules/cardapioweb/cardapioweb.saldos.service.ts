@@ -32,8 +32,8 @@ import { AuditoriaService } from '../auditoria/auditoria.service';
 import { cashbackValido, hojeDaConta } from '../contato/cashback';
 import { decifrarToken } from '../meta/cripto';
 import { CardapiowebCliente, ErroCardapioWeb, type Credencial } from './cardapioweb.cliente';
-import { saldosDaPagina, separarPagina, type ClienteCardapioWeb } from './cardapioweb.regras';
-import { bloquearClientes, gravarSaldos, proximaLeituraSql } from './cardapioweb.saldos';
+import { cadastrosDaPagina, saldosDaPagina, separarPagina, type ClienteCardapioWeb } from './cardapioweb.regras';
+import { bloquearClientes, gravarCadastros, gravarSaldos, proximaLeituraSql } from './cardapioweb.saldos';
 
 const PAGINAS_POR_PASSO = 5;
 const PAUSA_ENTRE_PAGINAS_MS = 1_200;
@@ -116,6 +116,8 @@ export class SaldosCardapiowebService {
     const agora = new Date();
     await this.ctx.comConta(contaId, async (db) => {
       await gravarSaldos(db, contaId, saldosDaPagina(clientes), agora);
+      // A leitura das 4h passa por todos: preenche a data do cadastro de quem já estava na base.
+      await gravarCadastros(db, contaId, cadastrosDaPagina(clientes, agora));
       await bloquearClientes(db, contaId, separarPagina(clientes).bloqueados, l.importacaoId, agora);
       await db
         .update(integracaoCardapioweb)

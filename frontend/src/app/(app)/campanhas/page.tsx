@@ -63,12 +63,14 @@ export default function PaginaCampanhas() {
   }, [carregar]);
 
   // Chegou pelo atalho "Nova campanha" do painel — ou por "Usar em campanha" num
-  // bloco, que traz a lista escolhida: já abre a montagem.
+  // bloco (traz a lista) ou num público salvo (traz o público): já abre a montagem.
   const [listaInicial, setListaInicial] = useState<string | undefined>(undefined);
+  const [publicoSalvoInicial, setPublicoSalvoInicial] = useState<string | undefined>(undefined);
   useEffect(() => {
     const busca = new URLSearchParams(window.location.search);
     if (busca.get('nova') === '1') setMontando(true);
     setListaInicial(busca.get('lista') ?? undefined);
+    setPublicoSalvoInicial(busca.get('publicoSalvo') ?? undefined);
   }, []);
 
   const saindo = lista?.filter((c) => c.status === 'enviando' || c.status === 'agendada').length ?? 0;
@@ -99,6 +101,7 @@ export default function PaginaCampanhas() {
       {montando && (
         <FormularioCampanha
           listaInicial={listaInicial}
+          publicoSalvoInicial={publicoSalvoInicial}
           aoConcluir={() => {
             setMontando(false);
             void carregar();

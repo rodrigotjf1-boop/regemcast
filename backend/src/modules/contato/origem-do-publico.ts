@@ -6,29 +6,59 @@
  *
  * Um lugar só para os blocos (dividir em blocos) e para a campanha ("Quem
  * recebe → Da base"): o número que uma tela conta é o que a outra entrega.
+ * A campanha também aceita o público montado com regras (`regras`,
+ * migration 053, `regras-do-publico.ts`), que os blocos e a porta MCP não usam.
  */
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { and, eq, sql, type SQL } from 'drizzle-orm';
 
 import { ESTADOS, dddsDaUf } from '../../common/ddd';
 import type { Db } from '../../db/contexto';
-import { contatoLista, importacao } from '../../db/schema';
+import { conta, contatoLista, importacao, publicoSalvo } from '../../db/schema';
 import { descreverPublico, expressaoPublico } from './publicos';
 import { limitesDosPublicos, publicoValido } from './publicos.service';
+import {
+  expressaoDaParte,
+  expressaoDasRegras,
+  resumoDasRegras,
+  validarParte,
+  validarRegras,
+  type ContextoDasRegras,
+  type RegrasDaCampanha,
+} from './regras-do-publico';
 import { SEGMENTOS, descreverSegmentos, expressaoSegmento, type Segmento } from './segmentacao';
 import { parametrosDaConta } from './segmentacao.service';
 
+/**
+ * As origens que os blocos, a porta MCP e a campanha aceitam. A porta MCP usa
+ * esta lista no esquema das ferramentas: mudar aqui muda o contrato com os
+ * parceiros (Padrão DMS §12).
+ */
 export const ORIGENS_DO_PUBLICO = ['lista', 'importacao', 'base', 'perfil', 'regiao', 'publico'] as const;
 export type OrigemDoPublico = (typeof ORIGENS_DO_PUBLICO)[number];
 
+/**
+ * As origens da TELA da campanha: as de cima mais o público montado com regras
+ * (migration 053). Fica fora da porta MCP nesta versão.
+ */
+export const ORIGENS_DA_TELA = [...ORIGENS_DO_PUBLICO, 'regras'] as const;
+export type OrigemDaTela = (typeof ORIGENS_DA_TELA)[number];
+
 /** O que a tela pede. `origemId` é a lista ou a importação. */
 export interface PedidoDeOrigem {
-  origem: OrigemDoPublico;
+  origem: OrigemDaTela;
   origemId?: string | null;
   segmento?: string | null;
   uf?: string | null;
   publico?: string | null;
   publicoValor?: string | null;
+  /** As regras, quando a origem é `regras` sem público salvo. */
+  regras?: unknown;
+  /** O público salvo: com ele, valem as regras GRAVADAS, não as do pedido. */
+  publicoSalvoId?: string | null;
+  /** Só uma parte do público: do contato `parteDe` ao `parteAte`. Só na origem `regras`. */
+  parteDe?: number | null;
+  parteAte?: number | null;
 }
 
 export interface Origem {
@@ -39,6 +69,37 @@ export interface Origem {
   /** O que identifica a escolha (o perfil, o estado, `publico:valor`). */
   rotulo: string | null;
   origemId: string | null;
+  /** Na origem `regras`: as regras e a parte que valeram, e o público salvo de onde vieram. */
+  regras?: RegrasDaCampanha & { publicoSalvoId: string | null };
+  /** Na origem `regras` com parte: o público inteiro, sem a parte (a prévia mostra "de N"). */
+  filtroSemParte?: SQL;
+}
+
+/** O fuso da conta e os números dos perfis: o que as regras precisam para virar SQL. */
+export async function contextoDasRegras(db: Db, contaId: string): Promise<ContextoDasRegras> {
+  const [c] = await db.select({ fuso: conta.timezone }).from(conta).where(eq(conta.id, contaId)).limit(1);
+  return { fuso: c?.fuso || 'America/Sao_Paulo', parametros: await parametrosDaConta(db, contaId) };
+}
+
+/** As regras de um público salvo da conta, conferidas de novo (um campo pode ter saído da lista). */
+export async function regrasDoPublicoSalvo(
+  db: Db,
+  contaId: string,
+  id: string,
+): Promise<{ nome: string; regras: RegrasDaCampanha['regras'] }> {
+  const [s] = await db
+    .select({ nome: publicoSalvo.nome, regras: publicoSalvo.regras })
+    .from(publicoSalvo)
+    .where(and(eq(publicoSalvo.id, id), eq(publicoSalvo.contaId, contaId)))
+    .limit(1);
+  if (!s) throw new NotFoundException('Público salvo não encontrado. Ele pode ter sido excluído.');
+  const v = validarRegras(s.regras);
+  if ('erro' in v) {
+    throw new BadRequestException(
+      `O público salvo "${s.nome}" tem uma regra que não vale mais (${v.erro}). Edite as regras em Contatos › Públicos salvos.`,
+    );
+  }
+  return { nome: s.nome, regras: v.regras };
 }
 
 /** O nome da importação: o arquivo, ou o jeito como os números entraram. */
@@ -116,6 +177,34 @@ export async function origemDoPublico(db: Db, contaId: string, pedido: PedidoDeO
         nome: descreverPublico(publico, valor, l).nome,
         rotulo: valor ? `${publico}:${valor}` : publico,
         origemId: null,
+      };
+    }
+    case 'regras': {
+      // Com o público salvo, valem as regras gravadas — a fonte, não o que a tela mandou.
+      let nomeSalvo: string | null = null;
+      let regras: RegrasDaCampanha['regras'];
+      if (pedido.publicoSalvoId) {
+        const s = await regrasDoPublicoSalvo(db, contaId, pedido.publicoSalvoId);
+        nomeSalvo = s.nome;
+        regras = s.regras;
+      } else {
+        const v = validarRegras(pedido.regras);
+        if ('erro' in v) throw new BadRequestException(v.erro);
+        regras = v.regras;
+      }
+      const p = validarParte(pedido.parteDe, pedido.parteAte);
+      if ('erro' in p) throw new BadRequestException(p.erro);
+      const ctx = await contextoDasRegras(db, contaId);
+      const filtroDasRegras = expressaoDasRegras(regras, ctx);
+      const nomeBase = nomeSalvo ? `Público salvo: ${nomeSalvo}` : resumoDasRegras(regras);
+      const nome = p.parte ? `${nomeBase} · do ${p.parte.de} ao ${p.parte.ate}` : nomeBase;
+      return {
+        filtro: p.parte ? expressaoDaParte(contaId, filtroDasRegras, p.parte) : filtroDasRegras,
+        filtroSemParte: p.parte ? filtroDasRegras : undefined,
+        nome,
+        rotulo: nome,
+        origemId: null,
+        regras: { regras, parte: p.parte, publicoSalvoId: pedido.publicoSalvoId ?? null },
       };
     }
   }

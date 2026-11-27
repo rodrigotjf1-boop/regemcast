@@ -45,6 +45,7 @@ export async function anonimizarContatos(
         cashbackEm: null,
         metricasEm: null,
         metricasOrigem: null,
+        cadastroOrigemEm: null,
         consentimentoEvidencia: evidencia,
         optOut: true,
         optOutEm: sql`coalesce(${contato.optOutEm}, now())`,

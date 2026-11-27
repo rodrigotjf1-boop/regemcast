@@ -153,10 +153,18 @@ Detalhe e o porquê em `docs/marca.md`; fonte da verdade em `kit/LEIA-ME.md`.
   oficial antes de codar (o Cardápio Web só devolve as alterações das últimas
   8 h, por exemplo). Detalhe em [`docs/integracoes.md`](docs/integracoes.md).
 - **O público da campanha é uma foto tirada ao montar** — de uma lista, de um
-  público da base (toda a base, importação, perfil, estado, público pronto) ou
-  dos números digitados. Quem entra em cada origem é `contato/origem-do-publico.ts`,
-  a MESMA regra dos blocos e da prévia (`POST /campanhas/previa`): o número que
-  uma tela mostra é o que a outra entrega.
+  público da base (toda a base, importação, perfil, estado, público pronto,
+  ou montado com regras) ou dos números digitados. Quem entra em cada origem é
+  `contato/origem-do-publico.ts`, a MESMA regra dos blocos e da prévia
+  (`POST /campanhas/previa`): o número que uma tela mostra é o que a outra entrega.
+- **Público com regras (migration 053): os campos são uma lista FIXA**
+  (`contato/regras-do-publico.ts`, `CAMPOS`): o pedido só escolhe um item dela
+  e o valor vai como parâmetro — nunca nome de coluna, apelido ou operador de
+  texto de fora. Todas as regras valem (E), até 10; "não é igual a" inclui
+  quem não tem o dado. Público salvo guarda as REGRAS, e a campanha usa as
+  GRAVADAS quando recebe `publicoSalvoId`. A parte (do X ao Y) numera quem pode
+  receber, na ordem de chegada. A origem `regras` fica fora da porta MCP
+  (`ORIGENS_DA_TELA` × `ORIGENS_DO_PUBLICO`). Detalhe em [`docs/whatsapp.md`](docs/whatsapp.md).
 - **Cashback do Cardápio Web (migration 034): uma regra de "válido" só**
   (`contato/cashback.ts`, positivo e não vencido, o dia do vencimento vale
   inteiro no fuso da conta) para públicos, Contatos, Integrações, prévia,

@@ -12,7 +12,8 @@
  *   → fica de fora e é contado como inválido.
  *
  * E o saldo de cashback de cada cliente (Fase 4C): `saldoDoCliente` e
- * `saldosDaPagina`.
+ * `saldosDaPagina`. E a data do cadastro na loja (migration 053),
+ * `cadastrosDaPagina`, para a regra "Data do cadastro no Cardápio Web".
  */
 import { gemeoDoCelular, paraCloudApi } from '../../common/telefone';
 
@@ -153,6 +154,40 @@ export function saldosDaPagina(clientes: ClienteCardapioWeb[]): Map<string, Sald
     }
   }
   return saldos;
+}
+
+/**
+ * Quando o cliente se cadastrou na loja (`created_at`), como instante ISO; nulo
+ * quando falta, não se lê, é de antes de 2000 ou do futuro (mais de 1 dia à
+ * frente de `agora`) — quem chama não mexe no que o contato já tem.
+ */
+export function cadastroDoCliente(c: Pick<ClienteCardapioWeb, 'created_at'>, agora: Date): string | null {
+  const texto = String(c.created_at ?? '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}/.test(texto)) return null;
+  const d = new Date(texto);
+  if (Number.isNaN(d.getTime())) return null;
+  if (d.getUTCFullYear() < 2000 || d.getTime() > agora.getTime() + 24 * 3600 * 1000) return null;
+  return d.toISOString();
+}
+
+/**
+ * As datas de cadastro de uma página, por telefone — nas DUAS formas do
+ * celular, como os saldos. O mesmo número em dois cadastros fica com o mais
+ * antigo: é desde quando a pessoa é cliente.
+ */
+export function cadastrosDaPagina(clientes: ClienteCardapioWeb[], agora: Date): Map<string, string> {
+  const datas = new Map<string, string>();
+  for (const c of clientes) {
+    const telefone = telefoneDoCliente(c);
+    const desde = cadastroDoCliente(c, agora);
+    if (!telefone || !desde) continue;
+    for (const forma of [telefone, gemeoDoCelular(telefone)]) {
+      if (!forma) continue;
+      const atual = datas.get(forma);
+      if (!atual || desde < atual) datas.set(forma, desde);
+    }
+  }
+  return datas;
 }
 
 /** Separa uma página em quem entra, quem entra bloqueado e quantos não servem. */

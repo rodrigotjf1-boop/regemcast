@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 
 import { GRUPOS } from '@/components/app/publicos-base';
+import { PublicoComRegras } from '@/components/app/regras/publico-com-regras';
 import { Alerta } from '@/components/ui/alerta';
 import { Select } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,6 +12,7 @@ import { formatarData, formatarNumero } from '@/lib/formato';
 import { contatos } from '@/lib/servicos';
 import type {
   ImportacaoDaBase,
+  PreviaDoPublico,
   ProdutoDaBase,
   Publico,
   PublicoDaCampanha,
@@ -19,13 +21,14 @@ import type {
   Segmento,
 } from '@/lib/tipos';
 
-type Tipo = 'base' | 'importacao' | 'perfil' | 'publico';
+type Tipo = 'base' | 'importacao' | 'perfil' | 'publico' | 'regras';
 
 const TIPOS: { valor: Tipo; titulo: string }[] = [
   { valor: 'base', titulo: 'Toda a base' },
   { valor: 'importacao', titulo: 'Uma importação (arquivo ou Cardápio Web)' },
   { valor: 'perfil', titulo: 'Um perfil (Campeões, Em risco…)' },
   { valor: 'publico', titulo: 'Um público pronto (VIP, horário, produto, bairro…)' },
+  { valor: 'regras', titulo: 'Montar com regras (total de pedidos, última compra, aniversário…)' },
 ];
 
 const MESES = [
@@ -47,18 +50,24 @@ const contagem = (n: number) => `${formatarNumero(n)} ${n === 1 ? 'contato' : 'c
 
 /**
  * "Quem recebe → Da base": o público sai direto da base — toda ela, uma
- * importação (os contatos importados sem lista estão aqui), um perfil ou um
- * público pronto. O servidor usa a MESMA regra dos blocos e da tela de
- * Contatos, e copia o público ao montar a campanha, como faz com a lista.
+ * importação (os contatos importados sem lista estão aqui), um perfil, um
+ * público pronto ou as regras montadas aqui. O servidor usa a MESMA regra dos
+ * blocos e da tela de Contatos, e copia o público ao montar a campanha, como
+ * faz com a lista.
  *
  * Os números de cada opção são de quem pode receber, como no resto do app.
  */
 export function PublicoDaBase({
   valor,
   aoMudar,
+  previa = null,
+  erroDaPrevia = '',
 }: {
   valor: PublicoDaCampanha | null;
   aoMudar: (publico: PublicoDaCampanha | null) => void;
+  /** A prévia que o formulário buscou: a contagem das regras sai dela. */
+  previa?: PreviaDoPublico | null;
+  erroDaPrevia?: string;
 }) {
   const [tipo, setTipo] = useState<Tipo | ''>(() =>
     valor && valor.origem !== 'lista' && valor.origem !== 'regiao' ? valor.origem : '',
@@ -178,11 +187,13 @@ export function PublicoDaBase({
     return [];
   })();
 
-  const vazio: Record<Exclude<Tipo, 'base'>, string> = {
+  const vazio: Record<Exclude<Tipo, 'base' | 'regras'>, string> = {
     importacao: 'Nenhuma importação com contatos que podem receber. Importe em Contatos.',
     perfil: 'Nenhum perfil com contatos que podem receber ainda.',
     publico: 'Os públicos prontos aparecem com as compras (Integrações) ou com uma planilha de pedidos.',
   };
+  /** Importação, perfil e público pronto pedem um segundo seletor ("Qual"); as regras têm o editor delas. */
+  const temQual = tipo === 'importacao' || tipo === 'perfil' || tipo === 'publico';
 
   return (
     <div className="space-y-3">
@@ -199,7 +210,7 @@ export function PublicoDaBase({
           </Select>
         </div>
 
-        {tipo && tipo !== 'base' && (
+        {temQual && (
           <div className="space-y-1">
             <Label htmlFor="valor-da-base">Qual</Label>
             <Select
@@ -223,9 +234,13 @@ export function PublicoDaBase({
         )}
       </div>
 
+      {tipo === 'regras' && (
+        <PublicoComRegras valor={valor} aoMudar={aoMudar} previa={previa} erroDaPrevia={erroDaPrevia} />
+      )}
+
       {erro && <Alerta tom="erro">{erro}</Alerta>}
-      {tipo && tipo !== 'base' && opcoes !== null && opcoes.length === 0 && !erro && (
-        <p className="text-xs text-tinta-suave">{vazio[tipo]}</p>
+      {temQual && opcoes !== null && opcoes.length === 0 && !erro && (
+        <p className="text-xs text-tinta-suave">{vazio[tipo as keyof typeof vazio]}</p>
       )}
     </div>
   );

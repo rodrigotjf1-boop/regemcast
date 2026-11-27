@@ -11,6 +11,7 @@ import { IconeBlocos, IconeContatos, IconeEscudo, IconeFechar, IconeImportar } f
 import { ImportarContatos } from '@/components/app/importar-contatos';
 import { COR_PERFIL, PerfisDaBase } from '@/components/app/perfis-base';
 import { PublicosDaBase } from '@/components/app/publicos-base';
+import { PublicosSalvos } from '@/components/app/regras/publicos-salvos';
 import { useSessao } from '@/components/app/sessao';
 import { CabecalhoPagina } from '@/components/ui/cabecalho-pagina';
 import { Badge } from '@/components/ui/badge';
@@ -322,6 +323,9 @@ export default function PaginaContatos() {
           </ul>
         </section>
       )}
+
+      {/* Sem ninguém que possa receber, não há o que segmentar: a seção espera a base ter gente. */}
+      {(ativosDaBase ?? total) > 0 && <PublicosSalvos ehDono={ehDono} />}
 
       {carregando && <EsqueletoLista linhas={5} />}
 
